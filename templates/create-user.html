@@ -17,101 +17,96 @@
     </a>
   </div>
 
-  <!-- Form card -->
-  <div class="create-card">
-    <form class="create-form">
+<!-- Form card -->
+<div class="create-card">
+  <form class="create-form" method="POST" action="{{ url_for('create_user') }}">
 
-      <!-- Row 1 -->
-      <div class="form-row">
-        <div class="form-field">
-          <label for="firstName">First Name</label>
-          <input id="firstName" type="text" placeholder="First Name">
-        </div>
-
-        <div class="form-field">
-          <label for="lastName">Last Name</label>
-          <input id="lastName" type="text" placeholder="Last Name">
-        </div>
+    <!-- Row 1 -->
+    <div class="form-row">
+      <div class="form-field">
+        <label for="firstName">First Name</label>
+        <input id="firstName" name="first_name" type="text" placeholder="First Name" required>
       </div>
 
-      <!-- Row 2 -->
-      <div class="form-row">
-        <div class="form-field">
-          <label for="email">Email</label>
-          <input id="email" type="email" placeholder="Stackly@gmail.com">
-        </div>
+      <div class="form-field">
+        <label for="lastName">Last Name</label>
+        <input id="lastName" name="last_name" type="text" placeholder="Last Name" required>
+      </div>
+    </div>
 
-        <div class="form-field">
-          <label for="contact">Contact Number</label>
-          <input id="contact" type="text" placeholder="0000000000">
-        </div>
+    <!-- Row 2 -->
+    <div class="form-row">
+      <div class="form-field">
+        <label for="email">Email</label>
+        <input id="email" name="email" type="email" placeholder="Stackly@gmail.com" required>
       </div>
 
-      <!-- Row 3 -->
-      <div class="form-row">
-        <div class="form-field">
-          <label for="branch">Branch</label>
-          <select id="branch">
-            <option value="">Select a branch</option>
-            <option>Main Branch</option>
-            <option>Branch 1</option>
-            <option>Branch 2</option>
-          </select>
-        </div>
+      <div class="form-field">
+        <label for="contact">Contact Number</label>
+        <input id="contact" name="contact_number" type="text" placeholder="0000000000" required>
+      </div>
+    </div>
 
-        <div class="form-field">
-          <label for="department">Department</label>
-          <select id="department">
-            <option value="">Select Department</option>
-            <option>Sales</option>
-            <option>HR</option>
-            <option>Accounts</option>
-          </select>
-        </div>
+    <!-- Row 3 -->
+    <div class="form-row">
+      <div class="form-field">
+        <label for="branch">Branch</label>
+        <select id="branch" name="branch" required>
+          <option value="">Select a branch</option>
+          <option>Main Branch</option>
+          <option>Branch 1</option>
+          <option>Branch 2</option>
+        </select>
       </div>
 
-      <!-- Row 4 -->
-      <div class="form-row">
-        <div class="form-field">
-          <label for="role">Role</label>
-          <select id="role">
-            <option value="">Select Designation</option>
-            <option>Admin</option>
-            <option>Manager</option>
-            <option>Staff</option>
-          </select>
-        </div>
+      <div class="form-field">
+        <label for="department">Department</label>
+        <select id="department" name="department" required>
+          <option value="">Select Department</option>
+          <option>Sales</option>
+          <option>HR</option>
+          <option>Accounts</option>
+        </select>
+      </div>
+    </div>
 
-        <div class="form-field">
-          <label for="reportingTo">Reporting To</label>
-          <input id="reportingTo" type="text" placeholder="0000000000">
-        </div>
+    <!-- Row 4 -->
+    <div class="form-row">
+      <div class="form-field">
+        <label for="role">Role</label>
+        <select id="role" name="role" required>
+          <option value="">Select Designation</option>
+          <option>Admin</option>
+          <option>Manager</option>
+          <option>Staff</option>
+        </select>
       </div>
 
-      <!-- Row 5 -->
-      <div class="form-row">
-        <div class="form-field">
-          <label for="availableBranches">Available Branches</label>
-          <input id="availableBranches" type="text" placeholder="e.g., 1,2">
-        </div>
+      <div class="form-field">
+        <label for="reportingTo">Reporting To</label>
+        <input id="reportingTo" name="reporting_to" type="text" placeholder="0000000000">
+      </div>
+    </div>
 
-        <div class="form-field">
-          <label for="employeeId">Employee ID</label>
-          <input id="employeeId" type="text" placeholder="Enter Employee ID">
-        </div>
+    <!-- Row 5 -->
+    <div class="form-row">
+      <div class="form-field">
+        <label for="availableBranches">Available Branches</label>
+        <input id="availableBranches" name="available_branches" type="text" placeholder="e.g., 1,2">
       </div>
 
-      <!-- Buttons -->
-      <div class="form-actions">
-        <button type="button" class="btn-outline">Cancel</button>
-        <button type="submit" class="btn-primary">Save</button>
+      <div class="form-field">
+        <label for="employeeId">Employee ID</label>
+        <input id="employeeId" name="employee_id" type="text" placeholder="Enter Employee ID">
       </div>
+    </div>
 
-    </form>
-  </div>
+    <!-- Buttons -->
+    <div class="form-actions">
+      <a href="{{ url_for('manage_users') }}" class="btn-outline">Cancel</a>
+      <button type="submit" class="btn-primary">Save</button>
+    </div>
+
+  </form>
 </div>
-{% endblock %}
-
-{% block extra_js %}
-<script src="{{ url_for('static', filename='no-screenshot.js') }}"></script>
 {% endblock %}
