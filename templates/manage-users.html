@@ -1,0 +1,91 @@
+{% extends "menu.html" %}
+
+{% block extra_css %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='manage-users.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="manage-users-page">
+
+  <!-- Header: title + search + create button -->
+  <div class="manage-header-row">
+    <div>
+      <h1 class="manage-title">Manage Users</h1>
+      
+    </div>
+
+    <div class="manage-header-right">
+      <div class="mini-search">
+        <input type="text" id="searchUsers" placeholder="Search Users">
+        <button type="button" class="search-icon-btn">🔍</button>
+      </div>
+
+      <button class="primary-btn" id="createUserBtn">+ Create New</button>
+      
+    </div>
+  </div>
+
+  <!-- Card with table + footer -->
+  <div class="card">
+    <table class="user-table">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>email</th>
+          <th>Phone</th>
+          <th>Role</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+
+      <tbody id="userTableBody">
+        {% if users and users|length > 0 %}
+          {% for u in users %}
+          <tr>
+            <td>{{ u.name }}</td>
+            <td>{{ u.email }}</td>
+            <td>{{ u.phone }}</td>
+            <td>{{ u.role or "Admin" }}</td>
+            <td>
+              <button class="action-btn edit-btn">Edit</button>
+              <button class="action-btn delete-btn">Delete</button>
+            </td>
+          </tr>
+          {% endfor %}
+
+          <!-- shown only when search finds nothing -->
+          <tr id="noUserRow">
+          <td colspan="5">No users found</td>
+        </tr>
+
+        {% else %}
+          <!-- when there are NO users in JSON at all -->
+          <tr class="no-data-row">
+            <td colspan="5">No Data Found</td>
+          </tr>
+        {% endif %}
+      </tbody>
+    </table>
+
+    <!-- Footer / pagination -->
+    <div class="table-footer">
+      <div class="entries-info">
+        Showing {{ users|length if users else 0 }} entries
+      </div>
+
+      <div class="pagination-controls">
+        <button class="pager-btn">Prev</button>
+        <span class="page-info">
+          Page 1 of {{ 1 if users and users|length > 0 else 0 }}
+        </span>
+        <button class="pager-btn">Next</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}   
+
+{% block extra_js %}
+  <script src="{{ url_for('static', filename='manage-users.js') }}"></script>
+{% endblock %}

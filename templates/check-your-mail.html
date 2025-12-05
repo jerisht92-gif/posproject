@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Check Your Email - POS</title>
+  <!-- <link rel="stylesheet" href="{{ url_for('static', filename='Pos.css') }}"> -->
+  <link rel="stylesheet" href="{{ url_for('static', filename='check-your-mail.css') }}">
+</head>
+
+<body class="confirm-page">
+
+  <!-- 🔮 Animated background -->
+  <div class="animated-bg">
+    <div class="gradient-layer"></div>
+    <div class="wave"></div>
+    <div class="wave wave2"></div>
+    <div class="wave wave3"></div>
+  </div>
+
+  <!-- Layout container -->
+  <div class="signup-container">
+
+    <!-- LEFT SECTION -->
+    <div class="left-section left-placeholder">
+      <a href="{{ url_for('login') }}" class="back-login-link">
+        Remember your password? <b>Login</b>
+      </a>
+    </div>
+
+    <!-- RIGHT SECTION -->
+    <div class="right-section">
+      <div class="confirm-box">
+
+        <!-- Logo -->
+        <div class="image1">
+          <img 
+            src="{{ url_for('static', filename='images/stack-img.webp') }}" 
+            alt="Stackly Logo" 
+            class="stackly-logo card-logo"
+          />
+        </div>
+
+        <h2 class="confirm-title">Check Your Email!</h2>
+
+        <p class="confirm-subtext">
+          We’ve sent a link to reset your password. If you don’t see it, check your spam folder
+          or resend the link below.
+        </p>
+
+        <form class="form-wrap" onsubmit="return false;">
+          <div class="input-group">
+            <label for="cym-email">Email Address</label>
+            <input id="cym-email"
+                   type="email"
+                   placeholder="Enter your email address"
+                   value="{{ email }}" />
+          </div>
+
+          <button type="button" class="resend-btn" id="cymResendBtn">Resend Link</button>
+
+          <p id="cymStatus" class="status-msg"></p>
+
+          <div class="footer-text">
+            Don’t have an account? <a href="{{ url_for('home') }}">Sign Up</a>
+          </div>
+        </form>
+
+      </div>
+    </div>
+
+  </div><!-- END signup-container -->
+
+  <script src="{{ url_for('static', filename='check-your-mail.js') }}"></script>
+</body>
+</html>

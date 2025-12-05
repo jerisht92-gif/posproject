@@ -1,0 +1,70 @@
+/* =========================================
+   DASHBOARD CONTENT ONLY (no layout here)
+   For: page-title, cards row, cards & charts
+========================================= */
+
+/* 1️⃣ PAGE TITLE (matches <h1 class="page-title">) */
+.page-title {
+  font-size: 32px;
+  font-weight: 700;
+  color: #7a001f;
+  margin: 4px 0 4px 7px;   /* aligns under search bar */
+}
+
+/* 2️⃣ CARDS CONTAINER (matches <div class="cards-row">) */
+.cards-row {
+  display: grid;
+  grid-template-columns: 1.1fr 1fr;
+  gap: 20px;
+}
+
+/* 3️⃣ CARD WRAPPER (matches <section class="card">) */
+.card {
+  background: #ffffff;
+  border-radius: 24px; 
+  padding: 20px 22px;
+  box-shadow: 0 16px 30px rgba(18, 32, 73, 0.08); 
+  display: flex;
+  flex-direction: column;
+}
+
+/* 4️⃣ CARD TITLE (matches <h2 class="card-title">) */
+.card-title {
+  font-size: 22px;
+  font-weight: 700;
+  margin-bottom: 16px;
+  color: #1a2340;  
+}
+
+
+.card .card-title,
+.card h2 {
+  margin-left: -15px;
+  
+}
+
+/* 5️⃣ CARD BODY (matches <div class="card-body">) */
+.card-body {
+  flex: 1;
+}
+
+/* 6️⃣ CHART CANVAS (matches <canvas> inside .card-body) */
+.card canvas {
+  width: 100% !important;
+  height: 260px !important;
+}
+
+/* 7️⃣ RESPONSIVE – 2 cards → 1 column on tablets & below */
+@media (max-width: 992px) {
+  .cards-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* 8️⃣ RESPONSIVE – adjust title spacing on mobile */
+@media (max-width: 600px) {
+  .page-title {
+    font-size: 26px;
+    margin: 16px 0 20px 16px;
+  }
+}
