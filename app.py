@@ -1,3 +1,6 @@
+from email.mime.text import MIMEText    
+from flask import render_template, request, redirect, url_for, session, flash
+from datetime import datetime
 from flask import Flask, render_template, request, jsonify, session, url_for, redirect
 from flask_cors import CORS
 import smtplib, random, json, os, time
@@ -342,6 +345,30 @@ def manage_users():
         user_email=user_email,
         user_name=user_name,
     )
+# manager user delete button
+import json
+
+@app.route("/delete-user/<int:user_id>", methods=["DELETE"])
+def delete_user(user_id):
+    try:
+        users = load_users()
+
+        # user_id = index number in users list
+        if user_id < 0 or user_id >= len(users):
+            return jsonify({"success": False, "message": "Invalid user ID"}), 404
+
+        deleted_user = users.pop(user_id)
+        save_users(users)
+
+        return jsonify({
+            "success": True,
+            "message": "User deleted successfully",
+            "deleted_email": deleted_user.get("email", "")
+        }), 200
+
+    except Exception as e:
+        print("❌ Delete user error:", e)
+        return jsonify({"success": False, "message": "Server error while deleting user"}), 500
 
 
 
@@ -528,7 +555,7 @@ def reset_password_submit():
         print("❌ Reset password error:", e)
         return jsonify({"status": "error", "message": "Server error while updating password."}), 500
 
-@app.route("/create-user")
+@app.route("/create-user", methods=["GET", "POST"])
 def create_user():
     user_email = session.get("user")
     if not user_email:
@@ -536,22 +563,72 @@ def create_user():
 
     users = load_users()
 
-    # find user name from users.json
+    # find logged-in user's name for topbar (same as before)
     user_name = "User"
     for u in users:
         if isinstance(u, dict) and (u.get("email") or "").lower() == user_email.lower():
             user_name = u.get("name") or "User"
             break
 
-    return render_template(
-        "create-user.html",
-        title="Create User - Stackly",
-        page="manage_users",          # highlight Masters → Manage Users
-        section="masters",
-        user_email=user_email,
-        user_name=user_name,
-    )
+    if request.method == "GET":
+        return render_template(
+            "create-user.html",
+            title="Create User - Stackly",
+            page="manage_users",
+            section="masters",
+            user_email=user_email,
+            user_name=user_name,
+        )
 
+    # ---------- POST: read form ----------
+    first_name        = request.form.get("first_name", "").strip()
+    last_name         = request.form.get("last_name", "").strip()
+    email             = request.form.get("email", "").strip()
+    contact_number    = request.form.get("contact_number", "").strip()
+    branch            = request.form.get("branch", "").strip()
+    department        = request.form.get("department", "").strip()
+    role              = request.form.get("role", "").strip()
+    reporting_to      = request.form.get("reporting_to", "").strip()
+    available_branches = request.form.get("available_branches", "").strip()
+    employee_id       = request.form.get("employee_id", "").strip()
+
+    full_name = (first_name + " " + last_name).strip()
+
+    # simple validation
+    if not full_name or not email:
+        flash("Please enter name and email", "error")
+        return redirect(url_for("create_user"))
+
+    # optional: check duplicate email
+    for u in users:
+        if isinstance(u, dict) and (u.get("email") or "").lower() == email.lower():
+            flash("Email already exists", "error")
+            return redirect(url_for("create_user"))
+
+    new_user = {
+        "id": str(uuid.uuid4()),
+        # 👇 these two are what your table expects
+        "name": full_name,
+        "phone": contact_number,
+
+        # keep also the detailed fields
+        "first_name": first_name,
+        "last_name": last_name,
+        "email": email,
+        "contact_number": contact_number,
+        "branch": branch,
+        "department": department,
+        "role": role,
+        "reporting_to": reporting_to,
+        "available_branches": available_branches,
+        "employee_id": employee_id,
+    }
+
+    users.append(new_user)
+    save_users(users)
+
+    flash("User created successfully", "success")
+    return redirect(url_for("manage_users"))
 
 @app.route("/department-role")
 def department_role():
