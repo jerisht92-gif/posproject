@@ -48,7 +48,9 @@
             <td>{{ u.role or "Admin" }}</td>
             <td>
               <button class="action-btn edit-btn">Edit</button>
-              <button class="action-btn delete-btn">Delete</button>
+              <!-- <button class="action-btn delete-btn">Delete</button> -->
+              <button class="action-btn delete-btn" data-id="{{ loop.index0 }}">Delete</button>
+
             </td>
           </tr>
           {% endfor %}
