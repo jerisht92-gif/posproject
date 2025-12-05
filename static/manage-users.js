@@ -6,6 +6,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const searchInput = document.getElementById("searchUsers");
   const tableBody   = document.getElementById("userTableBody");
   const noUserRow   = document.getElementById("noUserRow");
+  
 
   // 👉 "Create New" button: go to /create-user
   if (createBtn) {
@@ -13,6 +14,7 @@ document.addEventListener("DOMContentLoaded", () => {
       window.location.href = "/create-user";
     });
   }
+
 
   // 👉 Search filter for table
   if (searchInput && tableBody) {
@@ -50,4 +52,42 @@ document.addEventListener("DOMContentLoaded", () => {
 
     searchInput.addEventListener("input", applyFilter);
   }
+});
+
+document.addEventListener("DOMContentLoaded", function () {
+
+  // ================================
+  // DELETE USER (working version)
+  // ================================
+  const deleteButtons = document.querySelectorAll(".delete-btn");
+
+  deleteButtons.forEach(btn => {
+    btn.addEventListener("click", function () {
+      const userId = this.getAttribute("data-id");
+      const row = this.closest("tr");
+
+      if (!userId) {
+        console.error("No user ID found in delete button");
+        return;
+      }
+
+      if (confirm("Are you sure you want to delete this user?")) {
+        deleteUser(userId, row);
+      }
+    });
+  });
+
+  function deleteUser(id, rowElement) {
+    fetch(`/delete-user/${id}`, { method: "DELETE" })
+      .then(res => res.json())
+      .then(data => {
+        alert(data.message);
+
+        if (rowElement) {
+          rowElement.remove();
+        }
+      })
+      .catch(err => console.error(err));
+  }
+
 });
