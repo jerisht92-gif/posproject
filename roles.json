@@ -1,0 +1,352 @@
+[
+  {
+    "department": "Salessd",
+    "branch": "Main Branch",
+    "role": "Super Admin",
+    "description": "hjhjhj&&&&",
+    "permissions": {
+      "new_enquiry": {
+        "full_access": false,
+        "view": true,
+        "create": false,
+        "edit": false,
+        "delete": false
+      },
+      "quotation": {
+        "full_access": false,
+        "view": true,
+        "create": false,
+        "edit": false,
+        "delete": false
+      },
+      "sales": {
+        "full_access": false,
+        "view": false,
+        "create": false,
+        "edit": false,
+        "delete": false
+      },
+      "delivery": {
+        "full_access": false,
+        "view": false,
+        "create": false,
+        "edit": false,
+        "delete": false
+      },
+      "invoice": {
+        "full_access": false,
+        "view": false,
+        "create": false,
+        "edit": false,
+        "delete": false
+      }
+    }
+  },
+  {
+    "department": "Salessd",
+    "branch": "Branch 2",
+    "role": "Super Admin",
+    "description": "kjkhk",
+    "permissions": {
+      "new_enquiry": {
+        "full_access": false,
+        "view": false,
+        "create": false,
+        "edit": false,
+        "delete": false
+      },
+      "quotation": {
+        "full_access": false,
+        "view": false,
+        "create": false,
+        "edit": false,
+        "delete": false
+      },
+      "sales": {
+        "full_access": false,
+        "view": false,
+        "create": false,
+        "edit": false,
+        "delete": false
+      },
+      "delivery": {
+        "full_access": true,
+        "view": false,
+        "create": false,
+        "edit": false,
+        "delete": false
+      },
+      "invoice": {
+        "full_access": false,
+        "view": false,
+        "create": false,
+        "edit": false,
+        "delete": false
+      }
+    }
+  },
+  {
+    "department": "Sales",
+    "branch": "Main Branch",
+    "role": "superadmin",
+    "description": "jhj",
+    "permissions": {
+      "new_enquiry": {
+        "full_access": false,
+        "view": false,
+        "create": false,
+        "edit": false,
+        "delete": false
+      },
+      "quotation": {
+        "full_access": true,
+        "view": false,
+        "create": false,
+        "edit": false,
+        "delete": false
+      },
+      "sales": {
+        "full_access": false,
+        "view": false,
+        "create": false,
+        "edit": false,
+        "delete": false
+      },
+      "delivery": {
+        "full_access": false,
+        "view": false,
+        "create": false,
+        "edit": false,
+        "delete": false
+      },
+      "invoice": {
+        "full_access": false,
+        "view": false,
+        "create": false,
+        "edit": false,
+        "delete": false
+      }
+    }
+  },
+  {
+    "department": "Sales",
+    "branch": "Branch 2",
+    "role": "super admin",
+    "description": "jhjhx",
+    "permissions": {
+      "new_enquiry": {
+        "full_access": false,
+        "view": false,
+        "create": true,
+        "edit": false,
+        "delete": false
+      },
+      "quotation": {
+        "full_access": false,
+        "view": false,
+        "create": false,
+        "edit": false,
+        "delete": false
+      },
+      "sales": {
+        "full_access": false,
+        "view": false,
+        "create": false,
+        "edit": false,
+        "delete": false
+      },
+      "delivery": {
+        "full_access": false,
+        "view": false,
+        "create": false,
+        "edit": false,
+        "delete": false
+      },
+      "invoice": {
+        "full_access": false,
+        "view": false,
+        "create": false,
+        "edit": false,
+        "delete": false
+      }
+    }
+  },
+  {
+    "department": "Accounts",
+    "branch": "Branch 1",
+    "role": "tggh",
+    "description": "sdsd&&",
+    "permissions": {
+      "new_enquiry": {
+        "full_access": false,
+        "view": false,
+        "create": false,
+        "edit": false,
+        "delete": false
+      },
+      "quotation": {
+        "full_access": false,
+        "view": false,
+        "create": true,
+        "edit": false,
+        "delete": false
+      },
+      "sales": {
+        "full_access": false,
+        "view": false,
+        "create": false,
+        "edit": false,
+        "delete": false
+      },
+      "delivery": {
+        "full_access": false,
+        "view": false,
+        "create": false,
+        "edit": false,
+        "delete": false
+      },
+      "invoice": {
+        "full_access": false,
+        "view": false,
+        "create": false,
+        "edit": false,
+        "delete": false
+      }
+    }
+  },
+  {
+    "department": "HR",
+    "branch": "Main Branch",
+    "role": "dsds",
+    "description": "jjkjkj",
+    "permissions": {
+      "new_enquiry": {
+        "full_access": false,
+        "view": false,
+        "create": false,
+        "edit": false,
+        "delete": false
+      },
+      "quotation": {
+        "full_access": true,
+        "view": false,
+        "create": false,
+        "edit": false,
+        "delete": false
+      },
+      "sales": {
+        "full_access": false,
+        "view": false,
+        "create": false,
+        "edit": false,
+        "delete": false
+      },
+      "delivery": {
+        "full_access": false,
+        "view": false,
+        "create": false,
+        "edit": false,
+        "delete": false
+      },
+      "invoice": {
+        "full_access": false,
+        "view": false,
+        "create": false,
+        "edit": false,
+        "delete": false
+      }
+    }
+  },
+  {
+    "department": "HR",
+    "branch": "Main Branch",
+    "role": "sds",
+    "description": "mnj",
+    "permissions": {
+      "new_enquiry": {
+        "full_access": false,
+        "view": false,
+        "create": false,
+        "edit": false,
+        "delete": false
+      },
+      "quotation": {
+        "full_access": true,
+        "view": false,
+        "create": false,
+        "edit": false,
+        "delete": false
+      },
+      "sales": {
+        "full_access": false,
+        "view": false,
+        "create": false,
+        "edit": false,
+        "delete": false
+      },
+      "delivery": {
+        "full_access": false,
+        "view": false,
+        "create": false,
+        "edit": false,
+        "delete": false
+      },
+      "invoice": {
+        "full_access": false,
+        "view": false,
+        "create": false,
+        "edit": false,
+        "delete": false
+      }
+    }
+  },
+  {
+    "department": "Sales",
+    "branch": "Branch 1",
+    "role": "dfd",
+    "description": "jkjk",
+    "permissions": {
+      "new_enquiry": {
+        "full_access": false,
+        "view": true,
+        "create": false,
+        "edit": false,
+        "delete": false
+      },
+      "quotation": {
+        "full_access": false,
+        "view": false,
+        "create": false,
+        "edit": false,
+        "delete": false
+      },
+      "sales": {
+        "full_access": false,
+        "view": false,
+        "create": false,
+        "edit": false,
+        "delete": false
+      },
+      "delivery": {
+        "full_access": false,
+        "view": false,
+        "create": false,
+        "edit": false,
+        "delete": false
+      },
+      "invoice": {
+        "full_access": false,
+        "view": false,
+        "create": false,
+        "edit": false,
+        "delete": false
+      }
+    }
+  },
+  {
+    "department": "Sales",
+    "branch": "Main Branch",
+    "role": "Senior Manager",
+    "description": "Senior sales manager role"
+  }
+]
