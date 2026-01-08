@@ -1,12 +1,5 @@
 [
   {
-    "name": "Updated Name",
-    "phone": "+919876543210",
-    "email": "updated@example.com",
-    "password": "Mon@5005",
-    "role": "Super Admin"
-  },
-  {
     "name": "Ariyan",
     "phone": "+61198745632",
     "email": "Ari@gmail.com",
@@ -27,38 +20,6 @@
     "password": "Anil@5005",
     "phone": "9878654000",
     "role": "Admin"
-  },
-  {
-    "id": "2fa21bf1-01e1-496d-b266-60695824f466",
-    "name": "Sivogam",
-    "phone": "+918765444454",
-    "first_name": "gggzzz",
-    "last_name": "gfxzxxx",
-    "email": "wawa@gmail.com",
-    "country_code": "+91",
-    "contact_number": "8765444454",
-    "branch": "Main Branch",
-    "department": "HR",
-    "role": "Manager",
-    "reporting_to": "trtrtr",
-    "available_branches": "123555",
-    "employee_id": "9111821"
-  },
-  {
-    "id": "5ea05092-7dc2-4897-83f9-77c019d789c5",
-    "name": "dhdhdazaz zxxzxzx",
-    "phone": "+917865467671",
-    "first_name": "dhdhdazaz",
-    "last_name": "zxxzxzx",
-    "email": "xcxwew@gmail.com",
-    "country_code": "+91",
-    "contact_number": "7865467671",
-    "branch": "Main Branch",
-    "department": "Accounts",
-    "role": "Manager",
-    "reporting_to": "vchsdd",
-    "available_branches": "343",
-    "employee_id": "62622"
   },
   {
     "id": "c8127a4c-a0bb-4682-ba34-4ea8b510f583",
@@ -155,54 +116,6 @@
     "employee_id": "EMP002"
   },
   {
-    "id": "1e9d4fb3-a465-49ff-ae68-3549ffaa8194",
-    "name": "sdd fgg",
-    "phone": "+979345534352",
-    "first_name": "sdd",
-    "last_name": "fgg",
-    "email": "john.doe132@gmail.com",
-    "country_code": "+97",
-    "contact_number": "9345534352",
-    "branch": "ddd",
-    "department": "sdsd",
-    "role": "sd",
-    "reporting_to": "nbgf",
-    "available_branches": "1",
-    "employee_id": "1212"
-  },
-  {
-    "id": "07532192-774f-4f4f-8965-4694c4564687",
-    "name": "sdd fgg",
-    "phone": "+919345676234",
-    "first_name": "sdd",
-    "last_name": "fgg",
-    "email": "john.doe1232@gmail.com",
-    "country_code": "+91",
-    "contact_number": "9345676234",
-    "branch": "ddd",
-    "department": "sdsd",
-    "role": "sd",
-    "reporting_to": "nbgf",
-    "available_branches": "1",
-    "employee_id": "12122"
-  },
-  {
-    "id": "8333bc7d-7918-4639-99e8-b1143271c5b6",
-    "name": "sdd fgg",
-    "phone": "+971934567625",
-    "first_name": "sdd",
-    "last_name": "fgg",
-    "email": "john.doe1252@gmail.com",
-    "country_code": "+971",
-    "contact_number": "934567625",
-    "branch": "ddd",
-    "department": "sdsd",
-    "role": "sd",
-    "reporting_to": "nbgf",
-    "available_branches": "1",
-    "employee_id": "12124"
-  },
-  {
     "id": "120b0510-6b1c-4955-95a7-16f516087edb",
     "name": "asas hhg",
     "phone": "+913434343434",
@@ -251,54 +164,6 @@
     "employee_id": "767"
   },
   {
-    "id": "57ac5f77-05e7-44dd-8dd1-9fb53b4fe827",
-    "name": "sdd fgg",
-    "phone": "+971930567625",
-    "first_name": "sdd",
-    "last_name": "fgg",
-    "email": "john.doe12522@gmail.com",
-    "country_code": "+971",
-    "contact_number": "930567625",
-    "branch": "ddd",
-    "department": "sdsd",
-    "role": "sd",
-    "reporting_to": "nbgf",
-    "available_branches": "1",
-    "employee_id": "121242"
-  },
-  {
-    "id": "ff117541-0495-40df-9ddc-925bc876c1c4",
-    "name": "nbj vvcf",
-    "phone": "+919305676252",
-    "first_name": "nbj",
-    "last_name": "vvcf",
-    "email": "john.doe12524@gmail.com",
-    "country_code": "+91",
-    "contact_number": "9305676252",
-    "branch": "ddd",
-    "department": "sdsd",
-    "role": "sd",
-    "reporting_to": "nbgf",
-    "available_branches": "1",
-    "employee_id": "12emp242"
-  },
-  {
-    "id": "97f712ae-5e90-4d18-9b21-57befc0e964e",
-    "name": "nbd vvcf",
-    "phone": "+919305676242",
-    "first_name": "nbd",
-    "last_name": "vvcf",
-    "email": "john.doe125234@gmail.com",
-    "country_code": "+91",
-    "contact_number": "9305676242",
-    "branch": "ddd",
-    "department": "sdsd",
-    "role": "dfd",
-    "reporting_to": "nbgf",
-    "available_branches": "23",
-    "employee_id": "12emp2422"
-  },
-  {
     "id": "5e825393-9295-4fb4-b9ba-35ac30e2434b",
     "name": "srinivas fgfg",
     "phone": "+919845984544",
@@ -331,3 +196,4 @@
     "employee_id": "e545"
   }
 ]
+
