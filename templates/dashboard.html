@@ -1,0 +1,35 @@
+{% extends "menu.html" %}
+{% set page = "dashboard" %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='dashboard.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="dashboard-page">
+
+  <h1 class="page-title">DASHBOARD</h1>
+
+  <div class="cards-row">
+    <section class="dash-card">
+      <h2 class="card-title">Top Selling Products</h2>
+      <div class="card-body">
+        <canvas id="topProductsChart"></canvas>
+      </div>
+    </section>
+
+    <section class="dash-card">
+      <h2 class="card-title">Monthly Sales</h2>
+      <div class="card-body">
+        <canvas id="monthlySalesChart"></canvas>
+      </div>
+    </section>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="{{ url_for('static', filename='dashboard.js') }}"></script>
+{% endblock %}

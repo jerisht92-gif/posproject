@@ -1,0 +1,206 @@
+{% extends "menu.html" %}
+
+{% block extra_css %}
+<!-- <link rel="stylesheet" href="{{ url_for('static', filename='create-user.css') }}"> -->
+<link rel="stylesheet" href="{{ url_for('static', filename='create-department.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="create-user-page dept-create-page" data-current-role="{{ user_role|lower }}">
+
+  {% if error %}
+    <div class="flash-container">
+      <div class="flash flash-error">{{ error }}</div>
+    </div>
+  {% endif %}
+
+  <div class="create-header">
+    <h1 class="create-title">Create New Department &amp; Roles</h1>
+    
+  </div>
+
+  <div class="create-card">
+    <form class="create-form" method="POST" action="{{ url_for('create_department') }}">
+
+
+      
+
+      <!-- Row 1 -->
+      <div class="form-row form-row1">
+        <div class="form-field">
+          <label for="departmentName">Department Name</label>
+          <input id="departmentName" name="department_name" type="text" placeholder="Sales" required
+                 value="{{ form.department_name if form }}">
+        </div>
+
+        <div class="form-field">
+          <label for="departmentCode">Code</label>
+          <input id="departmentCode" name="code" type="text" placeholder="Enter Code" required
+                 maxlength="20" value="{{ form.code if form }}">
+        </div>
+      </div>
+
+      <!-- Row 2 -->
+      <div class="form-row">
+        <div class="form-field">
+          <label for="branchSelect">Branch</label>
+          <select id="branchSelect" name="branch" required>
+            <option value="">Select a branch</option>
+            {% for b in branches %}
+              <option value="{{ b.id }}" {% if form and form.branch == b.id %}selected{% endif %}>
+                {{ b.name if b.name else b.id }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+
+      <!-- Row 3 -->
+      <div class="form-row">
+        <div class="form-field">
+          <label for="deptDesc">Description</label>
+          <textarea id="deptDesc" name="description" placeholder="Text content" required maxlength="100">{{ form.description if form }}</textarea>
+        </div>
+      </div>
+
+      <!-- Roles section -->
+      <div class="form-row" style="align-items:center; justify-content:space-between; gap:12px;">
+        <h3 class="create-title" style="margin:0; font-size:18px;">Roles</h3>
+
+        <button type="button" id="addRoleBtn" class="btn-primary" style="padding:8px 12px;">
+          <a href="{{ url_for('department_new') }}" style="text-decoration:none;color:white;">
+            + Add New
+          </a>
+        </button>
+      </div>
+
+      <div class="roles-table-wrap" style="margin-top:8px;">
+        <table id="rolesTable" class="roles-table">
+          <thead>
+            <tr>
+              <th>Role Name</th>
+              <th>Description</th>
+              <th class="action-col">Action</th>
+            </tr>
+          </thead>
+
+          <tbody id="rolesTableBody">
+            {# normalize logged-in role once #}
+            {% set current_user_role = (user_role or '')|lower|replace(' ', '')|replace('_', '') %}
+            {% for role_item in roles %}
+              <tr>
+                <td>{{ role_item.role }}</td>
+                <td>{{ role_item.description }}</td>
+                <td class="action-cell">
+                  <div class="action-buttons">
+                    <!-- EDIT BUTTON -->
+                    {% if current_user_role in ["superadmin", "admin"] %}
+                      <button class="action-btn edit-btn" type="button">Edit</button>
+                    {% else %}
+                      <button class="action-btn edit-btn-disabled" disabled
+                              title="No access">Edit</button>
+                    {% endif %}
+
+                    <!-- DELETE BUTTON -->
+                    {% if current_user_role == "superadmin" %}
+                    <button class="action-btn delete-btn"
+                            type="button"
+                              data-description="{{ role_item.description }}">
+                        Delete
+                      </button>
+                    {% elif current_user_role == "admin" %}
+                      <button class="action-btn delete-btn-disabled" disabled
+                              title="Only Super Admin can delete"
+                              data-description="{{ role_item.description }}">
+                        Delete
+                      </button>
+                    {% else %}
+                      <button class="action-btn delete-btn-disabled" disabled
+                              title="No access"
+                              data-description="{{ role_item.description }}">
+                      Delete
+                    </button>
+                    {% endif %}
+                  </div>
+                </td>
+              </tr>
+            {% else %}
+              <tr>
+                <td colspan="3">No roles found</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <div id="rolesHidden"></div>
+
+      <div class="form-actions">
+        <!-- <button type="reset" class="btn-outline" id="clearBtn">Clear</button> -->
+        <a href="{{ url_for('department_roles') }}" class="btn-outline">Cancel</a>
+        <button type="submit" class="btn-primary">Save</button>
+      </div>
+
+    </form>
+  </div>
+
+  <!-- ✅ EDIT MODAL -->
+  <div id="editDeptModal" class="modal">
+    <div class="modal-content">
+      <h2>Edit Role</h2>
+
+      <input type="hidden" id="editRole">
+
+
+
+<label>Role</label>
+<select id="editRoleName" >
+  <option value="">Select Role</option>
+  <option value="Super Admin">Super Admin</option>
+  <option value="Admin">Admin</option>
+  <option value="User">User</option>
+</select>
+      <div id="editRoleNameError" class="field-error"></div>
+
+      <label>Description</label>
+      <input type="text" id="editRoleDesc" maxlength="50">
+      <div id="editRoleDescError" class="field-error"></div>
+
+      <label>Department</label>
+      <!-- Allow user to type department name in the Edit Role modal -->
+      <input type="text" id="editRoleDeptName" maxlength="20">
+      <div id="editRoleDeptNameError" class="field-error"></div>
+
+      <div class="modal-actions">
+        <button id="saveDeptEditBtn" class="primary-btn" type="button">Save</button>
+        <button id="closeDeptEditBtn" class="cancel-btn" type="button">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+
+
+
+  <!-- ✅ DELETE ROLE MODAL (match Delete Product design) -->
+  <div id="deleteRoleModal" class="delete-modal-overlay hidden" aria-hidden="true" role="dialog" aria-modal="true">
+    <div class="delete-modal" role="document">
+      <h2 class="modal-title">Delete Role</h2>
+      <p class="delete-text">
+        Are you sure you want to delete "<span id="deleteRoleName"></span>"?
+      </p>
+
+      <div class="delete-actions">
+        <button type="button" class="btn-cancel" id="cancelDeleteRole">Cancel</button>
+        <button type="button" class="btn-delete" id="confirmDeleteRole">Delete</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', filename='create-department.js') }}"></script>
+{% endblock %}

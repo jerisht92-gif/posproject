@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sign Up - POS</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='signup.css') }}">
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="{{ url_for('static', filename='signup.js') }}" defer></script>
+</head>
+<body>
+  <div class="animated-bg">
+    <div class="gradient-layer"></div>
+    <div class="wave"></div>
+    <div class="wave wave2"></div>
+    <div class="wave wave3"></div>
+  </div>
+
+  <div class="signup-container">
+    <div class="left-section">
+      <h1>Create an Account</h1>
+      <p>Turn ideas into action—stay organized, stay ahead.</p>
+    </div>
+
+    <div class="right-section">
+      <div class="signup-box">
+        <div class="image1">
+          <!-- <img src="images/stack-img.webp" alt="Stackly Logo" class="stackly-logo" /> -->
+          <img src="../static/images/stack-img.webp" alt="Stackly Logo" class="stackly-logo" />
+
+        </div>
+      <!-- ERROR MESSAGE BELOW LOGO -->
+      <p id="statusMsg" class="error-box"></p>
+
+       <form id="signupForm"  novalidate>
+          <div class="input-group">
+            <label>Name</label>
+            <input type="text" name="name" placeholder="Enter your name" maxlength="20"       
+               required  />
+          </div>
+
+          <!-- ✅ Phone number with country code -->
+           <div class="input-group">
+            <label>Phone number</label>
+            <div class="phone-container">
+              <select id="countryCode" name="countryCode" required>
+                <option value="+91" selected>IN +91</option>
+                <option value="+971">AE +971</option>
+                <option value="+974">QA +974</option>
+                <option value="+966">SA +966</option>
+                <option value="+94">LK +94</option>
+                <option value="+880">BD +880</option>
+                <option value="+977">NP +977</option>
+                <option value="+1">US +1</option>
+                <option value="+44">GB +44</option>
+                <option value="+61">AU +61</option>
+                <option value="+81">JP +81</option>
+              </select>
+              <input type="tel" id="phone" name="phone" placeholder="Enter your phone number"  
+               required />
+            </div>
+          </div>
+
+          <div class="input-group otp-section">
+            <label>Email Address</label>
+            <div class="email-otp-container">
+              <input
+                type="email"
+                id="email"
+                name="email"
+                placeholder="Enter your email address"
+                maxlength="30"          
+                required
+              />
+              <button type="button" id="sendOtpBtn" class="otp-btn" disabled>Send OTP</button>
+            </div>
+            
+          </div>
+
+
+          <div class="input-group">
+            <label>Enter OTP</label>
+            <input 
+              type="text" 
+              id="otp" 
+              placeholder="Enter Your OTP"
+              maxlength="6"
+              inputmode="numeric"
+              pattern="[0-9]*"
+              required 
+              disabled
+            />
+            <button type="button" id="verifyOtpBtn" class="otp-btn1" disabled>Verify OTP</button>
+          </div> 
+          
+          <div class="input-group password-group">
+            <label>Password</label>
+            <div class="password-container">
+              <input type="password" id="password" name="password" placeholder="Create a new password"    maxlength="20"
+            required disabled />
+              <button type="button" id="togglePassword" class="eye-btn" tabindex="-1">
+                <!-- 👁️ Eye icon SVG -->
+                <svg id="eyeIcon" xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="gray" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                  <circle cx="12" cy="12" r="3"></circle>
+                </svg>
+              </button>
+            </div>
+             <!-- 🔹 Caps Lock warning (SIGNUP) -->
+              <small id="capsWarningSignup" class="caps-warning" aria-live="polite" style="display:none;">
+                Caps Lock is ON
+              </small>
+          </div> 
+
+
+        <!-- Confirm Password (below Password) -->
+        <div class="input-group confirm-password-group">
+          <label>Confirm Password</label>
+          <div class="password-container">
+            <input
+              type="password"
+              id="confirmPassword"
+              name="confirmPassword"
+              placeholder="Re-enter the password"
+              maxlength="20"
+              required
+              disabled
+            />
+            <!-- 👁️ Toggle for Confirm Password -->
+            <button type="button" id="toggleConfirmPassword" class="eye-btn" tabindex="-1">
+              <svg id="eyeConfirmIcon" xmlns="http://www.w3.org/2000/svg" width="22" height="22"
+                viewBox="0 0 24 24" fill="none" stroke="gray" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                <circle cx="12" cy="12" r="3"></circle>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+                <!-- FOOTER LOGIN LINK -->
+        <div class="footer-text">
+          Already have an account?
+          <a href="{{ url_for('login') }}">Log In</a>
+        </div>
+
+        <!-- SIGN UP BUTTON -->
+        <button type="submit" id="signupBtn" class="signup-btn">Sign Up</button>
+        </form>
+        <script src="{{ url_for('static', filename='signup.js') }}" defer></script>
+        </body>
+        </html> 

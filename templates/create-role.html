@@ -1,0 +1,190 @@
+{% extends "menu.html" %}
+
+{% block extra_css %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='create-role.css') }}">
+{% endblock %}
+
+{% block content %}
+
+ 
+
+
+    <div class="header" data-current-role="{{ user_role|lower }}">
+        <h2>Create Roles</h2>
+        <!-- <button class="close-btn">✖</button> -->
+    </div>
+    <div class="container">
+
+
+    <div class="form-row">
+        <div class="form-group">
+            <label>Select Department</label>
+            <select id="department" name="department" required>
+            <option value="">Select Department</option>
+            <option>Sales</option>
+            <option>HR</option>
+            <option>Accounts</option>
+          </select>
+        </div>
+
+
+        <div class="form-group">
+            <label>Select Branch</label>
+            <select id="branch" name="branch" required>
+            <option value="">Select a branch</option>
+            <option>Main Branch</option>
+            <option>Branch 1</option>
+            <option>Branch 2</option>
+          </select>
+        </div>
+
+
+<!--         
+        
+        <div class="form-group">
+            <label>Role</label>
+            <select id="role" name="role" required>
+            <option value="">Select a Role</option>
+            <option>User</option>
+            <option>Admin</option>
+            <option>User Admin</option>
+          </select>
+        </div> -->
+
+
+    </div>
+
+
+
+        
+<!--         
+        <div class="form-group form-row">
+            <label>Role</label>
+            <select id="role" name="role" required>
+            <option value="">Select a Role</option>
+            <option>User</option>
+            <option>Admin</option>
+            <option>User Admin</option>
+          </select>
+        </div> -->
+
+
+
+    <!-- <div class="form-row"> -->
+        <div class="form-group full" style="margin-top: 15px;">
+            <label>Role</label>
+            <!-- Changed from dropdown to free-text input -->
+            <input
+                id="role"
+                name="role"
+                type="text"
+                placeholder="Enter role"
+                required
+                maxlength="20"
+            >
+        </div> 
+
+        <div class="form-group full text-group" style="margin-top: 15px;">
+            <label>Description</label>
+          <textarea id="deptDesc" name="description" placeholder="Text content" required>{{ form.description if form }}</textarea>
+        </div>
+    <!-- </div> -->
+
+    <div class="permission-header">
+        <h3>Permission</h3>
+        <button class="reset-btn">Reset</button>
+    </div>
+
+    <table>
+        <thead>
+        <tr>
+            <th>Menus</th>
+            <th>Full Access</th>
+            <th>View</th>
+            <th>Create</th>
+            <th>Edit</th>
+            <th>Delete</th>
+        </tr>
+        </thead>
+
+        <tbody>
+       
+<tr data-menu="new_enquiry">
+    <td>Enquiry List</td>
+    <td><input type="checkbox" name="new_enquiry_full"></td>
+    <td><input type="checkbox" name="new_enquiry_view"></td>
+    <td><input type="checkbox" name="new_enquiry_create"></td>
+    <td><input type="checkbox" name="new_enquiry_edit"></td>
+    <td><input type="checkbox" name="new_enquiry_delete"></td>
+</tr>
+
+<tr data-menu="quotation">
+    <td>Quotation Module</td>
+    <td><input type="checkbox" name="quotation_full"></td>
+    <td><input type="checkbox" name="quotation_view"></td>
+    <td><input type="checkbox" name="quotation_create"></td>
+    <td><input type="checkbox" name="quotation_edit"></td>
+    <td><input type="checkbox" name="quotation_delete"></td>
+</tr>
+
+<tr data-menu="sales">
+    <td>Sales</td>
+    <td><input type="checkbox" name="sales_full"></td>
+    <td><input type="checkbox" name="sales_view"></td>
+    <td><input type="checkbox" name="sales_create"></td>
+    <td><input type="checkbox" name="sales_edit"></td>
+    <td><input type="checkbox" name="sales_delete"></td>
+</tr>
+
+
+
+        <tr data-menu="delivery">
+            <td>Delivery Note Module</td>
+            <td><input type="checkbox" name="delivery_full"></td>
+            <td><input type="checkbox" name="delivery_view"></td>
+            <td><input type="checkbox" name="delivery_create"></td>
+            <td><input type="checkbox" name="delivery_edit"></td>
+            <td><input type="checkbox" name="delivery_delete"></td>
+        </tr>
+
+        <tr data-menu="invoice">
+            <td>Invoice Module</td>
+            <td><input type="checkbox" name="invoice_full"></td>
+            <td><input type="checkbox" name="invoice_view"></td>
+            <td><input type="checkbox" name="invoice_create"></td>
+            <td><input type="checkbox" name="invoice_edit"></td>
+            <td><input type="checkbox" name="invoice_delete"></td>
+        </tr>
+
+        </tbody>
+    </table>
+
+    <div class="btn-area">
+        <button class="cancel-btn">Cancel</button>
+        <button class="save-btn">Save</button>
+    </div>
+
+</div>
+
+
+<!-- save button -->
+
+<div id="confirmModal" class="confirm-overlay">
+  <div class="confirm-box">
+    <h3>Confirm Save</h3>
+    <p>Are you sure you want to save the data?</p>
+    <div class="confirm-actions">
+      <button id="confirmCancel">Cancel</button>
+      <button id="confirmOk">Save</button>
+    </div>
+  </div>
+</div>
+
+
+
+
+{% endblock %}   
+
+{% block extra_js %}
+  <script src="{{ url_for('static', filename='create-role.js') }}"></script>
+{% endblock %}

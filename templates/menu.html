@@ -1,0 +1,196 @@
+<!-- templates/menu.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{{ title or "Stackly POS" }}</title>
+
+  <link rel="stylesheet" href="{{ url_for('static', filename='menu.css') }}">
+  {% block extra_css %}{% endblock %}
+</head>
+
+<body class="dashboard-page">
+  <div class="layout">
+
+    <!-- ========== SIDEBAR ========== -->
+    <aside class="sidebar">
+           
+<div class="sidebar-header">
+  <img
+    src="{{ url_for('static', filename='images/stack-img.webp') }}"
+    alt="Stackly Logo"
+    class="logo-img"
+  >
+
+  <button class="sidebar-close" id="sidebarCloseBtn">✖</button>
+</div>
+
+      <nav class="sidebar-menu">
+        <!-- Dashboard -->
+        <a href="{{ url_for('dashboard') }}"
+           class="menu-item{% if page == 'dashboard' %} active{% endif %}">
+          <span class="menu-icon">💻</span>
+          <span class="menu-text">Dashboard</span>
+        </a>
+
+        <!-- Masters -->
+        <div class="menu-group">
+          <button
+            type="button"
+            class="menu-toggle"
+            data-target="masters-submenu"
+          >
+            <span class="menu-icon">☰</span>
+            <span class="menu-text">Masters</span>
+            <span class="menu-chevron">›</span>
+          </button>
+
+          <div id="masters-submenu"
+            class="submenu{% if page in ['manage_users','department_roles','products','customer'] %} open{% endif %}">
+            <a href="{{ url_for('manage_users') }}"
+               class="submenu-item{% if page == 'manage_users' %} active{% endif %}">
+              <span class="submenu-icon">👤</span>
+              <span>Manage Users</span>
+            </a>
+
+            <a href="{{ url_for('department_roles') }}"
+              class="submenu-item{% if page == 'department_roles' %} active{% endif %}">
+              <span class="submenu-icon">👥</span>
+              <span>Department &amp; Roles</span>
+            </a>
+  
+
+            <a href="{{ url_for('products') }}"
+               class="submenu-item{% if page == 'products' %} active{% endif %}">
+              <span class="submenu-icon">📦</span>
+              <span>Products</span>
+            </a>
+
+            <a href="{{ url_for('customer') }}"
+               class="submenu-item{% if page == 'customer' %} active{% endif %}">
+              <span class="submenu-icon">👥</span>
+              <span>Customer</span>
+            </a>
+          </div>
+        </div>
+
+        <!-- CRM -->
+        <div class="menu-group">
+          <button
+            type="button"
+            class="menu-toggle"
+            data-target="crm-submenu"
+          >
+            <span class="menu-icon">☰</span>
+            <span class="menu-text">CRM</span>
+            <span class="menu-chevron">›</span>
+          </button>
+
+          <div id="crm-submenu"
+               class="submenu{% if page in ['enquiry_list','new_enquiry','quotation','sales','delivery_note','invoice','dn_return','inv_return'] %} open{% endif %}">
+            <a href="{{ url_for('enquiry_list') }}"
+               class="submenu-item{% if page == 'enquiry_list' %} active{% endif %}">
+              <span class="submenu-icon">📋</span>
+              <span>Enquiry List</span>
+            </a>
+            <a href="#"
+               class="submenu-item{% if page == 'quotation' %} active{% endif %}">
+              <span class="submenu-icon">📑</span>
+              <span>Quotation Module</span>
+            </a>
+            <a href="#"
+               class="submenu-item{% if page == 'sales' %} active{% endif %}">
+              <span class="submenu-icon">🧾</span>
+              <span>Sales</span>
+            </a>
+            <a href="#"
+               class="submenu-item{% if page == 'delivery_note' %} active{% endif %}">
+              <span class="submenu-icon">📦</span>
+              <span>Delivery Note Module</span>
+            </a>
+            <a href="#"
+               class="submenu-item{% if page == 'invoice' %} active{% endif %}">
+              <span class="submenu-icon">🧮</span>
+              <span>Invoice Module</span>
+            </a>
+            <a href="#"
+               class="submenu-item{% if page == 'dn_return' %} active{% endif %}">
+              <span class="submenu-icon">↩</span>
+              <span>Delivery Note Return</span>
+            </a>
+            <a href="#"
+               class="submenu-item{% if page == 'inv_return' %} active{% endif %}">
+              <span class="submenu-icon">↩</span>
+              <span>Invoice Return Module</span>
+            </a>
+          </div>
+        </div>
+      </nav>
+    </aside>
+
+    <!-- ========== MAIN AREA ========== -->
+    <main class="main">
+      <header class="topbar">
+        <div class="top-left">
+          <!-- ☰ button -->
+          <button
+            class="icon-btn burger-btn"
+            id="menuToggleBtn"
+            aria-label="Toggle sidebar">
+            ☰
+          </button>
+          <!-- Search box -->
+          <div class="search-wrapper">
+            <span class="search-icon">🔍︎</span>
+            <input
+              type="text"
+              class="search-input"
+              placeholder="Search..." />
+          </div>
+          <!-- GLOBAL SEARCH RESULTS DROPDOWN -->
+          <div class="search-results" id="searchResults"></div>
+        </div>
+
+        <div class="top-right">
+          <!-- 🔔 Notification bell -->
+          <button class="icon-circle" aria-label="Notifications">
+            🔔
+          </button>
+
+          <!-- Profile + dropdown -->
+          <div class="profile-wrapper">
+            <button
+              type="button"
+              class="icon-circle profile-btn"
+              id="profileBtn"
+              aria-label="Profile">
+              👤
+            </button>
+
+            <div class="profile-dropdown" id="profileDropdown">
+              <p class="dropdown-name">{{ user_name }}</p>
+              <p class="dropdown-email">{{ user_email }}</p>
+
+              <a href="{{ url_for('profile') }}" class="profile-link">
+                Profile
+              </a>
+              <a href="{{ url_for('logout') }}" class="logout-link">
+                Sign out
+              </a>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <section class="content">
+        {% block content %}{% endblock %}
+      </section>
+    </main>
+
+  </div>
+
+  <script src="{{ url_for('static', filename='menu.js') }}" defer></script>
+  {% block extra_js %}{% endblock %}
+</body>
+</html>

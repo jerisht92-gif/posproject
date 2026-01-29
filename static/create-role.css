@@ -1,0 +1,449 @@
+body {
+    margin: 0;
+    padding: 0;
+    font-family: "Poppins", sans-serif;
+    
+    /* background: #fafafa; */
+      background: #f6f1f1;
+
+}
+
+.header h2{
+      color: #a12828; /* main maroon title */
+      
+
+   font-size: 26px;
+  font-weight: 600;
+
+}
+
+
+.container {
+    width: 85%;
+    margin: 10px auto;
+    background: white;
+    padding: 25px 35px;
+    border-radius: 10px;
+}
+
+.header {
+    margin: 0px 45px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.close-btn {
+    background: transparent;
+    /* border: none; */
+    /* font-size: 22px; */
+    cursor: pointer;
+    /* color: #a22; */
+  border: 2px solid #b9473e;
+  border-radius: 8px;
+
+ width: 34px;
+  height: 34px;
+  /* border-radius: 8px; */
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #b9473e;
+  text-decoration: none;
+  font-size: 20px;
+
+
+
+}
+.close-btn:hover{
+    background-color: #b9473e;
+    color: white;
+}
+
+.form-row {
+    display: flex;
+    gap: 25px;
+    margin-top: 20px;
+}
+
+.form-group {
+    display: flex;
+    flex-direction: column;
+    width: 50%;
+}
+
+.full {
+    width: 100%;
+}
+
+.form-group input,
+.form-group select {
+    padding: 10px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+      border: 1px solid #e7b7b5;
+  background-color: #fff5f5;
+  transition: 0.2s ease;
+  outline: none;
+}
+
+
+.form-group input::placeholder,
+.form-group select {
+  color: #d18a84;
+}
+
+.form-group label{
+      font-size: 13px;
+
+}
+
+.permission-header {
+    margin-top: 35px;
+    display: flex;
+    justify-content: space-between;
+}
+
+.reset-btn {
+    border: none;
+    background: none;
+    color: #c33;
+    cursor: pointer;
+}
+.permission-header h3{
+      color: #c33;
+  
+}
+
+table {
+    width: 100%;
+    margin-top: 20px;
+    border-collapse: collapse;
+    background: #fff4f4;
+}
+
+table thead {
+    background: #ffe9e9;
+}
+
+th, td {
+    padding: 12px;
+    text-align: center;
+}
+
+td:first-child {
+    text-align: left;
+}
+
+input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+}
+
+.btn-area {
+    margin-top: 25px;
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+.cancel-btn {
+    padding: 8px 20px;
+    background: #fff;
+    border: 1px solid #c33;
+    color: #c33;
+    border-radius: 5px;
+    cursor: pointer;
+}
+
+
+.cancel-btn:hover{
+    background-color:#a22;
+    color: white;
+}
+
+.save-btn {
+    padding: 8px 20px;
+    background: #a22;
+    color: #fff;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+}
+
+.save-btn:disabled {
+    background: #cccccc;
+    color: #666666;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.save-btn:disabled:hover {
+    background: #cccccc;
+    color: #666666;
+    transform: none;
+}
+
+
+
+.input-error {
+  border: 2px solid #c62828 !important;
+  background-color: #fff5f5 !important;
+}
+
+.error-msg {
+    color: red;
+    font-size: 12px;
+    margin-top: 3px;
+}
+
+/* -----------------------------------------
+   SUCCESS / ERROR NOTIFICATIONS (TOASTS)
+------------------------------------------ */
+.success-notification,
+.error-notification {
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-100px);
+  padding: 14px 28px;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 600;
+  z-index: 10000;
+  opacity: 0;
+  transition: all 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+  pointer-events: none;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.success-notification {
+  background: linear-gradient(135deg, #fff4f4, #ffe8e8);
+  color: #a12828;
+  border: 1.5px solid #a12828;
+  box-shadow: 0 8px 24px rgba(161, 40, 40, 0.25);
+}
+
+.error-notification {
+  background: linear-gradient(135deg, #ffe6e6, #ffc2c2);
+  color: #a12828;
+  border: 1.5px solid #a12828;
+  box-shadow: 0 8px 24px rgba(161, 40, 40, 0.35);
+}
+
+.success-notification.show,
+.error-notification.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+  pointer-events: auto;
+}
+
+.success-notification::before {
+  content: "✓";
+  font-size: 18px;
+  font-weight: bold;
+}
+
+.error-notification::before {
+  content: "✕";
+  font-size: 18px;
+  font-weight: bold;
+}
+
+
+
+
+
+.text-group textarea {
+  width: 100%;
+  padding: 11px 14px;
+  border-radius: 10px;
+  border: 1px solid #e7b7b5;
+  background-color: #fff5f5;
+  font-size: 14px;
+  box-sizing: border-box;
+  transition: 0.2s ease;
+  outline: none;
+  resize: vertical;
+  min-height: 70px;
+}
+
+/* =============================
+ INTERACTIONS (HOVER / FOCUS)
+============================= */
+.form-group input:hover,
+.form-group select:hover {
+  background: #f5d4d4;
+  border-color: #b9473e;
+  box-shadow: 0 4px 10px rgba(161, 40, 40, 0.12);
+  transform: scale(1.01);
+  transition: 0.25s ease-in-out;
+}
+
+.form-group input:focus,
+.form-group select:focus {
+  border-color: #a12828;
+  box-shadow: 0 0 0 1px rgba(161, 40, 40, 0.25);
+}
+
+.text-group textarea:hover {
+  background: #f5d4d4;
+  border-color: #b9473e;
+  box-shadow: 0 4px 10px rgba(161, 40, 40, 0.12);
+  transform: scale(1.01);
+  transition: 0.25s ease-in-out;
+}
+
+.text-group textarea:focus {
+  border-color: #a12828;
+  box-shadow: 0 0 0 1px rgba(161, 40, 40, 0.25);
+}
+
+
+
+
+
+
+
+
+
+.confirm-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.4);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 999;
+}
+
+.confirm-box {
+  background: white;
+  padding: 20px 25px;
+  border-radius: 10px;
+  width: 320px;
+  text-align: center;
+}
+
+.confirm-actions {
+  margin-top: 15px;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+#confirmCancel {
+  background: #eee;
+  border: none;
+  padding: 6px 14px;
+  cursor: pointer;
+}
+
+#confirmOk {
+  background: #a22;
+  color: white;
+  border: none;
+  padding: 6px 14px;
+  cursor: pointer;
+}
+
+
+
+
+
+
+
+
+/* =========================
+   📱 RESPONSIVE DESIGN
+   ========================= */
+
+/* Tablets & small laptops */
+@media (max-width: 1024px) {
+  .container {
+    width: 92%;
+    padding: 20px;
+  }
+
+  .header {
+    margin: 0 20px;
+  }
+}
+
+/* Mobile devices */
+@media (max-width: 768px) {
+  .header {
+    margin: 0 10px;
+  }
+
+
+.header h2{
+   font-size: 26px;
+  font-weight: 600;
+}
+
+  .container {
+    width: 90%;
+    padding: 18px;
+  }
+
+  .form-row {
+    flex-direction: column;
+    gap: 15px;
+  }
+
+  .form-group {
+    width: 100%;
+  }
+
+  table {
+    font-size: 13px;
+  }
+
+  th, td {
+    padding: 8px;
+  }
+
+  input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+  }
+
+  .btn-area {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .cancel-btn,
+  .save-btn {
+    width: 48%;
+    text-align: center;
+  }
+
+}
+
+/* Extra small phones */
+@media (max-width: 480px) {
+ 
+.header h2{
+   font-size: 26px;
+  font-weight: 600;
+}
+
+  .close-btn {
+    width: 30px;
+    height: 30px;
+    font-size: 16px;
+  }
+
+  table {
+    font-size: 12px;
+  }
+}

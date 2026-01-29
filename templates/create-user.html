@@ -1,0 +1,168 @@
+{% extends "menu.html" %}
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='create-user.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="manage-users-page create-user-page" data-current-role="{{ user_role|lower }}">
+   {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      <div class="flash-container">
+        {% for category, message in messages %}
+          <div class="flash flash-{{ category }}">{{ message }}</div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  {% endwith %}
+
+  <!-- Header: title center + close icon right -->
+  <div class="create-header">
+    <h1 class="create-title">Create New Branch Users</h1>
+
+    <!-- Close icon – back to Manage Users
+    <a href="{{ url_for('manage_users') }}" class="close-btn" aria-label="Close">
+      ✕
+    </a> -->
+  </div>
+
+  <!-- Form card -->
+  <div class="create-card">
+    <form class="create-form" method="POST" action="{{ url_for('create_user') }}">
+
+      <!-- Row 1 -->
+<div class="form-row">
+  <div class="form-field">
+    <label for="firstName">First Name</label>
+    <input id="firstName" name="first_name" type="text" placeholder="First Name" required>
+  </div>
+
+  <div class="form-field">
+    <label for="lastName">Last Name</label>
+    <input id="lastName" name="last_name" type="text" placeholder="Last Name" required>
+  </div>
+</div>
+
+{#Row 2: Email + Contact#}
+<div class="form-row">
+  <div class="form-field">
+    <label for="email">Email</label>
+    <input
+      id="email"
+      name="email"
+      type="email"
+      placeholder="abc@gmail.com"
+      required
+    >
+  </div>
+
+  <div class="form-field form-field-phone">
+    <label for="contact">Contact Number</label>
+    <div class="phone-row">
+      <select
+        id="countryCode"
+        name="country_code"
+        class="country-code"
+        required
+      >
+        <option value="+91">🇮🇳 +91</option>   <!-- India -->
+        <option value="+971">🇦🇪 +971</option> <!-- United Arab Emirates -->
+        <option value="+974">🇶🇦 +974</option> <!-- Qatar -->
+        <option value="+966">🇸🇦 +966</option> <!-- Saudi Arabia -->
+        <option value="+94">🇱🇰 +94</option>   <!-- Sri Lanka -->
+        <option value="+880">🇧🇩 +880</option> <!-- Bangladesh -->
+        <option value="+977">🇳🇵 +977</option> <!-- Nepal -->
+        <option value="+1">🇺🇸 +1</option>     <!-- United States -->
+        <option value="+44">🇬🇧 +44</option>   <!-- United Kingdom -->
+        <option value="+61">🇦🇺 +61</option>   <!-- Australia -->
+      </select>
+
+      <input
+        id="contact"
+        name="contact_number"
+        type="text"
+        class="phone-input"
+        placeholder="0000000000"
+        maxlength="10"
+        inputmode="numeric"
+        autocomplete="off"
+        required
+      >
+    </div>
+  </div>
+</div>
+
+
+
+<!-- Row 3 -->
+<div class="form-row">
+  <div class="form-field">
+    <label for="branch">Branch</label>
+    <select id="branch" name="branch" required>
+      <option value="">Select a branch</option>
+      <option>Main Branch</option>
+      <option>Branch 1</option>
+      <option>Branch 2</option>
+    </select>
+  </div>
+
+  <div class="form-field">
+    <label for="department">Department</label>
+    <select id="department" name="department" required>
+      <option value="">Select Department</option>
+      <option>Sales</option>
+      <option>HR</option>
+      <option>Accounts</option>
+    </select>
+  </div>
+</div>
+
+      <!-- Row 4 -->
+      <div class="form-row">
+        <div class="form-field">
+          <label for="role">Role</label>
+          <select id="role" name="role" required>
+            <option value="">Select Designation</option>
+            <option>Super Admin</option>
+            <option>Admin</option>
+            <option>User</option>
+          </select>
+          
+        </div>
+
+        <div class="form-field">
+          <label for="reportingTo">Reporting To</label>
+          <input id="reportingTo" name="reporting_to" type="text" placeholder="Enter Reporting Manager Name">
+          
+        </div>
+      </div>
+
+      <!-- Row 5 -->
+      <div class="form-row">
+        <div class="form-field">
+          <label for="availableBranches">Available Branches</label>
+          <input id="availableBranches" name="available_branches" type="text" placeholder="Enter in Digit">
+          
+        </div>
+
+        <div class="form-field">
+          <label for="employeeId">Employee ID</label>
+          <input id="employeeId" name="employee_id" type="text" placeholder="Enter Employee ID">
+          
+        </div>
+      </div>
+
+      <!-- Buttons -->
+    <div class="form-actions">
+      
+      <a href="{{ url_for('manage_users') }}" class="btn-outline">Cancel</a>
+      <button type="submit" class="btn-primary">Save</button>
+    </div>
+
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', filename='create-user.js') }}"></script>
+{% endblock %}

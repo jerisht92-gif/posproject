@@ -1,0 +1,163 @@
+
+{% extends "menu.html" %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='department-roles.css') }}">
+{% endblock %}
+
+{% block content %}
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    {% for category, message in messages %}
+      {% if category == 'success' %}
+        <div class="flash-success" data-flash="success" style="display: none;">{{ message }}</div>
+      {% endif %}
+    {% endfor %}
+  {% endif %}
+{% endwith %}
+
+<div class="manage-page department-page">
+
+  <!-- Header: title + search + create button -->
+  <div class="manage-header-row">
+    <div class="manage-header-left">
+      <h1 class="manage-title">Department &amp; Roles</h1>
+      <p class="manage-subtitle">
+        Efficiently manage and organize Department &amp; Roles with ease.
+      </p>
+    </div>
+
+    <div class="manage-header-right">
+      <!-- 🔍 Search -->
+      <div class="mini-search">
+        <input type="text" id="searchDepartments" placeholder="Search Departments">
+        <button class="search-icon-btn" type="button">🔍</button>
+      </div>
+
+      <!-- Create New -->
+      <button class="primary-btn" id="createDeptBtn" type="button">+ Create New</button>
+    </div>
+  </div>
+
+  <!-- Card with table + footer -->
+  <div class="card">
+          <div class="table-wrapper">
+
+    <table class="dept-table">
+      <thead>
+        <tr>
+          <th>Code</th>
+          <th>Department Name</th>
+          <th>Description</th>
+          <th class="action-header">Action</th>
+        </tr>
+      </thead>
+
+      <tbody id="deptTableBody">
+        {% if departments and departments|length > 0 %}
+          {% for d in departments %}
+          <tr>
+            <td>{{ d.code }}</td>
+            <td>{{ d.name }}</td>
+            <td>{{ d.description }}</td>
+
+            <td class="action-cell">
+              <div class="action-buttons">
+                {# normalize logged-in role once #}
+                {% set r = (user_role or '')|lower|replace(' ', '')|replace('_', '') %}
+                
+                <!-- EDIT BUTTON -->
+                {% if r in ["superadmin", "admin"] %}
+                  <button class="action-btn edit-btn" type="button" data-id="{{ d.id }}">Edit</button>
+                {% else %}
+                  <button class="action-btn edit-btn-disabled" disabled
+                          title="No access">Edit</button>
+                {% endif %}
+
+                <!-- DELETE BUTTON -->
+                {% if r == "superadmin" %}
+                  <button class="action-btn delete-btn" type="button" data-id="{{ d.id }}">Delete</button>
+                {% elif r == "admin" %}
+                  <button class="action-btn delete-btn-disabled" disabled
+                          title="Only Super Admin can delete">Delete</button>
+                {% else %}
+                  <button class="action-btn delete-btn-disabled" disabled
+                          title="No access">Delete</button>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        {% else %}
+          <tr id="noDeptRow" class="no-data-row">
+            <td colspan="4" class="no-data-cell">No data Found</td>
+          </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+
+    <!-- Footer -->
+    <div class="table-footer">
+      <div class="entries-info">
+        Showing
+        <span id="showingCount">{{ departments|length if departments else 0 }}</span>
+        Entries
+      </div>
+
+      <div class="pagination-controls">
+        <button class="pager-btn" id="prevPage" type="button">&lt; Prev</button>
+        <span class="page-info">
+          Page <span id="currentPage">1</span>
+          of <span id="totalPages">1</span>
+        </span>
+        <button class="pager-btn" id="nextPage" type="button">Next &gt;</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ✅ EDIT MODAL (INSIDE department-page) -->
+  <div id="editDeptModal" class="modal">
+    <div class="modal-content">
+      <h2>Edit Department</h2>
+
+      <input type="hidden" id="editDeptId">
+
+      <label>Code</label>
+      <input type="text" id="editDeptCode" maxlength="20">
+      <div id="editDeptCodeError" class="field-error"></div>
+
+      <label>Department Name</label>
+      <input type="text" id="editDeptName" maxlength="20">
+      <div id="editDeptNameError" class="field-error"></div>
+
+      <label>Description</label>
+      <input type="text" id="editDeptDesc" maxlength="100">
+      <div id="editDeptDescError" class="field-error"></div>
+
+      <div class="modal-actions">
+        <button id="saveDeptEditBtn" class="primary-btn" type="button">Save</button>
+        <button id="closeDeptEditBtn" class="cancel-btn" type="button">Cancel</button>
+      </div>
+    </div>
+  </div>
+  <!-- ✅ DELETE DEPARTMENT MODAL -->
+  <div id="deleteDeptModal" class="modal" aria-hidden="true" role="dialog" aria-modal="true">
+    <div class="modal-content delete-modal" role="document">
+      <h2 class="modal-title">Delete Department</h2>
+      <p id="deleteDeptText" class="delete-text"></p>
+
+      <div class="modal-actions">
+        <button id="cancelDeptDeleteBtn" class="cancel-btn" type="button">Cancel</button>
+        <button id="confirmDeptDeleteBtn" class="danger-btn" type="button">Delete</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', filename='department-roles.js') }}"></script>
+{% endblock %}

@@ -1,0 +1,225 @@
+{% extends "menu.html" %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='customer.css') }}">
+{% endblock %}
+
+{% block content %}
+
+<div class="manage-page customer-page">
+  {% set role = (user_role or 'user')|lower %}
+<div id="rbac"
+     data-role="{{ role }}"
+     data-can-create="{{ 1 if role in ['superadmin','super admin','admin'] else 0 }}"
+     data-can-edit="{{ 1 if role in ['superadmin','super admin','admin'] else 0 }}"
+     data-can-delete="{{ 1 if role in ['superadmin','super admin'] else 0 }}"
+     data-can-import="{{ 1 if role in ['superadmin','super admin','admin'] else 0 }}">
+</div>
+
+  <!-- ================= HEADER ================= -->
+  <div class="manage-header-row">
+    <div class="manage-header-left">
+      <h1 class="manage-title">Customer Master</h1>
+    </div>
+
+    <div class="manage-header-right">
+      <button class="btn-primary" id="addCustomerBtn" type="button">
+        + Add New Customer
+      </button>
+
+      <button class="btn-secondary" id="importCustomerBtn" type="button">
+        Import
+      </button>
+
+      
+    </div>
+  </div>
+
+
+  <!-- ================= MAIN CARD ================= -->
+  <div class="card">
+
+    <!-- ✅ SEARCH + CLEAR FILTER -->
+    <div class="top-controls">
+      <div class="mini-search">
+        <span class="search-icon">🔍</span>
+        <input type="text" id="searchInput" placeholder="Search by ID number..." autocomplete="off" />
+      </div>
+
+      <button class="clear-filter" id="clearFilterBtn" type="button">Clear Filter</button>
+    </div>
+
+
+    <!-- ✅ FILTERS (3 in one row) -->
+    <div class="filters">
+      <div class="filter-group">
+        <label>Status</label>
+        <select id="statusFilter">
+          <option value="">All</option>
+        </select>
+      </div>
+
+      <div class="filter-group">
+        <label>Customer Type</label>
+        <select id="typeFilter">
+          <option value="">All</option>
+        </select>
+      </div>
+
+      <div class="filter-group">
+        <label>Sales Rep</label>
+        <select id="salesRepFilter">
+          <option value="">All</option>
+          <!-- populated later -->
+        </select>
+      </div>
+    </div>
+
+
+    <!-- ✅ TABLE -->
+    <div class="table-wrap">
+      <table class="table customer-table">
+        <thead>
+          <tr>
+            <th>Customer ID</th>
+            <th>Name</th>
+            <th>Company</th>
+            <th>Customer Type</th>
+            <th>Status</th>
+            <th>Email</th>
+            <th>Credit limit</th>
+            <th>City</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+
+        <tbody id="customerTableBody">
+          <tr id="noDataRow">
+            <td colspan="9" class="empty">No Data Found</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+  </div>
+
+
+    <!-- ✅ FOOTER -->
+    <div class="table-footer">
+      <div class="left-info">
+        <span id="showingCount">Showing 0 Entities</span>
+      </div>
+
+      <div class="right-pager">
+        <button class="pager-btn" id="prevPageBtn" type="button">‹ Prev</button>
+        <span class="page-text">Page <b id="pageNow">1</b> of <b id="pageTotal">1</b></span>
+        <button class="pager-btn" id="nextPageBtn" type="button">Next ›</button>
+      </div>
+    </div>
+
+</div>
+
+
+<!-- ================= EDIT CUSTOMER MODAL ================= -->
+<div id="editCustomerModal" class="modal">
+  <div class="edit-modal-card product-edit-modal">
+
+    <h2 class="modal-title">Edit Customer</h2>
+
+    <form id="editCustomerForm" class="form-grid">
+      <input type="hidden" id="editCustomerId">
+
+      <div class="form-group">
+        <label for="editName">Name</label>
+        <input type="text" id="editName">
+        <span class="field-error" id="editNameError"></span>
+      </div>
+
+      <div class="form-group">
+        <label for="editCompany">Company</label>
+        <input type="text" id="editCompany">
+        <span class="field-error" id="editCompanyError"></span>
+      </div>
+
+      <div class="form-group">
+        <label for="editCustomerType">Customer Type</label>
+        <input type="text" id="editCustomerType">
+        <span class="field-error" id="editCustomerTypeError"></span>
+      </div>
+
+      <div class="form-group">
+        <label for="editEmail">Email</label>
+        <input type="text" id="editEmail">
+        <span class="field-error" id="editEmailError"></span>
+      </div>
+
+      <div class="form-group">
+        <label for="editCreditLimit">Credit Limit</label>
+        <input type="text" id="editCreditLimit">
+        <span class="field-error" id="editCreditLimitError"></span>
+      </div>
+
+      <div class="form-group">
+  <label>Status</label>
+
+  <select id="editStatus">
+    <option value="Active">Active</option>
+    <option value="Inactive">Inactive</option>
+    <option value="Blocked">Blocked</option>
+  </select>
+
+  <span class="field-error" id="editStatusError"></span>
+</div>
+
+      <div class="form-group">
+        <label for="editCity">City</label>
+        <input type="text" id="editCity">
+        <span class="field-error" id="editCityError"></span>
+      </div>
+
+      <!-- ACTION BUTTONS -->
+      <div class="modal-actions">
+        
+        <button type="submit" class="modal-primary-btn" id="saveEditBtn">
+          Save
+        </button>
+        <button type="button" class="modal-cancel-btn" id="closeEditBtn">
+          Cancel
+        </button>
+      </div>
+    </form>
+
+  </div>
+</div>
+
+<!-- ================= DELETE CUSTOMER MODAL ================= -->
+<div id="deleteCustomerModal" class="modal">
+  <div class="modal-card delete-modal-card">
+    <h2 class="modal-title">Delete Customer</h2>
+
+    <p class="modal-text">
+      Are you sure you want to delete "<span id="deleteCustomerLabel">this customer</span>"?
+    </p>
+
+    <div class="modal-actions">
+      <button type="button" class="modal-cancel-btn" id="deleteCancelBtn">
+        Cancel
+      </button>
+
+      <button type="button" class="modal-danger-btn" id="deleteConfirmBtn">
+        Delete
+      </button>
+    </div>
+  </div>
+</div>
+
+
+
+<!-- Toast Box -->
+<div id="toastBox"></div>
+
+
+<!-- ================= JS ================= -->
+<script src="{{ url_for('static', filename='customer.js') }}"></script>
+
+{% endblock %}

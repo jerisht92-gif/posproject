@@ -1,0 +1,1216 @@
+
+/* -----------------------------------------
+   SUCCESS / ERROR NOTIFICATIONS (TOASTS)
+   (Same design as Department & Roles)
+------------------------------------------ */
+.success-notification,
+.error-notification {
+  position: fixed;
+  top: 80px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-100px);
+  padding: 14px 28px;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 600;
+  z-index: 10000;
+  opacity: 0;
+  transition: all 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+  pointer-events: none;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.success-notification {
+  background: linear-gradient(135deg, #fff4f4, #ffe8e8);
+  color: #a12828;
+  border: 1.5px solid #a12828;
+  box-shadow: 0 8px 24px rgba(161, 40, 40, 0.25);
+}
+
+.error-notification {
+  background: linear-gradient(135deg, #ffe6e6, #ffc2c2);
+  color: #a12828;
+  border: 1.5px solid #a12828;
+  box-shadow: 0 8px 24px rgba(161, 40, 40, 0.35);
+}
+
+.success-notification.show,
+.error-notification.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+  pointer-events: auto;
+}
+
+.success-notification::before {
+  content: "✓";
+  font-size: 18px;
+  font-weight: bold;
+}
+
+.error-notification::before {
+  content: "✕";
+  font-size: 18px;
+  font-weight: bold;
+}
+
+.main-head{
+  font-size: 28px;
+  font-weight: 600;
+  color: #a12828;
+  margin-bottom: 12px;
+  text-shadow: 1px 1px 2px #d8b7b7; /* 🔥 3D text effect */
+  margin-left: 24px;
+  display: inline-block;
+}
+.create-product-page {
+  padding: 20px;
+  font-family: "Poppins", sans-serif;
+  color: #4a1f1a;
+  background: #f6f1f1;
+}
+
+.create-product-page .container {
+  max-width: 1100px;
+  margin: auto;
+  background: #fff;
+  padding: 25px;
+  border-radius: 6px;
+}
+
+.create-product-page h2 {
+  font-size: 20px;
+  margin-bottom: 15px;
+}
+
+.create-product-page h3 {
+  font-size: 17px;
+  margin: 22px 0 12px;
+  color: #444;
+}
+
+
+.form-group {
+  width: 100%;
+}
+
+.field input,
+.field select {
+  width: 100%;
+  box-sizing: border-box;
+    background-color: #fff5f5;
+  border: 1px solid #e7b7b5;
+
+}
+
+/* ONLY make right-side form-group take full column width */
+.create-product-page .grid-2 > .form-group {
+  width: 100%;
+    grid-template-columns: 220px 1fr;
+
+}
+
+/* GRID */
+
+.grid-2 {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+}
+
+.grid-1{
+    
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  gap: 16px;
+}
+
+
+.grid-3 {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+
+
+
+.product-top-grid {
+  display: grid;
+  grid-template-columns: 240px 1fr; /* upload | form */
+  gap: 24px;
+  align-items: start;
+}
+
+/* FIELD (THIS FIXES EVERYTHING) */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* LABEL */
+label {
+  font-size: 12px;
+  color: #555;
+}
+
+/* ADD NEW */
+.label-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.add-new {
+  font-size: 11px;
+  color: #c62828;
+  text-decoration: none;
+}
+
+/* INPUTS */
+input,
+select,
+textarea {
+  padding: 8px 10px;
+  font-size: 13px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+}
+
+
+
+/* UPLOAD */
+.upload-box {
+  border: 1px dashed #d9a5a5;
+  border-radius: 10px;
+  padding: 10px;
+  text-align: center;
+  height: 230px;
+  width: 80%;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.upload-inner {
+  border: 1px solid #e5c1c1;
+  padding: 30px 20px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+/* BUTTONS */
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.btn {
+  padding: 9px 18px;
+  border-radius: 4px;
+  border: none;
+  cursor: pointer;
+}
+
+.btn.primary {
+  background: #b01212;
+  color: #fff;
+}
+
+.btn.primary:disabled {
+  background: #cccccc !important;
+  color: #666666 !important;
+  cursor: not-allowed !important;
+  box-shadow: 0 2px 0 #999999 !important;
+  transform: none !important;
+}
+
+.btn.primary:disabled:hover {
+  background: #cccccc !important;
+  color: #666666 !important;
+  box-shadow: 0 2px 0 #999999 !important;
+  transform: none !important;
+}
+
+.btn.cancel {
+  color: #b01212;
+  border: 1px solid #b01212;
+ border-radius: 5px; 
+
+}
+.btn.cancel:hover{
+  color: white;
+  background-color:#b01212 ;
+
+}
+
+.error-msg {
+  color: red;
+  font-size: 12px;
+  margin-top: 4px;
+  display: block;
+}
+
+/* 🔴 common error style */
+.input-error {
+  border-color: #c1121f !important;
+  background-color: #fff0f0 !important;
+}
+
+
+/* ========================= */
+/* ✅ MODAL STYLES */
+/* ========================= */
+
+.modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.35);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+
+.modal.show {
+  display: flex;
+}
+
+/* ✅ CARD */
+.modal-card {
+  width: min(500px, 50vw);          
+  background: #fff;
+  border-radius: 18px;
+  border: 2px solid #b01212;
+  padding: 15px 19px 17px;          /* ✅ more padding */
+  box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+}
+
+/* Apply to all modal inputs & selects */
+.modal-card input,
+.modal-card select,
+.modal-card textarea {
+  height: 30px;          /* reduced height */
+  padding: 6px 14px;     /* tighter padding */
+  border-radius: 8px;
+  font-size: 14px;
+}
+
+/* Optional: smaller placeholder text */
+.modal-card input::placeholder,
+.modal-card textarea::placeholder {
+  font-size: 13px;
+  opacity: .8;
+}
+
+/* Compact modal fields */
+.modal-card .field input,
+.modal-card .field select,
+.modal-card .field textarea {
+  height: 30px !important;
+  padding: 6px 14px !important;
+  border-radius: 10px;
+  font-size: 13px;
+}
+
+
+
+/* Textarea (Notes) slightly taller */
+.modal-card .field textarea {
+  min-height: 30px;
+}
+
+/* Reduce gap between fields */
+.modal-card .modal-body label {
+  margin-bottom: 3px;
+}
+
+.modal-card .modal-body .field {
+  margin-bottom: 8px;
+}
+
+/* ✅ TOP HEADER */
+.modal-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 18px;              /* ✅ clean gap below header */
+}
+
+/* LEFT SIDE (arrow + title) */
+.modal-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* RIGHT SIDE (Add New) */
+.modal-right {
+  display: flex;
+  align-items: center;
+}
+
+.modal-top h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 800;
+}
+
+/* Back arrow button */
+.icon-btn {
+  background: none;
+  border: none;
+  font-size: 20px;
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 10px;
+}
+
+.icon-btn:hover {
+  background: rgba(176, 18, 18, 0.08);
+  transform: translateX(-2px);
+}
+
+/* ✅ BODY - IMPORTANT (gap works only with flex/grid) */
+.modal-body {
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;                      
+}
+
+/* each field block */
+.modal-body .field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* LABEL */
+.modal-body label {
+  margin: 0;
+  font-weight: 700;
+  font-size: 14px;
+  color: #5a5a5a;
+}
+
+/* INPUT & SELECT */
+.modal-body input,
+.modal-body select {
+  width: 100%;
+  height: 30px;                   
+  padding: 0 18px;
+  border-radius: 14px;
+  border: 2px solid #e2e2e2;        
+  font-size: 14px;
+  background: #fff;
+  box-sizing: border-box;
+  outline: none;
+}
+
+/* Focus */
+.modal-body input:focus,
+.modal-body select:focus {
+  border-color: #b01212;
+  box-shadow: 0 0 0 4px rgba(176, 18, 18, 0.10);
+}
+
+/* ✅ FOOTER ACTIONS */
+.modal-actions {
+  margin-top: 28px;
+  display: flex;
+  justify-content: space-between;  
+  align-items: center;
+}
+
+.right-actions {
+  display: flex;
+  gap: 10px;
+  
+}
+
+/* Buttons common */
+.btn-outline,
+.btn-primary,
+.btn-pill,
+.btn-danger-outline {
+  height: 36px;
+  min-width: 110px;
+  padding: 0 18px;
+  border-radius: 999px;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+
+.btn-outline {
+  border: 1px solid #b01212;
+  background: #fff;
+  color: #b01212;
+  margin-right: -4px;
+}
+
+.btn-outline:hover {
+  background: #b01212;
+  color: #fff;
+}
+
+/* Update (primary) */
+.btn-primary {
+  background: #b01212;
+  color: #fff;
+  border: none;
+}
+
+.btn-primary:hover {
+  background: #8f0f0f;
+  box-shadow: 0 8px 18px rgba(176, 18, 18, 0.25);
+}
+
+.btn-primary:disabled {
+  background: #cccccc;
+  color: #666666;
+  cursor: not-allowed;
+  box-shadow: 0 2px 0 #999999;
+  transform: none;
+}
+
+.btn-primary:disabled:hover {
+  transform: none;
+  box-shadow: 0 2px 0 #999999;
+  background: #cccccc;
+  color: #666666;
+}
+
+/* Add New (pill) */
+.btn-pill {
+  background: #b01212;
+  color: #fff;
+  border: none;
+  border-radius: 26px;
+  min-width: auto;
+  padding: 0 22px;
+  font-size: 16px;
+}
+
+.btn-pill:hover {
+  background: #8f0f0f;
+}
+
+/* Remove (danger outline) */
+.btn-danger-outline {
+  border: 2px solid #ff4d4d;
+  color: #ff4d4d;
+  background: #fff;
+  min-width: 160px;               
+}
+
+.btn-danger-outline:hover {
+  background: #ff4d4d;
+  color: #fff;
+}
+
+/* ============================= */
+/* ❌ Remove number input arrows */
+/* ============================= */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.error-msg{
+  color:#c1121f;
+  font-size:12px;
+  margin-top:4px;
+  display:block;
+}
+
+/* =========================
+   ✅ RESPONSIVE – CREATE PRODUCT
+========================= */
+
+/* 💻 Large tablets / small laptops (≤ 1024px) */
+@media (max-width: 1024px) {
+  .create-product-page {
+    padding: 16px;
+  }
+
+  .create-product-page .container {
+    max-width: 100%;
+    padding: 22px;
+  }
+
+  .product-top-grid {
+    grid-template-columns: 220px 1fr;
+    gap: 18px;
+  }
+
+  .grid-3 {
+    grid-template-columns: repeat(2, 1fr);  /* 3 → 2 columns */
+  }
+}
+
+/* 📱 Tablets & big phones (≤ 768px) */
+@media (max-width: 768px) {
+  /* keep page fixed, no sideways scroll */
+  html,
+  body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
+    box-sizing: border-box;
+    background: #ffffff;
+  }
+
+  
+  .main-head {
+    margin-left: 16px;   /* move a bit to the right */
+    margin-bottom: 10px;
+    text-align: left;
+
+  }
+
+  .create-product-page {
+    padding: 12px;
+  }
+
+  .create-product-page .container {
+    width: 100%;
+    max-width: 100%;
+    padding: 18px 14px;
+    box-sizing: border-box;
+    border-radius: 10px;
+  }
+
+  .main-head {
+    margin-left: 0;
+    margin-bottom: 10px;
+    text-align: left;        /* or center if you like */
+    font-size: 24px;
+  }
+
+  /* upload top, form below */
+  .product-top-grid {
+    grid-template-columns: 1fr;
+    gap: 18px;
+  }
+
+  .upload-box {
+    width: 100%;
+    max-width: 260px;
+    margin: 0 auto;          /* center image box */
+  }
+
+  /* all grids → 1 column or 2 as needed */
+  .grid-2,
+  .grid-3,
+  .grid-1 {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
+  /* label + input vertical (already flex-column, just ensure full width) */
+  .field input,
+  .field select,
+  .field textarea {
+    width: 100%;
+  }
+ .actions {
+    display: flex;
+    flex-direction: row;          /* ✅ same row */
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .actions .btn {
+    width: 48%;                   /* ✅ equal buttons */
+    text-align: center;
+  }
+
+  /* modal a bit wider on mobile */
+  .modal-card {
+    width: 92vw;
+    max-width: 420px;
+  }
+}
+
+/* 📱 Small mobiles (≤ 520px) */
+@media (max-width: 520px) {
+  .main-head {
+    margin-left: 16px;
+    font-size: 22px;
+    text-align: center;
+  }
+
+  .create-product-page {
+    padding: 10px 8px 16px;
+  }
+
+  .create-product-page .container {
+    padding: 16px 12px;
+    border-radius: 8px;
+  }
+
+  label {
+    font-size: 11px;
+  }
+
+  input,
+  select,
+  textarea {
+    font-size: 12px;
+    padding: 7px 9px;
+  }
+
+  .upload-box {
+    height: 210px;
+  }
+ 
+
+  .actions .btn {
+    width: 48%;                   /* ✅ equal buttons */
+    text-align: center;
+  }
+}
+
+/* -----------------------------------------
+   DELETE CATEGORY MODAL
+   (Same design as Delete Department/Delete User)
+------------------------------------------ */
+#deleteCategoryModal.modal {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 9999;
+  justify-content: center;
+  align-items: center;
+  padding: 18px;
+}
+
+#deleteCategoryModal.modal.show {
+  display: flex;
+}
+
+#deleteCategoryModal .modal-content {
+  width: 400px;
+  background: white;
+  border-radius: 12px;
+  padding: 30px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
+}
+
+#deleteCategoryModal .modal-content h2 {
+  margin: 0 0 12px;
+  font-size: 20px;
+  font-weight: 700;
+  color: #7a1d1d;
+}
+
+#deleteCategoryModal .delete-text {
+  font-size: 14px;
+  margin: 10px 0 18px;
+  color: #4a1f1a;
+  line-height: 1.4;
+}
+
+#deleteCategoryModal .modal-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+#deleteCategoryModal .cancel-btn {
+  padding: 10px 18px;
+  border-radius: 10px;
+  border: 1.5px solid #cfcfd4;
+  background: #f6f6f7;
+  color: #1d2430;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+#deleteCategoryModal .cancel-btn:hover {
+  filter: brightness(0.95);
+}
+
+#deleteCategoryModal .danger-btn {
+  background: #b71c1c;
+  color: #fff;
+  border: none;
+  padding: 10px 18px;
+  border-radius: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 8px 18px rgba(183, 28, 28, 0.25);
+}
+
+#deleteCategoryModal .danger-btn:hover {
+  filter: brightness(0.95);
+}
+
+/* -----------------------------------------
+   DELETE TAX CODE MODAL
+   (Same design as Delete Category/Delete Department/Delete User)
+------------------------------------------ */
+#deleteTaxCodeModal.modal {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 9999;
+  justify-content: center;
+  align-items: center;
+  padding: 18px;
+}
+
+#deleteTaxCodeModal.modal.show {
+  display: flex;
+}
+
+#deleteTaxCodeModal .modal-content {
+  width: 400px;
+  background: white;
+  border-radius: 12px;
+  padding: 30px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
+}
+
+#deleteTaxCodeModal .modal-content h2 {
+  margin: 0 0 12px;
+  font-size: 20px;
+  font-weight: 700;
+  color: #7a1d1d;
+}
+
+#deleteTaxCodeModal .delete-text {
+  font-size: 14px;
+  margin: 10px 0 18px;
+  color: #4a1f1a;
+  line-height: 1.4;
+}
+
+#deleteTaxCodeModal .modal-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+#deleteTaxCodeModal .cancel-btn {
+  padding: 10px 18px;
+  border-radius: 10px;
+  border: 1.5px solid #cfcfd4;
+  background: #f6f6f7;
+  color: #1d2430;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+#deleteTaxCodeModal .cancel-btn:hover {
+  filter: brightness(0.95);
+}
+
+#deleteTaxCodeModal .danger-btn {
+  background: #b71c1c;
+  color: #fff;
+  border: none;
+  padding: 10px 18px;
+  border-radius: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 8px 18px rgba(183, 28, 28, 0.25);
+}
+
+#deleteTaxCodeModal .danger-btn:hover {
+  filter: brightness(0.95);
+}
+
+/* -----------------------------------------
+   DELETE UOM MODAL
+   (Same design as Delete Category/Delete Tax Code)
+------------------------------------------ */
+#deleteUomModal.modal {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 9999;
+  justify-content: center;
+  align-items: center;
+  padding: 18px;
+}
+
+#deleteUomModal.modal.show {
+  display: flex;
+}
+
+#deleteUomModal .modal-content {
+  width: 400px;
+  background: white;
+  border-radius: 12px;
+  padding: 30px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
+}
+
+#deleteUomModal .modal-content h2 {
+  margin: 0 0 12px;
+  font-size: 20px;
+  font-weight: 700;
+  color: #7a1d1d;
+}
+
+#deleteUomModal .delete-text {
+  font-size: 14px;
+  margin: 10px 0 18px;
+  color: #4a1f1a;
+  line-height: 1.4;
+}
+
+#deleteUomModal .modal-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+#deleteUomModal .cancel-btn {
+  padding: 10px 18px;
+  border-radius: 10px;
+  border: 1.5px solid #cfcfd4;
+  background: #f6f6f7;
+  color: #1d2430;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+#deleteUomModal .cancel-btn:hover {
+  filter: brightness(0.95);
+}
+
+#deleteUomModal .danger-btn {
+  background: #b71c1c;
+  color: #fff;
+  border: none;
+  padding: 10px 18px;
+  border-radius: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 8px 18px rgba(183, 28, 28, 0.25);
+}
+
+#deleteUomModal .danger-btn:hover {
+  filter: brightness(0.95);
+}
+
+/* -----------------------------------------
+   DELETE WAREHOUSE MODAL
+   (Same design as Delete Category/Delete Tax Code)
+------------------------------------------ */
+#deleteWarehouseModal.modal {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 9999;
+  justify-content: center;
+  align-items: center;
+  padding: 18px;
+}
+
+#deleteWarehouseModal.modal.show {
+  display: flex;
+}
+
+#deleteWarehouseModal .modal-content {
+  width: 400px;
+  background: white;
+  border-radius: 12px;
+  padding: 30px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
+}
+
+#deleteWarehouseModal .modal-content h2 {
+  margin: 0 0 12px;
+  font-size: 20px;
+  font-weight: 700;
+  color: #7a1d1d;
+}
+
+#deleteWarehouseModal .delete-text {
+  font-size: 14px;
+  margin: 10px 0 18px;
+  color: #4a1f1a;
+  line-height: 1.4;
+}
+
+#deleteWarehouseModal .modal-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+#deleteWarehouseModal .cancel-btn {
+  padding: 10px 18px;
+  border-radius: 10px;
+  border: 1.5px solid #cfcfd4;
+  background: #f6f6f7;
+  color: #1d2430;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+#deleteWarehouseModal .cancel-btn:hover {
+  filter: brightness(0.95);
+}
+
+#deleteWarehouseModal .danger-btn {
+  background: #b71c1c;
+  color: #fff;
+  border: none;
+  padding: 10px 18px;
+  border-radius: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 8px 18px rgba(183, 28, 28, 0.25);
+}
+
+#deleteWarehouseModal .danger-btn:hover {
+  filter: brightness(0.95);
+}
+
+/* -----------------------------------------
+   DELETE SIZE MODAL
+   (Same design as Delete Category/Delete Tax Code)
+------------------------------------------ */
+#deleteSizeModal.modal {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 9999;
+  justify-content: center;
+  align-items: center;
+  padding: 18px;
+}
+
+#deleteSizeModal.modal.show {
+  display: flex;
+}
+
+#deleteSizeModal .modal-content {
+  width: 400px;
+  background: white;
+  border-radius: 12px;
+  padding: 30px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
+}
+
+#deleteSizeModal .modal-content h2 {
+  margin: 0 0 12px;
+  font-size: 20px;
+  font-weight: 700;
+  color: #7a1d1d;
+}
+
+#deleteSizeModal .delete-text {
+  font-size: 14px;
+  margin: 10px 0 18px;
+  color: #4a1f1a;
+  line-height: 1.4;
+}
+
+#deleteSizeModal .modal-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+#deleteSizeModal .cancel-btn {
+  padding: 10px 18px;
+  border-radius: 10px;
+  border: 1.5px solid #cfcfd4;
+  background: #f6f6f7;
+  color: #1d2430;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+#deleteSizeModal .cancel-btn:hover {
+  filter: brightness(0.95);
+}
+
+#deleteSizeModal .danger-btn {
+  background: #b71c1c;
+  color: #fff;
+  border: none;
+  padding: 10px 18px;
+  border-radius: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 8px 18px rgba(183, 28, 28, 0.25);
+}
+
+#deleteSizeModal .danger-btn:hover {
+  filter: brightness(0.95);
+}
+
+/* -----------------------------------------
+   DELETE COLOR MODAL
+   (Same design as Delete Category/Delete Tax Code)
+------------------------------------------ */
+#deleteColorModal.modal {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 9999;
+  justify-content: center;
+  align-items: center;
+  padding: 18px;
+}
+
+#deleteColorModal.modal.show {
+  display: flex;
+}
+
+#deleteColorModal .modal-content {
+  width: 400px;
+  background: white;
+  border-radius: 12px;
+  padding: 30px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
+}
+
+#deleteColorModal .modal-content h2 {
+  margin: 0 0 12px;
+  font-size: 20px;
+  font-weight: 700;
+  color: #7a1d1d;
+}
+
+#deleteColorModal .delete-text {
+  font-size: 14px;
+  margin: 10px 0 18px;
+  color: #4a1f1a;
+  line-height: 1.4;
+}
+
+#deleteColorModal .modal-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+#deleteColorModal .cancel-btn {
+  padding: 10px 18px;
+  border-radius: 10px;
+  border: 1.5px solid #cfcfd4;
+  background: #f6f6f7;
+  color: #1d2430;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+#deleteColorModal .cancel-btn:hover {
+  filter: brightness(0.95);
+}
+
+#deleteColorModal .danger-btn {
+  background: #b71c1c;
+  color: #fff;
+  border: none;
+  padding: 10px 18px;
+  border-radius: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 8px 18px rgba(183, 28, 28, 0.25);
+}
+
+#deleteColorModal .danger-btn:hover {
+  filter: brightness(0.95);
+}
+
+/* -----------------------------------------
+   DELETE SUPPLIER MODAL
+   (Same design as Delete Category/Delete Tax Code)
+------------------------------------------ */
+#deleteSupplierModal.modal {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 9999;
+  justify-content: center;
+  align-items: center;
+  padding: 18px;
+}
+
+#deleteSupplierModal.modal.show {
+  display: flex;
+}
+
+#deleteSupplierModal .modal-content {
+  width: 400px;
+  background: white;
+  border-radius: 12px;
+  padding: 30px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
+}
+
+#deleteSupplierModal .modal-content h2 {
+  margin: 0 0 12px;
+  font-size: 20px;
+  font-weight: 700;
+  color: #7a1d1d;
+}
+
+#deleteSupplierModal .delete-text {
+  font-size: 14px;
+  margin: 10px 0 18px;
+  color: #4a1f1a;
+  line-height: 1.4;
+}
+
+#deleteSupplierModal .modal-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+#deleteSupplierModal .cancel-btn {
+  padding: 10px 18px;
+  border-radius: 10px;
+  border: 1.5px solid #cfcfd4;
+  background: #f6f6f7;
+  color: #1d2430;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+#deleteSupplierModal .cancel-btn:hover {
+  filter: brightness(0.95);
+}
+
+#deleteSupplierModal .danger-btn {
+  background: #b71c1c;
+  color: #fff;
+  border: none;
+  padding: 10px 18px;
+  border-radius: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 8px 18px rgba(183, 28, 28, 0.25);
+}
+
+#deleteSupplierModal .danger-btn:hover {
+  filter: brightness(0.95);
+}

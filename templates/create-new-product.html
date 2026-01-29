@@ -1,0 +1,938 @@
+
+
+{% extends "menu.html" %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='create-new-product.css') }}">
+{% endblock %}
+
+{% block content %}
+
+<h2 class="main-head">Create New Product</h2>
+
+<div class="create-product-page">
+  <form class="container"
+      id="createProductForm"
+      method="POST"
+      action="/save-product"
+      enctype="multipart/form-data">
+
+    <!-- ================= TOP SECTION ================= -->
+    <div class="product-top-grid">
+      <div class="upload-box">
+        <label class="upload-inner">
+          <input type="file" id="productImage" name="product_image" accept="image/png, image/jpeg" hidden>
+
+          <div id="uploadPlaceholder">
+            <span>📷</span>
+            <p>Upload Photo</p>
+          </div>
+
+          <img id="imagePreview"
+               style="display:none; width:100%; height:100%; object-fit:cover; border-radius:8px;">
+        </label>
+
+        <small id="uploadHint">
+          Allowed formats: JPG, PNG<br>Max Size: 2MB
+        </small>
+        <small class="error-msg"></small>
+      </div>
+
+      <div class="form-group">
+        <div class="field" style="margin-top: 10px;">
+          <label>Product Name</label>
+          <input type="text" placeholder="Headphones" name="product_name" maxlength="20" id="productNameInput">
+          <small class="error-msg" id="productNameError"></small>
+        </div>
+
+        <div class="field field1">
+          <label>Product Type</label>
+          <select name="product_type" id="productTypeSelect">
+            <option value="">Select the product_type</option>
+            <option>Furniture</option>
+            <option>Lighting</option>
+            <option>Electronics</option>
+            <option>Apparel</option>
+            <option>Kitchen</option>
+            <option>Decor</option>
+            <option>Fitness</option>
+          </select>
+          <small class="error-msg"></small>
+        </div>
+
+        <div class="field field1">
+          <label>Product ID (Auto Generate)</label>
+          <input type="text" readonly placeholder="AutoGenerate" name="product_id" id="productId">
+          <small class="error-msg"></small>
+        </div>
+
+        <div class="field field1">
+          <label>Description</label>
+          <input type="text" placeholder="text-area" name="description" maxlength="100" id="descriptionInput">
+          <small class="error-msg"></small>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================= CLASSIFICATION ================= -->
+    <h3>Create New product</h3>
+    <div class="grid-2">
+      <div class="field">
+        <label class="label-row">
+          Category
+          <a href="#" class="add-new" id="addNewCategoryLink">+ Add New</a>
+        </label>
+        <select name="category" id="categorySelect">
+          <option value="">Select Category</option>
+        </select>
+        <small class="error-msg"></small>
+      </div>
+
+      <div class="field">
+        <label>Sub Category</label>
+        <input type="text" placeholder="Eg: Laptop" name="sub_category" id="subCategoryInput" maxlength="50">
+        <small class="error-msg"></small>
+      </div>
+    </div>
+
+    <!-- ================= PRICING ================= -->
+    <h3>Pricing & Tax</h3>
+    <div class="grid-3">
+      <div class="field">
+        <label>Unit Price</label>
+        <input type="number" name="unit_price" min="0" max="99999999" step="0.01" maxlength="10" id="unitPriceInput">
+        <small class="error-msg"></small>
+      </div>
+
+      <div class="field">
+        <label>Discount</label>
+        <input type="number" placeholder="e.g.,20%" name="discount" min="0" max="100" step="0.01" maxlength="10" id="discountInput">
+        <small class="error-msg"></small>
+      </div>
+
+      <div class="field">
+        <label class="label-row">
+          Tax Code
+          <!-- ✅ IMPORTANT: add ID so JS works -->
+          <a href="#" class="add-new" id="addNewTaxCodeLink">+ Add New</a>
+        </label>
+
+        <!-- ✅ IMPORTANT: add ID so JS works -->
+        <select name="tax_code" id="taxCodeSelect">
+          <option value="">Select Tax Code</option>
+          
+        </select>
+
+        <small class="error-msg"></small>
+      </div>
+    </div>
+
+    <!-- ================= UNIT & STOCK ================= -->
+    <h3>Unit & Stock</h3>
+    <div class="grid-2">
+      <div class="field">
+        <label>Quantity</label>
+        <input type="number" placeholder="e.g.,100" name="quantity" id="quantityInput">
+        <small class="error-msg"></small>
+      </div>
+
+      <div class="field">
+        <label class="label-row">
+          UOM(Unit Of Measurement)
+          <a href="#" class="add-new" id="addNewUomLink">+ Add New</a>
+        </label>
+        <select name="uom" id="uomSelect">
+          <option value="">Select Option</option>
+        </select>
+        <small class="error-msg"></small>
+      </div>
+      </div>
+
+    <!-- ================= INVENTORY ================= -->
+<h3>Inventory Details</h3>
+<div class="grid-3">
+  <div class="field">
+    <label>Stock Level</label>
+    <input type="number" placeholder="e.g.,120" name="stock_level" maxlength="10" id="stockLevelInput">
+    <small class="error-msg"></small>
+  </div>
+
+  <div class="field">
+    <label>Reorder Level</label>
+    <input type="number" placeholder="e.g.,30" name="reorder_level" maxlength="10" id="reorderLevelInput">
+    <small class="error-msg"></small>
+  </div>
+
+  <div class="field">
+    <label class="label-row">
+      Warehouse
+      <a href="#" class="add-new" id="addNewWarehouseLink">+ Add New</a>
+    </label>
+    <select name="warehouse" id="warehouseSelect">
+      <option value="">Select Option</option>
+    </select>
+    <small class="error-msg"></small>
+  </div>
+</div>
+
+      <!-- ✅ WAREHOUSE: Add -->
+<div class="modal" id="addWarehouseModal" tabindex="-1">
+  <div class="modal-card">
+    <div class="modal-top">
+      <div class="modal-left">
+        <button type="button" class="icon-btn" id="closeAddWarehouse">←</button>
+        <h2>Add New Warehouse</h2>
+      </div>
+
+      <div class="modal-right">
+        <button type="button" class="btn-outline" id="openEditWarehouseBtn">
+          Edit Existing
+        </button>
+      </div>
+    </div>
+
+    <div class="modal-body">
+      <label>Warehouse Name</label>
+      <input type="text" id="newWarehouseName" placeholder="e.g., Main Warehouse" maxlength="20">
+
+      <label>Location</label>
+      <input type="text" id="newWarehouseLocation" placeholder="e.g., ABC Industry, TN" maxlength="20">
+
+      <label>Manager Name (optional)</label>
+      <input type="text" id="newWarehouseManager" placeholder="e.g., Ram" maxlength="20">
+
+      <label>Contact Info (optional)</label>
+      <input type="text" id="newWarehouseContact" placeholder="Phone/Email" maxlength="20">
+
+      <label>Notes (optional)</label>
+      <input type="text" id="newWarehouseNotes" placeholder="Text Area" maxlength="100">
+
+      <small class="error-msg" id="newWarehouseError" style="display:none;"></small>
+    </div>
+
+    <div class="modal-actions">
+      <button type="button" class="btn-outline" id="cancelAddWarehouse">Cancel</button>
+      <button type="button" class="btn-primary" id="createWarehouseBtn">Create</button>
+    </div>
+  </div>
+</div>
+
+<!-- ✅ WAREHOUSE: Edit -->
+<div class="modal" id="editWarehouseModal" tabindex="-1">
+  <div class="modal-card">
+    <div class="modal-top">
+      <div class="modal-left">
+        <button type="button" class="icon-btn" id="backToAddWarehouse">←</button>
+        <h2>Edit Warehouse</h2>
+      </div>
+
+      <div class="modal-right">
+        <button type="button" class="btn-pill" id="goAddWarehouseBtn">+ Add New</button>
+      </div>
+    </div>
+
+    <div class="modal-body">
+      <label>Select Warehouse</label>
+      <select id="selectWarehouseName">
+        <option value="">Select Option</option>
+      </select>
+
+      <label>Location</label>
+      <input type="text" id="updateWarehouseLocation" placeholder="e.g., ABC Industry, TN" maxlength="20" disabled>
+
+      <label>Manager Name (optional)</label>
+      <input type="text" id="updateWarehouseManager" placeholder="e.g., Ram" maxlength="20" disabled>
+
+      <label>Contact Info (optional)</label>
+      <input type="text" id="updateWarehouseContact" placeholder="Phone/Email" maxlength="20" disabled>
+
+      <label>Notes (optional)</label>
+      <input type="text" id="updateWarehouseNotes" placeholder="Text Area" maxlength="100" disabled>
+
+      <small class="error-msg" id="updateWarehouseError" style="display:none;"></small>
+    </div>
+
+    <div class="modal-actions">
+      <button type="button" class="btn-danger-outline" id="removeWarehouseBtn">Remove</button>
+
+      <div class="right-actions">
+        <button type="button" class="btn-outline" id="cancelEditWarehouse">Cancel</button>
+        <button type="button" class="btn-primary" id="updateWarehouseBtn">Update</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ✅ WAREHOUSE: Delete -->
+<div id="deleteWarehouseModal" class="modal">
+  <div class="modal-content delete-modal">
+    <h2>Delete Warehouse</h2>
+    <p id="deleteWarehouseText" class="delete-text"></p>
+
+    <div class="modal-actions">
+      <button id="cancelWarehouseDeleteBtn" class="cancel-btn" type="button">Cancel</button>
+      <button id="confirmWarehouseDeleteBtn" class="danger-btn" type="button">Delete</button>
+    </div>
+  </div>
+</div>
+    <!-- ================= ATTRIBUTES ================= -->
+    <h3>Product Attributes & Specification</h3>
+    <div class="grid-3">
+      <div class="field">
+        <label class="label-row">
+          Size
+           <a class="add-new" id="openSizeModalLink">+ Add New</a>
+        </label>
+        <select name="size" id="sizeMainSelect">
+          <option value="">Select Option</option>
+        </select>
+        <small class="error-msg"></small>
+      </div>
+
+      <div class="field">
+        <label class="label-row">
+          Color
+          <a class="add-new" id="openColorModalLink">+ Add New</a>
+        </label>
+        <select name="color" id="colorMainSelect">
+          <option value="">Select Option</option>
+        </select>
+        <small class="error-msg"></small>
+      </div>
+
+      <div class="field">
+        <label>Weight</label>
+        <input type="text" placeholder="Eg: 1kg" name="weight" maxlength="10" id="weightInput">
+        <small class="error-msg"></small>
+      </div>
+    </div>
+
+    <!-- ================= SPECIFICATIONS ================= -->
+    <div class="form-group" style="margin-top: 20px;">
+      <div class="field">
+        <label>Specifications</label>
+        <input type="text" placeholder="Eg: 8GB RAM, Intel i5" name="specifications" maxlength="100" id="specificationsInput">
+        <small class="error-msg"></small>
+      </div>
+    </div>
+
+    <!-- ================= SUPPLIER ================= -->
+    <h3>Related Products & Supplier Info</h3>
+    <div class="grid-2">
+      <div class="field">
+        <label class="label-row">
+          Related Products
+          <a class="add-new">+ Add New</a>
+        </label>
+        <input
+    type="text"
+    name="related_products"
+    id="relatedProductsInput"
+    placeholder="Enter related product name"
+    maxlength="50"
+  />
+
+  <small class="error-msg" id="relatedProductsError"></small>
+</div>
+
+      <div class="field">
+        <label class="label-row">
+          Supplier
+          <a class="add-new" id="openSupplierModalLink">+ Add New</a>
+        </label>
+        <select name="supplier" id="supplierMainSelect">
+          <option value="">Select Option</option>
+        </select>
+        <small class="error-msg"></small>
+      </div>
+    </div>
+
+    <!-- ================= SETTINGS ================= -->
+    <h3>Settings</h3>
+    <div class="grid-2">
+      <div class="field">
+        <label>Status</label>
+        <select name="status">
+          <option value="">Select the Status</option>
+          <option value="active">Active</option>
+          <option value="inactive">Inactive</option>
+          <option value="discontinued">Discontinued</option>
+        </select>
+        <small class="error-msg"></small>
+      </div>
+
+      <div class="field">
+        <label>Product Usage</label>
+        <select name="product_usage">
+          <option value="">Select the product Usage</option>
+          <option value="purchase">Purchase</option>
+          <option value="sale">Sale</option>
+          <option value="both">Both</option>
+        </select>
+        <small class="error-msg"></small>
+      </div>
+    </div>
+
+    <!-- ================= ACTIONS ================= -->
+    <div class="actions">
+      <button class="btn cancel" type="button" id="discardBtn">Discard</button>
+      <button class="btn primary" type="submit">Add Product</button>
+    </div>
+
+  </form>
+</div>
+
+
+<!-- ===================================================== -->
+<!-- ✅ MODALS (KEEP OUTSIDE FORM, BOTTOM OF PAGE) -->
+<!-- ===================================================== -->
+
+<!-- ✅ CATEGORY: Add -->
+<div class="modal" id="addCategoryModal" tabindex="-1">
+  <div class="modal-card">
+    <div class="modal-top">
+      <div class="modal-left">
+        <button type="button" class="icon-btn" id="closeAddCategory">←</button>
+        <h2>Add New Category</h2>
+      </div>
+      <div class="modal-right">
+        <button type="button" class="btn-outline" id="openEditCategoryBtn">Edit Existing</button>
+      </div>
+    </div>
+
+    <div class="modal-body">
+      <label>Category Name</label>
+      <input type="text" id="newCategoryName" placeholder="Electronics" maxlength="20">
+      <small class="error-msg" id="newCategoryError" style="display:none;"></small>
+    </div>
+
+    <div class="modal-actions">
+      <button type="button" class="btn-outline" id="cancelAddCategory">Cancel</button>
+      <button type="button" class="btn-primary" id="createCategoryBtn">Create</button>
+    </div>
+  </div>
+</div>
+
+<!-- ✅ CATEGORY: Edit -->
+<div class="modal" id="editCategoryModal" tabindex="-1">
+  <div class="modal-card">
+    <div class="modal-top">
+      <div class="modal-left">
+        <button type="button" class="icon-btn" id="backToAddCategory">←</button>
+        <h2>Edit Category</h2>
+      </div>
+      <div class="modal-right">
+        <button type="button" class="btn-pill" id="goAddNewBtn">+ Add New</button>
+      </div>
+    </div>
+
+    <div class="modal-body">
+      <label>Select Category</label>
+      <select id="selectCategory">
+        <option value="">Select Option</option>
+      </select>
+
+      <label>Update Category Name</label>
+      <input type="text" id="updateCategoryName" placeholder="Fashion" maxlength="20" disabled>
+      <small class="error-msg" id="updateCategoryError" style="display:none;"></small>
+    </div>
+
+    <div class="modal-actions">
+      <button type="button" class="btn-danger-outline" id="removeCategoryBtn">Remove</button>
+
+      <div class="right-actions">
+        <button type="button" class="btn-outline" id="cancelEditCategory">Cancel</button>
+        <button type="button" class="btn-primary" id="updateCategoryBtn">Update</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ✅ CATEGORY: Delete -->
+<div id="deleteCategoryModal" class="modal">
+  <div class="modal-content delete-modal">
+    <h2>Delete Category</h2>
+    <p id="deleteCategoryText" class="delete-text"></p>
+
+    <div class="modal-actions">
+      <button id="cancelCategoryDeleteBtn" class="cancel-btn" type="button">Cancel</button>
+      <button id="confirmCategoryDeleteBtn" class="danger-btn" type="button">Delete</button>
+    </div>
+  </div>
+</div>
+
+
+<!-- ✅ TAX: Add -->
+<div class="modal" id="addTaxCodeModal" tabindex="-1">
+  <div class="modal-card">
+    <div class="modal-top">
+      <div class="modal-left">
+        <button type="button" class="icon-btn" id="closeAddTaxCode">←</button>
+        <h2>Add New Tax Code</h2>
+      </div>
+
+      <div class="modal-right">
+        <button type="button" class="btn-outline" id="openEditTaxCodeBtn">Edit Tax Code</button>
+      </div>
+    </div>
+
+    <div class="modal-body">
+      <label>Tax Name</label>
+      <input type="text" id="newTaxName" placeholder="GST" maxlength="20">
+
+      <label>Tax Percentage (%)</label>
+      <input type="number" id="newTaxPercent" placeholder="e.g.,18" min="0" max="100" step="0.01" maxlength="10">
+
+      <label>Description (optional)</label>
+      <input type="text" id="newTaxDesc" placeholder="Text Area" maxlength="100">
+
+      <small class="error-msg" id="newTaxError" style="display:none;"></small>
+    </div>
+
+    <div class="modal-actions">
+      <button type="button" class="btn-outline" id="cancelAddTaxCode">Cancel</button>
+      <button type="button" class="btn-primary" id="createTaxCodeBtn">Create</button>
+    </div>
+  </div>
+</div>
+
+<!-- ✅ TAX: Edit -->
+<div class="modal" id="editTaxCodeModal" tabindex="-1">
+  <div class="modal-card">
+    <div class="modal-top">
+      <div class="modal-left">
+        <button type="button" class="icon-btn" id="backToAddTaxCode">←</button>
+        <h2>Edit Tax Code</h2>
+      </div>
+
+      <div class="modal-right">
+        <button type="button" class="btn-pill" id="goAddTaxCodeBtn">+ Add Tax Code</button>
+      </div>
+    </div>
+
+    <div class="modal-body">
+      <label>Select Tax Code</label>
+      <select id="selectTaxCode">
+        <option value="">Select Option</option>
+      </select>
+
+      <label>Tax Percentage (%)</label>
+      <input type="number" id="updateTaxPercent" placeholder="e.g.,18" min="0" max="100" step="0.01" maxlength="10" disabled>
+      
+
+      <label>Description</label>
+      <input type="text" id="updateTaxDesc" placeholder="Text Area" maxlength="100" disabled>
+
+      <small class="error-msg" id="updateTaxError" style="display:none;"></small>
+    </div>
+
+    <div class="modal-actions">
+      <button type="button" class="btn-danger-outline" id="removeTaxCodeBtn">Remove</button>
+
+      <div class="right-actions">
+        <button type="button" class="btn-outline" id="cancelEditTaxCode">Cancel</button>
+        <button type="button" class="btn-primary" id="updateTaxCodeBtn">Update</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ✅ TAX: Delete -->
+<div id="deleteTaxCodeModal" class="modal">
+  <div class="modal-content delete-modal">
+    <h2>Delete Tax Code</h2>
+    <p id="deleteTaxCodeText" class="delete-text"></p>
+
+    <div class="modal-actions">
+      <button id="cancelTaxCodeDeleteBtn" class="cancel-btn" type="button">Cancel</button>
+      <button id="confirmTaxCodeDeleteBtn" class="danger-btn" type="button">Delete</button>
+    </div>
+  </div>
+</div>
+
+<!-- ✅ UOM: Add -->
+<div class="modal" id="addUomModal" tabindex="-1">
+  <div class="modal-card">
+    <div class="modal-top">
+      <div class="modal-left">
+        <button type="button" class="icon-btn" id="closeAddUom">←</button>
+        <h2>Add New UOM</h2>
+      </div>
+
+      <div class="modal-right">
+        <button type="button" class="btn-outline" id="openEditUomBtn">Edit UOM</button>
+      </div>
+    </div>
+
+    <div class="modal-body">
+      <label>UOM Name</label>
+      <input type="text" id="newUomName" placeholder="e.g., Box" maxlength="20">
+
+      <label>No. of Items</label>
+      <input type="number" id="newUomItems" min="1" max="10000" step="1" placeholder="e.g., 10" maxlength="10">
+
+      <label>Description (optional)</label>
+      <input type="text" id="newUomDesc" placeholder="Text Area" maxlength="100">
+
+      <small class="error-msg" id="newUomError" style="display:none;"></small>
+    </div>
+
+    <div class="modal-actions">
+      <button type="button" class="btn-outline" id="cancelAddUom">Cancel</button>
+      <button type="button" class="btn-primary" id="createUomBtn">Create</button>
+    </div>
+  </div>
+</div>
+
+<!-- ✅ UOM: Edit -->
+<div class="modal" id="editUomModal" tabindex="-1">
+  <div class="modal-card">
+    <div class="modal-top">
+      <div class="modal-left">
+        <button type="button" class="icon-btn" id="backToAddUom">←</button>
+        <h2>Edit UOM</h2>
+      </div>
+
+      <div class="modal-right">
+        <button type="button" class="btn-pill" id="goAddUomBtn">+ Add UOM</button>
+      </div>
+    </div>
+
+    <div class="modal-body">
+      <label>UOM Name</label>
+      <select id="selectUomName">
+        <option value="">Select Option</option>
+      </select>
+
+      <label>No. of Items</label>
+      <input type="number" id="updateUomItems" placeholder="e.g., 10" maxlength="10" disabled>
+
+      <label>Description (optional)</label>
+      <input type="text" id="updateUomDesc" placeholder="Text Area" maxlength="100" disabled>
+
+      <small class="error-msg" id="updateUomError" style="display:none;"></small>
+    </div>
+
+    <div class="modal-actions">
+      <button type="button" class="btn-danger-outline" id="removeUomBtn">Remove</button>
+
+      <div class="right-actions">
+        <button type="button" class="btn-outline" id="cancelEditUom">Cancel</button>
+        <button type="button" class="btn-primary" id="updateUomBtn">Update</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ✅ UOM: Delete -->
+<div id="deleteUomModal" class="modal">
+  <div class="modal-content delete-modal">
+    <h2>Delete UOM</h2>
+    <p id="deleteUomText" class="delete-text"></p>
+
+    <div class="modal-actions">
+      <button id="cancelUomDeleteBtn" class="cancel-btn" type="button">Cancel</button>
+      <button id="confirmUomDeleteBtn" class="danger-btn" type="button">Delete</button>
+    </div>
+  </div>
+</div>
+
+<!-- SIZE MODAL -->
+<div id="sizeModal" class="modal">
+  <div class="modal-card">
+
+    <!-- ================= ADD NEW SIZE ================= -->
+    <div id="addSizePage" class="size-input">
+      <div class="modal-top">
+        <div class="modal-left">
+          <button type="button" class="icon-btn" id="addBackArrow2">←</button>
+          <h2>Add New Size</h2>
+        </div>
+        <div class="modal-right">
+          <button type="button" class="btn-outline" id="openEditSizeBtn">
+            Edit Existing
+          </button>
+        </div>
+      </div>
+
+      <div class="modal-body">
+        <label>Size Name</label>
+        <input type="text" id="newSizeInput" placeholder="Small" maxlength="20">
+        <small class="error-msg" id="sizeError" style="display:none;"></small>
+      </div>
+
+      <div class="modal-actions">
+        <button type="button" class="btn-outline" id="cancelAddSize">Cancel</button>
+        <button type="button" class="btn-primary" id="createSizeBtn">Create</button>
+      </div>
+    </div>
+
+    <!-- ================= EDIT SIZE ================= -->
+    <div id="editSizePage" class="size-input" style="display:none;">
+      <div class="modal-top">
+        <div class="modal-left">
+          <button type="button" class="icon-btn" id="editBackArrow2">←</button>
+          <h2>Edit Size</h2>
+        </div>
+        <div class="modal-right">
+          <button type="button" class="btn-pill" id="openAddSizeBtn">
+            + Add New
+          </button>
+        </div>
+      </div>
+
+      <div class="modal-body">
+        <label>Select Size</label>
+        <select id="sizeSelect">
+          <option value="">Select Option</option>
+        </select>
+
+        <label>Update Size Name</label>
+        <input type="text" id="updateSizeInput" placeholder="Medium" maxlength="20" disabled>
+        <small class="error-msg" id="updateSizeError" style="display:none;"></small>
+      </div>
+
+      <div class="modal-actions">
+        <button type="button" class="btn-danger-outline" id="removeSizeBtn">
+          Remove
+        </button>
+
+        <div class="right-actions">
+          <button type="button" class="btn-outline" id="cancelEditSize">Cancel</button>
+          <button type="button" class="btn-primary" id="updateSizeBtn">Update</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ✅ SIZE: Delete -->
+<div id="deleteSizeModal" class="modal">
+  <div class="modal-content delete-modal">
+    <h2>Delete Size</h2>
+    <p id="deleteSizeText" class="delete-text"></p>
+
+    <div class="modal-actions">
+      <button id="cancelSizeDeleteBtn" class="cancel-btn" type="button">Cancel</button>
+      <button id="confirmSizeDeleteBtn" class="danger-btn" type="button">Delete</button>
+    </div>
+  </div>
+</div>
+
+<!-- COLOR MODAL -->
+<div id="colorModal" class="modal">
+  <div class="modal-card">
+
+    <!-- ================= ADD NEW COLOR ================= -->
+    <div id="addColorPage" class="size-input">
+      <div class="modal-top">
+        <div class="modal-left">
+          <button type="button" class="icon-btn" id="addBackArrow1">←</button>
+          <h2>Add New Color</h2>
+        </div>
+        <div class="modal-right">
+          <button type="button" class="btn-outline" id="openEditColorBtn">
+            Edit Existing
+          </button>
+        </div>
+      </div>
+
+      <div class="modal-body">
+        <label>Color Name</label>
+        <input type="text" id="newColorInput" placeholder="e.g., Red" maxlength="20">
+        <small class="error-msg" id="colorError" style="display:none;"></small>
+      </div>
+
+      <div class="modal-actions">
+        <button type="button" class="btn-outline" id="cancelAddColor">Cancel</button>
+        <button type="button" class="btn-primary" id="createSizeColor">Create</button>
+      </div>
+    </div>
+
+    <!-- ================= EDIT COLOR ================= -->
+    <div id="editColorPage" class="size-input" style="display:none;">
+      <div class="modal-top">
+        <div class="modal-left">
+          <button type="button" class="icon-btn" id="editBackArrow1">←</button>
+          <h2>Edit Color</h2>
+        </div>
+        <div class="modal-right">
+          <button type="button" class="btn-pill" id="openAddColorBtn">
+            + Add New
+          </button>
+        </div>
+      </div>
+
+      <div class="modal-body">
+        <label>Select Color</label>
+        <select id="colorSelect">
+          <option value="">Select Option</option>
+        </select>
+
+        <label>Update Color Name</label>
+        <input type="text" id="updateColorInput" placeholder="e.g., Maroon" maxlength="20" disabled>
+        <small class="error-msg" id="updateColorError" style="display:none;"></small>
+      </div>
+
+      <div class="modal-actions">
+        <button type="button" class="btn-danger-outline" id="removeColorBtn">
+          Remove
+        </button>
+
+        <div class="right-actions">
+          <button type="button" class="btn-outline" id="cancelEditColor">Cancel</button>
+          <button type="button" class="btn-primary" id="updateColorBtn">Update</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ✅ COLOR: Delete -->
+<div id="deleteColorModal" class="modal">
+  <div class="modal-content delete-modal">
+    <h2>Delete Color</h2>
+    <p id="deleteColorText" class="delete-text"></p>
+
+    <div class="modal-actions">
+      <button id="cancelColorDeleteBtn" class="cancel-btn" type="button">Cancel</button>
+      <button id="confirmColorDeleteBtn" class="danger-btn" type="button">Delete</button>
+    </div>
+  </div>
+</div>
+
+<!-- SUPPLIER MODAL -->
+<div id="supplierModal" class="modal">
+  <div class="modal-card">
+
+    <!-- ========== ADD NEW SUPPLIER ========== -->
+    <div id="addSupplierPage" class="supplier-input">
+      <div class="modal-top">
+        <div class="modal-left">
+          <button type="button" class="icon-btn" id="addBackArrow">←</button>
+          <h2>Add New Supplier</h2>
+        </div>
+        <div class="modal-right">
+          <button type="button" class="btn-outline" id="openEditSupplierBtn">
+            Edit Existing
+          </button>
+        </div>
+      </div>
+
+      <div class="modal-body">
+        <label>Supplier Name</label>
+<input type="text" id="newSupplierName" placeholder="Acme Audio Supplies Ltd" maxlength="20">
+<small class="error-msg" id="errSupplierName" style="display:none;"></small>
+
+<label>Contact Person</label>
+<input type="text" id="newSupplierContactPerson" placeholder="Rahul" maxlength="20">
+<small class="error-msg" id="errContactPerson" style="display:none;"></small>
+
+<label>Phone Number</label>
+<input type="text" id="newSupplierPhone" placeholder="+91 96555 55555">
+<small class="error-msg" id="errPhone" style="display:none;"></small>
+
+<label>Email Address</label>
+<input type="email" id="newSupplierEmail" placeholder="rahul@gmail.com" maxlength="20">
+<small class="error-msg" id="errEmail" style="display:none;"></small>
+
+<label>Address</label>
+<input type="text" id="newSupplierAddress" placeholder="123 Electronics Street, Mumbai" maxlength="50">
+<small class="error-msg" id="errAddress" style="display:none;"></small>
+
+</div>
+      <div class="modal-actions">
+        <button type="button" class="btn-outline" id="cancelAddSupplier">Cancel</button>
+        <button type="button" class="btn-primary" id="createSupplierBtn">Create</button>
+      </div>
+    </div>
+
+    <!-- ========== EDIT SUPPLIER ========== -->
+    <div id="editSupplierPage" class="supplier-input" style="display:none;">
+      <div class="modal-top">
+        <div class="modal-left">
+          <button type="button" class="icon-btn" id="editBackArrow">←</button>
+          <h2>Edit Supplier</h2>
+        </div>
+        <div class="modal-right">
+          <button type="button" class="btn-pill" id="openAddSupplierBtn">
+            + Add New
+          </button>
+        </div>
+      </div>
+
+      <div class="modal-body">
+        <label>Select Supplier</label>
+        <select id="supplierSelect">
+          <option value="">Select Option</option>
+          <option>Acme Audio Supplies Ltd</option>
+        </select>
+        <small class="error-msg" id="updateSupplierError" style="display:none;"></small>
+
+        <label>Contact Person</label>
+        <input type="text" id="editSupplierContactPerson" placeholder="Rahul" maxlength="20" disabled>
+        <small class="error-msg" id="errEditSupplierContact" style="display:none;"></small>
+
+        <label>Phone Number</label>
+        <input type="text" id="editSupplierPhone" placeholder="+91 96555 55555" disabled>
+        <small class="error-msg" id="errEditSupplierPhone" style="display:none;"></small>
+
+        <label>Email Address</label>
+        <input type="email" id="editSupplierEmail" placeholder="rahul@gmail.com" maxlength="20" disabled>
+        <small class="error-msg" id="errEditSupplierEmail" style="display:none;"></small>
+
+        <label>Address</label>
+        <input type="text" id="editSupplierAddress" placeholder="123 Electronics Street, Mumbai" maxlength="50" disabled>
+        <small class="error-msg" id="errEditSupplierAddress" style="display:none;"></small>
+      </div>
+
+      <div class="modal-actions">
+        <button type="button" class="btn-danger-outline" id="removeSupplierBtn">
+          Remove
+        </button>
+
+        <div class="right-actions">
+          <button type="button" class="btn-outline" id="cancelEditSupplier">Cancel</button>
+          <button type="button" class="btn-primary" id="updateSupplierBtn">Update</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ✅ SUPPLIER: Delete -->
+<div id="deleteSupplierModal" class="modal">
+  <div class="modal-content delete-modal">
+    <h2>Delete Supplier</h2>
+    <p id="deleteSupplierText" class="delete-text"></p>
+
+    <div class="modal-actions">
+      <button id="cancelSupplierDeleteBtn" class="cancel-btn" type="button">Cancel</button>
+      <button id="confirmSupplierDeleteBtn" class="danger-btn" type="button">Delete</button>
+    </div>
+  </div>
+</div>
+
+<!-- ✅ SUCCESS POPUP MODAL -->
+<div id="successModal" class="modal">
+  <div class="modal-card" style="max-width: 420px;">
+    <div class="modal-body">
+      <p id="successMessage" style="font-size: 16px; margin-bottom: 20px;"></p>
+      <div style="text-align: right;">
+        <button id="successOkBtn" type="button" class="primary-btn">
+          OK
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', filename='create-new-product.js') }}"></script>
+{% endblock %}

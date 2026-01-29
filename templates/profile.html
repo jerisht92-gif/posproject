@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>User Profile</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='profile.css') }}">
+</head>
+
+<body class="profile-page">
+
+  <div class="profile-wrapper">
+
+    <!-- Top: Avatar + Name + Email -->
+    <div class="profile-header">
+      <div class="avatar-circle">
+        <!-- simple icon/text inside the circle -->
+        👤
+      </div>
+
+      <h2 class="profile-name">{{ user_name }}</h2>
+      <p class="profile-email">{{ user_email }}</p>
+    </div>
+
+    {% if status %}
+      <p class="status-msg">{{ status }}</p>
+    {% endif %}
+
+    <!-- Card with form -->
+    <div class="profile-card">
+      <form class="profile-form" method="post" action="{{ url_for('profile') }}">
+
+        <div class="form-row">
+
+         <div class="form-group">
+            <label for="email">Email ID</label>
+            <input
+                id="email"
+                type="email"
+                name="email"
+                value="{{ user_email }}"
+                readonly
+            >
+            </div>
+
+
+          <!-- RIGHT: Mobile -->
+          <div class="form-group">
+            <label for="mobile">Mobile Number</label>
+            <input
+              id="mobile"
+              type="text"
+              name="mobile"
+              value="{{ mobile or '' }}"
+              placeholder="Enter mobile number">
+          </div>
+
+        </div>
+
+        <!-- Buttons in center -->
+        <div class="form-actions">
+          <button type="submit" class="btn-primary">Submit</button>
+
+          <a href="{{ url_for('dashboard') }}" class="btn-link">
+            Back to Dashboard
+          </a>
+        </div>
+
+      </form>
+    </div>
+
+  </div>
+
+</body>
+</html>

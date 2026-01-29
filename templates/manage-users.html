@@ -1,0 +1,178 @@
+{% extends "menu.html" %}
+
+{% block extra_css %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='manage-users.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="manage-users-page" data-current-role="{{ user_role|lower }}">
+
+  <!-- Header -->
+  <div class="manage-header-row">
+    <div>
+      <h1 class="manage-title">Manage Users</h1>
+    </div>
+
+    <div class="manage-header-right">
+      <div class="mini-search">
+        <input type="text" id="searchUsers" placeholder="Search Users">
+        <button type="button" class="search-icon-btn">🔍</button>
+      </div>
+
+      <button class="primary-btn" id="createUserBtn">+ Create New</button>
+    </div>
+  </div>
+
+  <!-- Table Card -->
+  <div class="card">
+    <table class="user-table">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Email</th>
+          <th>Phone</th>
+          <th>Role</th>
+          <th class="action-header">Action</th>
+        </tr>
+      </thead>
+
+      <tbody id="userTableBody">
+  {% if users and users|length > 0 %}
+    {% for u in users %}
+    <tr>
+      <td>{{ u.name }}</td>
+
+      {# normalize logged-in role once #}
+      {% set r = (user_role or '')|lower|replace(' ', '')|replace('_', '') %}
+
+      <!-- Email Column -->
+      {% if r in ["superadmin", "admin"] %}
+        <td>{{ u.email }}</td>
+      {% else %}
+        <td>*************</td>
+      {% endif %}
+
+      <!-- Phone Column -->
+      {% if r in ["superadmin", "admin"] %}
+        <td>{{ u.phone }}</td>
+      {% else %}
+        <td>**********</td>
+      {% endif %}
+
+      <td>{{ u.role or "User" }}</td>
+
+      <!-- ACTION COLUMN -->
+      <td class="action-cell">
+        <div class="action-buttons">
+
+          <!-- EDIT BUTTON -->
+          {% if r in ["superadmin", "admin"] %}
+            <button class="action-btn edit-btn" data-id="{{ loop.index0 }}">Edit</button>
+          {% else %}
+            <button class="action-btn edit-btn-disabled" disabled
+                    title="No access">Edit</button>
+          {% endif %}
+
+          <!-- DELETE BUTTON -->
+          {% if r == "superadmin" %}
+            <button class="action-btn delete-btn" data-id="{{ loop.index0 }}">Delete</button>
+          {% elif r == "admin" %}
+            <button class="action-btn delete-btn-disabled" disabled
+                    title="Only Super Admin can delete">Delete</button>
+          {% else %}
+            <button class="action-btn delete-btn-disabled" disabled
+                    title="No access">Delete</button>
+          {% endif %}
+
+        </div>
+      </td>
+    </tr>
+    {% endfor %}
+
+    <tr id="noUserRow">
+      <td colspan="5">No users found</td>
+    </tr>
+
+  {% else %}
+    <tr class="no-data-row">
+      <td colspan="5">No Data Found</td>
+    </tr>
+  {% endif %}
+</tbody>
+
+    </table>
+
+    <!-- Pagination Footer -->
+    <div class="table-footer">
+      <div class="entries-info">
+        Showing {{ users|length if users else 0 }} entries
+      </div>
+
+      <div class="pagination-controls">
+        <button id="prevPage" class="pager-btn">Prev</button>
+
+        <span id="pageInfo" class="page-info">
+          Page 1 of {{ 1 if users and users|length > 0 else 0 }}
+        </span>
+
+        <button id="nextPage" class="pager-btn">Next</button>
+      </div>
+    </div>
+
+  </div> <!-- End card -->
+
+</div> <!-- End page -->
+
+
+<!-- Edit User Modal -->
+<div id="editUserModal" class="modal">
+  <div class="modal-content">
+    <h2>Edit User</h2>
+
+  <label>Name</label>
+  <input type="text" id="editName">
+  <div id="editNameError" class="field-error"></div>
+
+  <label>Email</label>
+  <input type="email" id="editEmail">
+  <div id="editEmailError" class="field-error"></div>
+
+  <label>Phone</label>
+  <input type="text" id="editPhone">
+  <div id="editPhoneError" class="field-error"></div>
+
+  <label>Role</label>
+  <select id="editRole">
+    <option value="">Select Role</option>
+    <option value="Super_Admin">Super Admin</option>
+    <option value="Admin">Admin</option>
+    <option value="User">User</option>
+  </select>
+  <div id="editRoleError" class="field-error"></div>
+
+    <div class="modal-actions">
+      <button id="saveEditBtn" class="primary-btn">Save</button>
+      <button id="closeEditBtn" class="cancel-btn">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Delete User Modal -->
+<div id="deleteUserModal" class="modal" aria-hidden="true" role="dialog" aria-modal="true">
+  <div class="modal-content delete-modal" role="document">
+    <h2 class="modal-title">Delete User</h2>
+    <p id="deleteUserText" class="delete-text"></p>
+
+    <div class="modal-actions">
+      <button id="cancelDeleteBtn" class="cancel-btn">Cancel</button>
+      <button id="confirmDeleteBtn" class="danger-btn">Delete</button>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+
+{% block extra_js %}
+  <script src="{{ url_for('static', filename='manage-users.js') }}"></script>
+{% endblock %}

@@ -1,0 +1,880 @@
+
+
+/* ================================
+   CUSTOMER MASTER PAGE
+================================ */
+.customer-page {
+  padding: 20px;
+  font-family: "Poppins", sans-serif;
+  color: #4a1f1a;
+  background: #f6f1f1;
+}
+
+/* -----------------------------------------
+   SUCCESS / ERROR NOTIFICATIONS (TOASTS)
+   Same styling as Product Master
+------------------------------------------ */
+.success-notification,
+.error-notification {
+  position: fixed;
+  top: 80px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-100px);
+  padding: 14px 28px;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 600;
+  z-index: 10000;
+  opacity: 0;
+  transition: all 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+  pointer-events: none;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.success-notification {
+  background: linear-gradient(135deg, #fff4f4, #ffe8e8);
+  color: #a12828;
+  border: 1.5px solid #a12828;
+  box-shadow: 0 8px 24px rgba(161, 40, 40, 0.25);
+}
+
+.error-notification {
+  background: linear-gradient(135deg, #ffe6e6, #ffc2c2);
+  color: #a12828;
+  border: 1.5px solid #a12828;
+  box-shadow: 0 8px 24px rgba(161, 40, 40, 0.35);
+}
+
+.success-notification.show,
+.error-notification.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+  pointer-events: auto;
+}
+
+.success-notification::before {
+  content: "✓";
+  font-size: 18px;
+  font-weight: bold;
+}
+
+.error-notification::before {
+  content: "✕";
+  font-size: 18px;
+  font-weight: bold;
+}
+
+/* ---------- HEADER ---------- */
+.customer-page .manage-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.customer-page .manage-title {
+  font-size: 28px;
+  font-weight: 700;
+  color: #a12828;
+  text-shadow: 1px 1px 0 #d8b7b7;
+  margin-bottom: 12px;
+  margin-right: 24px;
+}
+
+.customer-page .manage-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ================================
+   PRIMARY + SECONDARY BUTTONS
+================================ */
+.btn-primary,
+.btn-secondary {
+  background: linear-gradient(#a12828, #8c1f1f);
+  color: #fff;
+  border: none;
+  padding: 5px 15px;
+  font-size: 14px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: 0.25s;
+  box-shadow: 0 5px 0 #6d1717;
+}
+
+.btn-secondary {
+  background: linear-gradient(#a12828, #8c1f1f);
+  color: #fff;
+  border: 1px solid #a12828;
+}
+
+.btn-primary:hover,
+.btn-secondary:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 0 #6d1717;
+}
+
+/* ---------- MAIN CARD ---------- */
+.card {
+  background: rgba(255, 255, 255, 0.65);
+  border: 1px solid rgba(190, 140, 140, 0.35);
+  border-radius: 18px;
+  padding: 8px;
+  box-shadow: 0 18px 40px rgba(70, 10, 10, 0.08);
+}
+
+/* ===============================
+   SEARCH BAR – SAME AS PRODUCTS
+=============================== */
+.top-controls {
+  display: flex;
+  flex-direction: column;
+}
+
+.mini-search {
+  display: flex;
+  align-items: center;
+  background: #ffffff;
+  border: 1.5px solid #a12828;
+  border-radius: 999px;
+  margin-top: 4px;
+  box-shadow: 0 4px 10px rgba(161, 40, 40, 0.25);
+  transition: 0.2s ease;
+  position: relative;
+  width: 100%;
+  height: 40px;                 /* slightly taller */
+}
+
+.mini-search input {
+  width: 100%;
+  height: 100%;
+  border: none;
+  outline: none;
+  font-size: 14px;
+  background: transparent;
+  padding-left: 46px;           /* space for icon */
+  padding-right: 18px;
+  color: #4a1f1a;
+}
+
+/* Search icon INSIDE input */
+.mini-search .search-icon {
+  position: absolute;
+  left: 16px;
+  font-size: 18px;
+  color: #9b9b9b;
+  pointer-events: none;
+}
+
+.mini-search input::placeholder {
+  color: #9b9b9b;
+}
+
+.mini-search:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 14px rgba(161, 40, 40, 0.35);
+}
+
+/* ---------- CLEAR FILTER ---------- */
+.clear-filter {
+  font-size: 15px;
+  font-weight: 700;
+  color: #8d1f1f;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  margin-top: 10px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* ✅ FILTER GRID (3 in one row) */
+.filters {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-bottom: 26px;
+  margin-top: 10px;
+}
+
+.filter-group label {
+  display: block;
+  font-weight: 700;
+  font-size: 13px;
+  margin-bottom: 8px;
+  color: #4a1f1a;
+}
+
+.filter-group select {
+  width: 100%;
+  height: 30px;
+  padding: 0 16px;
+  border-radius: 18px;
+  border: 2px solid #ead0d0;
+  background: #fff;
+  font-size: 13px;
+  outline: none;
+}
+
+/* ✅ TABLE */
+.table-wrap {
+  overflow-x: auto;
+  border-radius: 10px;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.table thead th {
+  padding: 8px 12px;
+  text-align: left;
+  background: rgba(170, 70, 70, 0.10);
+  color: #7a1d1d;
+  border-bottom: 1px solid rgba(170, 70, 70, 0.2);
+  white-space: nowrap;
+}
+
+.table tbody td {
+  padding: 8px 12px;
+  border-bottom: 1px solid rgba(170, 70, 70, 0.12);
+  white-space: nowrap;
+}
+
+.table thead th:last-child {
+  text-align: right;           /* ✅ Action heading right */
+  padding-right: 70px;         /* ✅ matches button padding */
+}
+
+.table tbody tr:hover {
+  background: rgba(141, 31, 31, 0.06);
+}
+
+.table tbody tr:hover td {
+  background: #e3bdbd;      /* soft maroon tint */
+  transform: scale(1.01);   /* slight lift */
+  transition: 0.25s ease;
+}
+
+.empty {
+  color: #8a5a5a;
+  padding: 16px 12px;
+}
+
+/* ✅ FOOTER ALIGNMENT */
+.table-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(170, 70, 70, 0.12);
+}
+
+.left-info {
+  font-size: 13px;
+  font-weight: 600;
+  color: #7a1d1d;
+}
+
+.right-pager {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.pager-btn {
+  padding: 6px 18px;
+  border-radius: 4px;
+  background: linear-gradient(#a12828, #821f1f);
+  border: none;
+  color: white;
+  font-size: 14px;
+  cursor: pointer;
+  box-shadow: 0 4px 0 #6d1717;
+  transition: 0.25s ease;
+}
+
+/* Hover effect */
+.pager-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+}
+
+/* Disabled state */
+.pager-btn:disabled {
+  opacity: 0.5;
+}
+
+.page-text {
+  font-size: 13px;
+  color: #7a1d1d;
+}
+
+/* ===============================
+   ACTION BUTTONS IN TABLE
+=============================== */
+.action-btn {
+  padding: 7px 15px;
+  font-size: 13px;
+  border-radius: 8px;
+  cursor: pointer;
+  border: none;
+  transition: 0.25s ease;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  color: white;
+  background: #d9534f;
+}
+
+.action-btn:hover {
+  transform: translateY(-3px);
+  background-color: #4a1f1a;
+  color: beige;
+}
+
+/* ===============================
+   MODAL BASE STYLES
+=============================== */
+.modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+
+.modal.show {
+  display: flex;
+}
+
+.modal-card {
+  background: #fff;
+  border-radius: 18px;
+  padding: 18px 22px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+  width: min(420px, 90vw);
+}
+
+.modal-title {
+  margin: 0 0 10px;
+  font-size: 18px;
+  color: #a12828;
+}
+
+.modal-text {
+  margin: 0 0 18px;
+  font-size: 14px;
+  color: #4a1f1a;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+/* ===============================
+   DELETE CUSTOMER MODAL
+=============================== */
+.delete-modal-card {
+  width: min(520px, 95vw);
+  border-radius: 18px;
+  padding: 24px 26px 20px;
+}
+
+.delete-modal-card .modal-title {
+  font-size: 24px;
+  font-weight: 700;
+  color: #7a1d1d;
+  margin-bottom: 14px;
+}
+
+.delete-modal-card .modal-text {
+  font-size: 15px;
+  line-height: 1.5;
+  color: #4a1f1a;
+  margin-bottom: 22px;
+}
+
+/* Override actions layout for delete modal */
+.delete-modal-card .modal-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+/* Cancel button – light outline */
+.modal-cancel-btn {
+  min-width: 110px;
+  padding: 10px 18px;
+  border-radius: 14px;
+  border: 1.5px solid #d0c8c8;
+  background: #ffffff;
+  color: #4a1f1a;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* Delete button – red filled */
+.modal-danger-btn {
+  min-width: 110px;
+  padding: 10px 24px;
+  border-radius: 14px;
+  border: none;
+  background: #b71c1c;
+  color: #ffffff;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 8px 18px rgba(183, 28, 28, 0.25);
+}
+
+.modal-cancel-btn:hover {
+  filter: brightness(0.97);
+}
+
+.modal-danger-btn:hover {
+  filter: brightness(0.95);
+}
+
+/* Row hover – stronger effect on cells */
+.customer-table tbody tr:hover td {
+  background: #e3bdbd;
+  transform: scale(1.01);
+  transition: 0.25s ease;
+}
+
+/* ===============================
+   TOAST STYLES
+=============================== */
+#toastBox {
+  position: fixed;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 9999;
+}
+
+.toast-success {
+  background: #fdeaea;
+  color: #9b1b1b;
+  border: 2px solid #a12828;
+  padding: 10px 22px;
+  border-radius: 18px;
+  font-weight: 600;
+  font-family: "Poppins", sans-serif;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.12);
+}
+
+/* ===============================
+   EDIT CUSTOMER MODAL
+   
+=============================== */
+.edit-modal-card.product-edit-modal {
+  max-width: 480px;
+  width: 92%;
+  max-height: 83vh;
+  overflow-y: auto;
+  padding: 25px;
+  border-radius: 20px;
+  background: #fff;
+  
+  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.25);
+}
+
+/* ---------- Title ---------- */
+.edit-modal-card .modal-title {
+  margin: 0 0 18px;
+  font-size: 20px;
+  font-weight: 800;
+  color: #7a1d1d;
+  text-align: left;
+}
+
+/* ---------- Form Layout ---------- */
+.edit-modal-card .form-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  row-gap: 6px;
+}
+
+/* ---------- Field Group ---------- */
+.edit-modal-card .form-group {
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---------- Labels ---------- */
+.edit-modal-card .form-group label {
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 4px;
+  color: #4a1f1a;
+}
+
+/* ---------- Inputs ---------- */
+.edit-modal-card .form-group input {
+  width: 100%;
+  height: 30px;                 /* same as previous module */
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1.4px solid #d9a7a7;
+  font-size: 14px;
+  background: #fff;
+  box-sizing: border-box;
+}
+
+/* Edit customer status dropdown */
+#editCustomerModal select {
+  width: 100%;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1.4px solid #d9a7a7;
+  font-size: 14px;
+  background: #fff;
+  color: #4a1f1a;
+  box-sizing: border-box;
+  cursor: pointer;
+}
+
+#editCustomerModal select:focus {
+  border-color: #a12828;
+  box-shadow: 0 0 0 2px rgba(161, 40, 40, 0.18);
+  outline: none;
+}
+
+
+/* ---------- Focus ---------- */
+.edit-modal-card .form-group input:focus {
+  border-color: #a12828;
+  box-shadow: 0 0 0 2px rgba(161, 40, 40, 0.18);
+  outline: none;
+}
+
+/* ---------- Error Text ---------- */
+.edit-modal-card .field-error {
+  font-size: 12px;
+  color: #d10000;
+  margin-top: 2px;
+  min-height: 14px;
+}
+
+
+/* =================================================
+   Edit page-save and cancel -all modules same size
+==================================================== */
+#editCustomerModal .modal-actions{
+  margin-top: 12px !important;
+  display: flex !important;
+  justify-content: space-between !important;  
+  align-items: center !important;
+  gap: 12px !important;
+}
+
+/* BOTH buttons: stop stretching */
+#editCustomerModal .modal-actions .modal-primary-btn,
+#editCustomerModal .modal-actions .modal-cancel-btn{
+  flex: 0 0 auto !important;     /* ✅ removes flex:1 */
+  width: 110px !important;       /* ✅ small size */
+  height: 34px !important;
+  padding: 0 !important;
+  border-radius: 10px !important;
+  font-size: 16px !important;
+  font-weight: 600 !important;
+  line-height: 34px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  box-sizing: border-box !important;
+}
+
+/* Keep your styles */
+#editCustomerModal .modal-actions .modal-primary-btn{
+  background: linear-gradient(#a12828, #8c1f1f) !important;
+  color: #fff !important;
+  border: none !important;
+}
+
+#editCustomerModal .modal-actions .modal-cancel-btn{
+  background: #fff !important;
+  color: #111 !important;
+  border: 1px solid #777 !important;
+  box-shadow: none !important;
+}
+
+/* ===============================
+   EDIT MODAL – BUTTON HOVER EFFECTS
+=============================== */
+
+/* SAVE button hover */
+#editCustomerModal .modal-actions .modal-primary-btn:hover{
+  background: linear-gradient(#8c1f1f, #6d1515) !important;
+  transform: translateY(-2px) !important;
+  box-shadow: 0 6px 14px rgba(161, 40, 40, 0.45) !important;
+}
+
+/* CANCEL button hover */
+#editCustomerModal .modal-actions .modal-cancel-btn:hover{
+  background: #f3f3f3 !important;
+  border-color: #444 !important;
+  transform: translateY(-2px) !important;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.15) !important;
+}
+
+/* ===============================
+   ✅ DISABLED STATES 
+   Same styling as edit department save button
+=============================== */
+.is-disabled,
+button:disabled,
+.pager-btn.disabled {
+  opacity: 0.45;
+  cursor: default !important;   /* ✅ NO no-access symbol */
+  pointer-events: none;         /* ✅ blocks hover + click */
+}
+
+/* Edit Customer Save Button - Disabled State (same as edit department) */
+#editCustomerModal .modal-actions .modal-primary-btn:disabled {
+  background: #cccccc !important;
+  color: #666666 !important;
+  cursor: not-allowed !important;
+  box-shadow: 0 2px 0 #999999 !important;
+  transform: none !important;
+  opacity: 1 !important; /* Override the general disabled opacity */
+  pointer-events: auto !important; /* Allow cursor to show not-allowed */
+}
+
+#editCustomerModal .modal-actions .modal-primary-btn:disabled:hover {
+  transform: none !important;
+  box-shadow: 0 2px 0 #999999 !important;
+  background: #cccccc !important;
+  color: #666666 !important;
+}
+
+
+
+
+
+
+/* ============================
+   RESPONSIVE – CUSTOMER PAGE
+============================ */
+
+/* 💻 Tablets & small laptops (≤1024px) */
+@media (max-width: 1024px) {
+  .customer-page {
+    padding: 16px;
+  }
+
+  /* keep 3 filters per row (same as product) */
+  .customer-page .filters {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  /* edit modal width like product */
+  .edit-modal-card.product-edit-modal {
+    width: 60%;
+    max-width: 700px;
+  }
+
+  /* table footer fit */
+  .table-footer {
+    width: 100%;
+  }
+}
+
+/* 📱 Tablets & Mobiles (≤768px) */
+@media (max-width: 768px) {
+  .customer-page {
+    padding: 12px;
+  }
+
+  /* 🔥 HEADER: title + buttons */
+  .customer-page .manage-header-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  /* ✅ Buttons area can wrap */
+  .customer-page .manage-header-right {
+    display: flex;
+    flex-wrap: wrap;     /* ✅ IMPORTANT */
+    gap: 10px;
+  }
+
+  /* ✅ Two buttons per row (if you have only 2 buttons) */
+  .customer-page .btn-primary,
+  .customer-page .btn-secondary {
+    flex: 1 1 48%;
+    white-space: nowrap;
+    text-align: center;
+  }
+
+  /* Search bar full width */
+  .mini-search {
+    width: 100%;
+  }
+
+  /* Filters: 2 per row */
+  .customer-page .filters {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  /* table scroll */
+  .table-wrap {
+    overflow-x: auto;
+  }
+
+  .customer-table {
+    min-width: 650px;
+  }
+
+  /* pagination: keep same line */
+  .table-footer {
+    flex-direction: row;            /* 🔥 force row */
+  }
+
+  .right-pager {
+    flex-direction: row;            /* 🔥 force row */
+  }
+
+  .pager-btn {
+    flex: 1 1 45%;
+    text-align: center;
+  }
+}
+
+/* 📱 Small Mobiles (≤520px) */
+@media (max-width: 520px) {
+  .customer-page {
+    padding: 10px;
+  }
+
+  .customer-page .manage-title {
+    font-size: 22px;
+    text-align: center;
+    margin-right: 0;
+  }
+
+  /* ✅ Buttons should WRAP for 3 buttons */
+  .customer-page .manage-header-right {
+    display: flex;
+    flex-wrap: wrap;     /* ✅ IMPORTANT */
+    gap: 8px;
+  }
+
+  /* ✅ Make buttons full width on small mobile */
+  .customer-page .btn-primary,
+  .customer-page .btn-secondary {
+    flex: 1 1 100%;
+    font-size: 13px;
+    padding: 9px 14px;
+    white-space: nowrap;
+    text-align: center;
+  }
+
+  /* Search bar full width */
+  .mini-search {
+    width: 100%;
+  }
+
+  /* Filters: 1 per row */
+  .customer-page .filters {
+    grid-template-columns: 1fr;
+  }
+
+  /* pagination text smaller + prevent overflow */
+  .left-info {
+    font-size: 11px;            /* 🔥 shrink text */
+    max-width: 55%;             /* 🔥 prevent overflow */
+  }
+
+  /* ✅ Prev + Next ALWAYS SAME LINE */
+  .right-pager {
+    flex-direction: row;
+    gap: 10px;
+  }
+
+  .pager-btn {
+    padding: 6px 12px;          /* 🔥 smaller buttons */
+    font-size: 12px;
+    min-width: 70px;
+  }
+
+  /* Modal full width */
+  .modal-card,
+  .delete-modal-card,
+  .edit-modal-card.product-edit-modal {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .edit-modal-card .form-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* 📱 Extra Small Mobiles (≤360px) — FIX for 320px screen */
+@media (max-width: 360px) {
+  .customer-page .manage-title {
+    font-size: 20px;
+  }
+
+  /* ✅ Reduce button size slightly */
+  .customer-page .btn-primary,
+  .customer-page .btn-secondary {
+    font-size: 12px;
+    padding: 8px 12px;
+  }
+
+  /* ✅ Pagination buttons full width if still tight */
+  .pager-btn {
+    flex: 1 1 100%;
+    min-width: unset;
+  }
+}
+
+/* 📱 Extra Small Mobiles (≤360px) — 3 buttons same line */
+@media (max-width: 360px) {
+
+  .customer-page .manage-header-right {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;          /* ✅ force one line */
+    justify-content: space-between;
+    gap: 6px;
+  }
+
+  .customer-page .btn-primary,
+  .customer-page .btn-secondary
+   {
+    flex: 1 1 0;              
+    min-width: 0;               
+    padding: 8px 6px;           
+    font-size: 11px;            
+    border-radius: 16px;
+
+    /* ✅ allow text to wrap INSIDE button */
+    white-space: normal;
+    line-height: 1.1;
+    text-align: center;
+    word-break: break-word;
+  }
+}

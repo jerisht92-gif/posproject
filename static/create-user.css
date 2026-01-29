@@ -1,0 +1,430 @@
+/* =============================
+   PAGE WRAPPER
+============================= */
+.create-user-page {
+  padding: 20px;
+  box-sizing: border-box;
+  font-family: "Poppins", sans-serif;
+  background: #f6f1f1;
+}
+
+/* =============================
+ HEADER + TITLE
+============================= */
+.create-header {
+position: relative;
+text-align: left;
+margin-bottom: 18px;
+}
+
+.create-title {
+font-size: 28px;
+font-weight: 600;
+color: #a12828;
+margin-bottom: 2px;
+text-shadow: 1px 1px 2px #d8b7b7;
+}
+
+/* Close button
+.close-btn {
+position: absolute;
+right: 0;
+top: 50%;
+transform: translateY(-50%);
+width: 34px;
+height: 34px;
+border-radius: 8px;
+border: 2px solid #b9473e;
+display: flex;
+align-items: center;
+justify-content: center;
+color: #b9473e;
+text-decoration: none;
+font-size: 20px;
+background: #fff;
+box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08);
+transition: 0.2s ease;
+}
+
+.close-btn:hover {
+background: #b9473e;
+color: #fff;
+} */
+
+/* =============================
+ 3D CARD
+============================= */
+.create-card {
+background: #ffffff;
+border-radius: 12px;
+padding: 32px 36px;
+box-shadow: 0 10px 20px rgba(0, 0, 0, 0.12);
+transition: 0.3s ease;
+}
+
+.create-card:hover {
+transform: translateY(-5px);
+box-shadow: 0 14px 26px rgba(0, 0, 0, 0.18);
+}
+
+/* =============================
+ FORM LAYOUT (ALL ROWS)
+============================= */
+.create-form .form-row {
+display: flex;
+gap: 24px;
+margin-bottom: 20px;
+}
+
+.form-field {
+flex: 1;
+display: flex;
+flex-direction: column;
+}
+
+.form-field label {
+font-size: 13px;
+margin-bottom: 6px;
+color: #444;
+}
+
+/* Inputs & selects */
+.form-field input,
+.form-field select {
+padding: 11px 14px;
+border-radius: 10px;
+border: 1px solid #e7b7b5;
+outline: none;
+font-size: 14px;
+background-color: #fff5f5;
+color: #000;
+transition: 0.2s ease;
+box-sizing: border-box;
+}
+
+.form-field input::placeholder {
+color: #d18a84;
+}
+
+.form-field select {
+color: #000;
+}
+
+.form-field input,
+.form-field select,
+.phone-input,
+.country-code {
+  height: 30px !important;    /* reduced height */
+  padding: 6px 12px !important; /* reduced inner spacing */
+  font-size: 13px !important;   /* slightly smaller text */
+  border-radius: 8px;           /* compact rounded corners */
+}
+
+
+
+/* =============================
+ ROW 2 ONLY (Email + Contact)
+ Email wider, Contact smaller
+============================= */
+.create-form .form-row:nth-of-type(2) {
+  display: flex;
+  gap: 24px;        /* same spacing as other rows */
+}
+
+.create-form .form-row:nth-of-type(2) .form-field {
+  flex: 1;          /* BOTH fields same width */
+}
+
+
+.masked-input {
+padding: 11px 14px;
+border-radius: 10px;
+border: 1px dashed #e7b7b5;
+background-color: #fdf2f2;
+color: #c08a8a;
+cursor: not-allowed;
+}
+
+/* =============================
+ CONTACT NUMBER (COUNTRY CODE + PHONE)
+============================= */
+
+/* wrapper: <div class="form-field form-field-phone"> */
+.form-field-phone {
+display: flex;
+flex-direction: column;
+align-items: flex-start;
+
+}
+
+/* ensure Contact Number label aligns left like others */
+.form-field-phone label {
+text-align: left;
+align-self: flex-start;
+}
+
+/* inner row: dropdown + number */
+.form-field-phone .phone-row {
+display: flex;
+align-items: center;
+width: 100%;
+gap: 7px; 
+margin-top: 0;
+}
+
+/* compact country code */
+.form-field-phone .country-code {
+flex: 0 0 60px;
+height: 42px;
+padding: 0 10px;
+border-radius: 10px;
+border: 1px solid #e7b7b5;
+background-color: #fff5f5;
+font-size: 14px;
+display: flex;
+align-items: center;
+justify-content: center;
+box-sizing: border-box;
+line-height: 40px;
+}
+
+/* phone input */
+.form-field-phone .phone-input {
+flex-grow: 3;
+min-width: 200px; 
+border-radius: 10px;
+border: 1px solid #e7b7b5;
+background-color: #fff5f5;
+font-size: 14px;
+color: #000;
+outline: none;
+box-sizing: border-box;
+height: 42px;
+padding: 0 14px;
+}
+
+.form-field-phone .phone-input::placeholder {
+color: #d18a84;
+}
+
+/* =============================
+ ACTION BUTTONS (3D)
+============================= */
+.form-actions {
+margin-top: 32px;
+display: flex;
+justify-content: center;
+gap: 24px;
+}
+
+/* primary button */
+.btn-primary {
+background: linear-gradient(#a12828, #8c1f1f);
+color: #fff;
+border: none;
+padding: 10px 26px;
+font-size: 14px;
+border-radius: 10px;
+font-weight: 500;
+cursor: pointer;
+box-shadow: 0 5px 0 #6d1717;
+transition: 0.25s;
+display: inline-flex;
+align-items: center;
+justify-content: center;
+}
+
+.btn-primary:hover {
+transform: translateY(-3px);
+box-shadow: 0 8px 0 #6d1717;
+}
+
+.btn-primary:active {
+transform: translateY(3px);
+box-shadow: 0 2px 0 #6d1717;
+}
+
+.btn-primary:disabled {
+background: #cccccc;
+color: #666666;
+cursor: not-allowed;
+box-shadow: 0 2px 0 #999999;
+transform: none;
+}
+
+.btn-primary:disabled:hover {
+transform: none;
+box-shadow: 0 2px 0 #999999;
+}
+
+/* outline buttons */
+.btn-outline {
+background: #ffffff;
+border: 1.5px solid #a12828;
+color: #a12828;
+padding: 9px 24px;
+border-radius: 10px;
+font-size: 14px;
+font-weight: 500;
+text-decoration: none;
+display: inline-flex;
+align-items: center;
+justify-content: center;
+cursor: pointer;
+box-shadow: 0 3px 0 rgba(0, 0, 0, 0.08);
+transition: 0.2s;
+}
+
+.btn-outline:hover {
+background: #a12828;
+color: #ffffff;
+transform: translateY(-2px);
+}
+
+/* =============================
+ ERRORS & FLASH MESSAGES
+============================= */
+.field-error-msg {
+color: #d9534f;
+font-size: 12px;
+margin-top: 4px;
+}
+
+.input-error {
+border-color: #e63946 !important;
+box-shadow: 0 0 0 1px rgba(230, 57, 70, 0.15);
+}
+
+.flash-container {
+margin-bottom: 12px;
+}
+
+.flash {
+padding: 8px 12px;
+border-radius: 6px;
+font-size: 14px;
+}
+
+.flash-error {
+background-color: #ffe6e6;
+color: #b3261e;
+border: 1px solid #f5c2c2;
+}
+
+.flash-success {
+background-color: #e6ffed;
+color: #146c43;
+border: 1px solid #b7e4c7;
+}
+
+/* =============================
+ RESPONSIVE
+============================= */
+@media (max-width: 768px) {
+.create-user-page {
+  margin-top: 16px;
+  padding: 0 12px 24px;
+}
+
+.create-card {
+  padding: 20px 18px;
+}
+
+.create-form .form-row {
+  display: block;     /* stack all fields */
+}
+
+.create-form .form-row:nth-of-type(2) {
+  display: block;     /* override grid on mobile */
+}
+}
+
+/* =============================
+ INTERACTIONS (HOVER / FOCUS)
+============================= */
+.create-form input:hover,
+.create-form select:hover {
+background: #f5d4d4;
+border-color: #b9473e;
+box-shadow: 0 4px 10px rgba(161, 40, 40, 0.12);
+transform: scale(1.01);
+transition: 0.25s ease-in-out;
+}
+
+.create-form input:focus,
+.create-form select:focus {
+border-color: #a12828;
+box-shadow: 0 0 0 1px rgba(161, 40, 40, 0.25);
+}
+
+/* Country code hover/focus */
+.country-code:hover,
+.country-code:focus {
+background: #f3c2c2;
+border-color: #b9473e;
+box-shadow: 0 0 6px rgba(185, 71, 62, 0.35);
+}
+
+/* Phone input hover/focus */
+.phone-input:hover,
+.phone-input:focus {
+background: #f3c2c2;
+border-color: #b9473e;
+box-shadow: 0 0 6px rgba(185, 71, 62, 0.35);
+}
+
+/* -----------------------------------------
+   SUCCESS / ERROR NOTIFICATIONS (TOASTS)
+------------------------------------------ */
+.success-notification,
+.error-notification {
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-100px);
+  padding: 14px 28px;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 600;
+  z-index: 10000;
+  opacity: 0;
+  transition: all 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+  pointer-events: none;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.success-notification {
+  background: linear-gradient(135deg, #fff4f4, #ffe8e8);
+  color: #a12828;
+  border: 1.5px solid #a12828;
+  box-shadow: 0 8px 24px rgba(161, 40, 40, 0.25);
+}
+
+.error-notification {
+  background: linear-gradient(135deg, #ffe6e6, #ffc2c2);
+  color: #a12828;
+  border: 1.5px solid #a12828;
+  box-shadow: 0 8px 24px rgba(161, 40, 40, 0.35);
+}
+
+.success-notification.show,
+.error-notification.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+  pointer-events: auto;
+}
+
+.success-notification::before {
+  content: "✓";
+  font-size: 18px;
+  font-weight: bold;
+}
+
+.error-notification::before {
+  content: "✕";
+  font-size: 18px;
+  font-weight: bold;
+}

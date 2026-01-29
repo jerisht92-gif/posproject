@@ -1,0 +1,168 @@
+
+{% extends "menu.html" %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='enquiry-list.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="manage-page enquiry-page">
+
+  <!-- Header: title + search + create button -->
+  <div class="manage-header-row">
+    <div class="manage-header-left">
+      <h1 class="manage-title">Enquiry List</h1>
+      <p class="manage-subtitle">
+        Easily view, manage, and track all customer enquiries.
+      </p>
+    </div>
+
+    <div class="manage-header-right">
+      <!-- 🔍 Search -->
+      <div class="mini-search">
+        <input type="text" id="searchEnquiries" placeholder="Search Enquiries">
+        <button class="search-icon-btn" type="button">🔍</button>
+      </div>
+
+      <!-- Create New -->
+      <a href="{{ url_for('new_enquiry') }}" class="primary-btn">+ Create New</a>
+    </div>
+  </div>
+
+  <!-- Card with table + footer -->
+  <div class="card">
+    <div class="table-wrapper">
+      <table class="enquiry-table">
+        <thead>
+          <tr>
+            <th>Enquiry ID</th>
+            <th>First Name</th>
+            <th>Last Name</th>
+            <th>Email</th>
+            <th>Phone Number</th>
+            <th>Status</th>
+            <th class="action-header">Action</th>
+          </tr>
+        </thead>
+
+        <tbody id="enquiryTable">
+          {% if enquiries and enquiries|length > 0 %}
+            {% for e in enquiries %}
+            <tr id="row-{{ e.enquiry_id or e.id }}"
+                data-id="{{ e.enquiry_id or e.id }}"
+                data-first-name="{{ e.first_name }}"
+                data-last-name="{{ e.last_number or e.last_name }}"
+                data-email="{{ e.email }}"
+                data-phone="{{ e.phone_number or e.phone }}"
+                data-status="{{ e.status }}">
+              <td>{{ e.enquiry_id or e.id }}</td>
+              <td class="cell-first-name">{{ e.first_name }}</td>
+              <td class="cell-last-name">{{ e.last_number or e.last_name or '' }}</td>
+              <td class="cell-email">{{ e.email }}</td>
+              <td class="cell-phone">{{ e.phone_number or e.phone or '' }}</td>
+              <td class="status-text">{{ e.status or 'New' }}</td>
+
+              <td class="action-cell">
+                <div class="action-buttons">
+                  <button type="button"
+                          class="action-btn edit-btn"
+                          data-id="{{ e.enquiry_id or e.id }}">
+                    Edit
+                  </button>
+                  <button type="button"
+                          class="action-btn delete-btn"
+                          data-id="{{ e.enquiry_id or e.id }}">
+                    Delete
+                  </button>
+                </div>
+              </td>
+            </tr>
+            {% endfor %}
+          {% else %}
+            <tr class="no-data-row">
+              <td colspan="7" class="no-data-cell">No data Found</td>
+            </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Footer -->
+    <div class="table-footer">
+      <div class="entries-info">
+        Showing
+        <span id="showingCount">{{ enquiries|length if enquiries else 0 }}</span>
+        Entries
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ✅ EDIT ENQUIRY MODAL -->
+<div id="editEnquiryModal" class="modal" aria-hidden="true" role="dialog" aria-modal="true">
+  <div class="modal-content enquiry-edit-modal" role="document">
+
+    <h2 class="modal-title">Edit Enquiry</h2>
+
+    <input type="hidden" id="editEnquiryId">
+
+    <div class="form-grid">
+
+      <!-- Row 1 -->
+      <div class="form-group">
+        <label for="editEnquiryCode">Enquiry ID</label>
+        <input type="text" id="editEnquiryCode" disabled>
+      </div>
+
+      <div class="form-group">
+        <label for="editFirstName">First Name</label>
+        <input type="text" id="editFirstName" autocomplete="off" minlength="3" maxlength="40"/>
+        <small class="field-error" id="errFirstName"></small>
+      </div>
+
+      <!-- Row 2 -->
+      <div class="form-group">
+        <label for="editLastName">Last Name</label>
+        <input type="text" id="editLastName" autocomplete="off" minlength="3" maxlength="40"/>
+        <small class="field-error" id="errLastName"></small>
+      </div>
+
+      <div class="form-group">
+        <label for="editPhoneNumber">Phone Number</label>
+        <input type="text" id="editPhoneNumber" autocomplete="off" maxlength="10"/>
+        <small class="field-error" id="errPhoneNumber"></small>
+      </div>
+
+      <!-- Row 3 -->
+      <div class="form-group full-width">
+        <label for="editEmail">Email</label>
+        <input type="email" id="editEmail" autocomplete="off"/>
+        <small class="field-error" id="errEmail"></small>
+      </div>
+
+    </div>
+
+    <div class="modal-actions">
+      <button id="saveEnquiryEditBtn" class="btn-primary" type="button">Save</button>
+      <button id="closeEnquiryEditBtn" class="cancel-btn" type="button">Cancel</button>
+    </div>
+
+  </div>
+</div>
+
+<!-- ✅ DELETE ENQUIRY MODAL -->
+<div id="deleteEnquiryModal" class="modal" aria-hidden="true" role="dialog" aria-modal="true">
+  <div class="modal-content" role="document">
+    <h2 class="modal-title">Delete Enquiry</h2>
+    <p id="deleteEnquiryText" class="delete-text"></p>
+
+    <div class="modal-actions">
+      <button id="cancelEnquiryDeleteBtn" class="cancel-btn" type="button">Cancel</button>
+      <button id="confirmEnquiryDeleteBtn" class="danger-btn" type="button">Delete</button>
+    </div>
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='enquiry-list.js') }}"></script>
+{% endblock %}

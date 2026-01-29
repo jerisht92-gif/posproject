@@ -1,0 +1,193 @@
+{# templates/products.html #}
+{% extends "menu.html" %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='products.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="manage-page product-page" data-role="{{ user_role|default('User') }}">
+
+  <!-- ✅ HEADER -->
+  <div class="manage-header-row">
+    <div class="manage-header-left">
+      <h1 class="manage-title">Product Master</h1>
+    </div>
+
+    <div class="manage-header-right">
+      <button class="btn-primary" id="addProductBtn" type="button">+ Add New Product</button>
+      <button class="btn-secondary" id="importBtn" type="button">Import</button>
+    </div>
+  </div>
+
+  <!-- ✅ MAIN CARD -->
+  <div class="card">
+
+    <!-- ✅ SEARCH + CLEAR FILTER -->
+    <div class="top-controls">
+      <div class="mini-search">
+        <span class="search-icon">🔍</span>
+        <input type="text" id="searchInput" placeholder="Search by ID number..." autocomplete="off" />
+      </div>
+
+      <button class="clear-filter" id="clearFilterBtn" type="button">Clear Filter</button>
+    </div>
+
+    <!-- ✅ FILTERS (4 in one row) -->
+    <div class="filters">
+      <div class="filter-group">
+        <label>Category</label>
+        <select id="categoryFilter">
+          <option value="">All</option>
+        </select>
+      </div>
+
+      <div class="filter-group">
+        <label>Brand</label>
+        <select id="brandFilter">
+          <option value="">All</option>
+        </select>
+      </div>
+
+      <div class="filter-group">
+        <label>Status</label>
+        <select id="statusFilter">
+          <option value="">All</option>
+        </select>
+      </div>
+
+      <div class="filter-group">
+        <label>Product Type</label>
+        <select id="typeFilter">
+          <option value="">All</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- ✅ TABLE -->
+    <div class="table-wrap">
+      <table class="table product-table">
+        <thead>
+          <tr>
+            <th>Product ID</th>
+            <th>Product Name</th>
+            <th>Type</th>
+            <th>Category</th>
+            <th>Status</th>
+            <th>Stock Level</th>
+            <th>Price</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+
+        <tbody id="productTableBody">
+          <tr id="noDataRow">
+            <td colspan="8" class="empty">No Data Found</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- ✅ EDIT PRODUCT MODAL -->
+    <div id="editProductModal" class="modal" aria-hidden="true" role="dialog" aria-modal="true">
+      <div class="modal-content product-edit-modal" role="document">
+
+        <h2 class="modal-title">Edit Product</h2>
+
+        <input type="hidden" id="editProductId">
+
+        <div class="form-grid">
+
+          <!-- Row 1 -->
+          <div class="form-group">
+            <label for="editProductCode">Product ID</label>
+            <input type="text" id="editProductCode" disabled>
+          </div>
+
+          <div class="form-group">
+            <label for="editProductName">Product Name</label>
+            <input type="text" id="editProductName" autocomplete="off" minlength="3" maxlength="40"/>
+            <small class="field-error" id="errProductName"></small>
+          </div>
+
+          <!-- Row 2 -->
+          <div class="form-group">
+            <label for="editProductType">Type</label>
+            <input type="text" id="editProductType" autocomplete="off" minlength="3" maxlength="40"/>
+            <small class="field-error" id="errProductType"></small>
+          </div>
+
+          <div class="form-group">
+            <label for="editProductCategory">Category</label>
+            <input type="text" id="editProductCategory" autocomplete="off" minlength="3" maxlength="40"/>
+            <small class="field-error" id="errProductCategory"></small>
+          </div>
+
+          <!-- Row 3 -->
+          <div class="form-group">
+            <label for="editProductStatus">Status</label>
+            <select id="editProductStatus">
+              <option value="Active">Active</option>
+              <option value="Inactive">Inactive</option>
+            </select>
+            <small class="field-error" id="errProductStatus"></small>
+          </div>
+
+          <div class="form-group">
+            <label for="editProductStock">Stock Level</label>
+            <input type="number" id="editProductStock" min="0" step="1">
+            <small class="field-error" id="errProductStock"></small>
+          </div>
+
+          <!-- Row 4 -->
+          <div class="form-group full-width">
+            <label for="editProductPrice">Price</label>
+            <input type="number" step="0.01" id="editProductPrice" min="0">
+            <small class="field-error" id="errProductPrice"></small>
+          </div>
+
+        </div>
+
+        <div class="modal-actions">
+          <button id="saveProductEditBtn" class="btn-primary" type="button">Save</button>
+          <button id="closeProductEditBtn" class="cancel-btn" type="button">Cancel</button>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ✅ DELETE CONFIRM MODAL -->
+    <div id="deleteProductModal" class="modal" aria-hidden="true" role="dialog" aria-modal="true">
+      <div class="modal-content" role="document">
+        <h2 class="modal-title">Delete Product</h2>
+        <p id="deleteProductText" class="delete-text"></p>
+
+        <div class="modal-actions">
+          <button id="cancelProductDeleteBtn" class="cancel-btn" type="button">Cancel</button>
+          <button id="confirmProductDeleteBtn" class="danger-btn" type="button">Delete</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ✅ FOOTER -->
+    <div class="table-footer">
+      <div class="left-info">
+        <span id="showingCount">Showing 0 Entities</span>
+      </div>
+
+      <div class="right-pager">
+        <button class="pager-btn" id="prevBtn" type="button">‹ Prev</button>
+        <span class="page-text">Page <b id="pageNow">1</b> of <b id="pageTotal">1</b></span>
+        <button class="pager-btn" id="nextBtn" type="button">Next ›</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<input type="file" id="importFile" accept=".csv" hidden>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', filename='products.js') }}"></script>
+{% endblock %}

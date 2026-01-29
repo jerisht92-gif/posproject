@@ -1,0 +1,606 @@
+/* =============================
+   PAGE WRAPPER
+============================= */
+.manage-users-page {
+  padding: 20px;
+  font-family: "Poppins", sans-serif;
+  color: #4a1f1a;
+  background: #f6f1f1;
+}
+
+/* =============================
+   TITLE
+============================= */
+.manage-title {
+  font-size: 28px;
+  font-weight: 600;
+  color: #a12828;
+  margin-bottom: 12px;
+  text-shadow: 1px 1px 2px #d8b7b7; /* 🔥 3D text effect */
+  margin-right: 24px;
+  display: inline-block;
+}
+
+/* =============================
+   HEADER
+============================= */
+.manage-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 18px;
+}
+
+.manage-header-left {
+  flex: 1;
+}
+
+.manage-header-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding-top: 6px;
+}
+
+/* =============================
+   3D SEARCH BOX
+============================= */
+.mini-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #ffffff;
+  border: 1.5px solid #a12828;
+  border-radius: 25px;
+  padding: 6px 12px;
+  margin-top: 4px;
+  box-shadow: 0 4px 10px rgba(161, 40, 40, 0.25);
+  transition: 0.2s ease;
+}
+
+.mini-search:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 14px rgba(161, 40, 40, 0.35);
+}
+
+.mini-search input {
+  border: none;
+  outline: none;
+  font-size: 14px;
+  width: 180px;
+}
+
+.search-icon-btn {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 16px;
+  color: #a12828;
+}
+
+/* =============================
+   3D PRIMARY BUTTON
+============================= */
+.primary-btn {
+  background: linear-gradient(#a12828, #8c1f1f);
+  color: #fff;
+  border: none;
+  padding: 10px 20px;
+  font-size: 14px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: 0.25s;
+  box-shadow: 0 5px 0 #6d1717;
+}
+
+.primary-btn:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 0 #6d1717;
+}
+
+.primary-btn:active {
+  transform: translateY(3px);
+  box-shadow: 0 2px 0 #6d1717;
+}
+
+.primary-btn:disabled {
+  background: #cccccc;
+  color: #666666;
+  cursor: not-allowed;
+  box-shadow: 0 2px 0 #999999;
+  transform: none;
+}
+
+.primary-btn:disabled:hover {
+  transform: none;
+  box-shadow: 0 2px 0 #999999;
+  background: #cccccc;
+  color: #666666;
+}
+
+/* =============================
+   CARD
+============================= */
+.card {
+  background: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.12);
+  overflow: hidden;
+  transition: 0.3s ease;
+}
+
+.card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 14px 26px rgba(0, 0, 0, 0.18);
+}
+
+/* =============================
+   TABLE
+============================= */
+.user-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.user-table thead {
+  background: #fff4f4;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.user-table th {
+  text-align: left;
+  padding: 14px 10px;
+  font-size: 15px;
+  color: #992525;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.user-table td {
+  padding: 12px 10px;
+  border-bottom: 1px solid #f0eaea;
+  font-size: 14px;
+  background: #ffffff;
+  transition: 0.25s;
+}
+
+/* Row hover 3D lift */
+.user-table tbody tr:hover td {
+  background: #e3bdbd;
+  transform: scale(1.01);
+  transition: 0.25s ease;
+}
+
+/* No data row */
+.no-data-row td {
+  text-align: center;
+  color: #888;
+}
+
+/* =============================
+   ACTION COLUMN
+============================= */
+
+/* Right-align header "Action" */
+.user-table th.action-header {
+  text-align: right !important;
+  padding-right: 60px; /* adjust if you want */
+}
+
+/* Cell that contains the buttons (matches <td class="action-cell">) */
+.action-cell {
+  width: 150px;               /* width of Action column */
+  padding-right: 20px;
+}
+
+/* Inner container (matches <div class="action-buttons">) */
+.action-buttons {
+  display: flex;
+  justify-content: flex-end;  /* push buttons to right */
+  align-items: center;
+  gap: 10px;                  /* space between Edit & Delete */
+  white-space: nowrap;        /* keep on one line */
+}
+
+/* Base style for all action buttons (Edit + Delete + disabled) */
+.action-btn {
+  padding: 7px 15px;
+  font-size: 13px;
+  border-radius: 8px;
+  cursor: pointer;
+  border: none;
+  transition: 0.25s ease;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+}
+
+/* Enabled Edit button */
+.edit-btn {
+  background: #d9534f;
+  color: #fff;
+}
+
+.edit-btn:hover {
+  transform: translateY(-3px);
+  background-color: #4a1f1a;
+  color: beige;
+}
+
+/* Enabled Delete button */
+.delete-btn {
+  background: #d9534f;
+  color: #fff;
+}
+
+.delete-btn:hover {
+  transform: translateY(-3px);
+  color: beige;
+  background-color: #4a1f1a;
+  box-shadow: rgba(161, 40, 40, 0.25);
+}
+
+/* Disabled Edit button (non-admin) */
+.edit-btn-disabled {
+  background: #e9c2c2 !important;
+  color: #3c3a3a !important;
+  box-shadow: none !important;
+  cursor: not-allowed !important;
+  opacity: 0.6 !important;
+  border: 1px solid #e0e0e0 !important;
+}
+
+/* Disabled Delete button (non-admin) */
+.delete-btn-disabled {
+  background: #e9c2c2 !important;
+  color: #3c3a3a !important;
+  box-shadow: none !important;
+  cursor: not-allowed !important;
+  opacity: 0.6 !important;
+  border: 1px solid #e0e0e0 !important;
+}
+
+/* =============================
+   MODAL (Edit User)
+============================= */
+.modal {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.45);
+  display: none; /* JS sets to flex */
+  justify-content: center;
+  align-items: center;
+  z-index: 9999;
+}
+
+.modal-content {
+  background: white;
+  padding: 30px;
+  width: 420px;              /* match Delete Product dialog width */
+  border-radius: 14px;       /* match Product modal radius */
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
+}
+
+/* Title – same size/weight as Delete Product */
+.modal-title {
+  margin: 0 0 12px;
+  font-size: 22px;
+  font-weight: 700;
+  color: #7a1d1d;
+}
+
+.modal-content input,
+.modal-content select {
+  width: 100%;
+  padding: 8px;
+  margin-bottom: 6px;
+  border-radius: 8px;
+  border: 1px solid #ccc;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.field-error {
+  color: #c62828;              /* red */
+  font-size: 12px;
+  margin-top: 4px;
+  min-height: 14px;            /* prevents layout jump */
+}
+
+input.input-error {
+  border: 2px solid #c62828 !important;
+}
+
+.input-error{
+  border:2px solid #c62828 !important;
+}
+
+.delete-text{
+  font-size: 14px;
+  margin: 10px 0 18px;
+  color: #4a1f1a;
+  line-height: 1.4;
+}
+
+.danger-btn{
+  background: #b71c1c;
+  color: #fff;
+  border: none;
+  padding: 10px 18px;
+  border-radius: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 8px 18px rgba(183, 28, 28, 0.25);
+}
+.danger-btn:hover{ filter: brightness(0.95); }
+
+.cancel-btn{
+  padding: 10px 18px;
+  border-radius: 10px;
+  border: 1.5px solid #cfcfd4;
+  background: #f6f6f7;
+  color: #1d2430;
+  font-weight: 600;
+  cursor: pointer;
+}
+.cancel-btn:hover{ filter: brightness(0.95); }
+
+
+
+/* =============================
+   FOOTER / PAGINATION
+============================= */
+.table-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #f7f2f2;
+  padding: 14px 20px;
+  font-size: 15px;
+  color: #2b2b2b;
+  border-top: 1px solid #e8dede;
+  box-shadow: 0 -4px 10px rgba(0, 0, 0, 0.08);
+}
+
+/* Pagination buttons */
+.pager-btn {
+  padding: 6px 18px;
+  border-radius: 4px;
+  background: linear-gradient(#a12828, #821f1f);
+  border: none;
+  color: white;
+  font-size: 14px;
+  cursor: pointer;
+  box-shadow: 0 4px 0 #6d1717;
+  transition: 0.25s ease;
+}
+
+.pager-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+}
+
+.pager-btn:disabled {
+  opacity: 0.5;
+}
+
+/* "No users" row hidden by default, JS will show if needed */
+#noUserRow {
+  display: none;
+}
+
+#noUserRow td {
+  text-align: center;
+}
+
+
+
+/* =============================
+   RESPONSIVE BREAKPOINTS
+============================= */
+
+/* Large desktops */
+@media (min-width: 1440px) {
+  .manage-users-page {
+    max-width: 1300px;
+    margin: 0 auto;
+  }
+}
+
+/* Laptops / mid screens (1025px – 1439px) */
+@media (min-width: 1025px) and (max-width: 1439px) {
+  .manage-users-page {
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+
+  .manage-title {
+    font-size: 28px;
+  }
+}
+
+/* Tablets / small laptops (768px – 1024px) */
+@media (min-width: 768px) and (max-width: 1024px) {
+  .manage-header-row {
+    flex-direction: row;
+  }
+
+  .manage-title {
+    font-size: 26px;
+  }
+
+  .user-table th,
+  .user-table td {
+    font-size: 13px;
+    padding: 10px 6px;
+  }
+}
+
+/* Normal phones (481px – 767px) */
+@media (min-width: 481px) and (max-width: 767px) {
+  .manage-users-page {
+    padding: 12px;
+  }
+
+  .manage-header-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .mini-search {
+    width: 100%;
+  }
+
+  .mini-search input {
+    width: 100%;
+    font-size: 13px;
+  }
+
+  .primary-btn {
+    padding: 8px 14px;
+    font-size: 13px;
+  }
+
+  .user-table th,
+  .user-table td {
+    font-size: 12px;
+    padding: 8px 6px;
+  }
+}
+
+/* Small phones (≤ 480px) */
+@media (max-width: 480px) {
+  html,
+  body {
+    overflow-x: hidden;
+  }
+
+  .manage-users-page {
+    width: 100%;
+    max-width: 100%;
+    padding: 10px;
+    box-sizing: border-box;
+  }
+
+  .manage-header-row {
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .manage-title {
+    font-size: 22px;
+    margin-bottom: 8px;
+  }
+
+  .manage-header-right {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+  }
+
+  .mini-search {
+    width: 100%;
+    margin: 0;
+    padding: 6px 10px;
+  }
+
+  .mini-search input {
+    width: 100%;
+    font-size: 13px;
+  }
+
+  .primary-btn {
+    width: 100%;
+    text-align: center;
+    padding: 8px 0;
+    font-size: 13px;
+  }
+
+  .card {
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+
+  .user-table {
+    width: 100%;
+    max-width: 100%;
+    table-layout: fixed;
+  }
+
+  .user-table th,
+  .user-table td {
+    font-size: 12px;
+    padding: 6px 4px;
+    word-wrap: break-word;
+  }
+
+  .action-btn,
+  .delete-btn {
+    padding: 6px 10px;
+    font-size: 11px;
+    width: 70px;
+  }
+
+  .table-footer {
+    flex-direction: column;
+    gap: 10px;
+    text-align: center;
+  }
+
+  .pager-btn {
+    width: 90px;
+    padding: 8px 0;
+    font-size: 12px;
+  }
+}
+
+/* -----------------------------------------
+   SUCCESS NOTIFICATION
+------------------------------------------ */
+.success-notification {
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-100px);
+  /* light red background matching template theme */
+  background: linear-gradient(135deg, #fff4f4, #ffe8e8);
+  color: #a12828; /* dark red text matching template */
+  padding: 14px 28px;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(161, 40, 40, 0.25);
+  font-size: 15px;
+  font-weight: 600;
+  z-index: 10000;
+  opacity: 0;
+  border: 1.5px solid #a12828;
+  transition: all 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+  pointer-events: none;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.success-notification.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+  pointer-events: auto;
+}
+
+.success-notification::before {
+  content: "✓";
+  font-size: 18px;
+  font-weight: bold;
+}

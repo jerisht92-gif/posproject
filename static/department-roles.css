@@ -1,0 +1,651 @@
+/* =========================================
+   DEPARTMENT & ROLES PAGE
+========================================= */
+
+/* PAGE WRAPPER */
+.manage-page.department-page {
+  max-width: 1100px;
+  margin: 0px auto 40px;
+  padding: 20px;
+  box-sizing: border-box;
+  font-family: "Poppins", sans-serif;
+  background: #f6f1f1;
+  color: #4a1f1a;
+}
+
+.debug-role {
+  color: red;
+  font-weight: bold;
+}
+
+/* -----------------------------------------
+   HEADER BAR
+------------------------------------------ */
+.department-page .manage-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 18px;
+}
+
+.department-page .manage-header-left {
+  flex: 1;
+}
+
+.department-page .manage-title {
+  font-size: 28px;
+  font-weight: 600;
+  color: #a12828;
+  margin-bottom: 12px;
+  text-shadow: 1px 1px 2px #d8b7b7;
+}
+
+.department-page .manage-subtitle {
+  font-size: 10px;
+  color: #888;
+}
+
+.department-page .manage-header-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+/* -----------------------------------------
+   SEARCH BOX (mini-search)
+------------------------------------------ */
+.department-page .mini-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #ffffff;
+  border: 1.5px solid #a12828;
+  border-radius: 25px;
+  padding: 6px 12px;
+  margin-top: 4px;
+  box-shadow: 0 4px 10px rgba(161, 40, 40, 0.25);
+  transition: 0.2s ease;
+  width: 230px;
+}
+
+.department-page .mini-search:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 14px rgba(161, 40, 40, 0.35);
+}
+
+.department-page .mini-search .search-icon {
+  font-size: 18px;
+  color: #7a001f;
+  display: flex;
+  align-items: center;
+}
+
+.department-page .search-icon-btn {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 16px;
+  color: #a12828;
+}
+
+.department-page .mini-search input {
+  border: none;
+  outline: none;
+  font-size: 14px;
+  width: 180px;
+  background: transparent;
+}
+
+/* -----------------------------------------
+   CREATE BUTTON (3D)
+------------------------------------------ */
+.department-page .primary-btn {
+  background: linear-gradient(#a12828, #8c1f1f);
+  color: #fff;
+  border: none;
+  padding: 10px 20px;
+  font-size: 14px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: 0.25s;
+  box-shadow: 0 5px 0 #6d1717;
+}
+
+.department-page .primary-btn:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 0 #6d1717;
+}
+
+.department-page .primary-btn:active {
+  transform: translateY(3px);
+  box-shadow: 0 2px 0 #6d1717;
+}
+
+.department-page .primary-btn:disabled {
+  background: #cccccc;
+  color: #666666;
+  cursor: not-allowed;
+  box-shadow: 0 2px 0 #999999;
+  transform: none;
+}
+
+.department-page .primary-btn:disabled:hover {
+  transform: none;
+  box-shadow: 0 2px 0 #999999;
+  background: #cccccc;
+  color: #666666;
+}
+
+/* -----------------------------------------
+   MAIN CARD BLOCK
+------------------------------------------ */
+.department-page .card {
+  background: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 10px 20px rgba(0,0,0,0.12);
+  overflow: hidden;
+}
+
+/* -----------------------------------------
+   TABLE
+------------------------------------------ */
+.department-page .dept-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed; /* ✅ KEY */
+}
+
+.department-page .dept-table thead {
+  background: #fff4f4;
+}
+
+/* base */
+.department-page .dept-table th,
+.department-page .dept-table td {
+  padding: 14px 14px;
+  text-align: left;
+  vertical-align: middle;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* headers */
+.department-page .dept-table th {
+  font-size: 15px;
+  font-weight: 600;
+  color: #992525;
+  text-transform: capitalize;
+  background: #fff4f4;
+  white-space: nowrap;
+}
+
+/* body */
+.department-page .dept-table td {
+  font-size: 14px;
+  border-bottom: 1px solid #f0eaea;
+  background: #ffffff;
+  white-space: nowrap;
+}
+
+/* 🔴 underline */
+.department-page .dept-table thead tr {
+  border-bottom: 2px solid #992525 !important;
+}
+
+/* ✅ COLUMN WIDTHS (better balance) */
+.department-page .dept-table th:nth-child(1),
+.department-page .dept-table td:nth-child(1) { width: 100px; }   /* Code */
+
+.department-page .dept-table th:nth-child(2),
+.department-page .dept-table td:nth-child(2) { width: 200px; }   /* Department Name */
+
+.department-page .dept-table th:nth-child(3),
+.department-page .dept-table td:nth-child(3) { width: 180px; }   /* Description */
+
+.department-page .dept-table th:nth-child(4),
+.department-page .dept-table td:nth-child(4) { width: 100px; }   /* Action */
+
+/* ✅ Description should be left + wrap */
+.department-page .dept-table th:nth-child(3),
+.department-page .dept-table td:nth-child(3) {
+  text-align: left;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: unset;
+  padding-left: 1px;
+  /* padding-right: 14px; */
+  
+}
+
+/* ✅ Action column stays right */
+.department-page .dept-table th:nth-child(4),
+.department-page .dept-table td:nth-child(4) {
+  text-align: right;
+  padding-right: 8px;
+}
+
+/* hover */
+.department-page .dept-table tbody tr:hover td {
+  background: #e3bdbd;
+  transform: scale(1.01);
+  transition: 0.25s ease;
+}
+
+/* -----------------------------------------
+   NO DATA FOUND
+------------------------------------------ */
+.department-page .no-data-row td.no-data-cell {
+  background: #000000 !important;
+  color: #ffffff !important;
+  text-align: center;
+  font-weight: 600;
+  font-size: 12px;
+  border-top: 40px solid #ffffff !important;
+  padding: 10px !important;
+  border-bottom: none !important;
+}
+
+/* -----------------------------------------
+   ACTION BUTTONS
+------------------------------------------ */
+.department-page .dept-table th.action-header {
+  text-align: right;       /* ✅ matches Action column */
+  padding-right: 40px;
+}
+
+.department-page .action-cell {
+  padding-right: 14px;
+}
+
+.department-page .action-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.department-page .action-btn {
+  padding: 7px 10px;
+  border: none;
+  border-radius: 6px;
+  background: #d9534f;
+  color: white;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+/* Disabled Edit button (non-admin) */
+.department-page .edit-btn-disabled {
+  background: #e9c2c2 !important;
+  color: #3c3a3a !important;
+  box-shadow: none !important;
+  cursor: not-allowed !important;
+  opacity: 0.6 !important;
+  border: 1px solid #e0e0e0 !important;
+}
+
+/* Disabled Delete button (non-super-admin) */
+.department-page .delete-btn-disabled {
+  background: #e9c2c2 !important;
+  color: #3c3a3a !important;
+  box-shadow: none !important;
+  cursor: not-allowed !important;
+  opacity: 0.6 !important;
+  border: 1px solid #e0e0e0 !important;
+}
+
+/* -----------------------------------------
+   DELETE MODAL (same overlay style as edit)
+------------------------------------------ */
+.department-page #deleteDeptModal.modal {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  z-index: 9999;
+  justify-content: center;
+  align-items: center;
+  padding: 18px;
+}
+
+.department-page #deleteDeptModal .modal-content {
+  width: 420px;              /* match Delete Product */
+  background: white;
+  border-radius: 14px;
+  padding: 18px 22px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+}
+
+.department-page #deleteDeptModal .modal-title {
+  margin: 0 0 10px;
+  font-size: 22px;
+  font-weight: 700;
+  color: #7a1d1d;
+}
+
+.department-page #deleteDeptModal .delete-text{
+  font-size: 14px;
+  margin: 10px 0 18px;
+  color: #4a1f1a;
+  line-height: 1.4;
+}
+
+.department-page #deleteDeptModal .modal-actions{
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.field-error{
+  color:#c62828;
+  font-size:12px;
+  margin-top:4px;
+  min-height:14px;
+}
+.input-error{
+  border:2px solid #c62828 !important;
+}
+
+.delete-text{
+  font-size:14px;
+  margin:10px 0 18px;
+  color:#4a1f1a;
+  line-height:1.4;
+}
+
+.danger-btn{
+  background:#b71c1c;
+  color:#fff;
+  border:none;
+  padding:10px 18px;
+  border-radius:10px;
+  font-weight:600;
+  cursor:pointer;
+  box-shadow:0 8px 18px rgba(183,28,28,0.25);
+}
+.danger-btn:hover{ filter:brightness(0.95); }
+
+.cancel-btn{
+  padding:10px 18px;
+  border-radius:10px;
+  border:1.5px solid #cfcfd4;
+  background:#f6f6f7;
+  color:#1d2430;
+  font-weight:600;
+  cursor:pointer;
+}
+.cancel-btn:hover{ filter:brightness(0.95); }
+
+
+/* -----------------------------------------
+   FOOTER / PAGINATION
+------------------------------------------ */
+.department-page .table-footer {
+  width: 95%;
+  background: #f3f3f3;
+  border-top: 1px solid #e0e0e0;
+  padding: 8px 18px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-radius: 0 0 12px 12px;
+}
+
+.department-page .entries-info {
+  font-size: 14px;
+  color: #555;
+}
+
+.department-page .pagination-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.department-page .pager-btn {
+  padding: 6px 18px;
+  border-radius: 4px;
+  background: linear-gradient(#a12828, #821f1f);
+  border: none;
+  color: white;
+  font-size: 14px;
+  cursor: pointer;
+  box-shadow: 0 4px 0 #6d1717;
+  transition: 0.25s ease;
+}
+
+.department-page .pager-btn:hover:not(:disabled) {
+    transform: translateY(-2px);
+}
+
+.department-page .pager-btn:disabled {
+  opacity: 0.5;
+}
+
+/* -----------------------------------------
+   EDIT MODAL
+------------------------------------------ */
+.department-page #editDeptModal.modal {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  z-index: 9999;
+  justify-content: center;
+  align-items: center;
+  padding: 18px;
+}
+
+.department-page #editDeptModal .modal-content {
+  width: min(420px, 92vw);
+  background: #fff;
+  border-radius: 14px;
+  padding: 18px 18px;
+  box-shadow: 0 18px 50px rgba(0,0,0,0.25);
+}
+
+.department-page #editDeptModal .modal-content h2 {
+  margin: 0 0 12px;
+  font-size: 20px;
+  font-weight: 700;
+  color: #1d2430;
+}
+
+.department-page #editDeptModal label {
+  display: block;
+  margin: 10px 0 6px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #1d2430;
+}
+
+.department-page #editDeptModal input {
+  width: 90%;
+  height: 20px;
+  border: 1.5px solid #cfcfd4;
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 14px;
+  outline: none;
+}
+
+.department-page #editDeptModal input:focus {
+  border-color: #a12828;
+  box-shadow: 0 0 0 3px rgba(161,40,40,0.12);
+}
+
+.department-page #editDeptModal .modal-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 14px;
+}
+
+.department-page #saveDeptEditBtn.primary-btn {
+  padding: 8px 16px;
+  font-size: 14px;
+  border-radius: 10px;
+  min-width: 120px;
+}
+
+.department-page #closeDeptEditBtn.cancel-btn {
+  padding: 8px 16px;
+  font-size: 14px;
+  border-radius: 10px;
+  border: 1.5px solid #cfcfd4;
+  background: #f6f6f7;
+  color: #1d2430;
+  cursor: pointer;
+  min-width: 110px;
+}
+
+/* Make table horizontally scrollable */
+.department-page .table-wrapper {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch; /* smooth scrolling on mobile */
+}
+
+
+
+/* ============================= 8) RESPONSIVE ============================= */
+@media (max-width: 1024px) {
+.department-page .dept-table {
+    table-layout: auto; /* allow columns to adjust */
+    min-width: 600px;   /* force horizontal scroll if needed */
+  }
+}
+
+@media (max-width: 768px) {
+  .department-page .dept-table {
+    min-width: 500px;  /* allow scroll on tablets */
+    /* margin-left: 20px; */
+  }
+
+  .department-page .manage-header-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .department-page .manage-title {
+    font-size: 25px;
+  }
+
+  .department-page .mini-search,
+  .department-page .primary-btn {
+    width: 100%;
+  }
+
+  .department-page .mini-search input {
+    width: 100%;
+  }
+
+  .department-page .pager-btn {
+    display: flex;
+    padding: 6px 14px;        /* smaller buttons */
+    font-size: 12px;
+  }
+
+  .department-page .page-info {
+    font-size: 12px;
+  }
+  .department-page .pagination-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: nowrap;          /* ✅ force single line */
+  gap: 8px;
+  white-space: nowrap;        /* ✅ prevent text wrap */
+}
+
+}
+
+@media (max-width: 480px) {
+  .department-page .dept-table {
+    min-width: 400px; /* scroll on very small screens */
+  }
+
+  .department-page .dept-table th,
+  .department-page .dept-table td {
+    font-size: 12px;
+    padding: 6px 8px;
+  }
+
+  
+}
+
+/* -----------------------------------------
+   SUCCESS NOTIFICATION
+------------------------------------------ */
+.success-notification {
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-100px);
+  /* light red background matching template theme */
+  background: linear-gradient(135deg, #fff4f4, #ffe8e8);
+  color: #a12828; /* dark red text matching template */
+  padding: 14px 28px;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(161, 40, 40, 0.25);
+  font-size: 15px;
+  font-weight: 600;
+  z-index: 10000;
+  opacity: 0;
+  border: 1.5px solid #a12828;
+  transition: all 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+  pointer-events: none;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.success-notification.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+  pointer-events: auto;
+}
+
+.success-notification::before {
+  content: "✓";
+  font-size: 18px;
+  font-weight: bold;
+}
+
+/* -----------------------------------------
+   ERROR NOTIFICATION
+------------------------------------------ */
+.error-notification {
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-100px);
+  /* light red background matching template theme */
+  background: linear-gradient(135deg, #fff4f4, #ffe8e8);
+  color: #a12828; /* dark red text matching template */
+  padding: 14px 28px;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(161, 40, 40, 0.25);
+  font-size: 15px;
+  font-weight: 600;
+  z-index: 10000;
+  opacity: 0;
+  border: 1.5px solid #a12828;
+  transition: all 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+  pointer-events: none;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.error-notification.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+  pointer-events: auto;
+}
+
+.error-notification::before {
+  content: "✕";
+  font-size: 18px;
+  font-weight: bold;
+}

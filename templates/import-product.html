@@ -1,0 +1,144 @@
+{% extends "menu.html" %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='import-product.css') }}">
+{% endblock %}
+
+{% block content %}
+
+<div class="import-page">
+
+  <!-- ================= HEADER ================= -->
+  <div class="import-header">
+    <h1 class="import-title">Import Products from CSV/Excel</h1>
+
+    <button class="close-btn" type="button">
+      <span class="close-icon">✖</span>
+      <span>Close</span>
+    </button>
+  </div>
+
+  <!-- ================= 1. DOWNLOAD TEMPLATE ================= -->
+  <section class="step-section">
+    <h2 class="step-title">1. Download Template :</h2>
+
+    <button class="download-btn" type="button" onclick="downloadTemplate()">
+      <span class="download-icon">⬇</span>
+      <span>Download Sample Template (CSV/XLSX)</span>
+    </button>
+
+    <ul class="download-notes">
+      <li>
+        <span class="note-icon check">✅</span>
+        <span>Ensure all mandatory fields are filled.</span>
+      </li>
+      <li>
+        <span class="note-icon info">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M8 2V10M8 10L5 7M8 10L11 7" stroke="#1d4ed8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M2 12H14" stroke="#1d4ed8" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+        </span>
+        <span>
+          After importing, review and update product data for completeness and accuracy.
+        </span>
+      </li>
+    </ul>
+  </section>
+
+  <!-- ================= 2. UPLOAD FILE ================= -->
+
+  <section class="step-section">
+    <div class="step-header-row">
+      <h2 class="step-title">2. Upload File :</h2>
+      <button class="reset-btn" type="button" id="resetBtn">Reset</button>
+    </div>
+
+    <div class="upload-box" id="uploadBox">
+      <input type="file" id="fileInput" name="file" accept=".csv,.xlsx" hidden>
+
+      <div class="upload-icon-wrap">
+        <span class="upload-icon">📁</span>
+      </div>
+
+      <p class="upload-title">Choose or Drag and drop your file here</p>
+      <p class="upload-subtitle">Supported formats</p>
+      <p class="upload-formats">.csv , .xlsx</p>
+    </div>
+
+    <!-- ADD UPLOAD BUTTON -->
+   
+  </section>
+
+<div id="result"></div>
+
+
+  <!-- ================= VALIDATION ================= -->
+  <section class="validation-section">
+    <div class="validation-header">
+      <span class="validation-main-icon">✅</span>
+      <h2 class="validation-title">Validation</h2>
+    </div>
+
+    <table class="validation-table">
+      <thead>
+        <tr>
+          <th>Valid Rows</th>
+          <th>Invalid Rows</th>
+          <th>Skipped</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td id="validCount">0</td>
+          <td id="invalidCount">0</td>
+          <td id="skippedCount">0</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="validation-messages">
+      <p class="warning" id="noFileMsg">
+        <span class="msg-icon warn">⚠</span>
+        <span>No file uploaded yet</span>
+      </p>
+
+      <p class="error-title">
+        <span class="msg-icon error">❌</span>
+        <span>Errors Detected:</span>
+      </p>
+
+      <ul id="errorList" class="error-list"></ul>
+
+      <p class="skipped-title">
+        <span class="msg-icon skipped">🚫</span>
+        <span>Skipped Rows detected</span>
+      </p>
+
+      <ul id="skippedList" class="error-list"></ul>
+    </div>
+
+    <label class="import-only">
+      <input type="checkbox" id="importValidOnly">
+      <span>Import validated rows only</span>
+      <span id="importValidHint" class="inline-hint" style="display:none; margin-left: 8px; color: #b02020; font-size: 13px;">
+        Tick the checkbox if you want to proceed.
+      </span>
+    </label>
+  </section>
+
+  <!-- ================= FOOTER ================= -->
+  <div class="import-footer">
+    <button class="btn-outline cancel-btn" type="button">Cancel</button>
+    <button class="btn-primary submit-btn" type="button" id="submitImport">
+      Submit
+    </button>
+  </div>
+
+</div>
+
+<div id="toastBox"></div>
+
+<script src="{{ url_for('static', filename='import-product.js') }}"></script>
+
+{% endblock %}
