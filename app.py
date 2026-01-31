@@ -120,6 +120,16 @@ NAME_REGEX = re.compile(r"^[A-Za-z\s]{3,20}$")
 
 
 # =========================================
+# ✅ CONTENT NEGOTIATION (HTML vs JSON for Postman)
+# =========================================
+def wants_json():
+    """Check if client wants JSON response (API/Postman).
+    Returns True for: Accept: application/json, ?format=json, or request.is_json"""
+    accept = request.headers.get("Accept", "")
+    return "application/json" in accept or request.args.get("format") == "json" or request.is_json
+
+
+# =========================================
 # ✅ GLOBAL BEFORE_REQUEST
 #   - AUTO SESSION TIMEOUT CHECK
 # =========================================
@@ -621,7 +631,21 @@ def set_security_headers(resp):
 
 
 # =========================================
-# ✅ ROUTES: BASIC
+# MODULE INDEX (matches sidebar: Dashboard → Masters → CRM)
+# =========================================
+# 1. ROOT & AUTH         — /, /login, /signup, /logout, forgot-password, reset-password, OTP
+# 2. DASHBOARD           — /dashboard
+# 3. MASTERS — Manage Users   — /manage-users, /create-user, /update-user, /delete-user, /api/users
+# 4. MASTERS — Department & Roles — /department-roles, /api/departments, /api/roles
+# 5. MASTERS — Products  — /products, /products/create, /import, /api/products
+# 6. MASTERS — Customer  — /customer, /import-customer, /addnew-customer, /api/customer, /api/customers
+# 7. CRM — Enquiry List  — /enquiry-list
+# 8. CRM — New Enquiry   — /new-enquiry, /save-enquiry, /add-product, enquiry APIs
+# 9. UTILITY             — /profile, /search, /logout
+# =========================================
+
+# =========================================
+# 1. ROOT & AUTH
 # =========================================
 @app.route("/")
 def root():
@@ -629,7 +653,7 @@ def root():
 
 
 # =========================================
-# ✅ ROUTES: DASHBOARD + MAIN PAGES
+# 2. DASHBOARD
 # =========================================
 @app.route("/dashboard")
 def dashboard():
@@ -655,7 +679,7 @@ def dashboard():
 
 
 # =========================================
-# ✅ ROUTES: AUTH PAGES (GET)
+# 1. ROOT & AUTH — Auth pages (GET)
 # =========================================
 @app.route("/signup")
 def home():
@@ -680,19 +704,17 @@ def check_your_mail_page():
 
 
 # =========================================
-# ✅ ROUTES: MANAGE USERS (UI)
+# 3. MASTERS — Manage Users
 # =========================================
 @app.route("/manage-users")
 def manage_users():
     user_email = session.get("user")
     if not user_email:
-        # Check if JSON request
-        if request.is_json or request.content_type == "application/json" or request.args.get("format") == "json":
+        if wants_json():
             return jsonify({"success": False, "message": "Session expired"}), 401
         return redirect(url_for("login", message="session_expired"))
 
     users = load_users()
-
     user_name = "User"
     user_role = "User"
 
@@ -710,28 +732,14 @@ def manage_users():
 
     print("DEBUG manage_users: email =", user_email, "role =", user_role)
 
-    # Check if JSON response is requested
-    is_json_request = (
-        request.is_json or 
-        request.content_type == "application/json" or 
-        request.args.get("format") == "json" or
-        request.headers.get("Accept") == "application/json"
-    )
-
-    if is_json_request:
-        # Return JSON response for API/Postman
+    if wants_json():
         return jsonify({
             "success": True,
             "users": users,
             "total": len(users),
-            "current_user": {
-                "email": user_email,
-                "name": user_name,
-                "role": user_role
-            }
+            "current_user": {"email": user_email, "name": user_name, "role": user_role}
         }), 200
 
-    # Return HTML response for browser
     return render_template(
         "manage-users.html",
         users=users,
@@ -745,26 +753,18 @@ def manage_users():
 
 
 # =========================================
-# ✅ ROUTES: DEPARTMENT & ROLES (UI)
+# 4. MASTERS — Department & Roles
 # =========================================
 @app.route("/department-roles")
 def department_roles():
     user_email = session.get("user")
     if not user_email:
-        # Check if JSON request
-        is_json_request = (
-            request.is_json or 
-            request.content_type == "application/json" or 
-            request.args.get("format") == "json" or
-            request.headers.get("Accept") == "application/json"
-        )
-        if is_json_request:
+        if wants_json():
             return jsonify({"success": False, "message": "Session expired. Please login first."}), 401
         return redirect(url_for("login", message="session_expired"))
 
     users = load_users()
     departments = load_departments()
-
     user_name = "User"
     user_role = "User"
     for u in users:
@@ -773,28 +773,14 @@ def department_roles():
             user_role = u.get("role") or "User"
             break
 
-    # Check if JSON response is requested
-    is_json_request = (
-        request.is_json or 
-        request.content_type == "application/json" or 
-        request.args.get("format") == "json" or
-        request.headers.get("Accept") == "application/json"
-    )
-
-    if is_json_request:
-        # Return JSON response for API/Postman
+    if wants_json():
         return jsonify({
             "success": True,
             "departments": departments,
             "total": len(departments),
-            "current_user": {
-                "email": user_email,
-                "name": user_name,
-                "role": user_role
-            }
+            "current_user": {"email": user_email, "name": user_name, "role": user_role}
         }), 200
 
-    # Return HTML response for browser
     return render_template(
         "department-roles.html",
         title="Department & Roles - Stackly",
@@ -956,7 +942,7 @@ def create_department():
 
 
 # =========================================
-# ✅ ROUTES: DEPARTMENTS (APIs)
+# 4. MASTERS — Department & Roles — Edit/Delete (UI)
 # =========================================
 @app.route("/department-roles/edit", methods=["POST"])
 def edit_department():
@@ -1047,7 +1033,8 @@ def delete_department():
 
 
 # =========================================
-# ✅ API ENDPOINTS: DEPARTMENTS (JSON)
+# =========================================
+# 4. MASTERS — Department & Roles — APIs
 # =========================================
 @app.route("/api/departments", methods=["GET"])
 def api_departments():
@@ -1289,7 +1276,7 @@ def api_delete_department(dept_id):
 
 
 # =========================================
-# ✅ ROUTES: ROLE PAGE (UI)
+# 4. MASTERS — Department & Roles — Role UI
 # =========================================
 @app.route("/department-role/create/new")
 def department_new():
@@ -1318,7 +1305,7 @@ def department_new():
 
 
 # =========================================
-# ✅ ROUTES: ROLES (APIs)
+# 4. MASTERS — Department & Roles — Save/Edit Role (UI)
 # =========================================
 @app.route("/save_role", methods=["POST"])
 def save_role():
@@ -1498,7 +1485,7 @@ def delete_role():
 
 
 # =========================================
-# ✅ API ENDPOINTS: ROLES (JSON)
+# 4. MASTERS — Department & Roles — APIs (continued)
 # =========================================
 @app.route("/api/roles", methods=["GET"])
 def api_roles():
@@ -1760,7 +1747,7 @@ def api_delete_role(role_index):
 
 
 # =========================================
-# ✅ ROUTES: PROFILE
+# 9. UTILITY — Profile
 # =========================================
 @app.route("/profile")
 def profile():
@@ -1789,7 +1776,7 @@ def profile():
 
 
 # =========================================
-# ✅ ROUTES: CHECK EMAIL EXISTS (AJAX)
+# 1. ROOT & AUTH — Check Email (AJAX)
 # =========================================
 @app.route("/check-email", methods=["POST"])
 def check_email():
@@ -1817,7 +1804,7 @@ def check_email():
 
 
 # =========================================
-# ✅ ROUTES: FORGOT PASSWORD – SEND LINK (AJAX)
+# 1. ROOT & AUTH — Forgot Password (AJAX)
 # =========================================
 @app.route("/send-reset-link", methods=["POST"])
 def send_reset_link():
@@ -1890,7 +1877,7 @@ def send_reset_link():
 
 
 # =========================================
-# ✅ ROUTES: RESET PASSWORD PAGES
+# 1. ROOT & AUTH — Reset Password
 # =========================================
 @app.route("/reset-password")
 def reset_password_page():
@@ -1941,7 +1928,7 @@ def reset_password_submit():
 
 
 # =========================================
-# ✅ ROUTES: CREATE USER (GET/POST)
+# 3. MASTERS — Manage Users — Create User
 # =========================================
 @app.route("/create-user", methods=["GET", "POST"])
 def create_user():
@@ -2191,7 +2178,7 @@ def create_user():
 def normalize_role(role: str) -> str:
     return (role or "").strip().lower().replace(" ", "").replace("_", "")
 # =========================================
-# ✅ ROUTES: UPDATE USER (API)
+# 3. MASTERS — Manage Users — Update User
 # =========================================
 @app.route("/update-user", methods=["POST"])
 def update_user():
@@ -2245,27 +2232,39 @@ def update_user():
     return jsonify({"success": True})
 
 
+# =========================================
+# 5. MASTERS — Products
+# =========================================
 @app.route("/products")
 def products():
     user_email = session.get("user")
     if not user_email:
+        if wants_json():
+            return jsonify({"success": False, "message": "Session expired. Please login first."}), 401
         return redirect(url_for("login"))
     
     users = load_users()
     user_name = "User"
     user_role = "User"
-    
     current_email = (user_email or "").strip().lower()
     
     for u in users:
         if not isinstance(u, dict):
             continue
-        
         u_email = (u.get("email") or "").strip().lower()
         if u_email == current_email:
             user_name = u.get("name") or "User"
             user_role = (u.get("role") or "User").strip()
             break
+    
+    if wants_json():
+        products_list = load_products()
+        return jsonify({
+            "success": True,
+            "products": products_list,
+            "total": len(products_list),
+            "current_user": {"email": user_email, "name": user_name, "role": user_role}
+        }), 200
     
     return render_template(
         "products.html",
@@ -3001,7 +3000,7 @@ def api_patch_product(product_id):
 
 
 # =========================================
-# ✅ ROUTES: OTHER PAGES
+# 5. MASTERS — Products (continued)
 # =========================================
 @app.route("/products/create")
 def create_new_product_page():
@@ -3808,10 +3807,15 @@ def save_product():
         return jsonify(success=False, message="Internal server error"), 500
 
 
+# =========================================
+# 6. MASTERS — Customer
+# =========================================
 @app.route("/customer")
 def customer():
     user_email = session.get("user")
     if not user_email:
+        if wants_json():
+            return jsonify({"success": False, "message": "Session expired. Please login first."}), 401
         return redirect(url_for("login", message="session_expired"))
     
     users = load_users()
@@ -3822,6 +3826,15 @@ def customer():
             user_name = u.get("name") or "User"
             user_role = u.get("role") or "User"
             break
+    
+    if wants_json():
+        customers_list = load_customer()
+        return jsonify({
+            "success": True,
+            "customers": customers_list,
+            "total": len(customers_list),
+            "current_user": {"email": user_email, "name": user_name, "role": user_role}
+        }), 200
     
     return render_template(
         "customer.html",
@@ -4394,6 +4407,68 @@ def api_get_customer(customer_id):
         }), 500
 
 
+# =========================================
+# ✅ API: UPDATE CUSTOMER (PUT /api/customer/<id>) — JSON for Postman
+# =========================================
+@app.route("/api/customer/<customer_id>", methods=["PUT"])
+def api_update_customer(customer_id):
+    """Update customer by ID. Requires JSON body."""
+    user_email = session.get("user")
+    if not user_email:
+        return jsonify({"success": False, "message": "Session expired. Please login first."}), 401
+
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"success": False, "message": "JSON body required"}), 400
+
+    customers = load_customer()
+    email = (data.get("email") or data.get("Email") or "").strip().lower()
+
+    for cust in customers:
+        if str(cust.get("customer_id")) != str(customer_id) and (cust.get("email") or "").strip().lower() == email and email:
+            return jsonify({"success": False, "message": "Duplicate email already exists."}), 409
+
+    found = False
+    for cust in customers:
+        if str(cust.get("customer_id")) == str(customer_id):
+            cust["name"] = (data.get("name") or data.get("Name") or cust.get("name", "")).strip()
+            cust["company"] = (data.get("company") or data.get("Company") or cust.get("company", "")).strip()
+            cust["customer_type"] = (data.get("customer_type") or data.get("Customer Type") or cust.get("customer_type", "")).strip()
+            cust["company_type"] = cust["customer_type"]
+            cust["email"] = (data.get("email") or data.get("Email") or cust.get("email", "")).strip()
+            cust["credit_limit"] = str(data.get("credit_limit") or data.get("Credit Limit") or cust.get("credit_limit", "")).strip()
+            cust["status"] = (data.get("status") or data.get("Status") or cust.get("status", "")).strip()
+            cust["city"] = (data.get("city") or data.get("City") or cust.get("city", "")).strip()
+            found = True
+            break
+
+    if not found:
+        return jsonify({"success": False, "message": "Customer not found"}), 404
+
+    save_customer(customers)
+    return jsonify({"success": True, "message": "Customer updated", "customer": next(c for c in customers if str(c.get("customer_id")) == str(customer_id))}), 200
+
+
+# =========================================
+# ✅ API: DELETE CUSTOMER (DELETE /api/customer/<id>) — JSON for Postman
+# =========================================
+@app.route("/api/customer/<customer_id>", methods=["DELETE"])
+def api_delete_customer(customer_id):
+    """Delete customer by ID."""
+    user_email = session.get("user")
+    if not user_email:
+        return jsonify({"success": False, "message": "Session expired. Please login first."}), 401
+
+    customers = load_customer()
+    new_list = [c for c in customers if str(c.get("customer_id")) != str(customer_id)]
+
+    if len(new_list) == len(customers):
+        return jsonify({"success": False, "message": "Customer not found"}), 404
+
+    save_customer(new_list)
+    return jsonify({"success": True, "message": "Customer deleted successfully"}), 200
+
+
 @app.route("/update-customer/<customer_id>", methods=["POST"])
 def update_customer(customer_id):
     # load all customer
@@ -4462,7 +4537,7 @@ def delete_customer(cust_id):
 
 
 # =========================================
-# ✅ ROUTES: Customer PAGES (Add New Customer)
+# 6. MASTERS — Customer — Add New Customer
 # =========================================
 @app.route("/addnew-customer")
 def addnew_customer():
@@ -5057,7 +5132,7 @@ def crm():
 
 
 # =========================================
-# ✅ ROUTES: OTP (APIs)
+# 1. ROOT & AUTH — OTP APIs
 # =========================================
 @app.route("/send_otp", methods=["POST"])
 def send_otp():
@@ -5099,7 +5174,7 @@ def verify_otp():
 
 
 # =========================================
-# ✅ ROUTES: SIGNUP (POST API)
+# 1. ROOT & AUTH — Signup API
 # =========================================
 @app.route("/signup", methods=["POST"])
 def signup():
@@ -5168,7 +5243,7 @@ def signup():
 
 
 # =========================================
-# ✅ ROUTES: LOGIN (POST API)
+# 1. ROOT & AUTH — Login API
 # =========================================
 @app.route("/login", methods=["POST"])
 def login_post():
@@ -5335,15 +5410,6 @@ def login_post():
             ),
             500,
         )
-
-
-# =========================================
-# ✅ HELPER: Determine Response Format (HTML or JSON)
-# =========================================
-def wants_json():
-    """Check if client wants JSON response (for API/Postman)"""
-    accept = request.headers.get('Accept', '')
-    return 'application/json' in accept or request.is_json or request.args.get('format') == 'json'
 
 
 # =========================
@@ -5558,7 +5624,7 @@ def check_session_timeout():
 
 
 # =========================================
-# ✅ ROUTES: LOGOUT
+# 9. UTILITY — Logout
 # =========================================
 @app.route("/logout")
 def logout():
@@ -5569,7 +5635,7 @@ def logout():
 
 
 # =========================================
-# ✅ ROUTES: GLOBAL SEARCH (API)
+# 9. UTILITY — Global Search
 # =========================================
 @app.route("/search")
 def global_search():
@@ -5624,7 +5690,7 @@ def global_search():
 
 
 # =========================================
-# ✅ ROUTES: API - GET ALL USERS (JSON)
+# 3. MASTERS — Manage Users — API
 # =========================================
 @app.route("/api/users", methods=["GET"])
 def api_get_users():
@@ -5661,8 +5727,7 @@ def api_get_users():
     }), 200
 
 
-# ✅ ROUTES: API - GET SINGLE USER BY INDEX (JSON)
-# =========================================
+# 3. MASTERS — Manage Users — API (continued)
 @app.route("/api/users/<int:user_index>", methods=["GET"])
 def api_get_user(user_index):
     """Get a single user by index as JSON - for Postman/API testing"""
@@ -5686,8 +5751,161 @@ def api_get_user(user_index):
     }), 200
 
 
-# ✅ ROUTES: DELETE USER (API)
 # =========================================
+# ✅ API: CREATE USER (POST /api/users) — JSON for Postman
+# =========================================
+@app.route("/api/users", methods=["POST"])
+def api_create_user():
+    """Create new user. Requires JSON body. Use ?format=json or Accept: application/json."""
+    user_email = session.get("user")
+    if not user_email:
+        return jsonify({"success": False, "message": "Session expired. Please login first."}), 401
+
+    users = load_users()
+    user_role = "User"
+    for u in users:
+        if isinstance(u, dict) and (u.get("email") or "").lower() == user_email.lower():
+            user_role = (u.get("role") or "User").strip()
+            break
+
+    if normalize_role(user_role) not in ["superadmin", "admin"]:
+        return jsonify({"success": False, "message": "Only Super Admin/Admin can create users."}), 403
+
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"success": False, "message": "JSON body required"}), 400
+
+    first_name = (data.get("first_name") or "").strip()
+    last_name = (data.get("last_name") or "").strip()
+    email = (data.get("email") or "").strip()
+    country_code = (data.get("country_code") or "").strip()
+    contact_number = (data.get("contact_number") or "").strip()
+    branch = (data.get("branch") or "").strip()
+    department = (data.get("department") or "").strip()
+    role = (data.get("role") or "").strip()
+    reporting_to = (data.get("reporting_to") or "").strip()
+    available_branches = (data.get("available_branches") or "").strip()
+    employee_id = (data.get("employee_id") or "").strip()
+
+    errors = []
+    if not first_name or len(first_name) < 3:
+        errors.append("First Name required (min 3 chars)")
+    if not last_name or len(last_name) < 3:
+        errors.append("Last Name required (min 3 chars)")
+    if not email:
+        errors.append("Email required")
+    elif not EMAIL_REGEX.match(email):
+        errors.append("Invalid email format")
+    if not branch:
+        errors.append("Branch required")
+    if not department:
+        errors.append("Department required")
+    if not role:
+        errors.append("Role required")
+    if not reporting_to:
+        errors.append("Reporting To required")
+    if not available_branches:
+        errors.append("Available Branches required")
+    if not employee_id:
+        errors.append("Employee ID required")
+
+    for u in users:
+        if isinstance(u, dict):
+            if (u.get("email") or "").strip().lower() == email.lower():
+                errors.append("Email already exists")
+                break
+            if (u.get("employee_id") or "") == employee_id:
+                errors.append("Employee ID already exists")
+                break
+
+    if errors:
+        return jsonify({"success": False, "message": "; ".join(errors), "errors": errors}), 400
+
+    full_name = (first_name + " " + last_name).strip()
+    full_phone = f"{country_code}{contact_number}" if country_code and contact_number else contact_number
+
+    new_user = {
+        "id": str(uuid.uuid4()),
+        "name": full_name, "phone": full_phone, "first_name": first_name, "last_name": last_name,
+        "email": email, "country_code": country_code, "contact_number": contact_number,
+        "branch": branch, "department": department, "role": role,
+        "reporting_to": reporting_to, "available_branches": available_branches, "employee_id": employee_id,
+    }
+    users.append(new_user)
+    save_users(users)
+
+    return jsonify({
+        "success": True,
+        "message": "User created successfully",
+        "user": new_user
+    }), 201
+
+
+# =========================================
+# ✅ API: UPDATE USER (PUT /api/users/<index>) — JSON for Postman
+# =========================================
+@app.route("/api/users/<int:user_index>", methods=["PUT"])
+def api_update_user(user_index):
+    """Update user by index. Requires JSON body."""
+    user_email = session.get("user")
+    if not user_email:
+        return jsonify({"success": False, "message": "Session expired. Please login first."}), 401
+
+    users = load_users()
+    current_user = next((u for u in users if isinstance(u, dict) and (u.get("email") or "").strip().lower() == user_email.strip().lower()), None)
+    if not current_user or normalize_role(current_user.get("role")) not in ["superadmin", "admin"]:
+        return jsonify({"success": False, "message": "Only Super Admin/Admin can edit users."}), 403
+
+    if user_index < 0 or user_index >= len(users):
+        return jsonify({"success": False, "message": "User index out of range"}), 404
+
+    data = request.get_json(silent=True) or {}
+    u = users[user_index]
+    if data.get("name") is not None:
+        u["name"] = str(data.get("name", "")).strip()
+    if data.get("email") is not None:
+        u["email"] = str(data.get("email", "")).strip()
+    if data.get("phone") is not None:
+        u["phone"] = str(data.get("phone", "")).strip()
+    if data.get("role") is not None:
+        u["role"] = str(data.get("role", "")).strip() or "User"
+    if data.get("department") is not None:
+        u["department"] = str(data.get("department", "")).strip()
+    if data.get("branch") is not None:
+        u["branch"] = str(data.get("branch", "")).strip()
+
+    save_users(users)
+    return jsonify({"success": True, "message": "User updated", "user": users[user_index]}), 200
+
+
+# =========================================
+# ✅ API: DELETE USER (DELETE /api/users/<index>) — JSON for Postman
+# =========================================
+@app.route("/api/users/<int:user_index>", methods=["DELETE"])
+def api_delete_user(user_index):
+    """Delete user by index."""
+    user_email = session.get("user")
+    if not user_email:
+        return jsonify({"success": False, "message": "Session expired. Please login first."}), 401
+
+    users = load_users()
+    current_user = next((u for u in users if isinstance(u, dict) and (u.get("email") or "").strip().lower() == user_email.strip().lower()), None)
+    if not current_user or normalize_role(current_user.get("role")) not in ["superadmin", "admin"]:
+        return jsonify({"success": False, "message": "Only Super Admin/Admin can delete users."}), 403
+
+    if user_index < 0 or user_index >= len(users):
+        return jsonify({"success": False, "message": "User index out of range"}), 404
+
+    deleted_user = users.pop(user_index)
+    save_users(users)
+    return jsonify({
+        "success": True,
+        "message": "User deleted successfully",
+        "deleted_email": deleted_user.get("email", "")
+    }), 200
+
+
+# 3. MASTERS — Manage Users — Delete API
 @app.route("/delete-user/<int:user_id>", methods=["DELETE"])
 def delete_user(user_id):
     try:
@@ -5778,6 +5996,9 @@ def write_products(data):
         json.dump(data, f, indent=4)
 
 
+# =========================================
+# 7. CRM — Enquiry List
+# =========================================
 @app.route("/enquiry-list")
 def enquiry_list():
     user_email = session.get("user")
@@ -5813,6 +6034,9 @@ def enquiry_list():
     )
 
 
+# =========================================
+# 8. CRM — New Enquiry
+# =========================================
 @app.route("/new-enquiry")
 def new_enquiry():
     user_email = session.get("user")

@@ -515,3 +515,181 @@
   from { opacity: 1; transform: translateY(0); }
   to   { opacity: 0; transform: translateY(-18px); }
 }
+
+
+
+
+
+
+/* ===============================
+   RESPONSIVE STYLES
+================================ */
+
+/* ---------- Tablet (≤ 1024px) ---------- */
+@media (max-width: 1024px) {
+
+  .import-page {
+    padding: 12px;
+  }
+
+  .import-title {
+    font-size: 24px;
+  }
+
+  .step-title {
+    font-size: 18px;
+  }
+
+  .validation-table th,
+  .validation-table td {
+    font-size: 16px;
+    padding: 10px;
+  }
+
+  .download-btn {
+    margin-left: 0;        /* remove fixed margin */
+  }
+}
+
+
+/* ---------- Mobile & Small Tablet (≤ 768px) ---------- */
+@media (max-width: 768px) {
+
+  .import-header {
+    display: flex;
+    flex-direction: row;
+    align-items: center;       /* 🔥 keeps vertical alignment */
+    justify-content: space-between;
+    flex-wrap: nowrap;         /* 🔥 prevents jumping */
+  }
+
+  .import-title {
+    margin-bottom: 0;          /* 🔥 MOST IMPORTANT FIX */
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .close-btn {
+    align-self: center;        /* 🔥 force same vertical level */
+    flex-shrink: 0;
+    margin-top: 9px;
+  }
+
+  /* Download button */
+  .download-btn {
+    width: 100%;
+    justify-content: center;
+    margin-left: 0;
+  }
+
+  /* Step header row (title + reset button) */
+  .step-header-row {
+    flex-direction: row;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  .reset-btn {
+    font-size: 13px;
+    padding: 6px 14px;
+    white-space: nowrap;
+  }
+
+  /* Upload box */
+  .upload-box {
+    padding: 40px 16px;
+  }
+
+  .upload-title {
+    font-size: 16px;
+  }
+
+  .upload-subtitle,
+  .upload-formats {
+    font-size: 14px;
+  }
+
+  /* Table scroll on mobile */
+  .validation-table {
+    display: block;
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+
+  /* Footer buttons – SAME LINE */
+  .import-footer {
+    flex-direction: row;
+    gap: 12px;
+    justify-content: space-between;
+  }
+
+  .import-footer button {
+    flex: 1;
+    max-width: 48%;
+    white-space: nowrap;
+  }
+
+  /* Toast */
+  .toast {
+    min-width: auto;
+    width: 90vw;
+    font-size: 14px;
+  }
+}
+
+
+/* ---------- Small Mobile (≤ 480px) ---------- */
+@media (max-width: 480px) {
+
+  
+  .import-header {
+    display: flex;
+    flex-direction: row;
+    align-items: center;       /* 🔥 keeps vertical alignment */
+    justify-content: space-between;
+    flex-wrap: nowrap;         /* 🔥 prevents jumping */
+  }
+
+  .import-title {
+    margin-bottom: 0;          /* 🔥 MOST IMPORTANT FIX */
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .close-btn {
+    align-self: center;        /* 🔥 force same vertical level */
+    flex-shrink: 0;
+    margin-top: 9px;
+  }
+
+  .import-title {
+    font-size: 20px;
+  }
+
+  .step-title {
+    font-size: 16px;
+  }
+
+  .validation-title {
+    font-size: 20px;
+  }
+
+  .validation-table th,
+  .validation-table td {
+    font-size: 14px;
+    padding: 8px;
+  }
+
+  .check-text,
+  .download-notes li,
+  .validation-messages {
+    font-size: 14px;
+  }
+
+  .import-footer button {
+    font-size: 13px;
+    padding: 8px 12px;
+  }
+}

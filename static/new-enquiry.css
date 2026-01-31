@@ -175,6 +175,9 @@
       justify-content: flex-end;
       gap: 14px;
       margin-top: 30px;
+        flex-wrap: nowrap;   /* 🔥 keeps buttons in same line */
+
+
   }
   
   
@@ -769,3 +772,328 @@
   .auto-field {
     pointer-events: none;
   }
+
+
+
+
+  /* ===============================
+   RESPONSIVE LAYOUT (ref: import-customer.css)
+================================ */
+
+/* 💻 Tablets & small laptops (≤1024px) */
+@media (max-width: 1024px) {
+  .container-enquiry {
+    max-width: 100%;
+    padding: 14px;
+  }
+
+  .container-enquiry #form-enquiry {
+    max-width: 100%;
+    padding: 20px;
+  }
+
+  .container-enquiry .enquiry-title {
+    font-size: 24px;
+    margin-bottom: 8px;
+  }
+
+  .grid {
+    column-gap: 20px;
+  }
+
+  h2, h3 {
+    font-size: 16px;
+  }
+
+  table th,
+  table td {
+    font-size: 13px;
+    padding: 10px 8px;
+  }
+
+  /* Modals */
+  #productModal .modal-content,
+  #productModal1 .modal-content {
+    width: min(500px, 90vw);
+  }
+
+  #enquirySuccessModal .modal-card {
+    width: min(500px, 90vw);
+  }
+}
+
+/* 📱 Tablets & Mobiles (≤768px) */
+@media (max-width: 768px) {
+  .container-enquiry {
+    padding: 12px;
+  }
+
+  .container-enquiry .enquiry-title {
+    font-size: 20px;
+    margin-left: 10px;
+    margin-bottom: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .container-enquiry #form-enquiry {
+    padding: 18px;
+    border-radius: 8px;
+  }
+
+  .grid {
+    grid-template-columns: 1fr;
+    row-gap: 16px;
+    column-gap: 0;
+  }
+
+  h2, h3 {
+    font-size: 15px;
+    margin: 18px 0 10px;
+  }
+
+  /* Product header – same row, no wrap */
+  .product-head {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    flex-wrap: nowrap;
+  }
+
+  .product-head h3,
+  .product-head h2 {
+    margin: 0;
+    font-size: 16px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .product-head button {
+    height: 32px;
+    padding: 6px 12px;
+    font-size: 12px;
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+
+  /* Action buttons – same line */
+  .actions {
+    display: flex;
+    flex-direction: row;
+    justify-content: stretch;
+    gap: 10px;
+    flex-wrap: nowrap;
+  }
+
+  .actions .btn-save,
+  .actions .btn-discard,
+  .actions .primary-btn {
+    flex: 1 1 50%;
+    min-width: 0;
+    white-space: nowrap;
+  }
+
+  /* Table scroll */
+  table {
+    display: block;
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+
+  table th,
+  table td {
+    padding: 10px 8px;
+    font-size: 13px;
+  }
+
+  /* Modals */
+  #productModal .modal-content,
+  #productModal1 .modal-content {
+    width: 95vw;
+    padding: 16px 18px;
+  }
+
+  #productModal .form-grid,
+  #productModal1 .form-grid {
+    grid-template-columns: 1fr;
+    row-gap: 12px;
+  }
+
+  #productModal .modal-title,
+  #productModal1 .modal-title {
+    font-size: 18px;
+  }
+
+  #enquirySuccessModal .modal-card {
+    width: 95vw;
+    padding: 14px 16px;
+  }
+
+  #enquirySuccessModal .modal-body {
+    font-size: 14px;
+  }
+
+  /* Confirm modal */
+  .confirm-box {
+    width: min(350px, 92vw);
+    padding: 20px;
+  }
+
+  .confirm-box h3 {
+    font-size: 18px;
+  }
+
+  .confirm-box p {
+    font-size: 13px;
+  }
+
+  /* Success notification */
+  .success-notification {
+    font-size: 14px;
+    padding: 12px 18px;
+    max-width: 90vw;
+  }
+}
+
+/* 📱 Small Mobiles (≤520px) */
+@media (max-width: 520px) {
+  .container-enquiry {
+    padding: 10px;
+  }
+
+  .container-enquiry .enquiry-title {
+    font-size: 18px;
+    margin-left: 6px;
+  }
+
+  .container-enquiry #form-enquiry {
+    padding: 14px;
+  }
+
+  .grid {
+    row-gap: 14px;
+  }
+
+  h2, h3 {
+    font-size: 14px;
+    margin: 14px 0 8px;
+  }
+
+  label {
+    font-size: 11px;
+    margin-bottom: 4px;
+  }
+
+  #form-enquiry input,
+  #form-enquiry select {
+    font-size: 12px;
+    padding: 7px 9px;
+  }
+
+  /* Product header */
+  .product-head h3,
+  .product-head h2 {
+    font-size: 14px;
+  }
+
+  .product-head button {
+    height: 30px;
+    padding: 5px 10px;
+    font-size: 11px;
+  }
+
+  /* Action buttons – same line, smaller */
+  .actions {
+    gap: 8px;
+  }
+
+  .actions .btn-save,
+  .actions .btn-discard,
+  .actions .primary-btn {
+    height: 38px;
+    line-height: 38px;
+    font-size: 12px;
+    padding: 0 10px;
+  }
+
+  table th,
+  table td {
+    font-size: 11px;
+    padding: 6px 4px;
+  }
+
+  /* Modal buttons stack on small screens */
+  #productModal .modal-actions,
+  #productModal1 .modal-actions {
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 18px;
+  }
+
+  #productModal .btn-primary,
+  #productModal1 .btn-primary,
+  #productModal .cancel-btn,
+  #productModal1 .cancel-btn {
+    width: 100%;
+  }
+
+  #productModal .modal-content,
+  #productModal1 .modal-content {
+    width: 92vw;
+    padding: 14px 16px;
+  }
+
+  #productModal .modal-title,
+  #productModal1 .modal-title {
+    font-size: 16px;
+  }
+
+  #productModal .form-group input,
+  #productModal1 .form-group input {
+    height: 28px;
+    font-size: 11px;
+  }
+
+  /* Success modal */
+  #enquirySuccessModal .modal-card {
+    width: 92vw;
+    padding: 12px 14px;
+  }
+
+  #enquirySuccessModal .modal-body {
+    font-size: 13px;
+  }
+
+  /* Confirm modal */
+  .confirm-box {
+    width: 92vw;
+    padding: 18px;
+  }
+
+  .confirm-box h3 {
+    font-size: 16px;
+  }
+
+  .confirm-box p {
+    font-size: 12px;
+  }
+
+  .confirm-actions {
+    flex-direction: column;
+  }
+
+  .confirm-actions button {
+    width: 100%;
+  }
+
+  /* Success notification */
+  .success-notification {
+    font-size: 13px;
+    padding: 12px 14px;
+    max-width: 92vw;
+  }
+}

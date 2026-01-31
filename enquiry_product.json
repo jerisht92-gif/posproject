@@ -134,13 +134,5 @@
         "selling_price": 655,
         "quantity": 4,
         "total": 2620
-    },
-    {
-        "product_id": "PRD-020",
-        "description": "dsf",
-        "unit_price": 232323,
-        "selling_price": 454,
-        "quantity": 76,
-        "total": 34504
     }
 ]

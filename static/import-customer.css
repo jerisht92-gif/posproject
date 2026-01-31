@@ -1,4 +1,3 @@
-
 /* ==============================
    IMPORT CUSTOMER – BASE STYLES
 ============================== */
@@ -504,23 +503,26 @@
     padding: 12px;
   }
 
-  .import-header {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 8px;
-    margin-bottom: 10px;
+ .import-header {
+    display: flex;
+    flex-direction: row;          /* keep in same row */
+    align-items: center;          /* vertical center */
+    justify-content: space-between;
+    flex-wrap: nowrap;            /* prevent moving up/down */
   }
 
   .import-title {
-    font-size: 22px;
-    text-align: left;
-    margin-right: 0;
-    margin-bottom: 4px;
+    margin-bottom: 0;             /* 🔥 main fix */
+    font-size: 20px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .close-btn {
-    align-self: flex-end;
-    font-size: 14px;
+    margin-top: 7px;
+    flex-shrink: 0;
+    align-self: center;
   }
 
   .step-title {
@@ -538,16 +540,31 @@
     margin-bottom: 12px;
   }
 
+
   .step-header-row {
-    flex-direction: column;
-    align-items: stretch;
+    display: flex;
+    flex-direction: row;        /* keep horizontal */
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: nowrap;          /* 🔥 prevent wrap */
     gap: 10px;
   }
 
-  .reset-btn {
-    width: 100%;
-    text-align: center;
+  .step-header-row h3,
+  .step-header-row .step-title {
+    margin: 0;                  /* 🔥 remove push */
+    font-size: 16px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
+
+  .reset-btn {
+    padding: 6px 12px;
+    font-size: 13px;
+    flex-shrink: 0;             /* 🔥 don’t push down */
+  }
+
 
   .upload-box {
     padding: 42px 16px;
@@ -631,14 +648,26 @@
     padding: 10px;
   }
 
+ .import-header {
+    display: flex;
+    flex-direction: row;          /* keep in same row */
+    align-items: center;          /* vertical center */
+    justify-content: space-between;
+    flex-wrap: nowrap;            /* prevent moving up/down */
+  }
+
   .import-title {
+    margin-bottom: 0;             /* 🔥 main fix */
     font-size: 20px;
-    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .close-btn {
+    margin-top: 7px;
+    flex-shrink: 0;
     align-self: center;
-    font-size: 14px;
   }
 
   .step-title {
@@ -722,5 +751,30 @@
     width: 16px;
     height: 16px;
     font-size: 11px;
+  }
+
+  
+  .step-header-row {
+    display: flex;
+    flex-direction: row;        /* keep horizontal */
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: nowrap;          /* 🔥 prevent wrap */
+    gap: 10px;
+  }
+
+  .step-header-row h3,
+  .step-header-row .step-title {
+    margin: 0;                  /* 🔥 remove push */
+    font-size: 16px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .reset-btn {
+    padding: 6px 12px;
+    font-size: 13px;
+    flex-shrink: 0;             /* 🔥 don’t push down */
   }
 }

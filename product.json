@@ -9,15 +9,6 @@
     "price": 32323.0
   },
   {
-    "product_id": "P108",
-    "product_name": "vcvcv",
-    "type": "Physical",
-    "category": "Food",
-    "status": "Active",
-    "stock_level": 23,
-    "price": 34565.0
-  },
-  {
     "product_id": "123",
     "product_name": "sdffd",
     "type": "Digital",
