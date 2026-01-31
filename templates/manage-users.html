@@ -37,67 +37,10 @@
       </thead>
 
       <tbody id="userTableBody">
-  {% if users and users|length > 0 %}
-    {% for u in users %}
-    <tr>
-      <td>{{ u.name }}</td>
-
-      {# normalize logged-in role once #}
-      {% set r = (user_role or '')|lower|replace(' ', '')|replace('_', '') %}
-
-      <!-- Email Column -->
-      {% if r in ["superadmin", "admin"] %}
-        <td>{{ u.email }}</td>
-      {% else %}
-        <td>*************</td>
-      {% endif %}
-
-      <!-- Phone Column -->
-      {% if r in ["superadmin", "admin"] %}
-        <td>{{ u.phone }}</td>
-      {% else %}
-        <td>**********</td>
-      {% endif %}
-
-      <td>{{ u.role or "User" }}</td>
-
-      <!-- ACTION COLUMN -->
-      <td class="action-cell">
-        <div class="action-buttons">
-
-          <!-- EDIT BUTTON -->
-          {% if r in ["superadmin", "admin"] %}
-            <button class="action-btn edit-btn" data-id="{{ loop.index0 }}">Edit</button>
-          {% else %}
-            <button class="action-btn edit-btn-disabled" disabled
-                    title="No access">Edit</button>
-          {% endif %}
-
-          <!-- DELETE BUTTON -->
-          {% if r == "superadmin" %}
-            <button class="action-btn delete-btn" data-id="{{ loop.index0 }}">Delete</button>
-          {% elif r == "admin" %}
-            <button class="action-btn delete-btn-disabled" disabled
-                    title="Only Super Admin can delete">Delete</button>
-          {% else %}
-            <button class="action-btn delete-btn-disabled" disabled
-                    title="No access">Delete</button>
-          {% endif %}
-
-        </div>
-      </td>
-    </tr>
-    {% endfor %}
-
-    <tr id="noUserRow">
-      <td colspan="5">No users found</td>
-    </tr>
-
-  {% else %}
-    <tr class="no-data-row">
+    <!-- Rows loaded via Fetch/XHR from /api/users (manage-users.js) -->
+    <tr id="noUserRow" class="no-data-row" style="display: none;">
       <td colspan="5">No Data Found</td>
     </tr>
-  {% endif %}
 </tbody>
 
     </table>
@@ -105,15 +48,13 @@
     <!-- Pagination Footer -->
     <div class="table-footer">
       <div class="entries-info">
-        Showing {{ users|length if users else 0 }} entries
+        Showing <span id="showingCount">0</span> entries
       </div>
 
       <div class="pagination-controls">
         <button id="prevPage" class="pager-btn">Prev</button>
 
-        <span id="pageInfo" class="page-info">
-          Page 1 of {{ 1 if users and users|length > 0 else 0 }}
-        </span>
+        <span id="pageInfo" class="page-info">Page 0 of 0</span>
 
         <button id="nextPage" class="pager-btn">Next</button>
       </div>

@@ -55,45 +55,10 @@
       </thead>
 
       <tbody id="deptTableBody">
-        {% if departments and departments|length > 0 %}
-          {% for d in departments %}
-          <tr>
-            <td>{{ d.code }}</td>
-            <td>{{ d.name }}</td>
-            <td>{{ d.description }}</td>
-
-            <td class="action-cell">
-              <div class="action-buttons">
-                {# normalize logged-in role once #}
-                {% set r = (user_role or '')|lower|replace(' ', '')|replace('_', '') %}
-                
-                <!-- EDIT BUTTON -->
-                {% if r in ["superadmin", "admin"] %}
-                  <button class="action-btn edit-btn" type="button" data-id="{{ d.id }}">Edit</button>
-                {% else %}
-                  <button class="action-btn edit-btn-disabled" disabled
-                          title="No access">Edit</button>
-                {% endif %}
-
-                <!-- DELETE BUTTON -->
-                {% if r == "superadmin" %}
-                  <button class="action-btn delete-btn" type="button" data-id="{{ d.id }}">Delete</button>
-                {% elif r == "admin" %}
-                  <button class="action-btn delete-btn-disabled" disabled
-                          title="Only Super Admin can delete">Delete</button>
-                {% else %}
-                  <button class="action-btn delete-btn-disabled" disabled
-                          title="No access">Delete</button>
-                {% endif %}
-              </div>
-            </td>
-          </tr>
-          {% endfor %}
-        {% else %}
-          <tr id="noDeptRow" class="no-data-row">
-            <td colspan="4" class="no-data-cell">No data Found</td>
-          </tr>
-        {% endif %}
+        <!-- Rows loaded via Fetch/XHR from /api/departments (department-roles.js) -->
+        <tr id="noDeptRow" class="no-data-row" style="display: none;">
+          <td colspan="4" class="no-data-cell">No data Found</td>
+        </tr>
       </tbody>
     </table>
   </div>
@@ -102,7 +67,7 @@
     <div class="table-footer">
       <div class="entries-info">
         Showing
-        <span id="showingCount">{{ departments|length if departments else 0 }}</span>
+        <span id="showingCount">0</span>
         Entries
       </div>
 

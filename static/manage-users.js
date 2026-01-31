@@ -42,10 +42,11 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  const createBtn   = document.getElementById("createUserBtn");
-  const searchInput = document.getElementById("searchUsers");
-  const tableBody   = document.getElementById("userTableBody");
-  const noUserRow   = document.getElementById("noUserRow");
+  const createBtn    = document.getElementById("createUserBtn");
+  const searchInput  = document.getElementById("searchUsers");
+  const tableBody    = document.getElementById("userTableBody");
+  const noUserRow    = document.getElementById("noUserRow");
+  const showingCount = document.getElementById("showingCount");
 
   const prevBtn  = document.getElementById("prevPage");
   const nextBtn  = document.getElementById("nextPage");
@@ -59,62 +60,141 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // ============================
-  //   ROWS + PAGINATION
+  //   DATA (loaded via Fetch/XHR from /api/users)
   // ============================
-  const allRows = tableBody
-    ? Array.from(tableBody.querySelectorAll("tr")).filter(
-        (row) =>
-          row.id !== "noUserRow" &&
-          !row.classList.contains("no-data-row")
-      )
-    : [];
-  
-  let filteredRows = [...allRows];
-  let currentPage  = 1;
+  let allUsers = [];
+  let filteredIndices = []; // indices into allUsers that match search
+  let currentPage = 1;
   const rowsPerPage = 10;
+  let currentUserRole = "user"; // from API for RBAC
+
+  function normalizeRole(r) {
+    return (r || "").toLowerCase().replace(/\s+/g, "").replace(/_/g, "");
+  }
+
+  function fetchUsers() {
+    return fetch("/api/users")
+      .then((res) => {
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        return res.json();
+      })
+      .then((payload) => {
+        if (payload && payload.users) {
+          allUsers = Array.isArray(payload.users) ? payload.users : [];
+        } else {
+          allUsers = [];
+        }
+        const role = (payload && payload.current_user && payload.current_user.role) ? payload.current_user.role : "User";
+        currentUserRole = normalizeRole(role);
+        applyFilter();
+      })
+      .catch((err) => {
+        console.error("Error fetching users:", err);
+        allUsers = [];
+        applyFilter();
+      });
+  }
+
+  const CAN_EDIT  = currentUserRole === "admin" || currentUserRole === "superadmin";
+  const CAN_DELETE = currentUserRole === "superadmin";
+
+  function getCanEdit() {
+    return currentUserRole === "admin" || currentUserRole === "superadmin";
+  }
+  function getCanDelete() {
+    return currentUserRole === "superadmin";
+  }
 
   function renderPage() {
-    const totalRows  = filteredRows.length;
-    const totalPages = totalRows === 0 ? 1 : Math.ceil(totalRows / rowsPerPage);
+    if (!tableBody) return;
 
+    const totalRows = filteredIndices.length;
+    const totalPages = totalRows === 0 ? 1 : Math.ceil(totalRows / rowsPerPage);
     if (currentPage > totalPages) currentPage = totalPages;
     if (currentPage < 1) currentPage = 1;
 
     const start = (currentPage - 1) * rowsPerPage;
-    const end   = start + rowsPerPage;
+    const end = start + rowsPerPage;
+    const pageIndices = filteredIndices.slice(start, end);
 
-    // hide all
-    allRows.forEach((row) => (row.style.display = "none"));
+    // Keep noUserRow reference, clear rest
+    const noRow = document.getElementById("noUserRow");
+    tableBody.innerHTML = "";
+    if (noRow) tableBody.appendChild(noRow);
 
-    // show only current page rows
-    filteredRows.forEach((row, index) => {
-      if (index >= start && index < end) row.style.display = "";
-    });
-
-    // update page text
-    if (pageInfo) {
-      pageInfo.textContent =
-        totalRows > 0
-          ? `Page ${currentPage} of ${Math.ceil(totalRows / rowsPerPage)}`
-          : `Page 0 of 0`;
+    if (pageIndices.length === 0) {
+      if (noUserRow) noUserRow.style.display = "";
+      if (showingCount) showingCount.textContent = "0";
+      if (pageInfo) pageInfo.textContent = "Page 0 of 0";
+      if (prevBtn) prevBtn.disabled = true;
+      if (nextBtn) nextBtn.disabled = true;
+      return;
     }
 
-    // enable/disable
+    if (noUserRow) noUserRow.style.display = "none";
+
+    const canEdit = getCanEdit();
+    const canDelete = getCanDelete();
+
+    pageIndices.forEach((idx) => {
+      const u = allUsers[idx];
+      if (!u || typeof u !== "object") return;
+      const name = (u.name || "").trim();
+      const email = (u.email || "").trim();
+      const phone = (u.phone || "").trim();
+      const role = (u.role || "User").trim();
+      const emailDisplay = canEdit ? email : "*************";
+      const phoneDisplay = canEdit ? phone : "**********";
+
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${escapeHtml(name)}</td>
+        <td>${escapeHtml(emailDisplay)}</td>
+        <td>${escapeHtml(phoneDisplay)}</td>
+        <td>${escapeHtml(role)}</td>
+        <td class="action-cell">
+          <div class="action-buttons">
+            ${canEdit
+              ? `<button class="action-btn edit-btn" data-id="${idx}">Edit</button>`
+              : `<button class="action-btn edit-btn-disabled" disabled title="No access">Edit</button>`}
+            ${canDelete
+              ? `<button class="action-btn delete-btn" data-id="${idx}">Delete</button>`
+              : `<button class="action-btn delete-btn-disabled" disabled title="Only Super Admin can delete">Delete</button>`}
+          </div>
+        </td>
+      `;
+      tableBody.appendChild(tr);
+    });
+
+    const startEntry = totalRows === 0 ? 0 : start + 1;
+    const endEntry = Math.min(end, totalRows);
+    if (showingCount) showingCount.textContent = totalRows > 0 ? `${startEntry}-${endEntry} of ${totalRows}` : "0";
+    if (pageInfo) pageInfo.textContent = `Page ${currentPage} of ${totalPages}`;
     if (prevBtn) prevBtn.disabled = currentPage <= 1 || totalRows === 0;
     if (nextBtn) nextBtn.disabled = currentPage >= totalPages || totalRows === 0;
-
-    // show/hide no users row
-    if (noUserRow) noUserRow.style.display = totalRows === 0 ? "" : "none";
   }
 
-  // ============================
-  //   SEARCH + PAGINATION
-  // ============================
+  function escapeHtml(s) {
+    const div = document.createElement("div");
+    div.textContent = s == null ? "" : String(s);
+    return div.innerHTML;
+  }
+
   function applyFilter() {
     const q = (searchInput?.value || "").trim().toLowerCase();
-    filteredRows = allRows.filter((row) =>
-      row.innerText.toLowerCase().includes(q)
-    );
+    if (!q) {
+      filteredIndices = allUsers.map((_, i) => i);
+    } else {
+      filteredIndices = allUsers
+        .map((u, i) => {
+          const name = (u.name || "").toLowerCase();
+          const email = (u.email || "").toLowerCase();
+          const phone = (u.phone || "").toLowerCase();
+          const role = (u.role || "").toLowerCase();
+          return (name.includes(q) || email.includes(q) || phone.includes(q) || role.includes(q)) ? i : -1;
+        })
+        .filter((i) => i >= 0);
+    }
     currentPage = 1;
     renderPage();
   }
@@ -138,67 +218,44 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
  // ============================
-//   DELETE USER (MODAL)
+//   DELETE USER (MODAL) — event delegation for dynamically loaded rows
 // ============================
-const deleteButtons = document.querySelectorAll(".delete-btn");
-
 const deleteModal      = document.getElementById("deleteUserModal");
 const deleteUserText   = document.getElementById("deleteUserText");
 const cancelDeleteBtn  = document.getElementById("cancelDeleteBtn");
 const confirmDeleteBtn = document.getElementById("confirmDeleteBtn");
 
-// 🔹 Accessibility: remember last focused element for delete modal(tab)]
 let lastFocusedDelete = null;
-let pendingDeleteId  = null;
-let pendingDeleteRow = null;
+let pendingDeleteId  = null; // user index in allUsers
 
 function openDeleteModal() {
   if (!deleteModal) return;
-
-  lastFocusedDelete = document.activeElement;   // save which delete button opened it
+  lastFocusedDelete = document.activeElement;
   deleteModal.style.display = "flex";
-
-  // focus first focusable element in delete modal (Cancel is nice first)
   const focusable = deleteModal.querySelectorAll(
     'button, input, select, textarea, [tabindex]:not([tabindex="-1"])'
   );
   if (focusable.length) focusable[0].focus();
-
-  trapFocus(deleteModal); // ✅ trap tab inside delete modal
+  trapFocus(deleteModal);
 }
 
 function closeDeleteModal() {
   if (!deleteModal) return;
-
   deleteModal.style.display = "none";
-
-  // restore focus back to delete button
   if (lastFocusedDelete) lastFocusedDelete.focus();
-
   pendingDeleteId = null;
-  pendingDeleteRow = null;
 }
 
-deleteButtons.forEach((btn) => {
-  btn.addEventListener("click", function () {
-    const userId = this.getAttribute("data-id");
-    const row    = this.closest("tr");
-
-    if (!userId || !row) {
-      console.error("No user ID / row found");
-      return;
-    }
-
-    pendingDeleteId  = userId;
-    pendingDeleteRow = row;
-
-    const name = row.querySelectorAll("td")[0]?.textContent.trim() || "this user";
-    if (deleteUserText) {
-      deleteUserText.textContent = `Are you sure you want to delete "${name}"? `;
-    }
-
-    openDeleteModal();
-  });
+tableBody.addEventListener("click", (e) => {
+  const btn = e.target.closest(".delete-btn");
+  if (!btn || btn.disabled || btn.classList.contains("delete-btn-disabled")) return;
+  const userId = btn.getAttribute("data-id");
+  const row = btn.closest("tr");
+  if (userId === null || userId === "" || !row) return;
+  pendingDeleteId = userId;
+  const name = row.querySelectorAll("td")[0]?.textContent.trim() || "this user";
+  if (deleteUserText) deleteUserText.textContent = `Are you sure you want to delete "${name}"?`;
+  openDeleteModal();
 });
 
 cancelDeleteBtn?.addEventListener("click", closeDeleteModal);
@@ -208,26 +265,13 @@ window.addEventListener("click", (e) => {
 });
 
 confirmDeleteBtn?.addEventListener("click", () => {
-  if (!pendingDeleteId || !pendingDeleteRow) return;
-
+  if (pendingDeleteId === null || pendingDeleteId === undefined) return;
   fetch(`/delete-user/${pendingDeleteId}`, { method: "DELETE" })
     .then((res) => res.json())
     .then((data) => {
-
-      // same logic you already had (keep pagination correct)
-      const idxAll = allRows.indexOf(pendingDeleteRow);
-      if (idxAll !== -1) allRows.splice(idxAll, 1);
-
-      const idxFiltered = filteredRows.indexOf(pendingDeleteRow);
-      if (idxFiltered !== -1) filteredRows.splice(idxFiltered, 1);
-
-      pendingDeleteRow.remove();
-      renderPage();
-
       closeDeleteModal();
-      
-      // Show success toast
       showSuccessNotification("User has been deleted successfully");
+      return fetchUsers();
     })
     .catch((err) => {
       console.error(err);
@@ -239,7 +283,6 @@ confirmDeleteBtn?.addEventListener("click", () => {
   // ================================
   //   EDIT USER – MODAL LOGIC
   // ================================
-  const editButtons   = document.querySelectorAll(".edit-btn");
   const modal         = document.getElementById("editUserModal");
   const closeEditBtn  = document.getElementById("closeEditBtn");
   const saveEditBtn   = document.getElementById("saveEditBtn");
@@ -512,39 +555,39 @@ function trapFocus(container) {
 }
 
 
-  // ---- open modal on edit ----
-  editButtons.forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const idx = btn.getAttribute("data-id");
-      if (idx === null) return;
+  // ---- open modal on edit (event delegation for dynamically loaded rows) ----
+  tableBody.addEventListener("click", (e) => {
+    const btn = e.target.closest(".edit-btn");
+    if (!btn || btn.disabled || btn.classList.contains("edit-btn-disabled")) return;
+    const idxStr = btn.getAttribute("data-id");
+    if (idxStr === null) return;
 
-      currentEditIndex = parseInt(idx, 10);
-      currentEditRow   = btn.closest("tr");
+    const idx = parseInt(idxStr, 10);
+    if (isNaN(idx) || idx < 0 || idx >= allUsers.length) return;
 
-      const cells = currentEditRow.querySelectorAll("td");
-      const name  = cells[0]?.textContent.trim() || "";
-      const email = cells[1]?.textContent.trim() || "";
-      const phone = cells[2]?.textContent.trim() || "";
-      const role  = cells[3]?.textContent.trim() || "";
+    currentEditIndex = idx;
+    currentEditRow   = btn.closest("tr");
 
-      // fill modal
-      if (editNameInput)  editNameInput.value  = name;
-      if (editEmailInput) editEmailInput.value = email;
-      if (editPhoneInput) editPhoneInput.value = phone;
-      if (editRoleSelect) editRoleSelect.value = role;
+    const u = allUsers[idx];
+    const name  = (u && u.name) ? String(u.name).trim() : "";
+    const email = (u && u.email) ? String(u.email).trim() : "";
+    const phone = (u && u.phone) ? String(u.phone).trim() : "";
+    let role  = (u && u.role) ? String(u.role).trim() : "";
+    if (role === "Super Admin") role = "Super_Admin";
 
-      // save originals
-      originalName  = name;
-      originalEmail = email;
-      originalPhone = phone;
-      originalRole  = role;
+    if (editNameInput)  editNameInput.value  = name;
+    if (editEmailInput) editEmailInput.value = email;
+    if (editPhoneInput) editPhoneInput.value = phone;
+    if (editRoleSelect) editRoleSelect.value = role;
 
-      clearAllErrors();
-      openModal();
-      
-      // Update button state when modal opens
-      updateEditUserButtonState();
-    });
+    originalName  = name;
+    originalEmail = email;
+    originalPhone = phone;
+    originalRole  = role;
+
+    clearAllErrors();
+    openModal();
+    updateEditUserButtonState();
   });
 
   // close modal
@@ -688,25 +731,15 @@ if (!phone) {
       .then((res) => res.json())
       .then((data) => {
         if (data.success) {
-          // Reset button text immediately after successful update
           if (saveEditBtn) {
             saveEditBtn.textContent = saveEditBtn.dataset.originalText || "Save";
             delete saveEditBtn.dataset.originalText;
           }
-          
-          const cells = currentEditRow.querySelectorAll("td");
-          cells[0].textContent = name;
-          cells[1].textContent = email;
-          cells[2].textContent = phone;
-          cells[3].textContent = role;
           closeModal();
-          
-          // Show success toast
           showSuccessNotification("User has been edited successfully");
+          return fetchUsers();
         } else {
           alert(data.message || "Failed to update user.");
-          
-          // Re-enable button on error
           if (saveEditBtn) {
             saveEditBtn.disabled = false;
             saveEditBtn.textContent = saveEditBtn.dataset.originalText || "Save";
@@ -727,6 +760,6 @@ if (!phone) {
       });
   });
 
-  // initial load
-  renderPage();
+  // initial load: fetch users via XHR (same pattern as customer / products)
+  fetchUsers();
 });

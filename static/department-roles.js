@@ -39,76 +39,134 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // ============================
-  // DATA + PAGINATION
+  // DATA (loaded via Fetch/XHR from /api/departments)
   // ============================
-  let allRows = Array.from(tableBody.querySelectorAll("tr")).filter(
-    (row) => !row.classList.contains("no-data-row") && row.id !== "noDeptRow"
-  );
-
-  let filteredRows = allRows.slice();
+  let allDepartments = [];
+  let filteredDepts = [];
   const PAGE_SIZE = 10;
   let currentPage = 1;
+  let currentUserRole = "user";
+
+  function normalizeRole(r) {
+    return (r || "").toLowerCase().replace(/\s+/g, "").replace(/_/g, "");
+  }
+
+  function fetchDepartments() {
+    return fetch("/api/departments")
+      .then((res) => {
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        return res.json();
+      })
+      .then((payload) => {
+        if (payload && payload.departments) {
+          allDepartments = Array.isArray(payload.departments) ? payload.departments : [];
+        } else {
+          allDepartments = [];
+        }
+        const role = (payload && payload.current_user && payload.current_user.role) ? payload.current_user.role : "User";
+        currentUserRole = normalizeRole(role);
+        applyFilter();
+      })
+      .catch((err) => {
+        console.error("Error fetching departments:", err);
+        allDepartments = [];
+        applyFilter();
+      });
+  }
+
+  const canEdit = () => currentUserRole === "admin" || currentUserRole === "superadmin";
+  const canDelete = () => currentUserRole === "superadmin";
+
+  function escapeHtml(s) {
+    const div = document.createElement("div");
+    div.textContent = s == null ? "" : String(s);
+    return div.innerHTML;
+  }
 
   function updateNoDataRow() {
-    const hasData = filteredRows.length > 0;
+    const hasData = filteredDepts.length > 0;
     if (noDeptRow) noDeptRow.style.display = hasData ? "none" : "";
   }
 
-  function updateCountsAndPages() {
-    const total = filteredRows.length;
-    const totalPages = total === 0 ? 1 : Math.ceil(total / PAGE_SIZE);
-
+  function updateCountsAndPages(total, totalPagesVal) {
     const startEntry = total === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1;
     const endEntry   = Math.min(currentPage * PAGE_SIZE, total);
 
     if (showingSpan) {
       showingSpan.textContent = total > 0 ? `${startEntry}-${endEntry} of ${total}` : "0";
     }
-
     if (currentPageSpan) currentPageSpan.textContent = currentPage;
-    if (totalPagesSpan) totalPagesSpan.textContent = totalPages;
-
+    if (totalPagesSpan) totalPagesSpan.textContent = totalPagesVal;
     if (prevBtn) prevBtn.disabled = currentPage <= 1;
-    if (nextBtn) nextBtn.disabled = currentPage >= totalPages;
+    if (nextBtn) nextBtn.disabled = currentPage >= totalPagesVal;
   }
 
   function renderPage() {
-    allRows = Array.from(tableBody.querySelectorAll("tr")).filter(
-      (row) => !row.classList.contains("no-data-row") && row.id !== "noDeptRow"
-    );
+    const total = filteredDepts.length;
+    const totalPages = total === 0 ? 1 : Math.ceil(total / PAGE_SIZE);
+    if (currentPage > totalPages) currentPage = totalPages;
+    if (currentPage < 1) currentPage = 1;
 
-    allRows.forEach((row) => (row.style.display = "none"));
+    const noRow = document.getElementById("noDeptRow");
+    tableBody.innerHTML = "";
+    if (noRow) tableBody.appendChild(noRow);
 
-    if (filteredRows.length === 0) {
+    if (filteredDepts.length === 0) {
       updateNoDataRow();
-      updateCountsAndPages();
+      updateCountsAndPages(0, 1);
       return;
     }
 
-    const totalPages = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE));
-    if (currentPage > totalPages) currentPage = totalPages;
-
     const start = (currentPage - 1) * PAGE_SIZE;
-    const end   = start + PAGE_SIZE;
+    const end = start + PAGE_SIZE;
+    const pageItems = filteredDepts.slice(start, end);
 
-    filteredRows.slice(start, end).forEach((row) => (row.style.display = ""));
+    if (noDeptRow) noDeptRow.style.display = "none";
+
+    const canEditBtn = canEdit();
+    const canDeleteBtn = canDelete();
+
+    pageItems.forEach((d) => {
+      const tr = document.createElement("tr");
+      const code = (d.code || "").trim();
+      const name = (d.name || "").trim();
+      const desc = (d.description || "").trim();
+      const id = d.id != null ? String(d.id) : "";
+
+      tr.innerHTML = `
+        <td>${escapeHtml(code)}</td>
+        <td>${escapeHtml(name)}</td>
+        <td>${escapeHtml(desc)}</td>
+        <td class="action-cell">
+          <div class="action-buttons">
+            ${canEditBtn
+              ? `<button class="action-btn edit-btn" type="button" data-id="${escapeHtml(id)}">Edit</button>`
+              : `<button class="action-btn edit-btn-disabled" disabled title="No access">Edit</button>`}
+            ${canDeleteBtn
+              ? `<button class="action-btn delete-btn" type="button" data-id="${escapeHtml(id)}">Delete</button>`
+              : `<button class="action-btn delete-btn-disabled" disabled title="Only Super Admin can delete">Delete</button>`}
+          </div>
+        </td>
+      `;
+      tableBody.appendChild(tr);
+    });
 
     updateNoDataRow();
-    updateCountsAndPages();
+    updateCountsAndPages(total, totalPages);
   }
 
   function applyFilter() {
     const q = (searchInput?.value || "").trim().toLowerCase();
-
     if (!q) {
-      filteredRows = allRows.slice();
+      filteredDepts = allDepartments.slice();
     } else {
-      filteredRows = allRows.filter((row) => {
-        const text = (row.textContent || "").toLowerCase();
-        return text.includes(q);
+      filteredDepts = allDepartments.filter((d) => {
+        const code = (d.code || "").toLowerCase();
+        const name = (d.name || "").toLowerCase();
+        const desc = (d.description || "").toLowerCase();
+        return code.includes(q) || name.includes(q) || desc.includes(q);
       });
     }
-
     currentPage = 1;
     renderPage();
   }
@@ -129,7 +187,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   if (nextBtn) {
     nextBtn.addEventListener("click", () => {
-      const totalPages = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE));
+      const totalPages = Math.max(1, Math.ceil(filteredDepts.length / PAGE_SIZE));
       if (currentPage < totalPages) {
         currentPage++;
         renderPage();
@@ -630,31 +688,13 @@ document.addEventListener("DOMContentLoaded", () => {
       .then((r) => r.json())
       .then((data) => {
         if (data.success) {
-          // Reset button text immediately after successful update
           if (saveBtn) {
             saveBtn.textContent = saveBtn.dataset.originalText || "Save";
             delete saveBtn.dataset.originalText;
           }
-          
-          // Close modal
           closeDeptModal();
-
-          // Optionally update the row in the table so changes reflect immediately
-          try {
-            const row = tableBody.querySelector(
-              `.edit-btn[data-id="${editId.value}"]`
-            )?.closest("tr");
-            if (row) {
-              if (row.children[0]) row.children[0].innerText = code;
-              if (row.children[1]) row.children[1].innerText = name;
-              if (row.children[2]) row.children[2].innerText = desc;
-            }
-          } catch (e) {
-            console.warn("Could not update row after edit:", e);
-          }
-
-          // Show success notification for 2 seconds (handled by helper)
           showSuccessNotification("Department has been edited successfully");
+          fetchDepartments();
         } else {
           // Show error notification instead of alert
           showErrorNotification(data.error || "Update failed");
@@ -752,10 +792,9 @@ document.addEventListener("DOMContentLoaded", () => {
       .then((res) => res.json())
       .then((data) => {
         if (data.success) {
+          closeDeleteDeptModal();
           showSuccessNotification("Department has been deleted successfully");
-          setTimeout(() => {
-            window.location.reload();
-          }, 500);
+          fetchDepartments();
         } else {
           alert("Failed to delete department: " + (data.error || "Unknown error"));
         }
@@ -766,7 +805,6 @@ document.addEventListener("DOMContentLoaded", () => {
       });
   });
 
-  // first-time render
-  updateNoDataRow();
-  renderPage();
+  // initial load: fetch departments via XHR (same pattern as customer / products)
+  fetchDepartments();
 });
