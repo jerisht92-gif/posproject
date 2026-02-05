@@ -131,6 +131,31 @@ if (searchInput && searchResultsBox) {
     });
   }
 
+  // ==========================
+  // CROSS-TAB LOGOUT
+  // When user logs out in one tab, all other tabs redirect to login.
+  // ==========================
+  const logoutLink = document.querySelector(".logout-link");
+  if (logoutLink) {
+    logoutLink.addEventListener("click", (e) => {
+      e.preventDefault();
+      fetch("/logout", { method: "GET", redirect: "manual", credentials: "include" })
+        .then(() => {
+          localStorage.setItem("session_logout", Date.now().toString());
+          window.location.href = "/login?message=logged_out";
+        })
+        .catch(() => {
+          localStorage.setItem("session_logout", Date.now().toString());
+          window.location.href = "/login?message=logged_out";
+        });
+    });
+  }
+
+  window.addEventListener("storage", (e) => {
+    if (e.key === "session_logout") {
+      window.location.href = "/login?message=session_expired";
+    }
+  });
 
   // ==========================
   // FOCUS TRAP - Keep Tab within page (prevent browser address bar)

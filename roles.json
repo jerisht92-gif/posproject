@@ -86,49 +86,6 @@
     }
   },
   {
-    "department": "jjsdjsdjfsfjsdjfgjsd",
-    "branch": "Main Branch",
-    "role": "Admin",
-    "description": "jsdcsdcsdcsdcscdscdscdsdcsdcsdcsdcsdcsdcsdcsdcsdcs",
-    "permissions": {
-      "new_enquiry": {
-        "full_access": false,
-        "view": false,
-        "create": false,
-        "edit": false,
-        "delete": false
-      },
-      "quotation": {
-        "full_access": true,
-        "view": false,
-        "create": false,
-        "edit": false,
-        "delete": false
-      },
-      "sales": {
-        "full_access": false,
-        "view": false,
-        "create": false,
-        "edit": false,
-        "delete": false
-      },
-      "delivery": {
-        "full_access": false,
-        "view": false,
-        "create": false,
-        "edit": false,
-        "delete": false
-      },
-      "invoice": {
-        "full_access": false,
-        "view": false,
-        "create": false,
-        "edit": false,
-        "delete": false
-      }
-    }
-  },
-  {
     "department": "hjjhjh",
     "branch": "Branch 2",
     "role": "User",
@@ -475,6 +432,49 @@
         "create": true,
         "edit": true,
         "delete": true
+      }
+    }
+  },
+  {
+    "department": "HJJH",
+    "branch": "Main Branch",
+    "role": "ghghg",
+    "description": "trytyfjtfg",
+    "permissions": {
+      "new_enquiry": {
+        "full_access": true,
+        "view": true,
+        "create": true,
+        "edit": true,
+        "delete": true
+      },
+      "quotation": {
+        "full_access": false,
+        "view": false,
+        "create": false,
+        "edit": false,
+        "delete": false
+      },
+      "sales": {
+        "full_access": false,
+        "view": false,
+        "create": false,
+        "edit": true,
+        "delete": false
+      },
+      "delivery": {
+        "full_access": false,
+        "view": true,
+        "create": false,
+        "edit": false,
+        "delete": false
+      },
+      "invoice": {
+        "full_access": false,
+        "view": false,
+        "create": false,
+        "edit": false,
+        "delete": false
       }
     }
   }

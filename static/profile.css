@@ -105,36 +105,78 @@ body.profile-page {
 
 /* =========================
    BUTTONS (CENTERED)
+   Match Create New Branch Users styling
 ========================= */
 .form-actions {
   margin-top: 24px;
   display: flex;
   align-items: center;
-  justify-content: center;  /* center horizontally */
-  gap: 16px;
+  justify-content: center;
+  gap: 24px;
 }
 
+/* primary button – same as create-user .btn-primary */
 .btn-primary {
-  padding: 10px 28px;
-  border-radius: 999px;
-  border: none;
-  cursor: pointer;
-  background: #2563eb;
+  background: linear-gradient(#a12828, #8c1f1f);
   color: #fff;
-  font-size: 16px;
-  font-weight: 600;
-  letter-spacing: 0.3px;
+  border: none;
+  padding: 10px 26px;
+  font-size: 14px;
+  border-radius: 10px;
+  font-weight: 500;
+  cursor: pointer;
+  box-shadow: 0 5px 0 #6d1717;
+  transition: 0.25s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .btn-primary:hover {
-  background: #1d4ed8;
+  transform: translateY(-3px);
+  box-shadow: 0 8px 0 #6d1717;
 }
 
-.btn-link {
-  text-decoration: none;
-  color: #2563eb;
+.btn-primary:active {
+  transform: translateY(3px);
+  box-shadow: 0 2px 0 #6d1717;
+}
+
+.btn-primary:disabled {
+  background: #cccccc;
+  color: #666666;
+  cursor: not-allowed;
+  box-shadow: 0 2px 0 #999999;
+  transform: none;
+}
+
+.btn-primary:disabled:hover {
+  transform: none;
+  box-shadow: 0 2px 0 #999999;
+}
+
+/* outline button – same as create-user .btn-outline */
+.btn-outline {
+  background: #ffffff;
+  border: 1.5px solid #a12828;
+  color: #a12828;
+  padding: 9px 24px;
+  border-radius: 10px;
+  font-size: 14px;
   font-weight: 500;
-  font-size: 16px;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 3px 0 rgba(0, 0, 0, 0.08);
+  transition: 0.2s;
+}
+
+.btn-outline:hover {
+  background: #a12828;
+  color: #ffffff;
+  transform: translateY(-2px);
 }
 
 /* =========================

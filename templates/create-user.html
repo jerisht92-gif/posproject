@@ -109,9 +109,7 @@
     <label for="department">Department</label>
     <select id="department" name="department" required>
       <option value="">Select Department</option>
-      <option>Sales</option>
-      <option>HR</option>
-      <option>Accounts</option>
+      <!-- Options loaded from departments.json via /api/departments (create-user.js) -->
     </select>
   </div>
 </div>
@@ -122,9 +120,7 @@
           <label for="role">Role</label>
           <select id="role" name="role" required>
             <option value="">Select Designation</option>
-            <option>Super Admin</option>
-            <option>Admin</option>
-            <option>User</option>
+            <!-- Options loaded from roles.json via /api/roles (create-user.js) -->
           </select>
           
         </div>

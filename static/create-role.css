@@ -116,23 +116,28 @@ body {
   
 }
 
-table {
+.permission-table {
     width: 100%;
     margin-top: 20px;
     border-collapse: collapse;
     background: #fff4f4;
+    border-radius: 12px;
+    overflow: hidden;
+    border: 1px solid #ffd2cf;
+    box-shadow: 0 4px 14px rgba(161, 40, 40, 0.12);
 }
 
-table thead {
+.permission-table thead {
     background: #ffe9e9;
 }
 
-th, td {
+.permission-table th,
+.permission-table td {
     padding: 12px;
     text-align: center;
 }
 
-td:first-child {
+.permission-table td:first-child {
     text-align: left;
 }
 
@@ -401,7 +406,7 @@ input[type="checkbox"] {
     width: 100%;
   }
 
-  table {
+  .permission-table {
     font-size: 13px;
   }
 
@@ -443,7 +448,7 @@ input[type="checkbox"] {
     font-size: 16px;
   }
 
-  table {
+  .permission-table {
     font-size: 12px;
   }
 }

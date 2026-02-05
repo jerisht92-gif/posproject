@@ -73,6 +73,34 @@ document.addEventListener("DOMContentLoaded", () => {
     const description = document.getElementById("deptDesc");
 
     // --------------------
+    // Load Department dropdown from departments.json via /api/departments
+    // --------------------
+    function loadDepartmentOptions() {
+        if (!department) return;
+        fetch("/api/departments")
+            .then((res) => res.json())
+            .then((data) => {
+                const list = (data && data.departments) ? data.departments : [];
+                department.innerHTML = '<option value="">Select Department</option>';
+                list.forEach((d) => {
+                    if (!d || typeof d !== "object") return;
+                    const name = (d.name || d.department_name || "").trim();
+                    if (!name) return;
+                    const opt = document.createElement("option");
+                    opt.value = name;
+                    opt.textContent = name;
+                    department.appendChild(opt);
+                });
+                if (typeof updateCreateRoleButtonState === "function") updateCreateRoleButtonState();
+            })
+            .catch((err) => {
+                console.error("Error loading departments:", err);
+                if (typeof updateCreateRoleButtonState === "function") updateCreateRoleButtonState();
+            });
+    }
+    loadDepartmentOptions();
+
+    // --------------------
     // CONFIRM MODAL
     // --------------------
     const confirmModal  = document.getElementById("confirmModal");

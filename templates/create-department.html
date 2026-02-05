@@ -66,11 +66,15 @@
       <!-- Roles section -->
       <div class="form-row" style="align-items:center; justify-content:space-between; gap:12px;">
         <h3 class="create-title" style="margin:0; font-size:18px;">Roles</h3>
-
-        <button type="button" id="addRoleBtn" class="btn-primary" style="padding:8px 12px;">
-          <a href="{{ url_for('department_new') }}" style="text-decoration:none;color:white;">
-            + Add New
-          </a>
+        
+        <!-- Simple button that navigates to the Create Role page -->
+        <button
+          type="button"
+          id="addRoleBtn"
+          class="btn-primary"
+          style="padding:8px 12px;"
+          onclick="window.location.href='{{ url_for('department_new') }}'">
+          + Add New
         </button>
       </div>
 

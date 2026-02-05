@@ -58,9 +58,9 @@ CORS(app)
 # =========================================
 app.secret_key = "supersecretkey"
 app.permanent_session_lifetime = timedelta(days=7)     # for Remember Me
-# Inactivity timeout for normal sessions (in seconds)
-# 10 minutes = 600 seconds
-INACTIVITY_TIMEOUT = 600
+# Inactivity timeout for normal sessions when "Remember Me" is not checked (in seconds)
+# 15 minutes = 900 seconds — after this, user is logged out and redirected to login
+INACTIVITY_TIMEOUT = 900
 
 
 # =========================================
@@ -104,6 +104,15 @@ LOCKOUT_DURATION = 120  # seconds
 RESET_TOKENS = {}
 RESET_LOCK = {}
 RESET_TOKEN_EXPIRY = 600
+
+# =========================================
+# ✅ SIGNUP OTP RATE LIMITING
+# =========================================
+# BUG_008: Too many OTP resend attempts should return HTTP 429 instead of 200.
+# We keep a simple in‑memory counter of recent OTP sends per email.
+OTP_SEND_COUNT = {}  # { email: [timestamps...] }
+MAX_OTP_SENDS = 5    # max OTPs within the window
+OTP_WINDOW_SECONDS = 5 * 60  # 5 minutes
 
 
 # =========================================
@@ -689,6 +698,20 @@ def home():
 @app.route("/login")
 def login():
     message = request.args.get("message", "")
+
+    # BUG_009: When the client explicitly asks for JSON (eg. Postman),
+    # treat GET on /login as an invalid HTTP method for the JSON API.
+    if wants_json():
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "message": "Method not allowed. Use POST /login for authentication.",
+                }
+            ),
+            405,
+        )
+
     return render_template("index.html", message=message)
 
 
@@ -1296,7 +1319,7 @@ def department_new():
 
     return render_template(
         "create-role.html",
-        page="department_role",
+        page="department_roles",
         section="masters",
         user_email=user_email,
         user_name=user_name,
@@ -2386,6 +2409,9 @@ def api_product_tax_codes():
     if not code:
         return jsonify({"success": False, "message": "Tax name is required."}), 400
 
+    if percent < 1 or percent > 100:
+        return jsonify({"success": False, "message": "Tax percentage must be between 1 and 100."}), 400
+
     # Extract pure tax name (before "(xx%)") for validation & duplicate check
     base_name = code.split("(")[0].strip()
 
@@ -2606,6 +2632,11 @@ def api_get_product(product_id):
     Returns a single product by ID
     Supports both JSON and HTML responses
     """
+    # BUG_001 / BUG_006: Require login for product APIs and return JSON 401
+    user_email, resp, status = _require_login_json()
+    if resp is not None:
+        return resp, status
+
     products = load_products()
     p = next((x for x in products if x.get("product_id") == str(product_id)), None)
     
@@ -2653,6 +2684,11 @@ def api_create_product():
     
     Returns created product with generated ID
     """
+    # BUG_001 / BUG_006: Require login for product APIs
+    user_email, resp, status = _require_login_json()
+    if resp is not None:
+        return resp, status
+
     if not request.is_json:
         error_response = {
             "success": False,
@@ -2738,6 +2774,11 @@ def api_update_product(product_id):
     
     Full update - replaces entire product
     """
+    # BUG_001 / BUG_006: Require login for product APIs
+    user_email, resp, status = _require_login_json()
+    if resp is not None:
+        return resp, status
+
     if not request.is_json:
         error_response = {
             "success": False,
@@ -2750,6 +2791,40 @@ def api_update_product(product_id):
             return jsonify(error_response), 400
     
     data = request.get_json(silent=True) or {}
+
+    # BUG_005: Validate payload and reject obviously invalid values
+    errors = []
+    product_name = (data.get("product_name") or "").strip()
+    if not product_name:
+        errors.append("Product name is required.")
+
+    if "stock_level" in data:
+        try:
+            stock_val = int(data.get("stock_level"))
+            if stock_val < 0:
+                errors.append("Stock level must be 0 or greater.")
+        except (TypeError, ValueError):
+            errors.append("Stock level must be a whole number.")
+
+    if "price" in data:
+        try:
+            price_val = float(data.get("price"))
+            if price_val <= 0:
+                errors.append("Price must be greater than 0.")
+        except (TypeError, ValueError):
+            errors.append("Price must be a valid number.")
+
+    if errors:
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "message": "Validation failed",
+                    "errors": errors,
+                }
+            ),
+            400,
+        )
     products = load_products()
     updated = False
     product = None
@@ -2873,6 +2948,11 @@ def api_patch_product(product_id):
     
     Partial update - only updates provided fields
     """
+    # BUG_001 / BUG_006: Require login for product APIs
+    user_email, resp, status = _require_login_json()
+    if resp is not None:
+        return resp, status
+
     if not request.is_json:
         error_response = {
             "success": False,
@@ -2885,6 +2965,39 @@ def api_patch_product(product_id):
             return jsonify(error_response), 400
     
     data = request.get_json(silent=True) or {}
+
+    # BUG_005: Validate any fields that are provided
+    errors = []
+    if "product_name" in data:
+        name = (data.get("product_name") or "").strip()
+        if not name:
+            errors.append("Product name cannot be blank.")
+    if "stock_level" in data:
+        try:
+            stock_val = int(data.get("stock_level"))
+            if stock_val < 0:
+                errors.append("Stock level must be 0 or greater.")
+        except (TypeError, ValueError):
+            errors.append("Stock level must be a whole number.")
+    if "price" in data:
+        try:
+            price_val = float(data.get("price"))
+            if price_val <= 0:
+                errors.append("Price must be greater than 0.")
+        except (TypeError, ValueError):
+            errors.append("Price must be a valid number.")
+
+    if errors:
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "message": "Validation failed",
+                    "errors": errors,
+                }
+            ),
+            400,
+        )
     products = load_products()
     updated = False
     product = None
@@ -3358,6 +3471,18 @@ def upload_file():
     if not file:
         return jsonify({"error": "No file uploaded"}), 400
 
+    # BUG_003 / BUG_004: validate file extension early (expect Excel template)
+    filename_lower = file.filename.lower()
+    if not (filename_lower.endswith(".xlsx") or filename_lower.endswith(".xls")):
+        return (
+            jsonify(
+                {
+                    "error": "Invalid file format. Please upload the provided Excel template (.xlsx or .xls)."
+                }
+            ),
+            400,
+        )
+
     try:
         df = pd.read_excel(file)
     except Exception:
@@ -3369,6 +3494,29 @@ def upload_file():
             "error": "No data found",
             "message": "The uploaded file contains no data. Please ensure the file has at least one row of product data."
         }), 400
+
+    # Ensure required columns exist in the uploaded template
+    required_columns = [
+        "Product ID",
+        "Product Name",
+        "Type",
+        "Category",
+        "Status",
+        "Stock Level",
+        "Price",
+    ]
+    missing_cols = [c for c in required_columns if c not in df.columns]
+    if missing_cols:
+        return (
+            jsonify(
+                {
+                    "error": "Invalid template",
+                    "message": "The uploaded Excel file does not match the required product import template.",
+                    "missing_columns": missing_cols,
+                }
+            ),
+            400,
+        )
 
     valid_rows = 0
     invalid_rows = 0
@@ -3556,6 +3704,19 @@ def import_products_validated():
 
     if not file:
         return jsonify({"success": False, "message": "No file uploaded"}), 400
+
+    # BUG_003 / BUG_004: enforce correct Excel template here as well
+    filename_lower = file.filename.lower()
+    if not (filename_lower.endswith(".xlsx") or filename_lower.endswith(".xls")):
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "message": "Invalid file format. Please upload the product Excel template (.xlsx or .xls).",
+                }
+            ),
+            400,
+        )
 
     try:
         df = pd.read_excel(file)
@@ -5148,6 +5309,27 @@ def send_otp():
     if not EMAIL_REGEX.match(email):
         return jsonify(success=False, message="Enter a valid email address like name@gmail.com or name@yahoo.com"), 400
 
+    # =========================================
+    # BUG_008 — Simple per‑email OTP rate limit
+    # Return HTTP 429 if too many OTPs are requested in a short window.
+    # =========================================
+    now = time.time()
+    history = OTP_SEND_COUNT.get(email, [])
+    # Keep only recent timestamps inside the window
+    history = [ts for ts in history if now - ts <= OTP_WINDOW_SECONDS]
+    if len(history) >= MAX_OTP_SENDS:
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "message": "Too many OTP requests. Please wait a few minutes before trying again.",
+                }
+            ),
+            429,
+        )
+    history.append(now)
+    OTP_SEND_COUNT[email] = history
+
     otp = generate_otp()
     print("DEBUG OTP for", email, "=", otp)
 
@@ -5431,6 +5613,11 @@ def api_products():
     
     Returns JSON or HTML based on Accept header
     """
+    # BUG_001 / BUG_006: Require login for product list API
+    user_email, resp, status = _require_login_json()
+    if resp is not None:
+        return resp, status
+
     products = load_products()
 
     q = (request.args.get("q") or "").strip().lower()
@@ -5440,8 +5627,45 @@ def api_products():
     brand = (request.args.get("brand") or "").strip()
     stock = (request.args.get("stock") or "").strip()
 
-    page = int(request.args.get("page") or 1)
-    page_size = int(request.args.get("page_size") or 10)
+    # BUG_002: Robust validation for pagination parameters
+    raw_page = request.args.get("page", "1")
+    raw_page_size = request.args.get("page_size", "10")
+    try:
+        page = int(raw_page)
+        page_size = int(raw_page_size)
+    except (TypeError, ValueError):
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "message": "Invalid pagination parameters. 'page' and 'page_size' must be integers.",
+                }
+            ),
+            400,
+        )
+
+    if page <= 0 or page_size <= 0:
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "message": "Invalid pagination parameters. 'page' and 'page_size' must be greater than 0.",
+                }
+            ),
+            400,
+        )
+
+    # Optional upper bound to avoid huge pages
+    if page_size > 1000:
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "message": "Invalid pagination parameters. 'page_size' is too large.",
+                }
+            ),
+            400,
+        )
 
     # filter
     def match(p):
@@ -5527,6 +5751,11 @@ def api_delete_product(product_id):
     
     Deletes a product by ID
     """
+    # BUG_001 / BUG_006: Require login for delete API
+    user_email, resp, status = _require_login_json()
+    if resp is not None:
+        return resp, status
+
     products = load_products()
     before = len(products)
     deleted_product = next((p for p in products if str(p.get("product_id")) == str(product_id)), None)
@@ -5561,6 +5790,11 @@ def api_delete_product(product_id):
 # =========================
 @app.route("/api/products/import", methods=["POST"])
 def api_import_products():
+    # BUG_001 / BUG_006: Require login for import API
+    user_email, resp, status = _require_login_json()
+    if resp is not None:
+        return resp, status
+
     if "file" not in request.files:
         return jsonify({"message": "No file uploaded"}), 400
 
@@ -6053,8 +6287,8 @@ def new_enquiry():
     return render_template(
         "new-enquiry.html",
         title="New-Enquiry - Stackly",
-        page="new_enquiry",
-        section="masters",
+        page="enquiry_list",
+        section="crm",
         user_email=user_email,
         user_name=user_name,
     )

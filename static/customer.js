@@ -115,16 +115,14 @@ document.addEventListener("DOMContentLoaded", () => {
   function applyHeaderRBAC() {
     console.log("🔐 Applying RBAC to buttons:", { CAN_CREATE, CAN_IMPORT });
     
-    // Add Customer - Don't disable, let click handler check permissions
-    // This allows the click event to fire and show a proper error message
     if (addCustomerBtn) {
-      // Don't disable the button - let the click handler manage access
-      // This way users get feedback when they click
-      addCustomerBtn.disabled = false;
-      addCustomerBtn.classList.remove("is-disabled");
       if (!CAN_CREATE) {
+        addCustomerBtn.disabled = true;
+        addCustomerBtn.classList.add("is-disabled");
         addCustomerBtn.title = "Access denied - Contact Admin";
       } else {
+        addCustomerBtn.disabled = false;
+        addCustomerBtn.classList.remove("is-disabled");
         addCustomerBtn.title = "Add New Customer";
       }
       console.log("✅ Add Customer button RBAC applied:", {
@@ -134,13 +132,14 @@ document.addEventListener("DOMContentLoaded", () => {
       });
     }
 
-    // Import - Don't disable, let click handler check permissions
     if (importCustomerBtn) {
-      importCustomerBtn.disabled = false;
-      importCustomerBtn.classList.remove("is-disabled");
       if (!CAN_IMPORT) {
+        importCustomerBtn.disabled = true;
+        importCustomerBtn.classList.add("is-disabled");
         importCustomerBtn.title = "Access denied - Contact Admin";
       } else {
+        importCustomerBtn.disabled = false;
+        importCustomerBtn.classList.remove("is-disabled");
         importCustomerBtn.title = "Import Customers";
       }
       console.log("✅ Import Customer button RBAC applied:", {
@@ -865,62 +864,73 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // save updated customer (only if CAN_EDIT)
-  if (editForm) {
-    editForm.addEventListener("submit", (e) => {
-      e.preventDefault();
+  // Save handler (shared by Save button click only — Enter does not submit, like other modules)
+  function submitEditCustomer() {
+    if (!CAN_EDIT) {
+      showToast("❌ Access denied");
+      return;
+    }
 
-      if (!CAN_EDIT) {
-        showToast("❌ Access denied");
-        return;
-      }
+    if (!validateEditForm()) {
+      updateSaveButtonState();
+      return;
+    }
 
-      if (!validateEditForm()) {
-        updateSaveButtonState();
-        return;
-      }
+    const id = editIdInput?.value;
+    if (!id) return;
 
-      const id = editIdInput?.value;
-      if (!id) return;
+    const payload = {
+      name: (nameInput?.value || "").trim(),
+      company: (companyInput?.value || "").trim(),
+      customer_type: (customerTypeInput?.value || "").trim(),
+      email: (emailInput?.value || "").trim(),
+      credit_limit: (creditLimitInput?.value || "").trim(),
+      status: (statusInput?.value || "").trim(),
+      city: (cityInput?.value || "").trim(),
+    };
 
-      const payload = {
-        name: (nameInput?.value || "").trim(),
-        company: (companyInput?.value || "").trim(),
-        customer_type: (customerTypeInput?.value || "").trim(),
-        email: (emailInput?.value || "").trim(),
-        credit_limit: (creditLimitInput?.value || "").trim(),
-        status: (statusInput?.value || "").trim(),
-        city: (cityInput?.value || "").trim(),
-      };
-
-      fetch(`/update-customer/${encodeURIComponent(id)}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+    fetch(`/update-customer/${encodeURIComponent(id)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    })
+      .then(async (res) => {
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          showToast(`❌ ${data.message || "Update failed"}`);
+          return null;
+        }
+        return data;
       })
-        .then(async (res) => {
-          const data = await res.json().catch(() => ({}));
-          if (!res.ok) {
-            showToast(`❌ ${data.message || "Update failed"}`);
-            return null;
-          }
-          return data;
-        })
-        .then((data) => {
-          if (!data || data.success === false || data.ok === false) {
-            showErrorNotification(data?.message || "Customer update failed");
-            return;
-          }
+      .then((data) => {
+        if (!data || data.success === false || data.ok === false) {
+          showErrorNotification(data?.message || "Customer update failed");
+          return;
+        }
 
-          // Single tick comes from CSS ::before, so keep message text clean
-          showSuccessNotification("Customer has been edited successfully");
-          return fetchCustomer();
-        })
-        .then(() => closeEditModal())
-        .catch((err) => {
-          console.error("Update failed:", err);
-          showErrorNotification("❌ Update failed");
-        });
+        showSuccessNotification("Customer has been edited successfully");
+        return fetchCustomer();
+      })
+      .then(() => closeEditModal())
+      .catch((err) => {
+        console.error("Update failed:", err);
+        showErrorNotification("❌ Update failed");
+      });
+  }
+
+  if (saveEditBtn) {
+    saveEditBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      submitEditCustomer();
+    });
+  }
+
+  // Prevent Enter in form from submitting (same as Products / Department & Roles edit modals)
+  if (editForm) {
+    editForm.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+      }
     });
   }
 

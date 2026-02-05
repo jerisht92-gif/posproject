@@ -119,6 +119,17 @@
   box-shadow: 0 8px 0 #6d1717;
 }
 
+/* Disabled header Add / Import buttons – match disabled Edit style */
+#addCustomerBtn:disabled,
+#importCustomerBtn:disabled {
+  background: #e9c2c2 !important;
+  color: #3c3a3a !important;
+  box-shadow: none !important;
+  cursor: not-allowed !important;
+  opacity: 0.6 !important;
+  border: 1px solid #e0e0e0 !important;
+}
+
 /* ---------- MAIN CARD ---------- */
 .card {
   background: rgba(255, 255, 255, 0.65);

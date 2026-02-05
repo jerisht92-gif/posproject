@@ -65,6 +65,8 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         const role = (payload && payload.current_user && payload.current_user.role) ? payload.current_user.role : "User";
         currentUserRole = normalizeRole(role);
+        // Update header Create button RBAC based on role
+        updateCreateButtonState();
         applyFilter();
       })
       .catch((err) => {
@@ -72,6 +74,21 @@ document.addEventListener("DOMContentLoaded", () => {
         allDepartments = [];
         applyFilter();
       });
+  }
+
+  function canCreate() {
+    return currentUserRole === "admin" || currentUserRole === "superadmin";
+  }
+
+  function updateCreateButtonState() {
+    if (!createBtn) return;
+    if (!canCreate()) {
+      createBtn.disabled = true;
+      createBtn.title = "Only Admin / Super Admin can create departments";
+    } else {
+      createBtn.disabled = false;
+      createBtn.title = "";
+    }
   }
 
   const canEdit = () => currentUserRole === "admin" || currentUserRole === "superadmin";

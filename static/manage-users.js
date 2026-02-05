@@ -52,11 +52,25 @@ document.addEventListener("DOMContentLoaded", () => {
   const nextBtn  = document.getElementById("nextPage");
   const pageInfo = document.getElementById("pageInfo");
 
-  // 👉 Go to Create User page
+  // ============================
+  // RBAC for header "+ Create New" button
+  // Disable for plain "user" role (same as Edit)
+  // ============================
+  const pageContainer = document.querySelector(".manage-users-page");
+  const PAGE_ROLE_RAW = (pageContainer?.dataset.currentRole || "user").toLowerCase();
+  const PAGE_ROLE_NORM = PAGE_ROLE_RAW.replace(/\s+/g, "").replace(/_/g, "");
+  const CAN_CREATE_USER = PAGE_ROLE_NORM === "admin" || PAGE_ROLE_NORM === "superadmin";
+
   if (createBtn) {
-    createBtn.addEventListener("click", () => {
-      window.location.href = "/create-user";
-    });
+    if (!CAN_CREATE_USER) {
+      createBtn.disabled = true;
+      createBtn.title = "Only Admin / Super Admin can create users";
+    } else {
+      // 👉 Go to Create User page
+      createBtn.addEventListener("click", () => {
+        window.location.href = "/create-user";
+      });
+    }
   }
 
   // ============================

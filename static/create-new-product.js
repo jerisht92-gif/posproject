@@ -1652,8 +1652,8 @@ document.addEventListener("DOMContentLoaded", () => {
       const TAX_NAME_REGEX = /^[A-Za-z\s]+$/;
       const hasValidName = name && name.length >= 3 && TAX_NAME_REGEX.test(name);
       
-      // Check if tax percentage is valid (not empty, is a number, between 0 and 100)
-      const hasValidPercent = percentStr && !isNaN(percentNum) && percentNum >= 0 && percentNum <= 100;
+      // Check if tax percentage is valid (not empty, is a number, between 1 and 100)
+      const hasValidPercent = percentStr && !isNaN(percentNum) && percentNum >= 1 && percentNum <= 100;
       
       // Check for duplicate (case-insensitive)
       let noDuplicate = true;
@@ -1745,15 +1745,20 @@ document.addEventListener("DOMContentLoaded", () => {
     if (newTaxPercent) {
       newTaxPercent.addEventListener("input", (e) => {
         let value = newTaxPercent.value;
-        // Limit to 10 characters
-        if (value.length > 10) {
-          value = value.substring(0, 10);
+        // Disallow standalone 0 (tax percentage must be 1–100)
+        if (value === "0") {
+          newTaxPercent.value = "";
+          validateCreateTaxCode();
+          return;
         }
+        // Strip leading zeros (e.g. "01" -> "1")
+        if (/^0+(\d*)$/.test(value)) value = value.replace(/^0+/, "") || "";
+        if (value.length > 10) value = value.substring(0, 10);
         newTaxPercent.value = value;
         validateCreateTaxCode();
       });
       
-      // Prevent typing beyond 10 characters on keydown
+      // Prevent typing beyond 10 characters; block 0 as first character or after single "0"
       newTaxPercent.addEventListener("keydown", (e) => {
         // Allow: backspace, delete, tab, escape, enter, arrow keys, home, end
         if ([8, 9, 27, 13, 46, 37, 38, 39, 40, 35, 36].indexOf(e.keyCode) !== -1 ||
@@ -1764,21 +1769,27 @@ document.addEventListener("DOMContentLoaded", () => {
             (e.keyCode === 88 && e.ctrlKey === true)) {
           return;
         }
+        // Restrict typing "0" when field is empty or already "0" (value must be 1–100)
+        if (e.key === "0" || e.keyCode === 48) {
+          const v = (newTaxPercent.value || "").trim();
+          if (v === "" || v === "0") {
+            e.preventDefault();
+            return;
+          }
+        }
         // Prevent typing if already at 10 characters
         if (newTaxPercent.value.length >= 10) {
           e.preventDefault();
         }
       });
       
-      // Handle paste events to limit to 10 characters
+      // Handle paste: strip leading zeros and disallow 0
       newTaxPercent.addEventListener("paste", (e) => {
         e.preventDefault();
         const pastedText = (e.clipboardData || window.clipboardData).getData("text");
-        let value = pastedText;
-        // Limit to 10 characters
-        if (value.length > 10) {
-          value = value.substring(0, 10);
-        }
+        let value = String(pastedText).replace(/\s/g, "").replace(/^0+/, "") || "";
+        if (value === "0") value = "";
+        if (value.length > 10) value = value.substring(0, 10);
         newTaxPercent.value = value;
         newTaxPercent.dispatchEvent(new Event("input"));
       });
@@ -1862,8 +1873,8 @@ document.addEventListener("DOMContentLoaded", () => {
       // Check if tax code is selected
       const hasSelection = !!oldVal;
       
-      // Check if tax percentage is valid
-      const hasValidPercent = percentStr && !isNaN(percentNum) && percentNum >= 0 && percentNum <= 100;
+      // Check if tax percentage is valid (1–100%)
+      const hasValidPercent = percentStr && !isNaN(percentNum) && percentNum >= 1 && percentNum <= 100;
       
       // Enable button only if all validations pass
       updateTaxCodeBtn.disabled = !(hasSelection && hasValidPercent);
@@ -1915,15 +1926,20 @@ document.addEventListener("DOMContentLoaded", () => {
     if (updateTaxPercent) {
       updateTaxPercent.addEventListener("input", (e) => {
         let value = updateTaxPercent.value;
-        // Limit to 10 characters
-        if (value.length > 10) {
-          value = value.substring(0, 10);
+        // Disallow standalone 0 (tax percentage must be 1–100)
+        if (value === "0") {
+          updateTaxPercent.value = "";
+          validateUpdateTaxCode();
+          return;
         }
+        // Strip leading zeros (e.g. "01" -> "1")
+        if (/^0+(\d*)$/.test(value)) value = value.replace(/^0+/, "") || "";
+        if (value.length > 10) value = value.substring(0, 10);
         updateTaxPercent.value = value;
         validateUpdateTaxCode();
       });
       
-      // Prevent typing beyond 10 characters on keydown
+      // Prevent typing beyond 10 characters; block 0 as first character or after single "0"
       updateTaxPercent.addEventListener("keydown", (e) => {
         // Allow: backspace, delete, tab, escape, enter, arrow keys, home, end
         if ([8, 9, 27, 13, 46, 37, 38, 39, 40, 35, 36].indexOf(e.keyCode) !== -1 ||
@@ -1934,21 +1950,27 @@ document.addEventListener("DOMContentLoaded", () => {
             (e.keyCode === 88 && e.ctrlKey === true)) {
           return;
         }
+        // Restrict typing "0" when field is empty or already "0" (value must be 1–100)
+        if (e.key === "0" || e.keyCode === 48) {
+          const v = (updateTaxPercent.value || "").trim();
+          if (v === "" || v === "0") {
+            e.preventDefault();
+            return;
+          }
+        }
         // Prevent typing if already at 10 characters
         if (updateTaxPercent.value.length >= 10) {
           e.preventDefault();
         }
       });
       
-      // Handle paste events to limit to 10 characters
+      // Handle paste: strip leading zeros and disallow 0
       updateTaxPercent.addEventListener("paste", (e) => {
         e.preventDefault();
         const pastedText = (e.clipboardData || window.clipboardData).getData("text");
-        let value = pastedText;
-        // Limit to 10 characters
-        if (value.length > 10) {
-          value = value.substring(0, 10);
-        }
+        let value = String(pastedText).replace(/\s/g, "").replace(/^0+/, "") || "";
+        if (value === "0") value = "";
+        if (value.length > 10) value = value.substring(0, 10);
         updateTaxPercent.value = value;
         updateTaxPercent.dispatchEvent(new Event("input"));
       });
@@ -2143,9 +2165,9 @@ document.addEventListener("DOMContentLoaded", () => {
           return;
         }
   
-        if (isNaN(percentNum) || percentNum < 0 || percentNum > 100) {
+        if (isNaN(percentNum) || percentNum < 1 || percentNum > 100) {
           if (newTaxError) {
-            newTaxError.innerText = "Tax percentage must be between 0 and 100";
+            newTaxError.innerText = "Tax percentage must be between 1 and 100";
             newTaxError.style.display = "block";
           }
           return;
@@ -2276,9 +2298,9 @@ document.addEventListener("DOMContentLoaded", () => {
           return;
         }
   
-        if (isNaN(percentNum) || percentNum < 0 || percentNum > 100) {
+        if (isNaN(percentNum) || percentNum < 1 || percentNum > 100) {
           if (updateTaxError) {
-            updateTaxError.innerText = "Tax percentage must be between 0 and 100";
+            updateTaxError.innerText = "Tax percentage must be between 1 and 100";
             updateTaxError.style.display = "block";
           }
           return;
@@ -7016,13 +7038,13 @@ document.addEventListener("DOMContentLoaded", () => {
             }
           }
           
-          // Check tax code percentage (0-100)
+          // Check tax code percentage (1-100)
           const taxCodeSelect = form.querySelector("select[name='tax_code']");
           if (taxCodeSelect) {
             const taxText = taxCodeSelect.value || "";
             const percentStr = extractPercent(taxText);
             const percentNum = percentStr ? parseFloat(percentStr) : NaN;
-            if (taxText && (isNaN(percentNum) || percentNum < 0 || percentNum > 100)) {
+            if (taxText && (isNaN(percentNum) || percentNum < 1 || percentNum > 100)) {
               allValid = false;
             }
           }
@@ -7199,17 +7221,17 @@ document.addEventListener("DOMContentLoaded", () => {
             }
           }
     
-          // Tax percentage from selected Tax Code (0–100)
+          // Tax percentage from selected Tax Code (1–100%)
           if (taxCodeSelect) {
             const taxText = taxCodeSelect.value || "";
             const percentStr = extractPercent(taxText);
             const percentNum = percentStr ? parseFloat(percentStr) : NaN;
     
-            if (isNaN(percentNum) || percentNum < 0 || percentNum > 100) {
+            if (isNaN(percentNum) || percentNum < 1 || percentNum > 100) {
               isValid = false;
               showFieldError(
                 taxCodeSelect,
-                "Tax percentage must be between 0 and 100"
+                "Tax percentage must be between 1 and 100"
               );
             }
           }

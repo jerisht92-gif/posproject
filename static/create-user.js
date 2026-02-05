@@ -393,6 +393,65 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  // ============================
+  // Load Department dropdown from departments.json via /api/departments
+  // ============================
+  function loadDepartmentOptions() {
+    if (!department) return;
+    fetch("/api/departments")
+      .then((res) => res.json())
+      .then((data) => {
+        const list = (data && data.departments) ? data.departments : [];
+        // Keep only "Select Department" placeholder
+        department.innerHTML = '<option value="">Select Department</option>';
+        list.forEach((d) => {
+          if (!d || typeof d !== "object") return;
+          const name = (d.name || d.department_name || "").trim();
+          if (!name) return;
+          const opt = document.createElement("option");
+          opt.value = name;
+          opt.textContent = name;
+          department.appendChild(opt);
+        });
+        validateAllFields();
+      })
+      .catch((err) => {
+        console.error("Error loading departments:", err);
+        validateAllFields();
+      });
+  }
+  loadDepartmentOptions();
+
+  // ============================
+  // Load Role dropdown from roles.json via /api/roles
+  // ============================
+  function loadRoleOptions() {
+    if (!role) return;
+    fetch("/api/roles")
+      .then((res) => res.json())
+      .then((data) => {
+        const list = (data && data.roles) ? data.roles : [];
+        role.innerHTML = '<option value="">Select Designation</option>';
+        const seen = new Set();
+        list.forEach((r) => {
+          if (!r || typeof r !== "object") return;
+          const name = (r.role || r.role_name || "").trim();
+          if (!name || seen.has(name)) return;
+          seen.add(name);
+          const opt = document.createElement("option");
+          opt.value = name;
+          opt.textContent = name;
+          role.appendChild(opt);
+        });
+        validateAllFields();
+      })
+      .catch((err) => {
+        console.error("Error loading roles:", err);
+        validateAllFields();
+      });
+  }
+  loadRoleOptions();
+
   // Dropdowns – clear error when user chooses value
   branch.addEventListener("change", () => {
     if (branch.value.trim()) setFieldError(branch, "");

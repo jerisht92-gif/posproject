@@ -7,7 +7,7 @@
     "role": "Super Admin"
   },
   {
-    "name": "Ariyanv",
+    "name": "hghghg",
     "phone": "+61198745631",
     "email": "Ari@gmail.com",
     "password": "Ari@5005",
@@ -393,5 +393,37 @@
     "reporting_to": "sdsfd",
     "available_branches": "23",
     "employee_id": "dfdfd"
+  },
+  {
+    "id": "50faf2b5-f39d-453f-b50a-8cd03c309836",
+    "name": "jhjh tytg",
+    "phone": "+916767576576",
+    "first_name": "jhjh",
+    "last_name": "tytg",
+    "email": "yugc@gmail.com",
+    "country_code": "+91",
+    "contact_number": "6767576576",
+    "branch": "Main Branch",
+    "department": "ccv",
+    "role": "Admin",
+    "reporting_to": "jhjhj",
+    "available_branches": "56",
+    "employee_id": "tyhg"
+  },
+  {
+    "id": "5e12761a-c87e-4227-98b2-8cea07ce062c",
+    "name": "jjhjh rtf",
+    "phone": "+917667676767",
+    "first_name": "jjhjh",
+    "last_name": "rtf",
+    "email": "fvty@gmail.com",
+    "country_code": "+91",
+    "contact_number": "7667676767",
+    "branch": "Branch 1",
+    "department": "ccv",
+    "role": "dfd",
+    "reporting_to": "vvffggf",
+    "available_branches": "44",
+    "employee_id": "rdtrdrt"
   }
 ]

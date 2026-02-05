@@ -21,9 +21,7 @@
             <label>Select Department</label>
             <select id="department" name="department" required>
             <option value="">Select Department</option>
-            <option>Sales</option>
-            <option>HR</option>
-            <option>Accounts</option>
+            <!-- Options loaded from departments.json via /api/departments (create-role.js) -->
           </select>
         </div>
 
@@ -95,7 +93,7 @@
         <button class="reset-btn">Reset</button>
     </div>
 
-    <table>
+    <table class="permission-table">
         <thead>
         <tr>
             <th>Menus</th>
