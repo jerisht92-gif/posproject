@@ -1,10 +1,21 @@
 
-.main {
+
+.main{
   flex: 1;
-  width: 100%;
   min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
+  height: 100vh;
+  overflow: hidden;      /* ✅ main wrapper won't scroll */
+}
+
+.content{
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;      /* ✅ ONLY right content scrolls */
+  overflow-x: hidden;
+  padding: 1px;
 }
 
 
@@ -32,6 +43,12 @@ body,
   font-family: var(--global-font) !important;
 }
 
+html, body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;   /* ✅ stop full page scroll */
+}
+
 /* extra safety: sidebar always Inter */
 .sidebar,
 .sidebar * {
@@ -45,37 +62,61 @@ body {
   font-weight: 500;
 }
 
-/* ============= LAYOUT ============= */
-.layout {
+.layout{
   display: flex;
-  min-height: 100vh;
+  height: 100vh;      /* ✅ fixed screen height */
+  overflow: hidden;   /* ✅ prevent layout scrolling */
+  border-left: 0;     /* keep */
+   padding-top: 15px;
 }
 
-/* LEFT – Right separator line in maroon */
-.layout {
-  border-left: 0;
+.sidebar{
+  width: 220px;
+  height: 100vh;              /* ✅ fixed height */
+  flex-shrink: 0;
+  background: #fff;
+  border-right: 1px solid rgba(128,0,0,0.25);
+
+  display: flex;              /* ✅ important */
+  flex-direction: column;     /* ✅ header top, menu below */
+  overflow: hidden;           /* ✅ sidebar itself not scroll */
 }
 
-.sidebar {
-  width: 260px;
-  background: #ffffff;
-  padding: 20px 18px;
-  border-right: 1px solid rgba(128, 0, 0, 0.25);  /* light maroon */
+/* Sidebar header stays fixed */
+.sidebar-header{
+  flex: 0 0 auto;
 }
 
+/* ✅ Only this scrolls */
+.sidebar-menu{
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
 
-/* Sidebar header row */
-.sidebar-header {
   display: flex;
- text-align: center;
-  margin-bottom: 24px;
-  padding: 10px 12px;
+  flex-direction: column;
+  gap: 4px;
+  padding-bottom: 12px;
+  margin-top: 15px;
+}
+
+/* ✅ hide scrollbar - Chrome/Edge/Safari/Samsung */
+.sidebar-menu::-webkit-scrollbar{
+  width: 0;
+  height: 0;
+}
+
+/* ✅ hide scrollbar - Firefox only (no warnings) */
+@supports (scrollbar-width: none){
+  .sidebar-menu{ scrollbar-width: none; }
 }
 
 /* Logo sizing */
 .sidebar-header .logo-img {
   height: auto;
   width: 150px;
+  
 }
 
 /* Close button */
@@ -360,7 +401,7 @@ body {
 .page-content {
   background: #ffffff;
   border: none !important;
-  padding: 24px;
+  padding: 20px;
   margin: 20px;
 }
 
@@ -544,8 +585,6 @@ body {
 
 
 
-
-
 /* ============= MOBILE LAYOUT ============= */
 @media (max-width: 768px) {
 
@@ -674,9 +713,3 @@ body {
     display: block;
   }
 }
-
-
-
-
-
-

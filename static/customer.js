@@ -889,13 +889,19 @@ document.addEventListener("DOMContentLoaded", () => {
       city: (cityInput?.value || "").trim(),
     };
 
-    fetch(`/update-customer/${encodeURIComponent(id)}`, {
-      method: "POST",
+    fetch(`/api/customer/${encodeURIComponent(id)}`, {
+      method: "PUT",
       headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
       body: JSON.stringify(payload),
     })
       .then(async (res) => {
         const data = await res.json().catch(() => ({}));
+        if (res.status === 401) {
+          showToast("Session expired. Please log in again.");
+          setTimeout(() => { window.location.href = "/login?message=session_expired"; }, 1500);
+          return null;
+        }
         if (!res.ok) {
           showToast(`❌ ${data.message || "Update failed"}`);
           return null;
@@ -903,7 +909,7 @@ document.addEventListener("DOMContentLoaded", () => {
         return data;
       })
       .then((data) => {
-        if (!data || data.success === false || data.ok === false) {
+        if (!data || !data.success) {
           showErrorNotification(data?.message || "Customer update failed");
           return;
         }

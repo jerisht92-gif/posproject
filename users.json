@@ -1,10 +1,10 @@
 [
   {
-    "name": "Updated Name",
+    "name": "Jane Smith",
     "phone": "+919876543210",
-    "email": "updated@example.com",
+    "email": "jane.smith@company.com",
     "password": "Mon@5005",
-    "role": "Super Admin"
+    "role": "Admin"
   },
   {
     "name": "hghghg",

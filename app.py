@@ -969,65 +969,60 @@ def create_department():
 # =========================================
 @app.route("/department-roles/edit", methods=["POST"])
 def edit_department():
-    try:
-        data = request.get_json()
+    # Session check (same as Edit Product / other edit modules)
+    user_email = session.get("user")
+    if not user_email:
+        return jsonify(success=False, error="Session expired. Please login first."), 401
 
+    try:
+        data = request.get_json(silent=True) or {}
         dept_id = data.get("id")
         code = (data.get("code") or "").strip()
         name = (data.get("name") or "").strip()
         description = data.get("description")
 
-        if not dept_id:
-            return jsonify(success=False, error="Missing department ID")
+        # Allow 0 as valid id; reject only None or empty string
+        if dept_id is None or (isinstance(dept_id, str) and not dept_id.strip()):
+            return jsonify(success=False, error="Missing department ID"), 400
 
-        # ⚠️ PATH MISMATCH (you already have DEPARTMENT_FILE constant)
-        file_path = DEPARTMENT_FILE
+        departments = load_departments()
+        if not isinstance(departments, list):
+            departments = []
 
-        if not os.path.exists(file_path):
-            return jsonify(success=False, error="departments.json not found")
-
-        with open(file_path, "r") as f:
-            departments = json.load(f)
-
-        # Check for duplicates (case-insensitive) - exclude current department
+        # Check for duplicates (case-insensitive) - exclude current department (compare as string)
         new_code = code.lower()
         new_name = name.lower()
-        
+        dept_id_str = str(dept_id)
+
         for dept in departments:
-            # Skip the current department being edited
-            if dept.get("id") == dept_id:
+            if str(dept.get("id")) == dept_id_str:
                 continue
-                
             existing_code = (dept.get("code") or "").strip().lower()
             existing_name = (dept.get("name") or "").strip().lower()
-            
             if existing_code == new_code:
-                return jsonify(success=False, error="Department code already exists. Please use a different code.")
-            
+                return jsonify(success=False, error="Department code already exists. Please use a different code."), 409
             if existing_name == new_name:
-                return jsonify(success=False, error="Department name already exists. Please use a different name.")
+                return jsonify(success=False, error="Department name already exists. Please use a different name."), 409
 
         updated = False
-
         for dept in departments:
-            if dept.get("id") == dept_id:
+            if str(dept.get("id")) == dept_id_str:
                 dept["code"] = code
                 dept["name"] = name
-                dept["description"] = description
+                if description is not None:
+                    dept["description"] = description
                 updated = True
                 break
 
         if not updated:
-            return jsonify(success=False, error="Department ID not found")
+            return jsonify(success=False, error="Department ID not found"), 404
 
-        with open(file_path, "w") as f:
-            json.dump(departments, f, indent=2)
-
-        return jsonify(success=True)
+        save_departments(departments)
+        return jsonify(success=True), 200
 
     except Exception as e:
         print("EDIT ERROR:", e)
-        return jsonify(success=False, error=str(e))
+        return jsonify(success=False, error=str(e)), 500
 
 
 @app.route("/department-roles/delete", methods=["POST"])
@@ -2252,7 +2247,7 @@ def update_user():
     u["role"]  = (data.get("role") or "").strip() or "Admin"
 
     save_users(users)
-    return jsonify({"success": True})
+    return jsonify({"success": True, "message": "User updated"}), 200
 
 
 # =========================================
@@ -4416,18 +4411,10 @@ def import_customers_validated():
 # =========================================
 @app.route("/api/customer", methods=["GET"])
 def api_customer():
-    """
-    GET /api/customer
-    Query Parameters:
-        - q: Search query (searches Customer ID, Name)
-        - status: Filter by status
-        - type: Filter by customer type
-        - sales_rep: Filter by sales rep
-        - page: Page number (default: 1)
-        - page_size: Items per page (default: 10)
-    
-    Returns JSON with pagination and meta data (same structure as /api/products)
-    """
+    """GET /api/customer — requires login (same as /api/products)."""
+    user_email = session.get("user")
+    if not user_email:
+        return jsonify({"success": False, "message": "Session expired. Please login first."}), 401
     try:
         customers = load_customer()
         
@@ -4573,41 +4560,58 @@ def api_get_customer(customer_id):
 # =========================================
 @app.route("/api/customer/<customer_id>", methods=["PUT"])
 def api_update_customer(customer_id):
-    """Update customer by ID. Requires JSON body."""
+    """Update customer by ID. Requires JSON body. Same pattern as PUT /api/products/<id>."""
     user_email = session.get("user")
     if not user_email:
         return jsonify({"success": False, "message": "Session expired. Please login first."}), 401
 
-    data = request.get_json(silent=True)
+    if not request.is_json:
+        return jsonify({"success": False, "message": "Content-Type must be application/json"}), 400
+
+    data = request.get_json(silent=True) or {}
     if not data:
         return jsonify({"success": False, "message": "JSON body required"}), 400
 
-    customers = load_customer()
-    email = (data.get("email") or data.get("Email") or "").strip().lower()
+    name = (data.get("name") or data.get("Name") or "").strip()
+    if not name:
+        return jsonify({"success": False, "message": "Customer name is required"}), 400
 
-    for cust in customers:
-        if str(cust.get("customer_id")) != str(customer_id) and (cust.get("email") or "").strip().lower() == email and email:
-            return jsonify({"success": False, "message": "Duplicate email already exists."}), 409
+    try:
+        customers = load_customer()
+        if not isinstance(customers, list):
+            customers = []
 
-    found = False
-    for cust in customers:
-        if str(cust.get("customer_id")) == str(customer_id):
-            cust["name"] = (data.get("name") or data.get("Name") or cust.get("name", "")).strip()
-            cust["company"] = (data.get("company") or data.get("Company") or cust.get("company", "")).strip()
-            cust["customer_type"] = (data.get("customer_type") or data.get("Customer Type") or cust.get("customer_type", "")).strip()
-            cust["company_type"] = cust["customer_type"]
-            cust["email"] = (data.get("email") or data.get("Email") or cust.get("email", "")).strip()
-            cust["credit_limit"] = str(data.get("credit_limit") or data.get("Credit Limit") or cust.get("credit_limit", "")).strip()
-            cust["status"] = (data.get("status") or data.get("Status") or cust.get("status", "")).strip()
-            cust["city"] = (data.get("city") or data.get("City") or cust.get("city", "")).strip()
-            found = True
-            break
+        email = (data.get("email") or data.get("Email") or "").strip().lower()
 
-    if not found:
-        return jsonify({"success": False, "message": "Customer not found"}), 404
+        for cust in customers:
+            if str(cust.get("customer_id")) != str(customer_id) and (cust.get("email") or "").strip().lower() == email and email:
+                return jsonify({"success": False, "message": "Duplicate email already exists."}), 409
 
-    save_customer(customers)
-    return jsonify({"success": True, "message": "Customer updated", "customer": next(c for c in customers if str(c.get("customer_id")) == str(customer_id))}), 200
+        found = False
+        for cust in customers:
+            if str(cust.get("customer_id")) == str(customer_id):
+                cust["name"] = (data.get("name") or data.get("Name") or cust.get("name", "")).strip()
+                cust["company"] = (data.get("company") or data.get("Company") or cust.get("company", "")).strip()
+                cust["customer_type"] = (data.get("customer_type") or data.get("Customer Type") or cust.get("customer_type", "")).strip()
+                cust["company_type"] = cust["customer_type"]
+                cust["email"] = (data.get("email") or data.get("Email") or cust.get("email", "")).strip().lower()
+                cust["credit_limit"] = str(data.get("credit_limit") or data.get("Credit Limit") or cust.get("credit_limit", "")).strip()
+                cust["status"] = (data.get("status") or data.get("Status") or cust.get("status", "")).strip()
+                cust["city"] = (data.get("city") or data.get("City") or cust.get("city", "")).strip()
+                found = True
+                break
+
+        if not found:
+            return jsonify({"success": False, "message": "Customer not found"}), 404
+
+        save_customer(customers)
+        updated = next((c for c in customers if str(c.get("customer_id")) == str(customer_id)), None)
+        return jsonify({"success": True, "message": "Customer updated", "customer": updated}), 200
+    except Exception as e:
+        print(f"Error in api_update_customer: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "message": f"Server error: {str(e)}"}), 500
 
 
 # =========================================
@@ -4632,9 +4636,12 @@ def api_delete_customer(customer_id):
 
 @app.route("/update-customer/<customer_id>", methods=["POST"])
 def update_customer(customer_id):
-    # load all customer
-    customer = load_customer()
+    # Require login (same as Edit Product / api_update_customer)
+    user_email = session.get("user")
+    if not user_email:
+        return jsonify({"success": False, "message": "Session expired. Please login first."}), 401
 
+    customer = load_customer()
     data = request.get_json(silent=True) or {}
 
     name = (data.get("name") or "").strip()
@@ -4679,7 +4686,8 @@ def update_customer(customer_id):
         return jsonify({"success": False, "message": "Customer not found"}), 404
 
     save_customer(customer)
-    return jsonify({"success": True, "message": "Customer updated"})
+    return jsonify({"success": True, "message": "Customer updated"}), 200
+
 
 # =========================================
 # ✅ DELETE CUSTOMER (POST)

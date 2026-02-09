@@ -740,10 +740,21 @@ if (!phone) {
     fetch("/update-user", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
       body: JSON.stringify(payload),
     })
-      .then((res) => res.json())
-      .then((data) => {
+      .then((res) => res.json().then((data) => ({ res, data })))
+      .then(({ res, data }) => {
+        if (res.status === 401) {
+          alert(data.message || "Session expired. Please log in again.");
+          setTimeout(() => { window.location.href = "/login?message=session_expired"; }, 500);
+          if (saveEditBtn) {
+            saveEditBtn.disabled = false;
+            saveEditBtn.textContent = saveEditBtn.dataset.originalText || "Save";
+            updateEditUserButtonState();
+          }
+          return;
+        }
         if (data.success) {
           if (saveEditBtn) {
             saveEditBtn.textContent = saveEditBtn.dataset.originalText || "Save";

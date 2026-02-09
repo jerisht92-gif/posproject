@@ -695,6 +695,7 @@ document.addEventListener("DOMContentLoaded", () => {
     fetch("/department-roles/edit", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
       body: JSON.stringify({
         id: editId.value,
         code,
@@ -702,8 +703,17 @@ document.addEventListener("DOMContentLoaded", () => {
         description: desc,
       }),
     })
-      .then((r) => r.json())
-      .then((data) => {
+      .then((r) => r.json().then((data) => ({ res: r, data })))
+      .then(({ res, data }) => {
+        if (res.status === 401) {
+          showErrorNotification(data.error || "Session expired. Please log in again.");
+          setTimeout(() => { window.location.href = "/login?message=session_expired"; }, 1500);
+          if (saveBtn) {
+            saveBtn.disabled = false;
+            saveBtn.textContent = saveBtn.dataset.originalText || "Save";
+          }
+          return;
+        }
         if (data.success) {
           if (saveBtn) {
             saveBtn.textContent = saveBtn.dataset.originalText || "Save";
@@ -713,10 +723,7 @@ document.addEventListener("DOMContentLoaded", () => {
           showSuccessNotification("Department has been edited successfully");
           fetchDepartments();
         } else {
-          // Show error notification instead of alert
           showErrorNotification(data.error || "Update failed");
-          
-          // Re-enable button on error
           if (saveBtn) {
             saveBtn.disabled = false;
             saveBtn.textContent = saveBtn.dataset.originalText || "Save";

@@ -1,13 +1,13 @@
 [
   {
     "customer_id": "C101",
-    "name": "Anjali",
-    "company": "Sunshine enterprise",
+    "name": "John Doe",
+    "company": "ABC Enterprises",
     "customer_type": "Individual",
     "status": "Active",
-    "email": "anj@gmail.com",
-    "credit_limit": "50002",
-    "city": "Coimbatore",
+    "email": "john.doe@example.com",
+    "credit_limit": "50000",
+    "city": "Chennai",
     "sales_rep": "Meena",
     "company_type": "Individual"
   },
