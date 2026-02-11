@@ -73,11 +73,11 @@ document.addEventListener("DOMContentLoaded", () => {
     const description = document.getElementById("deptDesc");
 
     // --------------------
-    // Load Department dropdown from departments.json via /api/departments
+    // Load Create Roles data (departments for dropdown) via /api/roles — shows as "roles" in Network Fetch/XHR
     // --------------------
     function loadDepartmentOptions() {
         if (!department) return;
-        fetch("/api/departments")
+        fetch("/api/roles", { credentials: "same-origin" })
             .then((res) => res.json())
             .then((data) => {
                 const list = (data && data.departments) ? data.departments : [];

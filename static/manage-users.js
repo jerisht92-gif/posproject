@@ -87,7 +87,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function fetchUsers() {
-    return fetch("/api/users")
+    return fetch("/api/users", { credentials: "same-origin" })
       .then((res) => {
         if (!res.ok) throw new Error("HTTP " + res.status);
         return res.json();
@@ -280,10 +280,19 @@ window.addEventListener("click", (e) => {
 
 confirmDeleteBtn?.addEventListener("click", () => {
   if (pendingDeleteId === null || pendingDeleteId === undefined) return;
-  fetch(`/delete-user/${pendingDeleteId}`, { method: "DELETE" })
-    .then((res) => res.json())
-    .then((data) => {
+  fetch(`/delete-user/${pendingDeleteId}`, { method: "DELETE", credentials: "same-origin" })
+    .then((res) => res.json().then((data) => ({ res, data })))
+    .then(({ res, data }) => {
       closeDeleteModal();
+
+      if (!res.ok || !data || data.success !== true) {
+        const msg =
+          (data && data.message) ||
+          "You do not have permission to delete this user or an error occurred.";
+        alert(msg);
+        return;
+      }
+
       showSuccessNotification("User has been deleted successfully");
       return fetchUsers();
     })

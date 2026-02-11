@@ -778,5 +778,41 @@
     "credit_limit": "374764.0",
     "city": "syuew",
     "sales_rep": ""
+  },
+  {
+    "customer_id": "C1244",
+    "name": "yuuy jkj",
+    "company": "yuuy jkj",
+    "customer_type": "Individual",
+    "status": "Active",
+    "email": "fgdf@gmail.com",
+    "credit_limit": "56554",
+    "city": "jhghd",
+    "sales_rep": "Meena",
+    "company_type": "Individual",
+    "phone": "9898989882",
+    "gstNumber": "27ABCDE1236F1Z8",
+    "address": "jgjhgjhg",
+    "street": "thgfhg",
+    "state": "fhgfhgfg",
+    "zipCode": "363663",
+    "country": "jhjhy",
+    "billingAddress": "jhjhg",
+    "shippingAddress": "jhy",
+    "paymentTerms": "Net 30",
+    "creditTerm": "Standard",
+    "availableLimit": "56554"
+  },
+  {
+    "customer_id": "C1245",
+    "name": "dfdf",
+    "company": "rere",
+    "customer_type": "Wholesale",
+    "company_type": "Wholesale",
+    "status": "Inactive",
+    "email": "regeg@gmail.com",
+    "credit_limit": "12122",
+    "city": "fderfge",
+    "sales_rep": ""
   }
 ]

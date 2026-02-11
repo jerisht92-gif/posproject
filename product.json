@@ -1,23 +1,5 @@
 [
   {
-    "product_id": "102",
-    "product_name": "dfddf",
-    "type": "Physical",
-    "category": "Electronics",
-    "status": "Active",
-    "stock_level": 7,
-    "price": 32323.0
-  },
-  {
-    "product_id": "123",
-    "product_name": "sdffd",
-    "type": "Digital",
-    "category": "Clothing",
-    "status": "Inactive",
-    "stock_level": 34,
-    "price": 4564.0
-  },
-  {
     "product_id": "124",
     "product_name": "vcvcvcv",
     "type": "Physical",
@@ -237,5 +219,49 @@
     "status": "Active",
     "stock_level": 23,
     "price": 34565.0
+  },
+  {
+    "product_id": "P141",
+    "product_name": "iofdrd",
+    "type": "Lighting",
+    "category": "efgh",
+    "status": "active",
+    "stock_level": 6,
+    "price": 23.0,
+    "description": "tyhth",
+    "sub_category": "ytyt",
+    "unit_price": "23",
+    "discount": "3",
+    "tax_code": "HGHG (32%)",
+    "quantity": "67",
+    "uom": "dj",
+    "reorder_level": "1",
+    "warehouse": "hjjhhj",
+    "size": "fdxf",
+    "color": "hghhg",
+    "weight": "5",
+    "specifications": "hydfdfgdfgdgfdfgfdfgdfg",
+    "related_products": "xcddfcg",
+    "supplier": "iuiuuii",
+    "product_usage": "purchase",
+    "image": "Screenshot_2026-02-03_094454.png"
+  },
+  {
+    "product_id": "P101",
+    "product_name": "abc",
+    "type": "Physical",
+    "category": "Electronics",
+    "status": "Active",
+    "stock_level": 12,
+    "price": 2323.0
+  },
+  {
+    "product_id": "P101",
+    "product_name": "abc",
+    "type": "Physical",
+    "category": "Electronics",
+    "status": "Active",
+    "stock_level": 12,
+    "price": 2323.0
   }
 ]

@@ -394,63 +394,50 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // ============================
-  // Load Department dropdown from departments.json via /api/departments
+  // Load Create Users data (departments + roles) in one request — shows as "create-users" in Network tab
   // ============================
-  function loadDepartmentOptions() {
-    if (!department) return;
-    fetch("/api/departments")
+  function loadCreateUsersOptions() {
+    fetch("/api/create-users", { credentials: "same-origin" })
       .then((res) => res.json())
       .then((data) => {
-        const list = (data && data.departments) ? data.departments : [];
-        // Keep only "Select Department" placeholder
-        department.innerHTML = '<option value="">Select Department</option>';
-        list.forEach((d) => {
-          if (!d || typeof d !== "object") return;
-          const name = (d.name || d.department_name || "").trim();
-          if (!name) return;
-          const opt = document.createElement("option");
-          opt.value = name;
-          opt.textContent = name;
-          department.appendChild(opt);
-        });
+        // Departments dropdown
+        if (department) {
+          const deptList = (data && data.departments) ? data.departments : [];
+          department.innerHTML = '<option value="">Select Department</option>';
+          deptList.forEach((d) => {
+            if (!d || typeof d !== "object") return;
+            const name = (d.name || d.department_name || "").trim();
+            if (!name) return;
+            const opt = document.createElement("option");
+            opt.value = name;
+            opt.textContent = name;
+            department.appendChild(opt);
+          });
+        }
+        // Roles dropdown
+        if (role) {
+          const roleList = (data && data.roles) ? data.roles : [];
+          role.innerHTML = '<option value="">Select Designation</option>';
+          const seen = new Set();
+          roleList.forEach((r) => {
+            if (!r || typeof r !== "object") return;
+            const name = (r.role || r.role_name || "").trim();
+            if (!name || seen.has(name)) return;
+            seen.add(name);
+            const opt = document.createElement("option");
+            opt.value = name;
+            opt.textContent = name;
+            role.appendChild(opt);
+          });
+        }
         validateAllFields();
       })
       .catch((err) => {
-        console.error("Error loading departments:", err);
+        console.error("Error loading Create Users options:", err);
         validateAllFields();
       });
   }
-  loadDepartmentOptions();
-
-  // ============================
-  // Load Role dropdown from roles.json via /api/roles
-  // ============================
-  function loadRoleOptions() {
-    if (!role) return;
-    fetch("/api/roles")
-      .then((res) => res.json())
-      .then((data) => {
-        const list = (data && data.roles) ? data.roles : [];
-        role.innerHTML = '<option value="">Select Designation</option>';
-        const seen = new Set();
-        list.forEach((r) => {
-          if (!r || typeof r !== "object") return;
-          const name = (r.role || r.role_name || "").trim();
-          if (!name || seen.has(name)) return;
-          seen.add(name);
-          const opt = document.createElement("option");
-          opt.value = name;
-          opt.textContent = name;
-          role.appendChild(opt);
-        });
-        validateAllFields();
-      })
-      .catch((err) => {
-        console.error("Error loading roles:", err);
-        validateAllFields();
-      });
-  }
-  loadRoleOptions();
+  loadCreateUsersOptions();
 
   // Dropdowns – clear error when user chooses value
   branch.addEventListener("change", () => {
@@ -649,13 +636,14 @@ document.addEventListener("DOMContentLoaded", () => {
       jsonData[key] = value;
     });
 
-    // Submit via AJAX (same pattern as create-department)
+    // Submit via AJAX — POST to create-user only (keeps context as New Branch User, not departments/roles)
     fetch(form.action, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "Accept": "application/json"
       },
+      credentials: "same-origin",
       body: JSON.stringify(jsonData)
     })
     .then(res => res.json())
@@ -667,7 +655,7 @@ document.addEventListener("DOMContentLoaded", () => {
           delete saveButton.dataset.originalText;
         }
 
-        // Redirect immediately; success toast will show on manage-users page
+        // Redirect to Manage Users list (New Branch User created)
         window.location.href = "/manage-users?user_created=1";
       } else {
         // Show error notification

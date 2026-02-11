@@ -1054,6 +1054,44 @@ def delete_department():
 # =========================================
 # 4. MASTERS — Department & Roles — APIs
 # =========================================
+@app.route("/api/create-departments", methods=["GET"])
+def api_create_departments_data():
+    """
+    Single endpoint for Create New Department & Roles page: branches + roles.
+    Fetched on page load so Network tab (Fetch/XHR) shows "create-departments".
+    """
+    user_email = session.get("user")
+    if not user_email:
+        return jsonify({"success": False, "message": "Session expired. Please login first."}), 401
+
+    users = load_users()
+    user_name = "User"
+    user_role = "User"
+    for u in users:
+        if isinstance(u, dict) and (u.get("email") or "").lower() == user_email.lower():
+            user_name = u.get("name") or "User"
+            user_role = (u.get("role") or "User").strip()
+            break
+
+    branches_list = [
+        {"id": "main_branch", "name": "Main Branch"},
+        {"id": "branch_1", "name": "Branch 1"},
+        {"id": "branch_2", "name": "Branch 2"},
+    ]
+    roles = load_roles()
+
+    return jsonify({
+        "success": True,
+        "branches": branches_list,
+        "roles": roles if isinstance(roles, list) else [],
+        "current_user": {
+            "email": user_email,
+            "name": user_name,
+            "role": user_role
+        }
+    }), 200
+
+
 @app.route("/api/departments", methods=["GET"])
 def api_departments():
     """Get all departments - supports JSON response for Postman"""
@@ -1507,13 +1545,14 @@ def delete_role():
 # =========================================
 @app.route("/api/roles", methods=["GET"])
 def api_roles():
-    """Get all roles - supports JSON response for Postman"""
+    """Get all roles (and departments for Create Roles form) - supports JSON response for Postman"""
     user_email = session.get("user")
     if not user_email:
         return jsonify({"success": False, "message": "Session expired. Please login first."}), 401
     
     users = load_users()
     roles = load_roles()
+    departments = load_departments()
     
     user_name = "User"
     user_role = "User"
@@ -1527,6 +1566,7 @@ def api_roles():
         "success": True,
         "roles": roles,
         "total": len(roles),
+        "departments": departments if isinstance(departments, list) else [],
         "current_user": {
             "email": user_email,
             "name": user_name,
@@ -1971,7 +2011,7 @@ def create_user():
     if request.method == "GET":
         return render_template(
             "create-user.html",
-            title="Create User - Stackly",
+            title="New Branch User - Stackly",
             page="manage_users",
             section="masters",
             user_email=user_email,
@@ -3405,6 +3445,41 @@ def download_customer_template():
     )
 
 
+@app.route("/api/import-product", methods=["GET"])
+def api_import_product():
+    """
+    Lightweight metadata endpoint for the Import Products page.
+    Called on page load so Network / Fetch/XHR shows 'import-product'.
+    """
+    user_email = session.get("user")
+    if not user_email:
+        return jsonify({"success": False, "message": "Session expired. Please login first."}), 401
+
+    users = load_users()
+    user_name = "User"
+    user_role = "User"
+    for u in users:
+        if isinstance(u, dict) and (u.get("email") or "").lower() == user_email.lower():
+            user_name = u.get("name") or "User"
+            user_role = (u.get("role") or "User").strip()
+            break
+
+    return jsonify(
+        {
+            "success": True,
+            "module": "products",
+            "action": "import",
+            "allowed_extensions": [".xlsx", ".xls"],
+            "template_url": url_for("download_template"),
+            "current_user": {
+                "email": user_email,
+                "name": user_name,
+                "role": user_role,
+            },
+        }
+    ), 200
+
+
 @app.route("/import", methods=["GET", "POST"])
 def import_products():
     user_email = session.get("user")
@@ -4001,6 +4076,41 @@ def customer():
         user_name=user_name,
         user_role=user_role
     )
+
+
+@app.route("/api/import-customer", methods=["GET"])
+def api_import_customer():
+    """
+    Lightweight metadata endpoint for the Import Customers page.
+    Called on page load so Network / Fetch/XHR shows 'import-customer'.
+    """
+    user_email = session.get("user")
+    if not user_email:
+        return jsonify({"success": False, "message": "Session expired. Please login first."}), 401
+
+    users = load_users()
+    user_name = "User"
+    user_role = "User"
+    for u in users:
+        if isinstance(u, dict) and (u.get("email") or "").lower() == user_email.lower():
+            user_name = u.get("name") or "User"
+            user_role = (u.get("role") or "User").strip()
+            break
+
+    return jsonify(
+        {
+            "success": True,
+            "module": "customer",
+            "action": "import",
+            "allowed_extensions": [".csv", ".xlsx"],
+            "template_url": url_for("download_customer_template"),
+            "current_user": {
+                "email": user_email,
+                "name": user_name,
+                "role": user_role,
+            },
+        }
+    ), 200
 
 
 @app.route("/import-customer", methods=["GET", "POST"])
@@ -5935,6 +6045,47 @@ def global_search():
 # =========================================
 # 3. MASTERS — Manage Users — API
 # =========================================
+@app.route("/api/create-users", methods=["GET"])
+def api_create_users_data():
+    """
+    Single endpoint for Create Users context: users list + departments + roles.
+    Used by both Manage Users (users table) and Create New Branch Users (department/role dropdowns).
+    Replaces separate /api/users, /api/departments, /api/roles fetches in Network tab with one 'create-users' request.
+    """
+    user_email = session.get("user")
+    if not user_email:
+        return jsonify({"success": False, "message": "Session expired. Please login first."}), 401
+
+    users = load_users()
+    departments = load_departments()
+    roles = load_roles()
+
+    user_name = "User"
+    user_role = "User"
+    current_email = (user_email or "").strip().lower()
+    for u in users:
+        if not isinstance(u, dict):
+            continue
+        u_email = (u.get("email") or "").strip().lower()
+        if u_email == current_email:
+            user_name = u.get("name") or "User"
+            user_role = (u.get("role") or "User").strip()
+            break
+
+    return jsonify({
+        "success": True,
+        "users": users,
+        "total": len(users),
+        "departments": departments if isinstance(departments, list) else [],
+        "roles": roles if isinstance(roles, list) else [],
+        "current_user": {
+            "email": user_email,
+            "name": user_name,
+            "role": user_role
+        }
+    }), 200
+
+
 @app.route("/api/users", methods=["GET"])
 def api_get_users():
     """Get all users as JSON - for Postman/API testing"""
@@ -6172,11 +6323,12 @@ def delete_user(user_id):
         if not current_user:
             return jsonify({"success": False, "message": "Current user not found"}), 403
 
-        current_role = (current_user.get("role") or "").strip().lower()
-        if current_role != "admin":
+        # Use normalized role (same pattern as other RBAC checks)
+        current_role_norm = normalize_role(current_user.get("role"))
+        if current_role_norm not in ["admin", "superadmin"]:
             return jsonify({
                 "success": False,
-                "message": "Only admins can delete users."
+                "message": "Only Admin / Super Admin can delete users."
             }), 403
 
         if user_id < 0 or user_id >= len(users):

@@ -7,20 +7,6 @@
     "role": "Admin"
   },
   {
-    "name": "hghghg",
-    "phone": "+61198745631",
-    "email": "Ari@gmail.com",
-    "password": "Ari@5005",
-    "role": "User"
-  },
-  {
-    "name": "zxd",
-    "phone": "7412589630",
-    "email": "wed@gmail.com",
-    "password": "Wed@5005",
-    "role": "Admin"
-  },
-  {
     "id": "1",
     "name": "Anithaganff",
     "email": "anitha@thestackly.com",
@@ -61,23 +47,7 @@
     "employee_id": "62622"
   },
   {
-    "id": "c8127a4c-a0bb-4682-ba34-4ea8b510f583",
-    "name": "VikramVedha ved",
-    "phone": "+97412345678",
-    "first_name": "VikramVedha",
-    "last_name": "ved",
-    "email": "vik@gmail.com",
-    "country_code": "+974",
-    "contact_number": "12345678",
-    "branch": "Main Branch",
-    "department": "Sales",
-    "role": "Admin",
-    "reporting_to": "Sheela",
-    "available_branches": "1",
-    "employee_id": "11012A"
-  },
-  {
-    "name": "Vicky",
+    "name": "Vickyv",
     "phone": "+61123456789",
     "email": "thaanig@gmail.com",
     "password": "Vik@5005",
@@ -425,5 +395,37 @@
     "reporting_to": "vvffggf",
     "available_branches": "44",
     "employee_id": "rdtrdrt"
+  },
+  {
+    "id": "dbd03e80-6d7b-4c2a-90c9-4aa1eff4b4ff",
+    "name": "jdjd yuy",
+    "phone": "+914378837487",
+    "first_name": "jdjd",
+    "last_name": "yuy",
+    "email": "gfvhgf@gmail.com",
+    "country_code": "+91",
+    "contact_number": "4378837487",
+    "branch": "Branch 1",
+    "department": "HJJH",
+    "role": "Senior Manager",
+    "reporting_to": "uyuy",
+    "available_branches": "766",
+    "employee_id": "6565"
+  },
+  {
+    "id": "6265cb90-0e92-4d0e-812a-72d2480fcbd9",
+    "name": "yuyyh jkkjkj",
+    "phone": "+914454564645",
+    "first_name": "yuyyh",
+    "last_name": "jkkjkj",
+    "email": "jhjhsads@gmail.com",
+    "country_code": "+91",
+    "contact_number": "4454564645",
+    "branch": "Branch 1",
+    "department": "ccv",
+    "role": "sds",
+    "reporting_to": "bvvgv",
+    "available_branches": "232",
+    "employee_id": "545"
   }
 ]

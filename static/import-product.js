@@ -1,6 +1,22 @@
 document.addEventListener("DOMContentLoaded", () => {
 
   // ==============================
+  // FETCH/XHR MARKER FOR IMPORT PAGE (shows as 'import-product')
+  // ==============================
+  fetch("/api/import-product", { credentials: "same-origin" })
+    .then((res) => res.json())
+    .then((data) => {
+      // Page already has all UI; this call is mainly for Network tab visibility
+      // Optional: could use `data.allowed_extensions` or `data.template_url` in future.
+      if (!data || !data.success) {
+        console.warn("import-product metadata not available");
+      }
+    })
+    .catch(() => {
+      // Silent failure – no impact on UI
+    });
+
+  // ==============================
   // ELEMENTS
   // ==============================
   const closeBtn = document.querySelector(".close-btn");

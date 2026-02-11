@@ -1,9 +1,21 @@
 // static/create-department.js
 (function () {
   // ============================
-  // ✅ AUTO-FADE ERROR MESSAGE AFTER 3 SECONDS
+  // ✅ CREATE-DEPARTMENTS: fetch on load so Fetch/XHR tab shows "create-departments"
   // ============================
   document.addEventListener("DOMContentLoaded", () => {
+    fetch("/api/create-departments", { credentials: "same-origin" })
+      .then((res) => res.json())
+      .then((data) => {
+        if (data && data.success) {
+          // Page is already server-rendered with branches/roles; optional: sync or use data here
+        }
+      })
+      .catch(() => {});
+
+    // ============================
+    // ✅ AUTO-FADE ERROR MESSAGE AFTER 3 SECONDS
+    // ============================
     const flashContainer = document.querySelector(".flash-container");
     if (flashContainer) {
       // Wait 3 seconds, then fade out

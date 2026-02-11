@@ -1,5 +1,19 @@
 document.addEventListener("DOMContentLoaded", () => {
   // ==============================
+  // FETCH/XHR MARKER FOR IMPORT CUSTOMERS PAGE (shows as 'import-customer')
+  // ==============================
+  fetch("/api/import-customer", { credentials: "same-origin" })
+    .then((res) => res.json())
+    .then((data) => {
+      if (!data || !data.success) {
+        console.warn("import-customer metadata not available");
+      }
+    })
+    .catch(() => {
+      // Silent failure – no impact on UI
+    });
+
+  // ==============================
   // ELEMENTS
   // ==============================
   const closeBtn = document.getElementById("closeBtn");
