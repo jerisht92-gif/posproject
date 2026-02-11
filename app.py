@@ -3519,6 +3519,7 @@ def upload_file():
     error_details = []
     skipped_row_numbers = []  # Track which rows were skipped (completely blank)
     
+    
     # Load existing products to check against database
     existing_products = load_products()
     existing_product_ids = {str(p.get("product_id", "")) for p in existing_products if p.get("product_id")}
