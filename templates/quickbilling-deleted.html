@@ -1,0 +1,92 @@
+{% extends "menu.html" %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='quickbilling-deleted.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="qb-del-page" data-role="{{ role|e }}">
+
+  <div class="qb-del-head">
+    <div>
+      <h2>Removed Items </h2>
+      <div class="sub">Items removed from current bill – You can restore them</div>
+    </div>
+
+    <a class="back-link" href="{{ url_for('quick_billing') }}">← Back </a>
+  </div>
+
+  <!-- Top filters row -->
+  <div class="qb-del-filters">
+    <div class="search-wrap">
+      
+      <input id="delSearch" type="text" placeholder="🔍︎ Search (Product code / name)">
+      
+    </div>
+
+    <button class="btn btn-soft" id="delClear">Clear Filter</button>
+  </div>
+
+  <!-- Actions row -->
+  <div class="qb-del-actions">
+    <label class="chk">
+      <input type="checkbox" id="delSelectAll">
+      <span>Select All</span>
+    </label>
+
+    <div class="right-actions">
+      <button class="btn btn-danger" id="delDeleteSelected">
+        Delete Selected <span class="muted">(Super Admin)</span>
+      </button>
+
+      
+    </div>
+  </div>
+
+  <!-- Table -->
+  <div class="qb-del-card">
+    <div class="table-scroll">
+      <table class="qb-del-table">
+        <thead>
+          <tr>
+            <th class="col-check"></th>
+            <th>S.No</th>
+            <th>Product Code</th>
+            <th>Product Name</th>
+            <th>Qty.</th>
+            <th>Unit Price</th>
+            <th>Discount %</th>
+            <th>Tax % (GST)</th>
+            <th>Removed By</th>
+            <th>Removed At</th>
+            <th class="col-action">Action</th>
+          </tr>
+        </thead>
+
+        <tbody id="delTbody">
+          <tr><td colspan="11" class="empty">No deleted items.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Footer pagination -->
+    <div class="qb-del-footer">
+      <div id="delShowing">Showing 0–0 of 0 Entities</div>
+
+      <div class="pager">
+        <button class="pager-btn" id="delPrev">‹ Prev</button>
+        <span>Page <b id="delPageNow">1</b> of <b id="delPageTotal">1</b></span>
+        <button class="pager-btn" id="delNext">Next ›</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  window.QB_ROLE = "{{ role|e }}";
+</script>
+<script src="{{ url_for('static', filename='quickbilling-deleted.js') }}"></script>
+{% endblock %}

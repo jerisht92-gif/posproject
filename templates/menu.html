@@ -104,6 +104,11 @@
               <span class="submenu-icon">🧾</span>
               <span>Sales</span>
             </a>
+            <a href="{{ url_for('quick_billing') }}"
+              class="submenu-item{% if page == 'quick_billing' %} active{% endif %}">
+              <span class="submenu-icon">🧾</span>
+              <span>Quick Billing</span>
+            </a>
             <a href="#"
                class="submenu-item{% if page == 'delivery_note' %} active{% endif %}">
               <span class="submenu-icon">📦</span>

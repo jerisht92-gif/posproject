@@ -82,7 +82,6 @@ COLOR_FILE = os.path.join(app.root_path, "product_colors.json")
 SUPPLIER_FILE = os.path.join(app.root_path, "product_suppliers.json")
 CUSTOMER_FILE = os.path.join(app.root_path, "customer.json")
 ENQUIRY_FILE = os.path.join(app.root_path, "new-enquiry.json")
-ENQUIRY_PRODUCT_FILE = os.path.join(app.root_path, "enquiry_product.json")
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 
@@ -6350,11 +6349,9 @@ def delete_user(user_id):
             "message": "Server error while deleting user"
         }), 500
 
-
 # =========================================
-# ✅ NEW-ENQUIRY 
+# 7. CRM — Enquiry List
 # =========================================
-
 def generate_enquiry_id():
     """Generate next enquiry ID based on the file at ENQUIRY_FILE."""
     if not os.path.exists(ENQUIRY_FILE):
@@ -6368,32 +6365,14 @@ def generate_enquiry_id():
         if not data or not isinstance(data, list):
             return "ENQ0001"
 
-        last_id = data[-1].get("enquiry_id", "ENQ0000")
+        last_id = data[-1].get("enquiry_id", "ENQ-0000")
         number = int(last_id.replace("ENQ", ""))
-        return f"ENQ{number + 1:04d}"
+        return f"ENQ-{number + 1:04d}"
 
     except Exception:
         return "ENQ0001"
 
 
-def read_products():
-    """
-    Read enquiry-related products from ENQUIRY_PRODUCT_FILE (D:\\POS_Project_Latest\\Pos project\\enquiry_product.json).
-    """
-    if not os.path.exists(ENQUIRY_PRODUCT_FILE):
-        return []
-    with open(ENQUIRY_PRODUCT_FILE, "r") as f:
-        return json.load(f)
-
-
-def write_products(data):
-    with open(ENQUIRY_PRODUCT_FILE, "w") as f:
-        json.dump(data, f, indent=4)
-
-
-# =========================================
-# 7. CRM — Enquiry List
-# =========================================
 @app.route("/enquiry-list")
 def enquiry_list():
     user_email = session.get("user")
@@ -6407,16 +6386,24 @@ def enquiry_list():
             user_name = u.get("name") or "User"
             break
 
-    # Load enquiries from JSON file (Pos project/new-enquiry.json)
+    # Load enquiries from JSON file (new-enquiry.json)
     enquiries = []
     if os.path.exists(ENQUIRY_FILE):
-        try:
-            with open(ENQUIRY_FILE, "r", encoding="utf-8") as f:
-                enquiries = json.load(f)
-                if not isinstance(enquiries, list):
-                    enquiries = []
-        except Exception:
-            enquiries = []
+        with open(ENQUIRY_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        # Convert dict to list
+        for enq_id, enq_data in data.items():
+            details = enq_data.get("enquiry_details", {})
+            enquiries.append({
+                "enquiry_id": enq_id,
+                "first_name": details.get("first_name", ""),
+                "last_name": details.get("last_name", ""),
+                "email": details.get("email", ""),
+                "phone_number": details.get("phone", ""),
+                "status": details.get("status", "New"),
+                "items": enq_data.get("items", {})
+            })
 
     return render_template(
         "enquiry-list.html",
@@ -6429,9 +6416,138 @@ def enquiry_list():
     )
 
 
+@app.route("/api/enquiry/<enquiry_id>")
+def get_enquiry(enquiry_id):
+    if not os.path.exists(ENQUIRY_FILE):
+        return jsonify(success=False, message="Enquiry file missing")
+
+    with open(ENQUIRY_FILE, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    enquiry = data.get(enquiry_id)
+    if not enquiry:
+        return jsonify(success=False, message="Enquiry not found")
+
+    details = enquiry.get("enquiry_details", {})
+    return jsonify(success=True, data={
+        "enquiry_id": enquiry_id,
+        "first_name": details.get("first_name", ""),
+        "last_name": details.get("last_name", ""),
+        "phone": details.get("phone", ""),
+        "email": details.get("email", "")
+    })
+
+
+
+@app.route("/update-enquiry/<enquiry_id>", methods=["POST"])
+def update_enquiry(enquiry_id):
+    if not os.path.exists(ENQUIRY_FILE):
+        return jsonify(success=False, message="Enquiry file missing"), 400
+
+    with open(ENQUIRY_FILE, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    if enquiry_id not in data:
+        return jsonify(success=False, message="Enquiry not found"), 404
+
+    req_data = request.get_json()
+    if not req_data:
+        return jsonify(success=False, message="Invalid request"), 400
+
+    # Get existing enquiry details
+    details = data[enquiry_id].get("enquiry_details", {})
+
+    # Update only the fields from the request
+    details["first_name"] = req_data.get("first_name", details.get("first_name", ""))
+    details["last_name"] = req_data.get("last_name", details.get("last_name", ""))
+    details["phone"] = req_data.get("phone_number", details.get("phone", ""))
+    details["email"] = req_data.get("email", details.get("email", ""))
+
+    # Save updated details back
+    data[enquiry_id]["enquiry_details"] = details
+
+    with open(ENQUIRY_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=4, ensure_ascii=False)
+
+    return jsonify(success=True, message="Enquiry updated successfully")
+
+
+
+
+
+@app.route("/delete-enquiry/<enquiry_id>", methods=["DELETE"])
+def delete_enquiry(enquiry_id):
+    if not os.path.exists(ENQUIRY_FILE):
+        return jsonify(success=False, message="Enquiry file missing")
+
+    with open(ENQUIRY_FILE, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    if enquiry_id not in data:
+        return jsonify(success=False, message="Enquiry not found")
+
+    # Remove enquiry
+    del data[enquiry_id]
+
+    with open(ENQUIRY_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=4)
+
+    return jsonify(success=True, message="Enquiry deleted successfully")
+
+
+
+@app.route("/api/enquiry-items/<enquiry_id>")
+def get_enquiry_items(enquiry_id):
+    if not os.path.exists(ENQUIRY_FILE):
+        return jsonify(success=False, message="Enquiry file missing")
+
+    with open(ENQUIRY_FILE, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    enquiry = data.get(enquiry_id)
+    if not enquiry:
+        return jsonify(success=False, message="Enquiry not found")
+
+    items = enquiry.get("items", {})  # get items dict
+
+    return jsonify(success=True, data=items)
+
+
+@app.route("/update-enquiry-items/<enquiry_id>", methods=["POST"])
+def update_enquiry_items(enquiry_id):
+    if not os.path.exists(ENQUIRY_FILE):
+        return jsonify(success=False, message="Enquiry file missing"), 400
+
+    with open(ENQUIRY_FILE, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    if enquiry_id not in data:
+        return jsonify(success=False, message="Enquiry not found"), 404
+
+    req_data = request.get_json()
+    if not req_data or "items" not in req_data:
+        return jsonify(success=False, message="Invalid request"), 400
+
+    # Update the items for this enquiry
+    for item_code, item_details in req_data["items"].items():
+        if "items" not in data[enquiry_id]:
+            data[enquiry_id]["items"] = {}
+        data[enquiry_id]["items"][item_code] = item_details
+
+    # Save back to JSON file
+    with open(ENQUIRY_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=4, ensure_ascii=False)
+
+    return jsonify(success=True, message="Enquiry items updated successfully")
+
+
+
 # =========================================
-# 8. CRM — New Enquiry
+# ✅ NEW-ENQUIRY 
 # =========================================
+
+
+
 @app.route("/new-enquiry")
 def new_enquiry():
     user_email = session.get("user")
@@ -6448,243 +6564,249 @@ def new_enquiry():
     return render_template(
         "new-enquiry.html",
         title="New-Enquiry - Stackly",
-        page="enquiry_list",
-        section="crm",
+        page="new_enquiry",
+        section="masters",
         user_email=user_email,
         user_name=user_name,
     )
 
 
+
+def load_data():
+    if not os.path.exists(ENQUIRY_FILE):
+        return {}
+    with open(ENQUIRY_FILE, "r") as f:
+        return json.load(f)
+
+def save_data(data):
+    with open(ENQUIRY_FILE, "w") as f:
+        json.dump(data, f, indent=4)
+
+def generate_enquiry_id():
+    data = load_data()
+    if not data:
+        return "ENQ-0001"
+
+    last_id = list(data.keys())[-1]
+    last_num = int(last_id.split("-")[1])
+    return f"ENQ-{last_num + 1:04d}"
+
+
+
+@app.route("/generate-enquiry-id")
+def generate_id():
+    return jsonify(enquiry_id=generate_enquiry_id())
+
+
 @app.route("/save-enquiry", methods=["POST"])
 def save_enquiry():
+    payload = request.json
 
-    # Support both JSON (AJAX) and regular form POST submissions
-    if request.is_json:
-        enquiry_data = request.get_json(silent=True) or {}
-    else:
-        enquiry_data = request.form.to_dict() or {}
+    enquiry_id = payload["enquiry_id"]
+    enquiry_details = payload["enquiry_details"]
+    new_items = payload.get("items", {})
 
-    if not enquiry_data:
-        return jsonify({"status": "error", "message": "No data received"}), 400
-
-    # 🔥 generate ID
-    enquiry_data["enquiry_id"] = generate_enquiry_id()
-
-    # 🔥 read existing data (Pos project/new-enquiry.json)
     if os.path.exists(ENQUIRY_FILE):
-        with open(ENQUIRY_FILE, "r", encoding="utf-8") as f:
-            try:
-                all_data = json.load(f)
-                if not isinstance(all_data, list):
-                    all_data = []
-            except json.JSONDecodeError:
-                all_data = []
+        with open(ENQUIRY_FILE, "r") as f:
+            data = json.load(f)
     else:
-        all_data = []
+        data = {}
 
-    # 🔥 append new enquiry
-    all_data.append(enquiry_data)
+    if enquiry_id in data:
+        # update details
+        # data[enquiry_id]["enquiry_details"] = enquiry_details
 
-    # 🔥 save back
-    with open(ENQUIRY_FILE, "w", encoding="utf-8") as f:
-        json.dump(all_data, f, indent=4)
+        # merge items
+        old_items = data[enquiry_id].get("items", {})
+        old_items.update(new_items)
+        data[enquiry_id]["items"] = old_items
 
-    # Build a common response payload
-    payload = {
-        "status": "success",
-        "enquiry_id": enquiry_data["enquiry_id"],
-    }
+    else:
+        data[enquiry_id] = {
+            "enquiry_details": enquiry_details,
+            "items": new_items
+        }
 
-    # If this is an AJAX/JSON request, return JSON
-    if request.is_json or wants_json():
-        return jsonify(payload), 200
+    with open(ENQUIRY_FILE, "w") as f:
+        json.dump(data, f, indent=4)
 
-    # Otherwise, it's a normal form POST → navigate to Enquiry List page
-    # with a query flag so front-end can show a toast
-    return redirect(url_for("enquiry_list", created="success"))
-
-
-@app.route("/add-product", methods=["POST"])
-def add_product():
-    product = request.json
-    products = read_products()
-    products.append(product)
-    write_products(products)
     return jsonify({"success": True})
 
 
-@app.route("/get-products")
-def get_products():
-    return jsonify(read_products())
-
-
-# Delete product
-@app.route("/delete-product/<product_id>", methods=["DELETE"])
-def delete_product(product_id):
-    products = read_products()
-    products = [p for p in products if p["product_id"] != product_id]
-    write_products(products)  # correct function
-    return jsonify({"status": "success"})
-
-
-@app.route("/update-product/<product_id>", methods=["PUT"])
-def update_product(product_id):
-    products = read_products()  # read all products
-    updated_data = request.json
-
-    for i, p in enumerate(products):
-        if p["product_id"] == product_id:
-            products[i].update(updated_data)
-            break
-
-    write_products(products)
-    return jsonify({"success": True})
-
-
-# ITEM CODE GENERATE
-@app.route("/generate-product-id")
-def generate_product_id_enquiry():
-    products = read_products()
-
-    if products:
-        last_id = products[-1]["product_id"]  # e.g., "PRD-005"
-        last_num = int(last_id.split("-")[1])  # get numeric part
-        new_num = last_num + 1
-    else:
-        new_num = 1  # first product
-
-    # Format with 3 digits, leading zeros
-    new_id = f"PRD-{new_num:03d}"
-
-    return jsonify({"product_id": new_id})
-
-
-# EMAIL CHECK (uses Pos project/new-enquiry.json)
-@app.route("/check-email", methods=["POST"])
-def check_emails():
-    data = request.get_json()
-    email = data.get("email")
-
+@app.route("/get-enquiry-add-items/<enquiry_id>")
+def get_enquiry_add_items_(enquiry_id):
     try:
-        with open(ENQUIRY_FILE, "r", encoding="utf-8") as f:
-            enquiries = json.load(f)
-    except FileNotFoundError:
-        enquiries = []
-
-    exists = any(e.get("email") == email for e in enquiries)
-
-    return jsonify({"exists": exists})
-
-
-@app.route("/delete-enquiry/<enquiry_id>", methods=["DELETE"])
-def delete_enquiry(enquiry_id):
-    try:
-        # Always use Pos project/new-enquiry.json
         if not os.path.exists(ENQUIRY_FILE):
-            return jsonify({"success": False, "message": "No enquiries found"}), 404
+            return jsonify({"success": False, "items": {}})
 
         with open(ENQUIRY_FILE, "r", encoding="utf-8") as f:
-            enquiries = json.load(f)
-            if not isinstance(enquiries, list):
-                enquiries = []
+            data = json.load(f)
 
-        # Find and remove the enquiry
-        original_count = len(enquiries)
-        enquiries = [e for e in enquiries if str(e.get("enquiry_id", "")) != str(enquiry_id) and str(e.get("id", "")) != str(enquiry_id)]
-
-        if len(enquiries) == original_count:
-            return jsonify({"success": False, "message": "Enquiry not found"}), 404
-
-        # Save back to Pos project/new-enquiry.json
-        with open(ENQUIRY_FILE, "w", encoding="utf-8") as f:
-            json.dump(enquiries, f, indent=4)
-
-        return jsonify({"success": True, "message": "Enquiry deleted successfully"}), 200
-
-    except Exception as e:
-        return jsonify({"success": False, "message": f"Error deleting enquiry: {str(e)}"}), 500
-
-
-@app.route("/api/enquiry/<enquiry_id>", methods=["GET"])
-def get_enquiry(enquiry_id):
-    try:
-        # Always use Pos project/new-enquiry.json
-        if not os.path.exists(ENQUIRY_FILE):
-            return jsonify({"success": False, "message": "No enquiries found"}), 404
-
-        with open(ENQUIRY_FILE, "r", encoding="utf-8") as f:
-            enquiries = json.load(f)
-            if not isinstance(enquiries, list):
-                enquiries = []
-
-        # Find the enquiry
-        enquiry = None
-        for e in enquiries:
-            if str(e.get("enquiry_id", "")) == str(enquiry_id) or str(e.get("id", "")) == str(enquiry_id):
-                enquiry = e
-                break
-
+        enquiry = data.get(enquiry_id)
         if not enquiry:
-            return jsonify({"success": False, "message": "Enquiry not found"}), 404
+            return jsonify({"success": False, "items": {}})
 
+        # ✅ Return ALL items - NO FILTERING NEEDED since items are physically removed
+        all_items = enquiry.get("items", {})
+        
+        print(f"Enquiry {enquiry_id} has {len(all_items)} items: {list(all_items.keys())}")
+        
         return jsonify({
             "success": True,
-            "data": enquiry
-        }), 200
-
+            "items": all_items  # Return everything - deleted items are GONE from file
+        })
+        
     except Exception as e:
-        return jsonify({"success": False, "message": f"Error fetching enquiry: {str(e)}"}), 500
+        print(f"Error in get_enquiry_add_items_: {e}")
+        return jsonify({"success": False, "items": {}})
 
+@app.route("/add-item", methods=["POST"])
+def add_item():
+    payload = request.get_json(force=True)
 
-@app.route("/update-enquiry/<enquiry_id>", methods=["POST"])
-def update_enquiry(enquiry_id):
+    enquiry_id = payload["enquiry_id"]
+    item = payload["item"]
+
+    data = load_data()
+
+    if enquiry_id not in data:
+        return jsonify(error="Invalid enquiry id"), 400
+
+    item_code = item["item_code"]
+
+    data[enquiry_id]["items"][item_code] = item
+
+    save_data(data)
+
+    return jsonify(status="item added")
+
+@app.route("/check-email-enquiry")
+def check_email_enquiry():
     try:
-        data = request.get_json()
-        if not data:
-            return jsonify({"success": False, "message": "No data received"}), 400
+        email = request.args.get("email", "").lower()
 
-        # Always use Pos project/new-enquiry.json
         if not os.path.exists(ENQUIRY_FILE):
-            return jsonify({"success": False, "message": "No enquiries found"}), 404
+            return jsonify({"exists": False})
 
-        with open(ENQUIRY_FILE, "r", encoding="utf-8") as f:
-            enquiries = json.load(f)
-            if not isinstance(enquiries, list):
-                enquiries = []
+        with open(ENQUIRY_FILE, "r") as f:
+            enquiries = json.load(f)   # THIS IS A DICT
 
-        # Find and update the enquiry
-        updated = False
-        for e in enquiries:
-            if str(e.get("enquiry_id", "")) == str(enquiry_id) or str(e.get("id", "")) == str(enquiry_id):
-                e.update({
-                    "first_name": data.get("first_name", ""),
-                    "last_number": data.get("last_number", ""),
-                    "email": data.get("email", ""),
-                    "phone_number": data.get("phone_number", "")
+        # Loop through dict values
+        for enquiry_id, enquiry in enquiries.items():
+            details = enquiry.get("enquiry_details", {})
+            if details.get("email", "").lower() == email:
+                return jsonify({
+                    "exists": True,
+                    "enquiry_id": enquiry_id,
+                    "customer": details
                 })
-                updated = True
-                break
 
-        if not updated:
-            return jsonify({"success": False, "message": "Enquiry not found"}), 404
-
-        # Save back
-        with open(ENQUIRY_FILE, "w", encoding="utf-8") as f:
-            json.dump(enquiries, f, indent=4)
-
-        # Find the updated enquiry to return
-        updated_enquiry = next((e for e in enquiries if str(e.get("enquiry_id", "")) == str(enquiry_id) or str(e.get("id", "")) == str(enquiry_id)), None)
-
-        return jsonify({
-            "success": True,
-            "message": "Enquiry updated successfully",
-            "data": updated_enquiry
-        }), 200
+        return jsonify({"exists": False})
 
     except Exception as e:
-        return jsonify({"success": False, "message": f"Error updating enquiry: {str(e)}"}), 500
+        print("❌ CHECK EMAIL ERROR:", e)
+        return jsonify({"exists": False, "error": str(e)}), 500
 
 
+def load_products():
+    if not os.path.exists(PRODUCT_FILE):
+        return []
+    with open(PRODUCT_FILE, "r") as f:
+        return json.load(f)
+
+@app.route("/get-product/<product_id>")
+def get_product(product_id):
+    products = load_products()
+    for p in products:
+        if p["product_id"] == product_id:
+            return jsonify({"success": True, "product": p})
+    return jsonify({"success": False, "message": "Product not found"}), 404
+
+
+@app.route("/delete-enquiry-item/<enquiry_id>/<item_code>", methods=["DELETE"])
+def delete_enquiry_item(enquiry_id, item_code):
+    try:
+        print(f"\n=== HARD DELETE REQUEST ===")
+        print(f"Enquiry ID: {enquiry_id}")
+        print(f"Item Code: {item_code}")
+        
+        if not os.path.exists(ENQUIRY_FILE):
+            return jsonify(success=False, message="Enquiry file missing"), 404
+
+        # Read the file
+        with open(ENQUIRY_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        # Check if enquiry exists
+        if enquiry_id not in data:
+            return jsonify(success=False, message="Enquiry not found"), 404
+
+        # Check if items exist
+        if "items" not in data[enquiry_id]:
+            return jsonify(success=False, message="No items found"), 404
+
+        items = data[enquiry_id]["items"]
+
+        # Check if item exists
+        if item_code not in items:
+            return jsonify(success=False, message="Item not found"), 404
+
+        # 🔴 HARD DELETE - Completely remove the item from dictionary
+        del items[item_code]
+        print(f"✓ Item {item_code} completely removed from JSON")
+        print(f"Remaining items: {list(items.keys())}")
+
+        # Save back to file
+        with open(ENQUIRY_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=4, ensure_ascii=False)
+        
+        print(f"✓ File saved successfully")
+        print(f"=== DELETE COMPLETED ===\n")
+        
+        return jsonify(success=True, message="Item permanently deleted")
+
+    except Exception as e:
+        print(f"Error deleting item: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify(success=False, message=f"Error: {str(e)}"), 500                                                                                                                                                                                                                    
+@app.route("/get-product-config")
+def get_product_config():
+    if not os.path.exists(PRODUCT_FILE):
+        return jsonify(success=False, message="Product file missing")
+
+    with open(PRODUCT_FILE, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    if not isinstance(data, list):
+        return jsonify(success=False, message="Invalid product data")
+
+    # Get all product IDs
+    product_ids = [p.get("product_id", "") for p in data if "product_id" in p]
+
+    # Calculate max length
+    max_id_length = max(len(pid) for pid in product_ids) if product_ids else 4
+
+    return jsonify(
+        success=True,
+        max_id_length=max_id_length,
+        product_ids=product_ids
+    )
+
+@app.route("/quick-billing")
+def quick_billing():
+    return render_template("quick-billing.html", page="quick_billing")
+
+@app.route("/api/products/qb") 
+def api_products_qb():
+    products = load_products()
+    return jsonify({"success": True, "products": products})
+
+@app.route("/quick-billing/deleted")
+def quick_billing_deleted():
+    
+    role = session.get("role", "")
+    return render_template("quickbilling-deleted.html", page="quick-billing-deleted", role=role)
 # =========================================
 # ✅ RUN APP
 # =========================================

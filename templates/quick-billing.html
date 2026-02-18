@@ -1,0 +1,379 @@
+{% extends "menu.html" %}
+
+{% block extra_css %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='quick-billing.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="quick-billing-page">
+
+  <!-- =========
+    1) HEADER
+  ============== -->
+  <div class="quick-billing-header">
+    <h2>Quick Billing</h2>
+
+    <div class="qb-header-actions">
+      <button class="qb-btn qb-btn-secondary" type="button" id="printBtn">Print</button>
+    </div>
+  </div>
+
+  <!-- ============================================================
+    2) ROW 1 : PRODUCT SELECT (TYPE SEARCH + CATEGORY)
+  ============================================================= -->
+  <div class="quick-billing-tabs qb-row-1">
+
+    <!-- Product Code (TYPE SEARCH via datalist) -->
+    <input
+      class="pill-input"
+      id="productCodeInput"
+      list="productCodeList"
+      placeholder="Product Code"
+    >
+    <datalist id="productCodeList"></datalist>
+
+    <!-- Product Name (TYPE SEARCH via datalist) -->
+    <input
+      class="pill-input"
+      id="productNameInput"
+      list="productNameList"
+      placeholder="Product name"
+    >
+    <datalist id="productNameList"></datalist>
+
+    <!-- Category Filter -->
+    <select class="pill-select" id="categoryFilter">
+      <option value="" selected>Categories</option>
+    </select>
+
+    <!-- Finalize Bill Button -->
+    <button class="qb-btn qb-btn-primary" id="finalizeBtn">
+      Finalize Bill
+    </button>
+
+  </div>
+
+  <!-- ============================================================
+    3) ROW 2 : FILTERS + ACTIONS (SINGLE LINE)
+  ============================================================= -->
+  <div class="quick-billing-tabs qb-row-2 qb-row-single">
+
+    <!-- Features Filter -->
+    <select class="pill-select" id="featuresFilter">
+      <option value="" selected>Features</option>
+    </select>
+
+    <!-- Payment Mode -->
+    <select class="pill-select pill-select-soft" id="paymentMode">
+      <option value="" selected>Payment Mode</option>
+      <option value="Cash">Cash</option>
+      <option value="UPI">UPI</option>
+      <option value="Card">Card</option>
+      <option value="Multiple">Multiple</option>
+    </select>
+
+    <!-- ==========================================================
+      3A) MULTIPLE / SPLIT PAYMENT MODAL (shown when Payment Mode = Multiple)
+    =========================================================== -->
+    <div class="qb-modal" id="multiPayModal">
+      <div class="qb-modal-card">
+
+        <h3 style="margin:0 0 10px;">Multiple Payment</h3>
+
+        <div class="mp-row">
+          <label>Total</label>
+          <input type="text" id="mpTotal" readonly>
+        </div>
+
+        <div class="mp-grid">
+
+          <div class="mp-row">
+            <label>Cash</label>
+            <input type="number" id="mpCash" min="0" step="0.01" placeholder="0.00">
+          </div>
+
+          <div class="mp-row">
+            <label>UPI</label>
+            <input type="number" id="mpUpi" min="0" step="0.01" placeholder="0.00">
+          </div>
+
+          <div class="mp-row">
+            <label>Card</label>
+            <input type="number" id="mpCard" min="0" step="0.01" placeholder="0.00">
+          </div>
+
+        </div>
+
+        <div class="mp-row">
+          <label>Balance (must be 0)</label>
+          <input type="text" id="mpBalance" readonly value="0.00">
+        </div>
+
+        <div class="mp-actions">
+          <button type="button" id="mpSave" class="qb-btn">Save</button>
+          <button type="button" id="mpCancel" class="qb-btn qb-btn-secondary">Cancel</button>
+          
+          
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Removed Items Page Button -->
+    <button class="deleted-pill-btn" id="deletedBtn" type="button">
+      Removed Items
+    </button>
+
+    <!-- Clear Filter Button -->
+    <button class="clear-filter-btn" id="clearFilterBtn" type="button">
+      Clear Filter
+    </button>
+
+  </div>
+
+  <!-- ============================================================
+    4) MAIN CARD (SCAN + TABLE + TOTALS)
+  ============================================================= -->
+  <div class="quick-billing-card">
+
+    <!-- ==========================================================
+      4A) SCAN / BARCODE INPUT
+    =========================================================== -->
+    <div class="scan-pill">
+
+      <input
+        type="text"
+        id="scanInput"
+        placeholder="Scan barcode"
+        autocomplete="off"
+      >
+
+      <!-- Scan Icon (click handled in JS to open camera modal / focus input) -->
+      <span class="scan-icon" title="Scan barcode">
+        <svg class="qr-icon" viewBox="0 0 24 24">
+          <path
+            d="M3 3h5v2H5v3H3V3zm16 0v5h-2V5h-3V3h5zM3 21v-5h2v3h3v2H3zm16-5h2v5h-5v-2h3v-3z"
+            fill="currentColor"
+          />
+          <rect x="7" y="7" width="3" height="3" fill="currentColor" />
+          <rect x="14" y="7" width="3" height="3" fill="currentColor" />
+          <rect x="7" y="14" width="3" height="3" fill="currentColor" />
+          <rect x="12" y="12" width="2" height="2" fill="currentColor" />
+        </svg>
+      </span>
+
+    </div>
+
+    <!-- ==========================================================
+      4B) TABLE + PRINT AREA WRAPPER
+      NOTE: printArea is used by JS print
+    =========================================================== -->
+    <div class="qb-data-wrap" id="printArea">
+
+      <div class="table-scroll-area">
+        <table class="billing-table">
+
+          <!-- ===================== TABLE HEAD ===================== -->
+          <thead>
+            <tr>
+              <th>SNo</th>
+              <th>Product Code</th>
+              <th>Product Name</th>
+              <th>Quantity</th>
+              <th>Price</th>
+              <th>Discount</th>
+              <th>Taxable Value</th>
+              <th>CGST</th>
+              <th>SGST</th>
+              <th>Total</th>
+              <th class="actions-col">Actions</th>
+            </tr>
+          </thead>
+
+          <!-- ===================== TABLE BODY ===================== -->
+          <tbody id="billingTableBody">
+            <tr class="no-data-row" id="noDataRow">
+              <td colspan="11">No entries found.</td>
+            </tr>
+          </tbody>
+
+          <!-- ======================================================
+            4C) TOTAL FOOTER (SUMMARY)
+            - ids are used in JS to update values
+          ======================================================= -->
+          <tfoot class="qb-tfoot">
+
+            <tr>
+              <td colspan="8"></td>
+              <td class="sum-label">Taxable Amount :</td>
+              <td class="sum-value" id="sumTaxableFoot">0.00</td>
+              <td></td>
+            </tr>
+
+            <tr>
+              <td colspan="8"></td>
+              <td class="sum-label">Total Tax :</td>
+              <td class="sum-value" id="sumTaxFoot">0.00</td>
+              <td></td>
+            </tr>
+
+            <!-- Total Amount (before roundoff) -->
+            <tr>
+              <td colspan="8"></td>
+              <td class="sum-label">Total Amount :</td>
+              <td class="sum-value" id="sumTotalAmtFoot">0.00</td>
+              <td></td>
+            </tr>
+
+            <!-- Round Off -->
+            <tr>
+              <td colspan="8"></td>
+              <td class="sum-label">Round Off :</td>
+              <td class="sum-value" id="sumRoundOffFoot">0.00</td>
+              <td></td>
+            </tr>
+
+            <tr class="sum-divider">
+              <td colspan="8"></td>
+              <td colspan="2"><hr></td>
+              <td></td>
+            </tr>
+
+            <!-- FINAL PAYABLE -->
+            <tr class="sum-total">
+              <td colspan="8"></td>
+              <td class="sum-label">Invoice Total :</td>
+              <td class="sum-value" id="sumInvoiceFoot">0.00</td>
+              <td></td>
+            </tr>
+
+          </tfoot>
+
+        </table>
+      </div>
+    </div>
+
+    <!-- ==========================================================
+      ✅ 4D) PAYMENT (SCREEN ONLY) — Cash Received / Change / Due
+   
+    =========================================================== -->
+    <div class="qb-payment-panel qb-no-print" id="qbPaymentPanel">
+
+  <div class="qb-pay-grid">
+
+    <div class="qb-pay-row">
+      <label>Total Amount</label>
+      <input type="text" id="qbBillTotal" value="₹0" readonly>
+    </div>
+
+    <div class="qb-pay-row">
+      <label for="cashReceived">Cash Received</label>
+      <input
+        type="number"
+        id="cashReceived"
+        min="0"
+        step="1"
+        placeholder="0"
+        autocomplete="off"
+      >
+    </div>
+
+    <div class="qb-pay-row">
+      <label>Balance to Return</label>
+      <input type="text" id="changeReturn" value="₹0" readonly>
+    </div>
+
+  </div>
+
+  <div class="qb-pay-hint" id="payHint"></div>
+
+  <div class="qb-pay-actions">
+    <button type="button" class="qb-btn qb-btn-soft" id="clearPaymentBtn">
+      Clear Payment
+    </button>
+  </div>
+
+</div>
+
+  <!-- ============================================================
+    5) BOTTOM PAGINATION / SHOWING COUNT
+  ============================================================= -->
+  <div class="qb-bottom-row qb-no-print">
+
+    <div class="qb-footer-left" id="showingCount">
+      Showing 0 Entries
+    </div>
+
+    <div class="qb-footer-right">
+      <button class="pager-btn" id="prevBtn">‹ Prev</button>
+
+      <span class="page-indicator">
+        Page <b id="pageNow">1</b> of <b id="pageTotal">1</b>
+      </span>
+
+      <button class="pager-btn" id="nextBtn">Next ›</button>
+    </div>
+
+  </div>
+
+  <!-- ============================================================
+    6) TOAST (Success / Error messages from JS)
+  ============================================================= -->
+  <div id="qbToast" class="qb-toast qb-no-print">
+    <span id="qbToastMsg">Message</span>
+  </div>
+
+</div>
+
+
+<!-- ============================================================
+  7) FINALIZE BILL CONFIRM MODAL
+============================================================= -->
+<div id="finalizeModal" class="qb-modal-overlay finalize-modal qb-no-print">
+  <div class="qb-modal-card">
+
+    <div class="qb-modal-header">
+      <h3>Finalize Bill</h3>
+    </div>
+
+    <div class="qb-modal-body">
+      Ready to print invoice?
+    </div>
+
+    <div class="qb-modal-actions">
+      <button id="finalizeCancel" class="qb-btn qb-btn-soft">Cancel</button>
+      <button id="finalizeOk" class="qb-btn qb-btn-primary">Yes, Print</button>
+    </div>
+
+  </div>
+</div>
+
+
+<!-- ============================================================
+  8) CAMERA BARCODE SCANNER MODAL
+============================================================= -->
+<div id="cameraScannerModal" class="qb-modal-overlay qb-no-print">
+  <div class="qb-modal-card camera-card">
+
+    <div class="qb-modal-header">
+      <h3>Scan Product</h3>
+    </div>
+
+    <div class="qb-modal-body">
+      <div id="barcodeScanner" class="barcode-scanner"></div>
+    </div>
+
+    <div class="qb-modal-actions">
+      <button id="cameraCloseBtn" type="button" class="qb-btn qb-btn-soft">Close</button>
+    </div>
+
+  </div>
+</div>
+
+{% endblock %}
+
+
+{% block extra_js %}
+  <script src="{{ url_for('static', filename='quick-billing.js') }}"></script>
+  <script src="https://unpkg.com/@ericblade/quagga2/dist/quagga.js"></script>
+{% endblock %}

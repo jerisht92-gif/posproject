@@ -1,32 +1,23 @@
-* {
-    box-sizing: border-box;
-    font-family: "Poppins", sans-serif;
-  }
-  
   /* Container */
   .container-enquiry {
-      /* width: 92%; */
      padding: 20px;
     font-family: "Poppins", sans-serif;
     color: #4a1f1a;
     background: #f6f1f1;
-    
+    }
+
+/* TITLE */
+.container-enquiry .enquiry-title {
+font-size: 28px;
+font-weight: 600;
+color: #a12828;
+margin-bottom: 2px;
+text-shadow: 1px 1px 2px #d8b7b7;
   }
-  
-  
-  .container-enquiry .enquiry-title {
-    font-size: 28px;
-    font-weight: 600;
-    color: #a12828;
-    margin-bottom: 12px;
-    text-shadow: 1px 1px 2px #d8b7b7; /* 🔥 3D text effect */
-    margin-left: 24px;
-    display: inline-block;
-  }
-  
-   .container-enquiry #form-enquiry{
-      
-    max-width: 1100px;
+
+ /* FORM  */
+.container-enquiry #form-enquiry{
+       max-width: 1100px;
     margin: auto;
     background: #fff;
     padding: 25px;
@@ -51,7 +42,6 @@
       display: grid;
       grid-template-columns: repeat(2, 1fr);
       column-gap: 28px;
-      /* row-gap: 22px; */
   }
   
   /* Form group */
@@ -62,79 +52,58 @@
   
   /* Labels */
   label {
-     font-size: 12px;
-    margin-bottom: 6px;
-    color: #333;
+    font-size: 13px;
+margin-bottom: 6px;
+color: #444;
   }
   
   /* Inputs & Selects – SAME HEIGHT */
   #form-enquiry input,
   #form-enquiry select {
-     padding: 8px 10px;
-    font-size: 13px;
-    border: 1px solid #e7b7b5;
-    border-radius: 8px;
-        background-color: #fff5f5;    /* 🔥 KEY FIX */
+padding: 11px 14px;
+border-radius: 10px;
+border: 1px solid #e7b7b5;
+outline: none;
+font-size: 14px;
+background-color: #fff5f5;
+color: #000;
+transition: 0.2s ease;
+box-sizing: border-box;
   }
+
+#form-enquiry input::placeholder {
+color: #d18a84;
+}
+
+#form-enquiry select {
+color: #000;
+}
   
-  
-  #form-enquiry input:focus, 
-  #form-enquiry select:focus {
-    outline: none;              /* remove default outline */
-    border: 2px solid black;  /* blue border when focused */
-    transition: 0.2s;   
-  }
-  /* Table */
-  table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-top: 15px;
-  }
-  
-  th, td {
-      border: 1px solid #e5e7eb;
-      padding: 10px;
-      text-align: center;
-      font-size: 14px;
-  }
-  
-  th {
-      background: #f0f4f8;
-  }
-  
-  .total-row {
-      background: #7b1e1e;
-      color: #fff;
-      font-weight: 600;
-  }
-  
-  .product-head button {
-    background: #7b1e1e;
-    color: #fff;
-    border: none;
-  
-    padding: 6px 14px;        /* ⬅ smaller padding */
-    font-size: 13px;
-    line-height: 1;           /* 🔥 removes extra height */
-    height: 34px;             /* optional but clean */
-  
-    border-radius: 4px;
-    cursor: pointer;
-    white-space: nowrap;      /* prevents text wrapping */
-  }
-  
-  
-  .product-head{
-    display: flex;
-    justify-content: space-between;
-  } 
+/* 🔥 FORCE MAIN ENQUIRY FORM INPUT SIZE */
+#form-enquiry .form-group input,
+#form-enquiry .form-group select {
+  height: 30px !important;
+  padding: 6px 12px !important;
+  font-size: 13px !important;
+  border-radius: 8px !important;
+}
+
+
+/* ======================
+   PRODUCT MODAL
+========================= */
+  .product-head {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+}
 
   /* Match Department & Roles primary button styling (scope to enquiry page so it wins over global .primary-btn in menu.css) */
   .container-enquiry .primary-btn {
     background: linear-gradient(#a12828, #8c1f1f);
     color: #fff;
     border: none;
-    padding: 10px 20px;
+    /* padding: 10px 20px; */
     font-size: 14px;
     font-weight: 600;
     border-radius: 10px;
@@ -168,7 +137,6 @@
     color: #666666;
   }
   
-  
   /* Buttons */
   .actions {
       display: flex;
@@ -176,104 +144,93 @@
       gap: 14px;
       margin-top: 30px;
         flex-wrap: nowrap;   /* 🔥 keeps buttons in same line */
+}
 
-
-  }
-  
-  
-  
-  .btn-save {
-    width: 90px;
-    height: 36px;
-    background: linear-gradient(#a12828, #8c1f1f);
-    color: #fff;
-    border: none;
-    padding: 0;
-    font-size: 14px;
-    font-weight: 500;
-    border-radius: 18px;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    box-shadow: 0 3px 0 rgba(0, 0, 0, 0.08);
-    box-sizing: border-box;
+.btn-save {
+background: linear-gradient(#a12828, #8c1f1f);
+color: #fff;
+border: none;
+padding: 10px 26px;
+font-size: 14px;
+border-radius: 10px;
+font-weight: 500;
+cursor: pointer;
+box-shadow: 0 5px 0 #6d1717;
+transition: 0.25s;
+display: inline-flex;
+align-items: center;
+justify-content: cente
   }
   
   .btn-save:hover {
-    background: #8f0e0e;
-  }
+transform: translateY(-3px);
+box-shadow: 0 8px 0 #6d1717;  }
+
+
+.btn-save:active {
+transform: translateY(3px);
+box-shadow: 0 2px 0 #6d1717;
+}
   
   .btn-save:disabled {
-    background: #cccccc !important;
-    color: #666666 !important;
-    cursor: not-allowed !important;
-    box-shadow: 0 2px 0 #999999 !important;
-    transform: none !important;
+background: #cccccc;
+color: #666666;
+cursor: not-allowed;
+box-shadow: 0 2px 0 #999999;
+transform: none;
   }
   
   .btn-save:disabled:hover {
-    background: #cccccc !important;
-    color: #666666 !important;
-    box-shadow: 0 2px 0 #999999 !important;
-    transform: none !important;
+   transform: none;
+box-shadow: 0 2px 0 #999999;
   }
   
   .btn-discard {
-    width: 90px;
-    height: 36px;
-    background: #fff;
-    border: 1.5px solid #a12828;
-    color: #a12828;
-    padding: 0;
-    font-size: 14px;
-    font-weight: 500;
-    border-radius: 18px;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    box-shadow: 0 3px 0 rgba(0, 0, 0, 0.08);
-    box-sizing: border-box;
+background: #ffffff;
+border: 1.5px solid #a12828;
+color: #a12828;
+padding: 9px 24px;
+border-radius: 10px;
+font-size: 14px;
+font-weight: 500;
+text-decoration: none;
+display: inline-flex;
+align-items: center;
+justify-content: center;
+cursor: pointer;
+box-shadow: 0 3px 0 rgba(0, 0, 0, 0.08);
+transition: 0.2s;
   }
   
   .btn-discard:hover {
-    background: #a12828;
-    color: #fff;
-    border: 1.5px solid #a12828;
+   background: #a12828;
+color: #ffffff;
+transform: translateY(-2px);
   }
   
-  .btn-cancel {
-    width: 90px;
-    height: 36px;
-    background: #fff;
-    border: 1.5px solid #a12828;
-    color: #a12828;
-    padding: 0;
-    font-size: 14px;
-    font-weight: 500;
-    border-radius: 18px;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    box-shadow: 0 3px 0 rgba(0, 0, 0, 0.08);
-    box-sizing: border-box;
-    text-decoration: none;
-  }
-  
-  .btn-cancel:hover {
-    background: #a12828;
-    color: #fff;
-    border: 1.5px solid #a12828;
-  }
-  
-  
-  /* ================= CONFIRM MODAL ================= */
-  .confirm-overlay {
+
+/* =============================
+ INTERACTIONS (HOVER / FOCUS)
+============================= */
+#form-enquiry input:hover,
+#form-enquiry select:hover {
+background: #f5d4d4;
+border-color: #b9473e;
+box-shadow: 0 4px 10px rgba(161, 40, 40, 0.12);
+transform: scale(1.01);
+transition: 0.25s ease-in-out;
+}
+
+#form-enquiry input:focus,
+#form-enquiry select:focus {
+border-color: #a12828;
+box-shadow: 0 0 0 1px rgba(161, 40, 40, 0.25);
+}
+
+/* ======================
+  CONFIRM MODAL
+========================= */ 
+ .confirm-overlay {
     position: fixed;
     inset: 0;
     background: rgba(0, 0, 0, 0.4);
@@ -298,18 +255,16 @@
     font-weight: 700;
     color: #7a1d1d;
   }
+
   
   .confirm-box p {
     font-size: 14px;
-    margin: 10px 0 18px;
-    color: #4a1f1a;
     line-height: 1.4;
   }
   
-  .confirm-actions {
-    display: flex;
-    justify-content: space-between;
-    gap: 10px;
+ .confirm-actions {
+  display: flex;
+  justify-content: center;
   }
   
   .error-message {
@@ -318,7 +273,101 @@
   }
   
   
-  
+  /* Overlay background */
+.popup-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5); /* semi-transparent black */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000; /* on top of other elements */
+}
+
+/* Popup box */
+.popup-box {
+    background: #fff;
+    border-radius: 12px;
+    padding: 25px 30px;
+    width: 400px;
+    max-width: 90%;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+    text-align: center;
+    animation: popupFade 0.3s ease-in-out;
+}
+
+/* Popup heading */
+.popup-box h6 {
+    font-size: 20px;
+    font-weight: 600;
+    margin-bottom: 15px;
+    color: #7a1d1d;
+}
+
+/* Popup message */
+.popup-box p {
+    font-size: 14px;
+    /* color: #374151; */
+    margin-bottom: 25px;
+    line-height: 1.5;
+}
+
+/* Action buttons container */
+.confirm-actions-confirm {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+/* OK button */
+.btn-save {
+    background-color: #7a1d1d;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 20px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: background 0.2s;
+}
+
+/* .btn-save:hover { */
+    /* background-color: #1d4ed8; */
+/* } */
+
+/* Cancel / Discard button */
+.btn-discard-confirm {
+   background: #ffffff;
+border: 1.5px solid #a12828;
+color: #a12828;
+padding: 10px 20px;
+border-radius: 10px;
+font-size: 14px;
+font-weight: 500;
+text-decoration: none;
+display: inline-flex;
+align-items: center;
+justify-content: center;
+cursor: pointer;
+box-shadow: 0 3px 0 rgba(0, 0, 0, 0.08);
+transition: 0.2s;
+}
+
+.btn-discard-confirm:hover {
+   background: #a12828;
+color: #ffffff;
+transform: translateY(-2px);
+}
+
+/* Animation */
+@keyframes popupFade {
+    from { transform: scale(0.8); opacity: 0; }
+    to { transform: scale(1); opacity: 1; }
+}
+
   
   
   .overlay {
@@ -331,8 +380,10 @@
     z-index: 1000;
   }
   
-/* ================= ADD PRODUCT MODAL (MATCH EDIT PRODUCT STYLE) ================= */
 
+/* ======================
+   ADD PRODUCT ITEM
+========================= */
 /* Reuse the same visual shell as #productModal1 for #productModal */
 #productModal .modal {
   background: transparent;
@@ -407,6 +458,8 @@
   justify-content: space-between;
   align-items: center;
   margin-top: 22px;
+          flex-wrap: nowrap;   /* 🔥 keeps buttons in same line */
+
 }
 
 #productModal .field-error {
@@ -538,26 +591,6 @@
     margin-top: 15px;
   }
   
-  .btn {
-    padding: 6px 14px;
-    font-size: 12px;
-    border-radius: 3px;
-    cursor: pointer;
-  }
-  
-  .btn.cancel {
-     
-    background: #fff;
-    border: 1px solid #7b1e1e;
-    color: #7b1e1e;
-    padding: 8px 18px;
-    border-radius: 4px;
-    cursor: pointer;
-  }
-  
-  
-  
-  
   .btn.cancel:hover {
     background: #7b1e1e;
     color: #fff;
@@ -567,162 +600,22 @@
     cursor: pointer;
   }
   
-  
   .btn.add {
-   
     background: #7b1e1e;
     color: #fff;
     border: none;
     padding: 8px 20px;
     border-radius: 4px;
     cursor: pointer;
-  }
+  } */
   .overlay {
     display: none;
   }
 
-  /* =============================
-     EDIT PRODUCT MODAL (Match Edit Enquiry Design)
-  ============================= */
-  #productModal1.overlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.45);
-    display: none;
-    align-items: center;
-    justify-content: center;
-    z-index: 9999;
-    padding: 18px;
-  }
 
-  #productModal1.overlay[style*="flex"] {
-    display: flex !important;
-  }
-
-  /* Remove white background from .modal wrapper */
-  #productModal1 .modal {
-    background: transparent;
-    width: auto;
-    padding: 0;
-    border-radius: 0;
-    box-shadow: none;
-  }
-
-  #productModal1 .modal-content {
-    background: #fff;
-    border-radius: 14px;
-    padding: 18px 22px;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
-    width: min(500px, 90vw);
-  }
-
-  #productModal1 .modal-title {
-    margin-bottom: 15px;
-    font-size: 22px;
-    font-weight: 700;
-    color: #7a1d1d;
-  }
-
-  #productModal1 .form-grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    column-gap: 15px;
-    row-gap: 15px;
-  }
-
-  #productModal1 .form-group label {
-    display: block;
-    font-size: 13px;
-    font-weight: 600;
-    margin-bottom: 4px;
-    color: #4a1f1a;
-  }
-
-  #productModal1 .form-group input {
-    width: 100%;
-    height: 30px;
-    padding: 2px 15px;
-    border-radius: 12px;
-    border: 1.5px solid #d9a7a7;
-    font-size: 12px;
-    box-sizing: border-box;
-    background: #fff;
-    line-height: normal;
-  }
-
-  #productModal1 .form-group input:disabled {
-    background: #f3eeee;
-    color: #7a5a5a;
-    cursor: not-allowed;
-  }
-
-  #productModal1 .form-group input:focus {
-    border-color: #a12828;
-    box-shadow: 0 0 0 2px rgba(161, 40, 40, 0.15);
-    outline: none;
-  }
-
-  #productModal1 .modal-actions {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-top: 22px;
-  }
-
-  #productModal1 .field-error {
-    display: block;
-    margin-top: 6px;
-    font-size: 10px;
-    font-weight: 500;
-    color: #d10000;
-  }
-
-  #productModal1 .input-error {
-    border: 2px solid #d10000 !important;
-  }
-
-  #productModal1 .btn-primary {
-    background: linear-gradient(#a12828, #8c1f1f);
-    color: #fff;
-    border: none;
-    padding: 8px 14px;
-    font-size: 13px;
-    border-radius: 10px;
-    cursor: pointer;
-    transition: 0.25s;
-    box-shadow: 0 5px 0 #6d1717;
-  }
-
-  #productModal1 .btn-primary:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 8px 0 #6d1717;
-  }
-
-  #productModal1 .btn-primary:disabled {
-    background: #cccccc !important;
-    color: #666666 !important;
-    cursor: not-allowed !important;
-    box-shadow: 0 2px 0 #999999 !important;
-    transform: none !important;
-  }
-
-  #productModal1 .btn-primary:disabled:hover {
-    transform: none !important;
-    box-shadow: 0 2px 0 #999999 !important;
-    background: #cccccc !important;
-    color: #666666 !important;
-  }
-
-  #productModal1 .cancel-btn {
-    padding: 10px 18px;
-    border-radius: 10px;
-    border: 1.5px solid #cfcfd4;
-    background: #f6f6f7;
-    cursor: pointer;
-  }
-
-  /* Success Notification */
-  .success-notification {
+/* ======================
+   SUCCESS NOTIFICATION 
+========================= */  .success-notification {
     position: fixed;
     top: 80px;
     left: 50%;
@@ -757,49 +650,35 @@
     font-weight: bold;
   }
   
-  
-  .edit-btn, .delete-btn {
-    border: none;
-    background: transparent;
-    cursor: pointer;
-    font-size: 18px;
-    margin-right: 5px;
-  }
-  
-  .edit-btn:hover {
-    color: #007bff;
-  }
-  
-  .delete-btn:hover {
-    color: red;
-  }
-  
-  
-  
-  
-  .action-icons {
-    display: flex;
-    gap: 10px;
-    justify-content: center;
-  }
-  
-  .icon {
-    cursor: pointer;
-    font-size: 18px;
-    padding: 4px;
-    border-radius: 4px;
-    user-select: none;
-  }
-  
-  .edit-icon:hover {
-    background: #e0e7ff;
-  }
-  
-  .delete-icon:hover {
-    background: #fee2e2;
-  }
-  
-  
+.action-icons{
+
+ display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.icon {
+  padding: 7px 10px;
+  border: none;
+  border-radius: 6px;
+  background: #d9534f;
+  color: white;
+  cursor: pointer;
+  font-weight: 600;
+}
+ .edit-btn {
+  background: #d9534f;
+}
+
+ .delete-btn {
+  background: #d9534f;
+}
+
+ .icon:hover {
+  transform: translateY(-3px);
+  background-color: #4a1f1a;
+  color: beige;
+}
   
   
   /* remove focus border & outline */
@@ -816,222 +695,140 @@
   }
 
 
+/* //EMAIL EXIST */
+
+
+
 
 
   /* ===============================
-   RESPONSIVE LAYOUT (ref: import-customer.css)
+   RESPONSIVE DESIGN
 ================================ */
 
-/* 💻 Tablets & small laptops (≤1024px) */
+/* ----------- Tablets (≤ 1024px) ----------- */
 @media (max-width: 1024px) {
+
   .container-enquiry {
-    max-width: 100%;
-    padding: 14px;
+    padding: 15px;
   }
 
   .container-enquiry #form-enquiry {
-    max-width: 100%;
     padding: 20px;
-  }
-
-  .container-enquiry .enquiry-title {
-    font-size: 24px;
-    margin-bottom: 8px;
   }
 
   .grid {
     column-gap: 20px;
   }
 
-  h2, h3 {
-    font-size: 16px;
-  }
-
-  table th,
-  table td {
+  table th, table td {
     font-size: 13px;
-    padding: 10px 8px;
-  }
-
-  /* Modals */
-  #productModal .modal-content,
-  #productModal1 .modal-content {
-    width: min(500px, 90vw);
-  }
-
-  #enquirySuccessModal .modal-card {
-    width: min(500px, 90vw);
+    padding: 8px;
   }
 }
 
-/* 📱 Tablets & Mobiles (≤768px) */
+
+/* ----------- Small Tablets & Large Mobiles (≤ 768px) ----------- */
 @media (max-width: 768px) {
-  .container-enquiry {
-    padding: 12px;
-  }
 
+  /* Title */
   .container-enquiry .enquiry-title {
-    font-size: 20px;
+    font-size: 22px;
     margin-left: 10px;
-    margin-bottom: 0;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
   }
 
-  .container-enquiry #form-enquiry {
-    padding: 18px;
-    border-radius: 8px;
-  }
-
+  /* Form grid -> single column */
   .grid {
     grid-template-columns: 1fr;
     row-gap: 16px;
-    column-gap: 0;
   }
 
-  h2, h3 {
-    font-size: 15px;
-    margin: 18px 0 10px;
-  }
-
-  /* Product header – same row, no wrap */
+  /* Product header */
   .product-head {
     display: flex;
-    flex-direction: row;
+    flex-direction: row;      
     align-items: center;
     justify-content: space-between;
     gap: 10px;
-    flex-wrap: nowrap;
+    flex-wrap: nowrap;       
   }
-
   .product-head h3,
   .product-head h2 {
-    margin: 0;
-    font-size: 16px;
+    font-size: 15px;
     white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
   }
 
   .product-head button {
     height: 32px;
     padding: 6px 12px;
     font-size: 12px;
-    flex-shrink: 0;
     white-space: nowrap;
   }
 
-  /* Action buttons – same line, fixed size */
+  /* Action buttons */
   .actions {
-    display: flex;
-    flex-direction: row;
-    justify-content: flex-end;
-    gap: 10px;
-    flex-wrap: nowrap;
+    flex-direction: column;
+    gap: 12px;
   }
 
-  .actions .btn-save,
-  .actions .btn-discard,
-  .actions .btn-cancel,
-  .actions .primary-btn {
-    flex: none;
-    width: 90px;
-    height: 36px;
-    border-radius: 18px;
-    min-width: 90px;
-    white-space: nowrap;
+  .actions button {
+    width: 100%;
   }
 
-  /* Table scroll */
+  /* Tables scroll */
   table {
     display: block;
     overflow-x: auto;
     white-space: nowrap;
   }
 
-  table th,
-  table td {
-    padding: 10px 8px;
-    font-size: 13px;
-  }
-
   /* Modals */
   #productModal .modal-content,
   #productModal1 .modal-content {
     width: 95vw;
-    padding: 16px 18px;
   }
 
   #productModal .form-grid,
   #productModal1 .form-grid {
     grid-template-columns: 1fr;
-    row-gap: 12px;
   }
 
-  #productModal .modal-title,
-  #productModal1 .modal-title {
-    font-size: 18px;
+.actions {
+    display: flex;
+    flex-direction: row;      /* 🔥 force same line */
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: nowrap;        /* no wrap */
   }
 
-  #enquirySuccessModal .modal-card {
-    width: 95vw;
-    padding: 14px 16px;
+  .actions button {
+    flex: 1;                  /* equal width */
+    max-width: 48%;
+    white-space: nowrap;
   }
 
-  #enquirySuccessModal .modal-body {
-    font-size: 14px;
-  }
+  
+#productModal .modal-actions {
+  display: flex;
+  justify-content: space-between;
+          flex-wrap: nowrap;   /* 🔥 keeps buttons in same line */
 
-  /* Confirm modal */
-  .confirm-box {
-    width: min(350px, 92vw);
-    padding: 20px;
-  }
-
-  .confirm-box h3 {
-    font-size: 18px;
-  }
-
-  .confirm-box p {
-    font-size: 13px;
-  }
-
-  /* Success notification */
-  .success-notification {
-    font-size: 14px;
-    padding: 12px 18px;
-    max-width: 90vw;
-  }
+}
 }
 
-/* 📱 Small Mobiles (≤520px) */
-@media (max-width: 520px) {
+
+/* ----------- Mobile Phones (≤ 480px) ----------- */
+@media (max-width: 480px) {
+
   .container-enquiry {
     padding: 10px;
   }
 
   .container-enquiry .enquiry-title {
-    font-size: 18px;
-    margin-left: 6px;
-  }
-
-  .container-enquiry #form-enquiry {
-    padding: 14px;
-  }
-
-  .grid {
-    row-gap: 14px;
-  }
-
-  h2, h3 {
-    font-size: 14px;
-    margin: 14px 0 8px;
+    font-size: 20px;
   }
 
   label {
     font-size: 11px;
-    margin-bottom: 4px;
   }
 
   #form-enquiry input,
@@ -1040,47 +837,16 @@
     padding: 7px 9px;
   }
 
-  /* Product header */
-  .product-head h3,
-  .product-head h2 {
-    font-size: 14px;
-  }
-
-  .product-head button {
-    height: 30px;
-    padding: 5px 10px;
-    font-size: 11px;
-  }
-
-  /* Action buttons – same line, smaller */
-  .actions {
-    gap: 8px;
-  }
-
-  .actions .btn-save,
-  .actions .btn-discard,
-  .actions .btn-cancel,
-  .actions .primary-btn {
-    width: 90px;
-    height: 36px;
-    border-radius: 18px;
+  table th, table td {
     font-size: 12px;
-    padding: 0;
-    line-height: 1;
+    padding: 6px;
   }
 
-  table th,
-  table td {
-    font-size: 11px;
-    padding: 6px 4px;
-  }
-
-  /* Modal buttons stack on small screens */
+  /* Modal buttons stack */
   #productModal .modal-actions,
   #productModal1 .modal-actions {
     flex-direction: column;
     gap: 10px;
-    margin-top: 18px;
   }
 
   #productModal .btn-primary,
@@ -1090,59 +856,52 @@
     width: 100%;
   }
 
-  #productModal .modal-content,
-  #productModal1 .modal-content {
-    width: 92vw;
-    padding: 14px 16px;
-  }
-
-  #productModal .modal-title,
-  #productModal1 .modal-title {
-    font-size: 16px;
-  }
-
-  #productModal .form-group input,
-  #productModal1 .form-group input {
-    height: 28px;
-    font-size: 11px;
-  }
-
   /* Success modal */
   #enquirySuccessModal .modal-card {
-    width: 92vw;
-    padding: 12px 14px;
+    width: 95vw;
+  }
+  .actions {
+    display: flex;
+    flex-direction: row;      /* 🔥 force same line */
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: nowrap;        /* no wrap */
   }
 
-  #enquirySuccessModal .modal-body {
-    font-size: 13px;
+  .actions button {
+    flex: 1;                  /* equal width */
+    max-width: 48%;
+    white-space: nowrap;
   }
 
-  /* Confirm modal */
-  .confirm-box {
-    width: 92vw;
-    padding: 18px;
+
+  .product-head {
+    display: flex;
+    flex-direction: row;      /* 🔥 same line */
+    align-items: center; 
+    justify-content: space-between;
+    gap: 10px;
+     flex-wrap: nowrap;        /*no wrap */
+ } 
+
+  .product-head h3,
+  .product-head h2 {
+    font-size: 15px;
+    white-space: nowrap;
   }
 
-  .confirm-box h3 {
-    font-size: 16px;
-  }
-
-  .confirm-box p {
+  .product-head button {
+    height: 32px;
+    padding: 6px 12px;
     font-size: 12px;
-  }
-
-  .confirm-actions {
-    flex-direction: column;
-  }
-
-  .confirm-actions button {
-    width: 100%;
-  }
-
-  /* Success notification */
-  .success-notification {
-    font-size: 13px;
-    padding: 12px 14px;
-    max-width: 92vw;
+    white-space: nowrap;
   }
 }
+
+
+
+
+
+
+
+  

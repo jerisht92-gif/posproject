@@ -1,4 +1,3 @@
-
 {% extends "menu.html" %}
 
 {% block extra_css %}
@@ -45,59 +44,56 @@
           </tr>
         </thead>
 
-        <tbody id="enquiryTable">
-          {% if enquiries and enquiries|length > 0 %}
-            {% for e in enquiries %}
-            <tr id="row-{{ e.enquiry_id or e.id }}"
-                data-id="{{ e.enquiry_id or e.id }}"
-                data-first-name="{{ e.first_name }}"
-                data-last-name="{{ e.last_number or e.last_name }}"
-                data-email="{{ e.email }}"
-                data-phone="{{ e.phone_number or e.phone }}"
-                data-status="{{ e.status }}">
-              <td>{{ e.enquiry_id or e.id }}</td>
-              <td class="cell-first-name">{{ e.first_name }}</td>
-              <td class="cell-last-name">{{ e.last_number or e.last_name or '' }}</td>
-              <td class="cell-email">{{ e.email }}</td>
-              <td class="cell-phone">{{ e.phone_number or e.phone or '' }}</td>
-              <td class="status-text">{{ e.status or 'New' }}</td>
-
-              <td class="action-cell">
-                <div class="action-buttons">
-                  <button type="button"
-                          class="action-btn edit-btn"
-                          data-id="{{ e.enquiry_id or e.id }}">
-                    Edit
-                  </button>
-                  <button type="button"
-                          class="action-btn delete-btn"
-                          data-id="{{ e.enquiry_id or e.id }}">
-                    Delete
-                  </button>
-                </div>
-              </td>
-            </tr>
-            {% endfor %}
-          {% else %}
-            <tr class="no-data-row">
-              <td colspan="7" class="no-data-cell">No data Found</td>
-            </tr>
-          {% endif %}
-        </tbody>
+          
+<tbody id="enquiryTable">
+{% for e in enquiries %}
+<tr>
+  <td >
+    <span class="enquiry-id-link" data-id="{{ e.enquiry_id }}">{{ e.enquiry_id }}</span>
+  </td>
+  <td>{{ e.first_name }}</td>
+  <td>{{ e.last_name }}</td>
+  <td>{{ e.email }}</td>
+  <td>{{ e.phone_number }}</td>
+  <td>{{ e.status }}</td>
+  <td class="action-cell">  
+                    <div class="action-buttons">                                                                                                                                     <div class="action-buttons">
+    <button class="edit-btn action-btn" data-id="{{ e.enquiry_id }}">Edit</button> 
+    <button class="delete-btn action-btn" data-id="{{ e.enquiry_id }}">Delete</button> 
+    </div>
+  </td>
+</tr>
+{% else %}
+<tr class="no-data-row">
+  <td colspan="7" class="no-data-cell">No data Found</td>
+</tr>
+{% endfor %}
+</tbody>
       </table>
     </div>
 
     <!-- Footer -->
+   <!-- Pagination Footer -->
     <div class="table-footer">
       <div class="entries-info">
-        Showing
-        <span id="showingCount">{{ enquiries|length if enquiries else 0 }}</span>
-        Entries
+        Showing {{ users|length if users else 0 }} entries
+      </div>
+
+      <div class="pagination-controls">
+        <button id="prevPage" class="pager-btn">Prev</button>
+
+        <span id="pageInfo" class="page-info">
+          Page 1 of {{ 1 if users and users|length > 0 else 0 }}
+        </span>
+
+        <button id="nextPage" class="pager-btn">Next</button>
       </div>
     </div>
-  </div>
 
-</div>
+  </div> <!-- End card -->
+
+
+
 
 <!-- ✅ EDIT ENQUIRY MODAL -->
 <div id="editEnquiryModal" class="modal" aria-hidden="true" role="dialog" aria-modal="true">
@@ -163,6 +159,113 @@
     </div>
   </div>
 </div>
+
+
+
+<!--✅ VIEW PRODUCT -->
+
+<div id="productModal" style="display: none;">
+  <div class="modalContent">
+    <div class="view-title">
+          <h3 class="view-product"id="modalTitle"  >View Product</h3>
+              <span class="closeBtn" id="closeModal">&times;</span>
+
+    </div>
+   <div class="productRow" style="margin-top: 40px;"></div>
+    <!-- Product details in row layout -->
+      <div class="productRow boxed">
+      <div class="rowLabel">Product Id         </div>
+        <div class="rowColon">:</div>
+      <div class="rowValue" id="modalProductId"></div>
+    </div>
+
+    <div class="productRow boxed">
+      <div class="rowLabel">Product Name</div>
+        <div class="rowColon">:</div>
+      <div class="rowValue" id="modalProductName"></div>
+    </div>
+    <div class="productRow boxed">
+      <div class="rowLabel">Product Description</div>
+        <div class="rowColon">:</div>
+      <div class="rowValue" id="modalDescription"></div>
+    </div>
+    <div class="productRow boxed">
+      <div class="rowLabel">Unit Price</div>
+        <div class="rowColon">:</div>
+      <div class="rowValue" id="modalUnitPrice"></div>
+    </div>
+
+   <!-- Quantity -->
+<div class="productRow boxed">
+  <div class="rowLabel">Quantity</div>
+    <div class="rowColon">:</div>
+  <div class="rowValue editable" id="modalQuantity" contenteditable="false"></div>
+</div>
+
+<!-- Selling Price -->
+<div class="productRow boxed">
+  <div class="rowLabel">Selling Price</div>
+    <div class="rowColon">:</div>
+  <div class="rowValue editable" id="modalSellingPrice" contenteditable="false"></div>
+</div>
+
+    <div class="productRow boxed">
+      <div class="rowLabel">
+        Total
+      </div>
+        <div class="rowColon">:</div>
+      <div class="rowValue" id="modalTotal"></div>
+    </div>
+
+    <!-- Navigation arrows -->
+
+    <!-- Navigation arrows with dynamic info -->
+    <div class="navButtons">
+      <button class="navBtn" id="prevBtn">⬅️</button>
+      <span id="productCounter" style="margin: 0 15px;font-size: 12px;  color: #2b2b2b;">
+        Product 1 of 1 
+      </span>
+      <button class="navBtn" id="nextBtn">➡️</button>
+    </div>
+
+
+    <!-- Action buttons -->
+    <div class="actionButtons">
+      <!-- <button id="closeModal">Cancel</button> -->
+      <button id="editBtn" class="btn-primary">Edit</button>
+      <button id="saveBtn" disabled>Save</button>
+<button id="deleteItemBtn" class="delete-item-btn">Delete</button>
+
+
+    </div>
+
+    <!-- Grand Total -->
+    <div class="productRow" style="margin-top:10px; font-weight:bold;">
+      <div >Grand Total:</div>
+      <div class="rowValue1" id="modalGrandTotal" ></div>
+    </div>
+  </div>
+</div>
+
+
+
+<!--✅ DELETE ITEM MODAL -->
+<div id="deleteModal" class="modal" style="display:none;">
+  <div class="modal-content">
+    <h3>Confirm Delete</h3>
+    <p>Are you sure you want to delete this item?</p>
+    <div class="modal-actions">
+      <button id="confirmDelete" class="danger-btn">OK</button>
+      <button id="cancelDelete" class="cancel-btn">Cancel</button>
+    </div>
+  </div>
+</div>
+
+
+{% endblock %}
+
+{% block extra_js %}
+
 
 <script src="{{ url_for('static', filename='enquiry-list.js') }}"></script>
 {% endblock %}
