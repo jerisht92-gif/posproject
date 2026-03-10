@@ -748,6 +748,16 @@ function validateDateFormats() {
         var field = document.getElementById(id);
         if (!field) return;
         var val = (field.value || '').trim();
+
+        // Hard clamp: if user types more than 4 consecutive digits anywhere
+        // (typically in the year part), trim it down to 4 digits.
+        // Example: "dd-mm-345534" -> "dd-mm-3455"
+        var mDigits = val.match(/(\d{4})\d+/);
+        if (mDigits) {
+            val = val.replace(/(\d{4})\d+/, '$1');
+            field.value = val;
+        }
+
         var errEl = document.getElementById(id + 'Error');
         if (!val) {
             if (errEl) errEl.remove();
@@ -1332,6 +1342,42 @@ function initializeFormValidation() {
         quotationType, quotationDate, expiryDate, 
         customerSelect, currency, paymentTerms, expectedDate
     ];
+
+    // Shared helper: clamp year segment to max 4 digits for any date input
+    function attachYearClamp(input) {
+        if (!input) return;
+        input.addEventListener('input', function () {
+            let v = input.value || '';
+            v = v.replace(/[^\d-]/g, '');
+
+            // Handle native YYYY-MM-DD
+            const iso = v.match(/^(\d{4,})-(\d{2})-(\d{2})$/);
+            if (iso) {
+                const year = iso[1].slice(0, 4);
+                input.value = `${year}-${iso[2]}-${iso[3]}`;
+                return;
+            }
+
+            // Handle dd-mm-yyyy style
+            const lastDash = v.lastIndexOf('-');
+            if (lastDash !== -1) {
+                const prefix = v.slice(0, lastDash + 1);
+                let yearPart = v.slice(lastDash + 1).replace(/\D/g, '');
+                if (yearPart.length > 4) yearPart = yearPart.slice(0, 4);
+                input.value = prefix + yearPart;
+                return;
+            }
+
+            // Only year typed
+            const m = v.match(/^(\d{0,4})\d*$/);
+            input.value = m ? m[1] : v;
+        });
+    }
+
+    // Apply the same clamp logic to all three date fields
+    attachYearClamp(quotationDate);
+    attachYearClamp(expiryDate);
+    attachYearClamp(expectedDate);
     
      // Date validation listeners (format + relative dates; validate on blur when typed manually)
     [quotationDate, expiryDate, expectedDate].forEach(field => {
@@ -4037,19 +4083,9 @@ function initializeButtons() {
         }
         
         if (!validateRequiredFields()) return;
-        
-        let confirmMessage = 'Are you sure you want to submit this quotation?';
-        if (currentQuotationStatus === 'rejected') {
-            confirmMessage = 'Are you sure you want to resubmit this rejected quotation?';
-        } else if (currentQuotationStatus === 'expired') {
-            confirmMessage = 'Are you sure you want to resubmit this expired quotation?';
-        } else if (currentQuotationStatus === 'send' || currentQuotationStatus === 'submitted') {
-            confirmMessage = 'Are you sure you want to resubmit this quotation with your changes?';
-        }
-        
-        if (confirm(confirmMessage)) {
-            submitQuotationWithStatusAndRedirect(targetStatus, true);
-        }
+
+        // Directly submit without browser confirmation dialog.
+        submitQuotationWithStatusAndRedirect(targetStatus, true);
     });
     
     document.querySelector(".footer-item.approve")?.addEventListener("click", function() {
@@ -5603,6 +5639,8 @@ function validateExpectedDate() {
     
     return true;
 }
+
+// (year clamp for all date fields is attached inside initializeFormValidation)
 
 // ===================================================
 // ADD MANUAL EXPIRY CHECK BUTTON

@@ -751,5 +751,56 @@
         "notes": "Quotation send"
       }
     ]
+  },
+  {
+    "quotation_id": "QA-0014",
+    "quotation_type": "Standard",
+    "quotation_date": "2026-03-10",
+    "expiry_date": "2026-03-25",
+    "customer_po": "sfdsdfsd",
+    "sales_rep": "Anitha",
+    "paymentTerms": "Net 45",
+    "customer_name": "vijbbxss",
+    "currency": "SGD",
+    "expected_date": "2026-03-20",
+    "status": "send",
+    "status_date": "2026-03-10T07:02:09.571Z",
+    "submitted_by": "Current User",
+    "rejection_reason": "",
+    "items": [
+      {
+        "sl_no": 1,
+        "product_id": "P134",
+        "product_name": "Sunflower Cooking Oil 1L",
+        "quantity": 1,
+        "uom": "Bottle",
+        "unit_price": 2.56,
+        "tax": 5,
+        "tax_amount": 0.12416,
+        "discount": 3,
+        "total": 2.61,
+        "product_status": "Active"
+      }
+    ],
+    "totals": {
+      "subtotal": 2.61,
+      "tax_summary": 0.12415999999999999,
+      "grand_total": 3,
+      "global_discount_percent": 0,
+      "shipping_charge": 0,
+      "rounding_adjustment": 0.04,
+      "subtotal_base": 162.95999999999998,
+      "tax_base": 7.76
+    },
+    "last_updated": "2026-03-10T12:32:09.580777",
+    "created_at": "2026-03-10T12:32:09.580800",
+    "status_history": [
+      {
+        "status": "send",
+        "date": "2026-03-10T07:02:09.571Z",
+        "user": "Current User",
+        "notes": "Quotation send"
+      }
+    ]
   }
 ]

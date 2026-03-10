@@ -19,4 +19,7 @@ reportlab>=4.0.0
 # --- HTML → PDF rendering (delivery note PDFs) ---
 WeasyPrint>=63.0
 
+# --- Environment variable loader (.env support) ---
+python-dotenv>=1.0.0
+
 

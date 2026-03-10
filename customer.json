@@ -790,5 +790,29 @@
     "paymentTerms": "Net 15",
     "creditTerm": "Standard",
     "availableLimit": "45000"
+  },
+  {
+    "customer_id": "C1245",
+    "name": "jhj ytfyf",
+    "company": "jhj ytfyf",
+    "customer_type": "Individual",
+    "status": "Active",
+    "email": "asdads@gmail.com",
+    "credit_limit": "4343",
+    "city": "tfuf",
+    "sales_rep": "Meena",
+    "company_type": "Individual",
+    "phone": "9090909090",
+    "gstNumber": "27AAAPA1234A1Z5",
+    "address": "uhiuhuihiuh",
+    "street": "yguygu",
+    "state": "ttfuftyu",
+    "zipCode": "787876",
+    "country": "utffytf",
+    "billingAddress": "sdcsd",
+    "shippingAddress": "yuyjuy",
+    "paymentTerms": "Net 15",
+    "creditTerm": "Extended",
+    "availableLimit": "4343"
   }
 ]

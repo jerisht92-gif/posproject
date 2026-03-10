@@ -29,6 +29,7 @@ from reportlab.lib.pagesizes import A4  # type: ignore[import]
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer  # type: ignore[import]
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle  # type: ignore[import]
 from reportlab.lib.units import inch, mm  # type: ignore[import]
+from dotenv import load_dotenv
 
 # PDF
 from weasyprint import HTML
@@ -46,13 +47,16 @@ import string
 from collections import defaultdict
 
 
+load_dotenv()  # Load variables from .env if present
+
+
 # =========================================
 # ✅ EMAIL SENDER (SMTP / UNIVERSAL)
 # =========================================
-def send_email_universal(to_email, subject, body, from_email, password):
-    """Send email using Gmail SMTP only."""
-    smtp_server = "smtp.gmail.com"
-    port = 587
+def send_email_universal(to_email, subject, body, from_email, password, smtp_server=None, port=None):
+    """Send email using configured SMTP server."""
+    smtp_server = smtp_server or os.getenv("SMTP_SERVER", "smtp.gmail.com")
+    port = int(port or os.getenv("SMTP_PORT", "587"))
     msg = MIMEText(body)
     msg["Subject"] = subject
     msg["From"] = from_email
@@ -72,8 +76,6 @@ def send_email_universal(to_email, subject, body, from_email, password):
         return False
 
 
-
-
 # =========================================
 # ✅ FLASK APP SETUP
 # =========================================
@@ -84,7 +86,7 @@ CORS(app)
 # =========================================
 # ✅ SESSION SETTINGS & GLOBAL CONSTANTS
 # =========================================
-app.secret_key = "supersecretkey"
+app.secret_key = os.getenv("SECRET_KEY", "dev-secret-key")
 app.permanent_session_lifetime = timedelta(days=7)     # for Remember Me
 # Inactivity timeout for normal sessions when "Remember Me" is not checked (in seconds)
 # 15 minutes = 900 seconds — after this, user is logged out and redirected to login
@@ -126,31 +128,22 @@ DELIVERY_NOTE_FILE = os.path.join(app.root_path, "deliverynotes.json")
 
 
 # =========================================
-# ✅ EMAIL CONFIG
+# ✅ EMAIL CONFIG (from environment)
 # =========================================
-EMAIL_ADDRESS = "amritha2025j@gmail.com"
-EMAIL_PASSWORD = "szwwyraaobpbrcpd"
+EMAIL_ADDRESS = os.getenv("EMAIL_ADDRESS", "")
+EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD", "")
 
-SMTP_SERVER = "smtp.gmail.com"
-SMTP_PORT = 587
-SENDER_EMAIL = EMAIL_ADDRESS
-SENDER_PASSWORD = EMAIL_PASSWORD
+SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.gmail.com")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SENDER_EMAIL = os.getenv("SENDER_EMAIL", EMAIL_ADDRESS)
+SENDER_PASSWORD = os.getenv("SENDER_PASSWORD", EMAIL_PASSWORD)
 
-
-
-# =========================================
-# QUOTATION PAGE
-# ========================================
-SMTP_SERVER = "smtp.gmail.com"
-SMTP_PORT = 587
-SENDER_EMAIL = "amritha2025j@gmail.com"  # Your Gmail
-SENDER_PASSWORD = "szwwyraaobpbrcpd"
-OTP_EXPIRY_MINUTES = 1
+OTP_EXPIRY_MINUTES = int(os.getenv("OTP_EXPIRY_MINUTES", "1"))
 
 # =========================================
 # ✅ FORGOT PASSWORD + LOCKOUT CONFIG
 # =========================================
-BASE_URL = "https://anithag.pythonanywhere.com"
+BASE_URL = os.getenv("APP_BASE_URL", "http://127.0.0.1:5000")
 RESET_SEND_COUNT = {}
 MAX_RESET_SENDS = 5
 LOCKOUT_THRESHOLD = 5
