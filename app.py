@@ -247,10 +247,17 @@ def auto_session_timeout():
         return
 
     # for all other pages → check session timeout
-    # Skip session check for API endpoints (they handle their own auth if needed)
-    # API endpoints can work with or without session (for AJAX calls from authenticated pages)
-    if not request.path.startswith("/api/"):
+    # Skip session check for some public pages above.
+    # Special handling for JSON/API clients: return JSON 401 instead of redirecting to /login.
+    is_api = request.path.startswith("/api/")
+
+    if wants_json():
+        # JSON clients (e.g. Postman) should get a JSON error, not an HTML redirect.
         if not check_session_timeout():
+            return jsonify({"success": False, "message": "session_expired"}), 401
+    else:
+        # Normal browser HTML navigation: redirect to login on timeout for non-API routes.
+        if not is_api and not check_session_timeout():
             return redirect(url_for("login", message="session_expired"))
 
     # =========================================
@@ -11233,4 +11240,5 @@ def delivery_note_print(dn_id):
 # ✅ RUN APP
 # =========================================
 if __name__ == "__main__":
+    print("Application is running successfully")
     app.run(debug=True)

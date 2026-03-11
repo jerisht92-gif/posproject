@@ -60,20 +60,15 @@ box-shadow: 0 14px 26px rgba(0, 0, 0, 0.18);
 
 .form-group input,
 .form-group select {
-      /* padding: 8px 10px;
-    font-size: 13px;
-    border: 1px solid #e7b7b5;
-    border-radius: 8px;
-        background-color: #fff5f5;    🔥 KEY FIX */
-padding: 11px 14px;
-border-radius: 10px;
-border: 1px solid #e7b7b5;
-outline: none;
-font-size: 14px;
-background-color: #fff5f5;
-color: #000;
-transition: 0.2s ease;
-box-sizing: border-box;
+  padding: 11px 14px;
+  border-radius: 10px;
+  border: 1px solid #e7b7b5;
+  outline: none;
+  font-size: 14px;
+  background-color: #fff5f5;
+  color: #000;
+  transition: 0.2s ease;
+  box-sizing: border-box;
 }
 
 .form-group input::placeholder {
@@ -241,23 +236,6 @@ color: #d18a84;
 color: #000;
 }
 
-
-
-.form-group input,
-.form-group select
-{
-  height: 30px !important;    /* reduced height */
-  padding: 6px 12px !important; /* reduced inner spacing */
-  font-size: 13px !important;   /* slightly smaller text */
-  border-radius: 8px;           /* compact rounded corners */
-}
-  #form-enquiry input:focus, 
-  #form-enquiry select:focus {
-    outline: none;              /* remove default outline */
-    border: 2px solid black;  /* blue border when focused */
-    transition: 0.2s;   
-  }
-
 .section-title {
    margin-bottom: 15px;
     font-size: 22px;
@@ -342,6 +320,32 @@ color: #000;
   background: #fafafa;
 }
 
+/* Global Discount & Shipping Charge fields - match quantity/discount styling */
+#globalDiscount,
+#shippingCharge {
+  border: 1.5px solid #d97b7b;
+  border-radius: 12px;
+  padding: 8px 10px;
+  font-size: 14px;
+  background-color: #fff5f5;
+  box-shadow: 0 2px 6px rgba(161, 40, 40, 0.08);
+  transition: all 0.2s ease;
+}
+
+#globalDiscount:hover,
+#shippingCharge:hover {
+  background-color: #fbeeee;
+  border-color: #c85f5f;
+  box-shadow: 0 4px 10px rgba(161, 40, 40, 0.12);
+}
+
+#globalDiscount:focus,
+#shippingCharge:focus {
+  outline: none !important;
+  border: 1.5px solid #c85f5f !important;
+  box-shadow: 0 0 0 3px rgba(161, 40, 40, 0.12) !important;
+}
+
 /* COMMENT */
 .comment-box {
   border: 1px solid #ddd;
@@ -388,14 +392,36 @@ color: #000;
 }
 
 .comment-body textarea {
-  width: 90%;
-  /* height: 45px; */
+  width: 100%;
+  height: 90px;
+  padding: 10px 12px;
   resize: none;
-  padding: 18px;
-  border-radius: 6px;
-  border: none;
-  background: #e6e6e6;
+  font-size: 14px;
+  border-radius: 10px;
+  border: 1px solid #e7b7b5;
+  background-color: #fff5f5;
+  box-sizing: border-box;
+  transition: 0.2s ease;
+  color: #000;
   margin-bottom: 10px;
+}
+
+.comment-body textarea::placeholder {
+  color: #d18a84;
+}
+
+.comment-body textarea:hover {
+  transform: scale(1.01);
+  background: #f5d4d4;
+  border-color: #b9473e;
+  box-shadow: 0 4px 10px rgba(161, 40, 40, 0.12);
+  transition: 0.25s ease-in-out;
+}
+
+.comment-body textarea:focus {
+  border-color: #a12828;
+  box-shadow: 0 0 0 1px rgba(161, 40, 40, 0.25);
+  outline: none;
 }
 
 .add-btn {
@@ -1285,4 +1311,71 @@ body.view-mode #submitBtn {
     background-color: #fff5f5 !important;
     cursor: text !important;
     pointer-events: auto !important;
+}
+
+/* Match hover/border style of other form fields for quantity & discount */
+.quantity-input,
+.discount-input {
+    border: 1.5px solid #d97b7b;
+    border-radius: 12px;
+    padding: 8px 10px;
+    font-size: 14px;
+    background-color: #fff5f5;
+    box-shadow: 0 2px 6px rgba(161, 40, 40, 0.08);
+    transition: all 0.2s ease;
+}
+
+.quantity-input:hover,
+.discount-input:hover {
+    background-color: #fbeeee;
+    border-color: #c85f5f;
+    box-shadow: 0 4px 10px rgba(161, 40, 40, 0.12);
+}
+
+.quantity-input:focus,
+.discount-input:focus {
+    outline: none !important;
+    border: 1.5px solid #c85f5f !important;
+    box-shadow: 0 0 0 3px rgba(161, 40, 40, 0.12) !important;
+}
+
+.items-table select,
+.items-table .product-select {
+  width: 100%;
+  max-width: 260px;
+  height: 40px;
+  padding: 8px 38px 8px 14px;
+  font-size: 14px;
+  font-family: "Poppins", sans-serif;
+  color: #000;
+  background-color: #fff5f5;
+  border: 1.5px solid #d97b7b;
+  border-radius: 12px;
+  outline: none;
+  box-shadow: 0 2px 6px rgba(161, 40, 40, 0.08);
+  transition: all 0.2s ease;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  cursor: pointer;
+
+  /* custom dropdown arrow */
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 20 20' fill='none'><path d='M5 7.5L10 12.5L15 7.5' stroke='%23222222' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 18px;
+}
+
+.items-table select:hover,
+.items-table .product-select:hover {
+  background-color: #fbeeee;
+  border-color: #c85f5f;
+  box-shadow: 0 4px 10px rgba(161, 40, 40, 0.12);
+}
+
+.items-table select:focus,
+.items-table .product-select:focus {
+  outline: none !important;
+  border: 1.5px solid #c85f5f !important;
+  box-shadow: 0 0 0 3px rgba(161, 40, 40, 0.12) !important;
 }

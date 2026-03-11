@@ -25,6 +25,8 @@ const MAX_ATTACHMENTS = 5;
 const MAX_FILE_SIZE_MB = 10;
 const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
 const COMMENTS_PER_PAGE = 5;
+/** Max allowed value for item discount (%) and global discount (%) - cap at 90 */
+const MAX_DISCOUNT_PERCENT = 90;
 
 // Exchange rates (base currency: IND)
 const exchangeRates = {
@@ -1065,14 +1067,7 @@ function loadDropdowns() {
     
     const currencySelect = document.getElementById('currency');
     if (currencySelect) {
-        currencySelect.innerHTML = '<option value="">Select Currency</option>';
-        
-        Object.keys(currencySymbols).forEach(currency => {
-            const option = document.createElement('option');
-            option.value = currency;
-            option.textContent = `${currency} (${currencySymbols[currency]})`;
-            currencySelect.appendChild(option);
-        });
+        currencySelect.innerHTML = '<option value="">Select Currency</option><option value="IND">IND (₹)</option>';
     }
     
     const customerSelect = document.getElementById("customerSelect");
@@ -1180,7 +1175,15 @@ function initializeTotalsStructure() {
     discountRow.innerHTML = `
         <span>Global Discount (%)</span>
         <span>
-            <input type="text" id="globalDiscount" class="global-discount-input" value="0" min="0" max="100" step="0.1" oninput="handleGlobalInput()" style="width: 80px; padding: 5px; border: 1px solid #ddd; border-radius: 4px; text-align: right;">
+            <input type="number"
+                   id="globalDiscount"
+                   class="global-discount-input"
+                   value="0"
+                   min="0"
+                   max="${MAX_DISCOUNT_PERCENT}"
+                   step="1"
+                   oninput="handleGlobalInput()"
+                   style="width: 80px; padding: 5px; border-radius: 4px; text-align: right;">
         </span>
     `;
     totalsDiv.appendChild(discountRow);
@@ -1194,7 +1197,15 @@ function initializeTotalsStructure() {
     shippingRow.innerHTML = `
         <span>Shipping Charge</span>
         <span>
-            <input type="text" id="shippingCharge" class="shipping-input" value="0" min="0" maxlength="5" step="0.01" oninput="handleGlobalInput()" style="width: 80px; padding: 5px; border: 1px solid #ddd; border-radius: 4px; text-align: right;">
+            <input type="number"
+                   id="shippingCharge"
+                   class="shipping-input"
+                   value="0"
+                   min="0"
+                   step="1"
+                   maxlength="5"
+                   oninput="handleGlobalInput()"
+                   style="width: 80px; padding: 5px; border-radius: 4px; text-align: right;">
         </span>
     `;
     totalsDiv.appendChild(shippingRow);
@@ -1283,10 +1294,10 @@ function initializeGlobalFields() {
     if (globalDiscount) {
         // Add validation events
         globalDiscount.addEventListener('input', function() {
-            // Live validation - prevent going over 100 while typing
+            // Live validation - prevent going over MAX_DISCOUNT_PERCENT (90) while typing
             let value = parseFloat(this.value) || 0;
-            if (value > 100) {
-                this.value = 100;
+            if (value > MAX_DISCOUNT_PERCENT) {
+                this.value = MAX_DISCOUNT_PERCENT;
             } else if (value < 0) {
                 this.value = 0;
             }
@@ -1562,7 +1573,7 @@ function initializeFormValidation() {
 
 
 // ===================================================
-// VALIDATE GLOBAL DISCOUNT - MAX 100%
+// VALIDATE GLOBAL DISCOUNT - MAX 90%
 // ===================================================
 
 function validateGlobalDiscount() {
@@ -1571,15 +1582,15 @@ function validateGlobalDiscount() {
     
     let value = parseFloat(globalDiscount.value) || 0;
     
-    // Ensure discount is between 0 and 100
+    // Ensure discount is between 0 and MAX_DISCOUNT_PERCENT (90)
     if (value < 0) {
         value = 0;
         globalDiscount.value = 0;
         showToast('Global discount cannot be negative', 'warning');
-    } else if (value > 100) {
-        value = 100;
-        globalDiscount.value = 100;
-        showToast('Global discount cannot exceed 100%', 'warning');
+    } else if (value > MAX_DISCOUNT_PERCENT) {
+        value = MAX_DISCOUNT_PERCENT;
+        globalDiscount.value = MAX_DISCOUNT_PERCENT;
+        showToast('Global discount cannot exceed ' + MAX_DISCOUNT_PERCENT + '%', 'warning');
     }
     
     // Recalculate totals after validation
@@ -1713,11 +1724,17 @@ function updateUIForStatus(status) {
                 showStatusBadge('send', displayStatus === 'send' ? 'Sent' : 'Submitted');
             } 
             else {
-                formInputs.forEach(input => { 
+                formInputs.forEach(input => {
                     input.disabled = false;
-                    // input.style.backgroundColor = '#fffff0';
                 });
-                
+
+                // Product name field non-editable when status is send/submitted (edit mode)
+                document.querySelectorAll('.product-select').forEach(sel => {
+                    sel.disabled = true;
+                    sel.style.backgroundColor = '#f5f5f5';
+                    sel.style.cursor = 'not-allowed';
+                });
+
                 // ✅ For send/submitted in edit mode - show Approve/Reject with proper flex layout
                 if (submitBtn) submitBtn.style.display = 'none';
                 if (draftBtn) draftBtn.style.display = 'none';
@@ -1726,9 +1743,9 @@ function updateUIForStatus(status) {
                 showFooterItem(pdfBtn, true);
                 showFooterItem(emailBtn, true);
                 if (addItemBtn) { addItemBtn.disabled = false; addItemBtn.style.opacity = '1'; }
-                
+
                 showStatusBadge('send', displayStatus === 'send' ? 'Pending Approval' : 'Submitted');
-                
+
                 setTimeout(() => {
                     captureInitialFormState();
                 }, 1000);
@@ -2039,8 +2056,11 @@ function addNewRow() {
         </td>
         <td class="product-id-cell"></td>
         <td>
-            <input type="text" 
+            <input type="number" 
                    class="quantity-input" 
+                   value="0"
+                   min="0"
+                   step="1"
                    placeholder="Select product first" 
                    onchange="handleItemChange(${rowCount})" 
                    oninput="handleItemChange(${rowCount})" 
@@ -2053,9 +2073,12 @@ function addNewRow() {
         <td class="unit-price-cell">${symbol} 0.00</td>
         <td class="tax-cell"></td>
         <td>
-            <input type="text" 
+            <input type="number" 
                    class="discount-input" 
                    value="0" 
+                   min="0"
+                   max="${MAX_DISCOUNT_PERCENT}"
+                   step="1"
                    onchange="handleItemChange(${rowCount})" 
                    oninput="handleItemChange(${rowCount})" 
                    style="width: 70px; padding: 5px; border: 1px solid #ddd; border-radius: 4px; background-color: #f5f5f5; cursor: not-allowed;" 
@@ -2553,16 +2576,16 @@ window.calculateRowTotal = function(rowId) {
     const discountInput = row.querySelector('.discount-input');
     let discountPercent = parseFloat(discountInput?.value) || 0;
 
-    // Apply same validation as global discount: 0–100%, toast if invalid
+    // Apply same validation as global discount: 0–90%, toast if invalid
     if (discountInput) {
         if (discountPercent < 0) {
             discountPercent = 0;
             discountInput.value = 0;
             showToast('Item discount cannot be negative', 'warning');
-        } else if (discountPercent > 100) {
-            discountPercent = 100;
-            discountInput.value = 100;
-            showToast('Item discount limited to 100%', 'warning');
+        } else if (discountPercent > MAX_DISCOUNT_PERCENT) {
+            discountPercent = MAX_DISCOUNT_PERCENT;
+            discountInput.value = MAX_DISCOUNT_PERCENT;
+            showToast('Item discount limited to ' + MAX_DISCOUNT_PERCENT + '%', 'warning');
         }
     }
 
@@ -2618,11 +2641,11 @@ function calculateGrandTotal() {
     // Validate global discount before using it
     let globalDiscountPercent = parseFloat(document.getElementById('globalDiscount')?.value) || 0;
     
-    // Ensure discount is between 0 and 100
-    if (globalDiscountPercent > 100) {
-        globalDiscountPercent = 100;
-        document.getElementById('globalDiscount').value = 100;
-        showToast('Global discount limited to 100%', 'warning');
+    // Ensure discount is between 0 and MAX_DISCOUNT_PERCENT (90)
+    if (globalDiscountPercent > MAX_DISCOUNT_PERCENT) {
+        globalDiscountPercent = MAX_DISCOUNT_PERCENT;
+        document.getElementById('globalDiscount').value = MAX_DISCOUNT_PERCENT;
+        showToast('Global discount limited to ' + MAX_DISCOUNT_PERCENT + '%', 'warning');
     } else if (globalDiscountPercent < 0) {
         globalDiscountPercent = 0;
         document.getElementById('globalDiscount').value = 0;

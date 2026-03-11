@@ -211,12 +211,28 @@
   .filter-item select{
     width:100%;
     height:30px;
-    padding: 0 16px;
-    border-radius: 18px;
-    border: 2px solid #ead0d0;
-    background:#fff;
+    padding: 6px 12px;
+    border-radius: 10px;
+    border: 1px solid #e7b7b5;
+    background-color:#fff5f5;
     font-size:13px;
     outline:none;
+    color:#000;
+    box-sizing:border-box;
+    transition:0.2s ease;
+  }
+
+  .filter-item select:hover{
+    background: #f5d4d4;
+    border-color: #b9473e;
+    box-shadow: 0 4px 10px rgba(161, 40, 40, 0.12);
+    transform: scale(1.01);
+    transition: 0.25s ease-in-out;
+  }
+
+  .filter-item select:focus{
+    border-color: #a12828;
+    box-shadow: 0 0 0 1px rgba(161, 40, 40, 0.25);
   }
   
   /* -------------------------------
@@ -261,7 +277,7 @@
   
   .quotation-table tbody tr:hover td{
     background: #e3bdbd;
-    transform: scale(1.01);
+    /* transform: scale(1.01); */
     transition: 0.25s ease;
   }
   
