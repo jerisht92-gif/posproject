@@ -52,6 +52,40 @@ const pageTotal = document.getElementById("pageTotal");
   /* =========================================================
      COMMON HELPERS
   ========================================================== */
+  function showToast(message, type = "success") {
+    const existing = document.querySelector(".success-notification, .error-notification");
+    if (existing) existing.remove();
+
+    const div = document.createElement("div");
+    div.className = type === "success" ? "success-notification" : "error-notification";
+    div.textContent = message;
+
+    document.body.appendChild(div);
+
+    requestAnimationFrame(() => {
+      div.classList.add("show");
+    });
+
+    setTimeout(() => {
+      div.classList.remove("show");
+      setTimeout(() => div.remove(), 300);
+    }, 3000);
+  }
+
+  // Show cross-page success toast if set by form page
+  try {
+    const flag = localStorage.getItem("salesOrderSuccess");
+    if (flag === "1") {
+      showToast("Sales order added successfully.", "success");
+      localStorage.removeItem("salesOrderSuccess");
+    }
+
+    const draftFlag = localStorage.getItem("salesOrderDraftSuccess");
+    if (draftFlag === "1") {
+      showToast("Sales order draft saved successfully.", "success");
+      localStorage.removeItem("salesOrderDraftSuccess");
+    }
+  } catch (e) {}
   function safeText(value) {
     return value === null || value === undefined || value === ""
       ? "—"

@@ -148,29 +148,27 @@ function setSelectAny(ids, raw) {
 }
 
 // =========================================
-// TOAST
+// TOAST (match Quotation design)
 // =========================================
 function showToast(message, type = "success") {
-  const old = document.getElementById("centerToast");
-  if (old) old.remove();
+  const existing = document.querySelector(".success-notification, .error-notification");
+  if (existing) existing.remove();
 
-  const toast = document.createElement("div");
-  toast.id = "centerToast";
-  toast.className = `center-toast ${type}`;
-  toast.innerHTML = `
-    <div class="toast-inner">
-      <span class="toast-icon">${type === "success" ? "✓" : "!"}</span>
-      <span class="toast-msg">${message}</span>
-    </div>
-  `;
+  const div = document.createElement("div");
+  div.className = type === "success" ? "success-notification" : "error-notification";
+  div.textContent = message;
 
-  document.body.appendChild(toast);
-  requestAnimationFrame(() => toast.classList.add("show"));
+  document.body.appendChild(div);
+
+  // trigger show animation
+  requestAnimationFrame(() => {
+    div.classList.add("show");
+  });
 
   setTimeout(() => {
-    toast.classList.remove("show");
-    setTimeout(() => toast.remove(), 250);
-  }, 2200);
+    div.classList.remove("show");
+    setTimeout(() => div.remove(), 300);
+  }, 2600);
 }
 
 // =========================================
@@ -495,6 +493,36 @@ function onProductChange(selectEl) {
   if (!row) return;
 
   applyProductToRow(row, selectEl.value);
+
+  // Show success toast when a valid product is selected (match quotation UX)
+  const pid = selectEl.value;
+  if (pid && window.SO_PRODUCTS_MAP && window.SO_PRODUCTS_MAP[pid]) {
+    const p = window.SO_PRODUCTS_MAP[pid];
+    const name =
+      (p.product_name || p.name || p.title || "Product").toString().trim();
+    const price = Number(
+      p.unit_price ?? p.price ?? p.selling_price ?? 0
+    );
+
+    // Determine currency symbol from current selection (default ₹)
+    const currencyCode =
+      document.getElementById("currency")?.value?.trim() || "IND";
+    const currencySymbols = {
+      IND: "₹",
+      INR: "₹",
+      USD: "$",
+      EUR: "€",
+      GBP: "£",
+      SGD: "S$",
+    };
+    const symbol = currencySymbols[currencyCode] || currencyCode || "₹";
+
+    showToast(
+      `${name} selected. Price: ${symbol} ${price.toFixed(2)}`,
+      "success"
+    );
+  }
+
   calculateRow(selectEl);
   refreshProductDropdowns();
 }
@@ -821,8 +849,6 @@ function updateSubmitButton() {
   const email = (document.getElementById("email")?.value || "").trim();
   const phone = (document.getElementById("phone")?.value || "").trim();
 
-  const commentsOk = hasAtLeastOneComment();
-
   const allOk =
     !!billAddr &&
     !!shipAddr &&
@@ -838,8 +864,7 @@ function updateSubmitButton() {
     !!terms &&
     !!shipMethod &&
     !!delDate &&
-    allItemsValid() &&
-    commentsOk;
+    allItemsValid();
 
   submitBtn.style.display = "inline-flex";
   submitBtn.disabled = !allOk;
@@ -968,8 +993,11 @@ function saveDraft() {
     .then((r) => r.json())
     .then((data) => {
       if (!data.success) throw new Error("Draft save failed");
-      showToast(`Draft Saved (${data.so_id})`, "success");
-      setTimeout(() => (window.location.href = SALES_LIST_URL), 700);
+      // Flag for success toast on list page (draft)
+      try {
+        localStorage.setItem("salesOrderDraftSuccess", "1");
+      } catch (e) {}
+      window.location.href = SALES_LIST_URL;
     })
     .catch(() => showToast("Draft Save Error", "error"));
 }
@@ -1025,8 +1053,11 @@ function submitOrder() {
     .then((r) => r.json())
     .then((data) => {
       if (!data.success) throw new Error("Submit failed");
-      showToast(`Submitted (${data.so_id})`, "success");
-      setTimeout(() => (window.location.href = SALES_LIST_URL), 700);
+      // Flag for success toast on list page
+      try {
+        localStorage.setItem("salesOrderSuccess", "1");
+      } catch (e) {}
+      window.location.href = SALES_LIST_URL;
     })
     .catch(() => showToast("Submit Error", "error"));
 }
@@ -1630,6 +1661,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     tracking?.addEventListener("input", () => {
       let v = (tracking.value || "").toUpperCase();
       v = v.replace(/[^A-Z0-9-]/g, "");
+      if (v.length > 14) v = v.slice(0, 14);
       tracking.value = v;
       setFieldError(tracking, trackingErr, "");
     });
@@ -1645,6 +1677,16 @@ document.addEventListener("DOMContentLoaded", async () => {
 
       setFieldError(tracking, trackingErr, "");
     });
+
+    // Phone number: allow only digits, max length 10
+    const phoneInput = document.getElementById("phone");
+    if (phoneInput) {
+      phoneInput.addEventListener("input", () => {
+        let v = phoneInput.value.replace(/\D/g, "");
+        if (v.length > 10) v = v.slice(0, 10);
+        phoneInput.value = v;
+      });
+    }
 
     function attachAlphaNumOnly(inputId, errId) {
       const el = document.getElementById(inputId);

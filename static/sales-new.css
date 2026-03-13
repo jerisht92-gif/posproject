@@ -4,11 +4,7 @@
 /* =========================================
    GLOBAL
 ========================================= */
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-}
+
 
 .sales-wrapper {
   min-height: 100vh;
@@ -160,6 +156,62 @@ textarea:focus {
   box-shadow: 0 0 0 1px rgba(161, 40, 40, 0.25);
 }
 
+/* =========================================
+   SUCCESS / ERROR TOASTS (match Quotation)
+========================================= */
+.success-notification,
+.error-notification {
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-100px);
+  padding: 14px 28px;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 600;
+  z-index: 10000;
+  opacity: 0;
+  transition: all 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+  pointer-events: none;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.success-notification {
+  background: linear-gradient(135deg, #fff4f4, #ffe8e8);
+  color: #a12828;
+  border: 1.5px solid #a12828;
+  box-shadow: 0 8px 24px rgba(161, 40, 40, 0.25);
+}
+
+.error-notification {
+  background: linear-gradient(135deg, #ffe6e6, #ffc2c2);
+  color: #a12828;
+  border: 1.5px solid #a12828;
+  box-shadow: 0 8px 24px rgba(161, 40, 40, 0.35);
+}
+
+.success-notification.show,
+.error-notification.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+  pointer-events: auto;
+}
+
+.success-notification::before {
+  content: "✓";
+  font-size: 18px;
+  font-weight: bold;
+}
+
+.error-notification::before {
+  content: "✕";
+  font-size: 18px;
+  font-weight: bold;
+}
+
 input:disabled,
 select:disabled,
 textarea:disabled {
@@ -200,6 +252,7 @@ textarea:disabled {
 .dropdown-selected {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   width: 100%;
   height: 30px;
   padding: 6px 12px;
@@ -209,7 +262,8 @@ textarea:disabled {
   border-radius: 8px;
   background-color: #fff5f5;
   font-size: 13px;
-  transition: 0.25s ease;
+  box-sizing: border-box;
+  transition: 0.2s ease;
 }
 
 .dropdown-selected:hover {
@@ -244,6 +298,17 @@ textarea:disabled {
   border-radius: 8px;
   background: #fff5f5;
   font-size: 13px;
+  transition: 0.25s ease-in-out;
+}
+
+/* Match hover/focus style of main Sales Rep select */
+.dropdown-menu input:hover,
+.dropdown-menu input:focus {
+  background: #f5d4d4;
+  border-color: #b9473e;
+  box-shadow: 0 4px 10px rgba(161, 40, 40, 0.12);
+  transform: scale(1.01);
+  outline: none;
 }
 
 .dropdown-item {
@@ -254,7 +319,7 @@ textarea:disabled {
 }
 
 .dropdown-item:hover {
-  background: #fff2f2;
+  background: #e7b7b5;
 }
 
 /* =========================================

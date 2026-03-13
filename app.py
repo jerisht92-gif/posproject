@@ -169,7 +169,9 @@ OTP_EXPIRY_MINUTES = int(os.getenv("OTP_EXPIRY_MINUTES", "1"))
 # =========================================
 # ✅ FORGOT PASSWORD + LOCKOUT CONFIG
 # =========================================
-BASE_URL = os.getenv("APP_BASE_URL", "http://127.0.0.1:5000")
+_raw_base_url = os.getenv("APP_BASE_URL", "http://127.0.0.1:5000")
+# Support multiple base URLs in APP_BASE_URL (comma-separated); use the first as primary
+BASE_URL = _raw_base_url.split(",")[0].strip() if _raw_base_url else "http://127.0.0.1:5000"
 RESET_SEND_COUNT = {}
 MAX_RESET_SENDS = 5
 LOCKOUT_THRESHOLD = 5
@@ -10233,7 +10235,24 @@ def upsert_sales_order(payload: dict, status_value: str):
 # =========================================
 @app.get("/sales-order")
 def sales_order():
-    return render_template("sales-order.html", page="sales_order")
+    user_email = session.get("user")
+    if not user_email:
+        return redirect(url_for("login", message="session_expired"))
+
+    users = load_users()
+    user_name = "User"
+    for u in users:
+        if isinstance(u, dict) and (u.get("email") or "").lower() == user_email.lower():
+            user_name = u.get("name") or "User"
+            break
+
+    return render_template(
+        "sales-order.html",
+        page="sales_order",
+        title="Sales Order - Stackly",
+        user_email=user_email,
+        user_name=user_name,
+    )
 
 
 @app.get("/sales_order")
@@ -10243,10 +10262,21 @@ def sales_order_compat():
 
 @app.get("/sales-order/new")
 def sales_order_new():
+    user_email = session.get("user")
+    if not user_email:
+        return redirect(url_for("login", message="session_expired"))
+
     so_id = generate_sales_order_id()
 
     users = load_users()
     sales_reps = [u for u in users if u.get("role") in ["Admin", "User", "Sales"]]
+
+    # Resolve logged-in user's display name for profile dropdown
+    user_name = "User"
+    for u in users:
+        if isinstance(u, dict) and (u.get("email") or "").lower() == user_email.lower():
+            user_name = u.get("name") or "User"
+            break
 
     customers = load_customer()
 
@@ -10256,7 +10286,9 @@ def sales_order_new():
         so_id=so_id,
         sales_reps=sales_reps,
         customers=customers,
-        page="sales_order"
+        page="sales_order",
+        user_email=user_email,
+        user_name=user_name,
     ))
 
     # Prevent browser cache from reusing an old SO page
@@ -10863,48 +10895,6 @@ def cancel_sales_order(so_id):
         "so_id": so_id
     })
 
-
-@app.route("/save_sales", methods=["POST"])
-def save_sales():
-    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-    SALES_FILE = os.path.join(BASE_DIR, "sales_orders.json")
-
-    data = request.get_json() or {}   # ✅ safer than request.json
-
-    # ✅ AUTO FETCH CUSTOMER DETAILS into sales order
-    customer_name = (data.get("customer_name") or data.get("name") or "").strip()
-    customer = find_customer_by_name(customer_name)
-
-    if customer:
-        data["customer_id"] = customer.get("customer_id", "")
-        data["email"] = customer.get("email", "")
-        data["phone"] = customer.get("phone", "")
-        data["billing_address"] = customer.get("billingAddress", "")
-        data["shipping_address"] = customer.get("shippingAddress", "")
-    else:
-        data["customer_id"] = ""
-        data["email"] = ""
-        data["phone"] = ""
-
-    # create file if missing
-    if not os.path.exists(SALES_FILE):
-        with open(SALES_FILE, "w", encoding="utf-8") as f:
-            json.dump([], f, ensure_ascii=False, indent=4)
-
-    # load existing
-    with open(SALES_FILE, "r", encoding="utf-8") as f:
-        try:
-            orders = json.load(f)
-        except json.JSONDecodeError:
-            orders = []
-
-    # append + save
-    orders.append(data)
-
-    with open(SALES_FILE, "w", encoding="utf-8") as f:
-        json.dump(orders, f, ensure_ascii=False, indent=4)
-
-    return jsonify({"success": True, "message": "Saved"})
 
 # =========================================
 # DELIVERY NOTE - UTILITIES / HELPERS
