@@ -146,7 +146,7 @@ function closeModal(id) {
   function getFocusable(container) {
     if (!container) return [];
     return [...container.querySelectorAll(
-      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+      'button, [href], input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])'
     )].filter(el => !el.disabled && el.offsetParent !== null);
   }
 
@@ -164,21 +164,28 @@ function closeModal(id) {
     addProductModalTrapKeydown = function (e) {
       if (!addItemModal || addItemModal.style.display !== "flex") return;
       if (e.key === "Escape") {
-    e.preventDefault();
+        e.preventDefault();
         closeAddProductModal();
         return;
       }
       if (e.key !== "Tab") return;
-      const list = getFocusable(addItemModal);
-      if (list.length === 0) return;
-      const first = list[0];
-      const last = list[list.length - 1];
-      if (e.shiftKey && document.activeElement === first) {
+      const focusables = getFocusable(addItemModal);
+      if (focusables.length === 0) return;
+      const current = document.activeElement;
+      const inside = addItemModal.contains(current);
+      if (!inside) {
         e.preventDefault();
-        last.focus();
-      } else if (!e.shiftKey && document.activeElement === last) {
-        e.preventDefault();
-        first.focus();
+        focusables[e.shiftKey ? focusables.length - 1 : 0].focus();
+        return;
+      }
+      e.preventDefault();
+      const idx = focusables.indexOf(current);
+      if (e.shiftKey) {
+        const nextIdx = idx <= 0 ? focusables.length - 1 : idx - 1;
+        focusables[nextIdx].focus();
+      } else {
+        const nextIdx = idx < 0 || idx >= focusables.length - 1 ? 0 : idx + 1;
+        focusables[nextIdx].focus();
       }
     };
     document.addEventListener("keydown", addProductModalTrapKeydown);

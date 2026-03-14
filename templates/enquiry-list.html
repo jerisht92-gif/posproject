@@ -9,7 +9,7 @@
 {% set can_create = role_norm in ['admin', 'superadmin'] %}
 {% set can_edit = role_norm in ['admin', 'superadmin'] %}
 {% set can_delete = role_norm == 'superadmin' %}
-<div class="manage-page enquiry-page" data-current-role="{{ role_norm }}">
+<div class="manage-page enquiry-page" data-current-role="{{ role_norm }}" data-role="{{ user_role|default('User') }}">
 
   <!-- Header: title + search + create button -->
   <div class="manage-header-row">

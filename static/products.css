@@ -340,7 +340,7 @@
 
 .table tbody tr:hover td {
   background: #e3bdbd;      /* soft maroon tint */
-  transform: scale(1.01);   /* slight lift */
+  /* transform: scale(1.01);   slight lift */
   transition: 0.25s ease;
 }
 

@@ -152,26 +152,36 @@ color: #a12828;
 }
 
 /* -----------------------------------------
+   TABLE WRAPPER – scrollable like Products page
+------------------------------------------ */
+.enquiry-page .table-wrapper {
+  overflow-x: auto;
+  overflow-y: auto;
+  max-height: 420px;
+  border-radius: 10px;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* -----------------------------------------
    TABLE
 ------------------------------------------ */
 .enquiry-page .enquiry-table {
   width: 100%;
+  min-width: 900px;
   border-collapse: collapse;
-  table-layout: fixed;
+  table-layout: auto;
 }
 
 .enquiry-page .enquiry-table thead {
   background: #fff4f4;
 }
 
-/* base */
+/* base – no truncation; show full values */
 .enquiry-page .enquiry-table th,
 .enquiry-page .enquiry-table td {
   padding: 14px 14px;
   text-align: left;
   vertical-align: middle;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 /* headers */
@@ -184,12 +194,18 @@ color: #a12828;
   white-space: nowrap;
 }
 
-/* body */
+/* body – full value visible; wrap only if very long */
 .enquiry-page .enquiry-table td {
   font-size: 14px;
   border-bottom: 1px solid #f0eaea;
   background: #ffffff;
   white-space: nowrap;
+}
+
+/* Email column: allow enough space for full address */
+.enquiry-page .enquiry-table th:nth-child(4),
+.enquiry-page .enquiry-table td:nth-child(4) {
+  min-width: 180px;
 }
 
 /* 🔴 underline */
@@ -379,11 +395,15 @@ color: #a12828;
   cursor: not-allowed;
 }
 
-/* Focus */
+/* Focus – same #a12828 for all modal fields when clicked */
 .form-group input:focus,
-.form-group select:focus {
+.form-group select:focus,
+.enquiry-edit-modal .form-group input:focus,
+.enquiry-edit-modal .form-group select:focus {
+  outline: none;
   border-color: #a12828;
-  box-shadow: 0 0 0 2px rgba(161, 40, 40, 0.15);
+  border-width: 2px;
+  box-shadow: 0 0 0 2px rgba(161, 40, 40, 0.2);
 }
 
 /* Buttons alignment */
@@ -397,13 +417,18 @@ color: #a12828;
 .field-error {
   display: block;
   margin-top: 6px;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 500;
-  color: #d10000;
+  color: #d9534f;
 }
 
-.input-error {
-  border: 2px solid #d10000 !important;
+/* Invalid field: red border + light red background (same as Create New Branch Users) */
+.input-error,
+.enquiry-edit-modal .form-group input.input-error,
+.enquiry-edit-modal .form-group select.input-error {
+  border: 2px solid #e63946 !important;
+  background-color: #fff5f5 !important;
+  box-shadow: 0 0 0 1px rgba(230, 57, 70, 0.15);
 }
 
 .btn-primary {
@@ -506,6 +531,42 @@ color: #a12828;
 
 .success-notification::before {
   content: "✓";
+  font-size: 18px;
+  font-weight: bold;
+}
+
+/* Error toast – same layout as success, different color */
+.error-notification {
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-100px);
+  background: linear-gradient(135deg, #ffe6e6, #ffd4d4);
+  color: #b3261e;
+  padding: 14px 28px;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(179, 38, 30, 0.25);
+  font-size: 15px;
+  font-weight: 600;
+  z-index: 10000;
+  opacity: 0;
+  border: 1.5px solid #c62828;
+  transition: all 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+  pointer-events: none;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.error-notification.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+  pointer-events: auto;
+}
+
+.error-notification::before {
+  content: "✕";
   font-size: 18px;
   font-weight: bold;
 }
@@ -660,11 +721,7 @@ color: #a12828;
   box-shadow: 0 8px 24px rgba(161, 40, 40, 0.35);
 }
 
-/* Make table horizontally scrollable */
-/* .enquiry-page .table-wrapper {
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-} */
+/* Table scroll is defined in TABLE WRAPPER above */
 
 
 

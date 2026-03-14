@@ -289,10 +289,22 @@ body {
   width: 100%;
   padding: 10px 18px 10px 40px;
   border-radius: 40px;
-  border: 2px solid #7a001f;     /* maroon */
+  border: 2px solid #a12828;     /* maroon – match enquiry/search box */
   background: #ffffff;
   font-size: 15px;
   color: #4a1f1a;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.search-input:hover {
+  border-color: #a12828;
+  box-shadow: 0 4px 12px rgba(161, 40, 40, 0.25);
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: #a12828;
+  box-shadow: 0 0 0 3px rgba(161, 40, 40, 0.2);
 }
 
 .search-icon {

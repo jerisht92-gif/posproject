@@ -5,6 +5,20 @@ document.addEventListener("DOMContentLoaded", () => {
 
   if (!tableBody) return;
 
+  // ==========================
+  // Role-based access (same as Product module)
+  // ==========================
+  const pageEl = document.querySelector(".enquiry-page");
+  const roleRaw = pageEl?.dataset.currentRole || pageEl?.dataset.role || "";
+  const role = roleRaw.toLowerCase().replace(/\s+/g, "").replace(/_/g, "");
+  const canEdit = ["superadmin", "admin"].includes(role);
+  const canDelete = ["superadmin"].includes(role);
+
+  const editDisabledAttr = canEdit ? "" : " disabled title=\"Only Admin / Super Admin can edit\"";
+  const deleteDisabledAttr = canDelete ? "" : " disabled title=\"Only Super Admin can delete\"";
+  const editClass = canEdit ? "edit-btn action-btn" : "edit-btn action-btn edit-btn-disabled";
+  const deleteClass = canDelete ? "delete-btn action-btn" : "delete-btn action-btn delete-btn-disabled";
+
   function renderRows(items) {
     // Keep header/footer behaviour from server render; just replace body rows
     tableBody.innerHTML = "";
@@ -28,15 +42,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
       tr.innerHTML = `
         <td><span class="enquiry-id-link" data-id="${e.enquiry_id}">${e.enquiry_id}</span></td>
-        <td>${e.first_name || ""}</td>
-        <td>${e.last_name || ""}</td>
-        <td>${e.email || ""}</td>
-        <td>${e.phone_number || ""}</td>
-        <td>${e.status || ""}</td>
+        <td>${(e.first_name || "").replace(/</g, "&lt;")}</td>
+        <td>${(e.last_name || "").replace(/</g, "&lt;")}</td>
+        <td>${(e.email || "").replace(/</g, "&lt;")}</td>
+        <td>${(e.phone_number || "").replace(/</g, "&lt;")}</td>
+        <td>${(e.status || "").replace(/</g, "&lt;")}</td>
         <td class="action-cell">
           <div class="action-buttons">
-            <button class="edit-btn action-btn" data-id="${e.enquiry_id}">Edit</button>
-            <button class="delete-btn action-btn" data-id="${e.enquiry_id}">Delete</button>
+            <button class="${editClass}" data-id="${e.enquiry_id}"${editDisabledAttr}>Edit</button>
+            <button class="${deleteClass}" data-id="${e.enquiry_id}"${deleteDisabledAttr}>Delete</button>
           </div>
         </td>
       `;
@@ -151,14 +165,23 @@ document.addEventListener('click', function(e) {
         })
         .then(data => {
             if (data.success) {
-                alert("Product deleted successfully");
-                
-                // Close both modals
+                // Close both modals first
                 document.getElementById('deleteModal').style.display = 'none';
                 document.getElementById("productModal").style.display = "none";
-                
-                // Reload the page
-                location.reload();
+
+                // Show success toast instead of alert
+                const existing = document.querySelector(".success-notification");
+                if (existing) existing.remove();
+                const toast = document.createElement("div");
+                toast.className = "success-notification";
+                toast.textContent = "Product deleted Successfully.";
+                document.body.appendChild(toast);
+                setTimeout(() => toast.classList.add("show"), 10);
+                setTimeout(() => {
+                    toast.classList.remove("show");
+                    setTimeout(() => toast.remove(), 400);
+                    location.reload();
+                }, 2500);
             } else {
                 alert(data.message || 'Delete failed');
                 document.getElementById('deleteModal').style.display = 'none';
@@ -172,7 +195,7 @@ document.addEventListener('click', function(e) {
         .finally(() => {
             // Re-enable button
             e.target.disabled = false;
-            e.target.textContent = 'OK';
+            e.target.textContent = 'Delete';
         });
     }
 });
@@ -243,23 +266,29 @@ document.addEventListener("DOMContentLoaded", () => {
     function getFocusable(modal) {
         if (!modal) return [];
         return [...modal.querySelectorAll(
-            'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+            'button, [href], input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])'
         )].filter(el => !el.disabled && el.offsetParent !== null);
     }
 
     function trapFocus(e) {
-        if (!activeModal) return;
-        if (e.key !== "Tab") return;
+        if (!activeModal || e.key !== "Tab") return;
         const focusables = getFocusable(activeModal);
         if (focusables.length === 0) return;
-        const first = focusables[0];
-        const last = focusables[focusables.length - 1];
-        if (e.shiftKey && document.activeElement === first) {
+        const current = document.activeElement;
+        const inside = activeModal.contains(current);
+        if (!inside) {
             e.preventDefault();
-            last.focus();
-        } else if (!e.shiftKey && document.activeElement === last) {
-            e.preventDefault();
-            first.focus();
+            focusables[e.shiftKey ? focusables.length - 1 : 0].focus();
+            return;
+        }
+        e.preventDefault();
+        const idx = focusables.indexOf(current);
+        if (e.shiftKey) {
+            const nextIdx = idx <= 0 ? focusables.length - 1 : idx - 1;
+            focusables[nextIdx].focus();
+        } else {
+            const nextIdx = idx < 0 || idx >= focusables.length - 1 ? 0 : idx + 1;
+            focusables[nextIdx].focus();
         }
     }
 
@@ -313,7 +342,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     function isValidLastName(v) {
         v = (v || "").trim();
-        return v.length <= 40 && /^[A-Za-z ]+$/.test(v);
+        return v.length >= 3 && v.length <= 40 && /^[A-Za-z ]+$/.test(v);
     }
 
     function isValidEmail(v) {
@@ -356,6 +385,21 @@ document.addEventListener("DOMContentLoaded", () => {
         setTimeout(() => {
             notification.classList.remove("show");
             setTimeout(() => notification.remove(), 400);
+        }, duration);
+    }
+
+    function showErrorToast(message, durationMs) {
+        const duration = durationMs == null ? 3000 : durationMs;
+        const existing = document.querySelector(".error-notification");
+        if (existing) existing.remove();
+        const toast = document.createElement("div");
+        toast.className = "error-notification";
+        toast.textContent = message;
+        document.body.appendChild(toast);
+        setTimeout(() => toast.classList.add("show"), 10);
+        setTimeout(() => {
+            toast.classList.remove("show");
+            setTimeout(() => toast.remove(), 400);
         }, duration);
     }
 
@@ -431,6 +475,7 @@ document.addEventListener("DOMContentLoaded", () => {
             formChanged = false;
             clearErrors();
             openModal(editModal);
+            [editFirstName, editLastName, editPhoneNumber, editEmail].forEach(validateEditField);
             updateEnquirySaveButtonState();
 
         } catch (err) {
@@ -473,19 +518,42 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    // Input listeners for Edit Enquiry modal – update Save button state (same pattern as Edit User)
+    // ==========================
+    // Live validation for Edit Enquiry (same as Create New Branch Users)
+    // ==========================
+    function validateEditField(field) {
+        if (!field) return;
+        const v = (field.value || "").trim();
+        let message = "";
+        if (field === editFirstName) {
+            if (!v) message = "First Name is required.";
+            else if (v.length < 3) message = "Minimum 3 Letters Required";
+            else if (!isValidName(v)) message = "First name should contain only letters (max 40).";
+        } else if (field === editLastName) {
+            if (!v) message = "Last Name is required.";
+            else if (v.length < 3) message = "Minimum 3 Letters Required";
+            else if (!isValidLastName(v)) message = "Last name should contain only letters (max 40).";
+        } else if (field === editPhoneNumber) {
+            if (!v) message = "Phone is required.";
+            else if (!isValidPhone(v)) message = "Phone must be exactly 10 digits";
+        } else if (field === editEmail) {
+            if (!v) message = "Email is required.";
+            else if (!isValidEmail(v)) message = "Enter a valid email address";
+        }
+        const errEl = field === editFirstName ? errFirstName : field === editLastName ? errLastName : field === editPhoneNumber ? errPhoneNumber : errEmail;
+        if (errEl) errEl.textContent = message;
+        if (message) field.classList.add("input-error"); else field.classList.remove("input-error");
+        updateEnquirySaveButtonState();
+    }
+
+    // Input + blur: live validation for each Edit Enquiry field
     [editFirstName, editLastName, editPhoneNumber, editEmail].forEach(el => {
         if (!el) return;
         el.addEventListener("input", () => {
             formChanged = true;
-            if (el === editFirstName && errFirstName) errFirstName.textContent = "";
-            if (el === editLastName && errLastName) errLastName.textContent = "";
-            if (el === editPhoneNumber && errPhoneNumber) errPhoneNumber.textContent = "";
-            if (el === editEmail && errEmail) errEmail.textContent = "";
-            el.classList.remove("input-error");
-            updateEnquirySaveButtonState();
+            validateEditField(el);
         });
-        el.addEventListener("blur", () => updateEnquirySaveButtonState());
+        el.addEventListener("blur", () => validateEditField(el));
     });
 
     // ==========================
@@ -718,7 +786,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const data = await res.json();
 
             if(!data.success) { 
-                alert("No items found"); 
+                showErrorToast("No items found");
                 return; 
             }
 
@@ -726,7 +794,7 @@ document.addEventListener("DOMContentLoaded", () => {
             const items = data.items || {};
             
             if (Object.keys(items).length === 0) {
-                alert("This enquiry has no items");
+                showErrorToast("This enquiry has no items");
                 return;
             }
             
@@ -743,7 +811,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         } catch(err) {
             console.error("Error loading products:", err);
-            alert("Error loading products");
+            showErrorToast("Error loading products");
         }
     });
 
@@ -808,14 +876,21 @@ console.log("Length:", currentItems.length);
         if (e.key !== "Tab") return;
         const focusables = getFocusable(productModalEl);
         if (focusables.length === 0) return;
-        const first = focusables[0];
-        const last = focusables[focusables.length - 1];
-        if (e.shiftKey && document.activeElement === first) {
+        const current = document.activeElement;
+        const inside = productModalEl.contains(current);
+        if (!inside) {
             e.preventDefault();
-            last.focus();
-        } else if (!e.shiftKey && document.activeElement === last) {
-            e.preventDefault();
-            first.focus();
+            focusables[e.shiftKey ? focusables.length - 1 : 0].focus();
+            return;
+        }
+        e.preventDefault();
+        const idx = focusables.indexOf(current);
+        if (e.shiftKey) {
+            const nextIdx = idx <= 0 ? focusables.length - 1 : idx - 1;
+            focusables[nextIdx].focus();
+        } else {
+            const nextIdx = idx < 0 || idx >= focusables.length - 1 ? 0 : idx + 1;
+            focusables[nextIdx].focus();
         }
     }
 
