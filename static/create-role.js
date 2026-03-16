@@ -128,16 +128,19 @@ document.addEventListener("DOMContentLoaded", () => {
         .then((data) => {
           if (data.status === "success" || data.success) {
             hideConfirm();
-            alert("Role saved successfully.");
+            // Flag for success toast on Department & Roles page
+            try {
+              window.localStorage.setItem("roleSavedSuccess", "1");
+            } catch (e) {}
             window.location.href = "/department-roles";
           } else {
             const msg = data.message || data.error || "Failed to save role.";
-            alert(msg);
+            showErrorNotification(msg);
           }
         })
         .catch((err) => {
           console.error("Error saving role:", err);
-          alert("Error saving role. Please try again.");
+          showErrorNotification("Error saving role. Please try again.");
         });
     });
   }
@@ -260,10 +263,15 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     function showError(el, msg) {
-        const div = document.createElement("div");
-        div.className = "error-msg";
+        if (!el) return;
+        // Reuse existing error node if present, otherwise create once
+        let div = el.parentElement.querySelector(".error-msg");
+        if (!div) {
+            div = document.createElement("div");
+            div.className = "error-msg";
+            el.parentElement.appendChild(div);
+        }
         div.innerText = msg;
-        el.parentElement.appendChild(div);
     }
 
     function removeError(el) {
@@ -295,6 +303,19 @@ document.addEventListener("DOMContentLoaded", () => {
         // Validate description (max 50, allowed chars)
         const descValid = desc && desc.length <= 50 && /^[A-Za-z\s.,/&]+$/.test(desc);
         
+        // When text fields are valid, guide user to choose dropdowns
+        const textFieldsValid = roleValid && descValid;
+        if (textFieldsValid) {
+            if (!dept && department) {
+                showError(department, "Please select Department.");
+                department.classList.add("input-error");
+            }
+            if (!br && branch) {
+                showError(branch, "Please select Branch.");
+                branch.classList.add("input-error");
+            }
+        }
+        
         // Check if at least one permission is checked
         let anyChecked = false;
         document.querySelectorAll("tbody tr").forEach(row => {
@@ -308,6 +329,28 @@ document.addEventListener("DOMContentLoaded", () => {
         
         // Enable button only if all fields are valid AND at least one permission is checked
         saveBtn.disabled = !(deptValid && branchValid && roleValid && descValid && anyChecked);
+
+        // Show a single inline message just under the "Permission" title
+        // when everything else is valid but no permission has been chosen.
+        const permHeader = document.querySelector(".permission-header");
+        const existingPermErr = permHeader?.parentElement.querySelector(".perm-error-msg");
+        if (deptValid && branchValid && roleValid && descValid && !anyChecked) {
+            if (permHeader) {
+                let msgNode = existingPermErr;
+                if (!msgNode) {
+                    msgNode = document.createElement("div");
+                    msgNode.className = "perm-error-msg";
+                    msgNode.style.color = "#d9534f";
+                    msgNode.style.fontSize = "12px";
+                    msgNode.style.marginTop = "6px";
+                    // Insert directly under the Permission title row
+                    permHeader.insertAdjacentElement("afterend", msgNode);
+                }
+                msgNode.textContent = "Please choose at least one permission.";
+            }
+        } else if (existingPermErr) {
+            existingPermErr.remove();
+        }
     }
 
     // --------------------

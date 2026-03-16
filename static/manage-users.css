@@ -324,10 +324,30 @@
 .modal-content input,
 .modal-content select {
   width: 100%;
-  padding: 8px;
+  padding: 6px 12px;
   margin-bottom: 6px;
   border-radius: 8px;
-  border: 1px solid #ccc;
+  border: 1px solid #e7b7b5;
+  background-color: #fff5f5;
+  font-size: 13px;
+  box-sizing: border-box;
+  transition: 0.2s ease;
+}
+
+/* Hover / focus – match Create New Branch Users */
+.modal-content input:hover,
+.modal-content select:hover {
+  background: #f5d4d4;
+  border-color: #b9473e;
+  box-shadow: 0 4px 10px rgba(161, 40, 40, 0.12);
+  transform: scale(1.01);
+}
+
+.modal-content input:focus,
+.modal-content select:focus {
+  outline: none;
+  border-color: #a12828;
+  box-shadow: 0 0 0 1px rgba(161, 40, 40, 0.25);
 }
 
 .modal-actions {
@@ -337,14 +357,17 @@
 }
 
 .field-error {
-  color: #c62828;
+  color: #d9534f;
   font-size: 12px;
   margin-top: 4px;
   min-height: 14px;
 }
 
+/* Match Create New Branch Users error style */
 .input-error{
-  border: 2px solid #c62828 !important;
+  border: 2px solid #e63946 !important;
+  background-color: #fff5f5 !important;
+  box-shadow: 0 0 0 1px rgba(230, 57, 70, 0.15);
 }
 
 .delete-text{

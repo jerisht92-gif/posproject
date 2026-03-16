@@ -154,7 +154,7 @@ function closeModal(id) {
     if (!addItemModal) return;
     const form = document.getElementById("addProductForm");
     if (form) {
-      form.reset();
+        form.reset();
       addItemModal.querySelectorAll(".field-error").forEach(el => { el.textContent = ""; });
     }
     addItemModal.style.display = "flex";
@@ -178,7 +178,7 @@ function closeModal(id) {
         focusables[e.shiftKey ? focusables.length - 1 : 0].focus();
         return;
       }
-      e.preventDefault();
+    e.preventDefault();
       const idx = focusables.indexOf(current);
       if (e.shiftKey) {
         const nextIdx = idx <= 0 ? focusables.length - 1 : idx - 1;

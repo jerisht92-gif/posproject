@@ -250,6 +250,35 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
     // ============================
+    // Description validation (live, like Create New Branch Users)
+    // ============================
+    if (departmentDesc) {
+      departmentDesc.addEventListener("input", () => {
+        const value = (departmentDesc.value || "").trim();
+
+        if (!value) {
+          setFieldError(departmentDesc, "Description is required.");
+        } else if (value.length > 100) {
+          setFieldError(departmentDesc, "Description must be maximum 100 characters.");
+        } else if (!/^[A-Za-z\s.,\/&]+$/.test(value)) {
+          setFieldError(
+            departmentDesc,
+            "Description can use letters, spaces and . , / & only."
+          );
+        } else {
+          clearFieldError(departmentDesc);
+        }
+      });
+
+      departmentDesc.addEventListener("blur", () => {
+        const value = (departmentDesc.value || "").trim();
+        if (!value) {
+          setFieldError(departmentDesc, "Description is required.");
+        }
+      });
+    }
+
+    // ============================
     // ✅ Enable/Disable New Department Save Button
     // ============================
     const createForm = document.querySelector(".create-form");
@@ -275,6 +304,16 @@ document.addEventListener("DOMContentLoaded", () => {
       
       // Validate description
       const descValid = desc && desc.length <= 100 && /^[A-Za-z\s.,\/&]+$/.test(desc);
+      
+      // When all text fields are valid, force user to pick a branch
+      const allTextValid = codeValid && nameValid && descValid;
+      if (allTextValid) {
+        if (!branchValid && branchSelect) {
+          setFieldError(branchSelect, "Please select a Branch.");
+        } else if (branchValid && branchSelect) {
+          clearFieldError(branchSelect);
+        }
+      }
       
       // Enable button only if all fields are valid
       submitBtn.disabled = !(codeValid && nameValid && branchValid && descValid);
@@ -480,6 +519,49 @@ document.addEventListener("DOMContentLoaded", () => {
     clearRoleError(editDeptNameView, editDeptError);
   }
 
+  // ============================
+  // ✅ Live validation for Edit Role fields (same concept as Edit User)
+  // ============================
+  function validateEditRoleField(field) {
+    const roleVal = editRoleInput ? editRoleInput.value : "";
+    const descVal = editDescInput ? editDescInput.value.trim() : "";
+    const deptVal = editDeptNameView ? editDeptNameView.value.trim() : "";
+
+    if (field === editRoleInput) {
+      clearRoleError(editRoleInput, editRoleError);
+      if (!roleVal) {
+        setRoleError(editRoleInput, editRoleError, "Role is required.");
+      }
+    } else if (field === editDescInput) {
+      clearRoleError(editDescInput, editDescError);
+      if (!descVal) {
+        setRoleError(editDescInput, editDescError, "Description is required.");
+      } else if (descVal.length > 50) {
+        setRoleError(editDescInput, editDescError, "Description must not exceed 50 characters.");
+      } else if (!/^[A-Za-z\s.,\/&]+$/.test(descVal)) {
+        setRoleError(
+          editDescInput,
+          editDescError,
+          "Description can contain only letters, spaces, comma (,), slash (/), dot (.) and &."
+        );
+      }
+    } else if (field === editDeptNameView) {
+      clearRoleError(editDeptNameView, editDeptError);
+      if (!deptVal) {
+        setRoleError(editDeptNameView, editDeptError, "Department is required.");
+      } else if (deptVal.length < 3) {
+        setRoleError(editDeptNameView, editDeptError, "Minimum 3 characters required.");
+      } else if (deptVal.length > 20) {
+        setRoleError(editDeptNameView, editDeptError, "Maximum 20 characters allowed.");
+      } else if (!/^[A-Za-z\s]+$/.test(deptVal)) {
+        setRoleError(editDeptNameView, editDeptError, "Department can contain only letters and spaces.");
+      }
+    }
+
+    // After updating field errors, refresh Save button state
+    updateEditRoleButtonState();
+  }
+
   function closeEditModal() {
     if (!editModal) return;
     editModal.style.display = "none";
@@ -544,16 +626,13 @@ document.addEventListener("DOMContentLoaded", () => {
       }
       
       editDescInput.value = value;
-
-      clearRoleError(editDescInput, editDescError);
-      
-      // Update button state
-      updateEditRoleButtonState();
+      // Live validate description like Edit User
+      validateEditRoleField(editDescInput);
     });
     
     // Also validate on blur
     editDescInput.addEventListener("blur", () => {
-      updateEditRoleButtonState();
+      validateEditRoleField(editDescInput);
     });
     
     // Prevent typing beyond 50 characters on keydown
@@ -610,16 +689,14 @@ document.addEventListener("DOMContentLoaded", () => {
       }
       
       editDeptNameView.value = value;
-      
-      clearRoleError(editDeptNameView, editDeptError);
-      
-      // Update button state
-      updateEditRoleButtonState();
+
+      // Live validate department field
+      validateEditRoleField(editDeptNameView);
     });
     
     // Also validate on blur
     editDeptNameView.addEventListener("blur", () => {
-      updateEditRoleButtonState();
+      validateEditRoleField(editDeptNameView);
     });
     
     // Prevent typing beyond 20 characters on keydown
@@ -661,13 +738,12 @@ document.addEventListener("DOMContentLoaded", () => {
   // Add event listener for role dropdown
   if (editRoleInput) {
     editRoleInput.addEventListener("change", () => {
-      clearRoleError(editRoleInput, editRoleError);
-      updateEditRoleButtonState();
+      validateEditRoleField(editRoleInput);
     });
     
     // Also validate on blur
     editRoleInput.addEventListener("blur", () => {
-      updateEditRoleButtonState();
+      validateEditRoleField(editRoleInput);
     });
   }
   
@@ -750,7 +826,10 @@ if (editRoleInput) {
     // Update button state when modal opens (same pattern as Edit User)
     // Use a small delay to ensure DOM is ready and fields are populated
     setTimeout(() => {
-      updateEditRoleButtonState();
+      // Run live validation once for all fields so messages show immediately if invalid
+      if (editRoleInput) validateEditRoleField(editRoleInput);
+      if (editDescInput) validateEditRoleField(editDescInput);
+      if (editDeptNameView) validateEditRoleField(editDeptNameView);
     }, 10);
   });
 

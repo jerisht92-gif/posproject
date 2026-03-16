@@ -15,6 +15,15 @@ document.addEventListener("DOMContentLoaded", () => {
     }, 100);
   }
 
+  // Show success toast when redirected after saving a Role
+  try {
+    const roleSaved = window.localStorage.getItem("roleSavedSuccess");
+    if (roleSaved === "1") {
+      showSuccessNotification("Role saved successfully.");
+      window.localStorage.removeItem("roleSavedSuccess");
+    }
+  } catch (e) {}
+
   const createBtn   = document.getElementById("createDeptBtn");
   const searchInput = document.getElementById("searchDepartments");
   const tableBody   = document.getElementById("deptTableBody");
@@ -303,6 +312,54 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // ============================
+  // ✅ Live validation helpers for Edit Department
+  // ============================
+  function validateEditDeptField(field) {
+    const code = (editCode?.value || "").trim();
+    const name = (editName?.value || "").trim();
+    const desc = (editDesc?.value || "").trim();
+
+    if (field === editCode) {
+      clrErr(editCode, codeErr);
+      if (!code) {
+        setErr(editCode, codeErr, "Code is required.");
+      } else if (code.length < 3) {
+        setErr(editCode, codeErr, "Minimum 3 characters required.");
+      } else if (code.length > 20) {
+        setErr(editCode, codeErr, "Maximum 20 characters allowed.");
+      } else if (!/^[A-Za-z0-9-]+$/.test(code)) {
+        setErr(editCode, codeErr, "Code can contain only letters, numbers, and hyphen (-).");
+      }
+    } else if (field === editName) {
+      clrErr(editName, nameErr);
+      if (!name) {
+        setErr(editName, nameErr, "Department name is required.");
+      } else if (name.length < 3) {
+        setErr(editName, nameErr, "Minimum 3 characters required.");
+      } else if (name.length > 20) {
+        setErr(editName, nameErr, "Maximum 20 characters allowed.");
+      } else if (!/^[A-Za-z\s]+$/.test(name)) {
+        setErr(editName, nameErr, "Name can contain only letters and spaces.");
+      }
+    } else if (field === editDesc) {
+      clrErr(editDesc, descErr);
+      if (!desc) {
+        setErr(editDesc, descErr, "Description is required.");
+      } else if (desc.length > 100) {
+        setErr(editDesc, descErr, "Description must not exceed 100 characters.");
+      } else if (!/^[A-Za-z\s,\/.&]+$/.test(desc)) {
+        setErr(
+          editDesc,
+          descErr,
+          "Description can contain only letters, spaces, comma (,), slash (/), dot (.) and &."
+        );
+      }
+    }
+
+    updateEditDepartmentButtonState();
+  }
+
+  // ============================
   // ✅ CODE FIELD - Restrict to max 20 characters (alphanumeric and hyphen)
   // ============================
   if (editCode) {
@@ -316,7 +373,7 @@ document.addEventListener("DOMContentLoaded", () => {
       }
       
       editCode.value = value;
-      clrErr(editCode, codeErr);
+      validateEditDeptField(editCode);
     });
     
     // Prevent typing beyond 20 characters on keydown
@@ -367,7 +424,7 @@ document.addEventListener("DOMContentLoaded", () => {
       }
       
       editName.value = value;
-      clrErr(editName, nameErr);
+      validateEditDeptField(editName);
     });
     
     // Prevent typing beyond 20 characters on keydown
@@ -422,8 +479,8 @@ document.addEventListener("DOMContentLoaded", () => {
       }
       
       editDesc.value = value;
-    clrErr(editDesc, descErr);
-  });
+      validateEditDeptField(editDesc);
+    });
     
     // Prevent typing beyond 100 characters on keydown
     editDesc.addEventListener("keydown", (e) => {

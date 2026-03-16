@@ -393,7 +393,72 @@ confirmDeleteBtn?.addEventListener("click", () => {
     saveEditBtn.disabled = !(nameValid && emailValid && phoneValid && roleValid);
   }
 
-  // ---- input restrictions + clear inline error while typing ----
+  // ============================
+  // ✅ Live field validation (like Create New Branch Users)
+  // ============================
+  function validateEditField(field) {
+    if (!field) return;
+    const name  = (editNameInput?.value  || "").trim();
+    const email = (editEmailInput?.value || "").trim();
+    const phone = (editPhoneInput?.value || "").trim();
+    const role  = (editRoleSelect?.value || "").trim();
+ 
+    if (field === editNameInput) {
+      clearError(editNameInput, nameError);
+      if (!name) {
+        setError(editNameInput, nameError, "Name is required.");
+      } else if (name.length < 3) {
+        setError(editNameInput, nameError, "Name must be at least 3 characters.");
+      } else if (name.length > 40) {
+        setError(editNameInput, nameError, "Name must be maximum 40 characters.");
+      } else if (!/^[A-Za-z\s]+$/.test(name)) {
+        setError(editNameInput, nameError, "Name can contain only letters and spaces.");
+      }
+    } else if (field === editEmailInput) {
+      clearError(editEmailInput, emailError);
+      if (!email) {
+        setError(editEmailInput, emailError, "Email is required.");
+      } else if (!strictEmailRegex.test(email)) {
+        setError(editEmailInput, emailError, "Enter a valid email.");
+      }
+    } else if (field === editPhoneInput) {
+      clearError(editPhoneInput, phoneError);
+      if (!phone) {
+        setError(editPhoneInput, phoneError, "Phone number is required.");
+      } else if (phone.startsWith("+")) {
+        const parsed = parseE164(phone);
+        if (!parsed) {
+          setError(editPhoneInput, phoneError, "Enter valid phone like +974XXXXXXXX.");
+        } else if (!parsed.countryCode) {
+          const digitsCount = phone.slice(1).replace(/\D/g, "").length;
+          if (digitsCount < 8 || digitsCount > 15) {
+            setError(editPhoneInput, phoneError, "Phone must be 8 to 15 digits after +.");
+          }
+        } else {
+          const rule = COUNTRY_RULES[parsed.countryCode];
+          const nLen = (parsed.national || "").length;
+          if (nLen < rule.min || nLen > rule.max) {
+            setError(
+              editPhoneInput,
+              phoneError,
+              `For +${parsed.countryCode}, phone must be ${rule.min} digits.`
+            );
+          }
+        }
+      } else if (!/^\d{10}$/.test(phone)) {
+        setError(editPhoneInput, phoneError, "Enter 10 digit number or use +countrycode.");
+      }
+    } else if (field === editRoleSelect) {
+      clearError(editRoleSelect, roleError);
+      if (!role) {
+        setError(editRoleSelect, roleError, "Role is required.");
+      }
+    }
+ 
+    updateEditUserButtonState();
+  }
+ 
+  // ---- input restrictions + live validation while typing / on blur ----
   if (editNameInput) {
     editNameInput.addEventListener("input", () => {
       let value = editNameInput.value;
@@ -401,60 +466,57 @@ confirmDeleteBtn?.addEventListener("click", () => {
       value = value.replace(/\s+/g, " ");
       if (value.length > 40) value = value.slice(0, 40);
       editNameInput.value = value;
-      clearError(editNameInput, nameError);
-      updateEditUserButtonState();
+      validateEditField(editNameInput);
     });
+    editNameInput.addEventListener("blur", () => validateEditField(editNameInput));
   }
-
+ 
   if (editEmailInput) {
     editEmailInput.addEventListener("input", () => {
-      clearError(editEmailInput, emailError);
-      updateEditUserButtonState();
+      validateEditField(editEmailInput);
     });
+    editEmailInput.addEventListener("blur", () => validateEditField(editEmailInput));
   }
-
+ 
   if (editPhoneInput) {
     editPhoneInput.addEventListener("input", () => {
       let v = editPhoneInput.value || "";
-
+ 
       // allow digits and only one leading +
       v = v.replace(/[^\d+]/g, "");
       v = v.replace(/(?!^)\+/g, "");
-
+ 
       if (v.startsWith("+")) {
         let digits = v.slice(1).replace(/\D/g, "");
-
+ 
         // detect country code (longest match first)
         const codes = Object.keys(COUNTRY_RULES).sort((a, b) => b.length - a.length);
         const code = codes.find(c => digits.startsWith(c));
-
+ 
         if (code) {
           const rule = COUNTRY_RULES[code];
-          const national = digits.slice(code.length).slice(0, rule.max); // ✅ limit exact digits
+          const national = digits.slice(code.length).slice(0, rule.max);
           digits = code + national;
         } else {
-          // unknown country → allow max 15 digits after +
           digits = digits.slice(0, 15);
         }
-
+ 
         v = "+" + digits;
       } else {
-        // if user types without +, just keep digits (max 15)
         v = v.replace(/\D/g, "").slice(0, 15);
       }
-
+ 
       editPhoneInput.value = v;
-      clearError(editPhoneInput, phoneError);
-      updateEditUserButtonState();
+      validateEditField(editPhoneInput);
     });
+    editPhoneInput.addEventListener("blur", () => validateEditField(editPhoneInput));
   }
-
-
+ 
   if (editRoleSelect) {
     editRoleSelect.addEventListener("change", () => {
-      clearError(editRoleSelect, roleError);
-      updateEditUserButtonState();
+      validateEditField(editRoleSelect);
     });
+    editRoleSelect.addEventListener("blur", () => validateEditField(editRoleSelect));
   }
   
   // Initialize button as disabled when modal opens

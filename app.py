@@ -35,7 +35,6 @@ from reportlab.pdfbase.pdfmetrics import registerFontFamily  # type: ignore[impo
 from dotenv import load_dotenv
 
 # PDF
-from weasyprint import HTML
 from flask import make_response, request
 
 #email

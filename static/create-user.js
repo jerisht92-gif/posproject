@@ -202,14 +202,10 @@ document.addEventListener("DOMContentLoaded", () => {
     // Check Country Code
     const countryCodeValid = countryCode && countryCode.value.trim() !== "";
 
-    // Check Branch
-    const branchValid = branch && branch.value.trim() !== "";
-
-    // Check Department
+    // Check Branch / Department / Role
+    const branchValid     = branch     && branch.value.trim()     !== "";
     const departmentValid = department && department.value.trim() !== "";
-
-    // Check Role
-    const roleValid = role && role.value.trim() !== "";
+    const roleValid       = role       && role.value.trim()       !== "";
 
     // Check Reporting To
     const rep = reportingTo.value.trim();
@@ -228,6 +224,29 @@ document.addEventListener("DOMContentLoaded", () => {
                      contactValid && countryCodeValid && branchValid && 
                      departmentValid && roleValid && reportingToValid && 
                      availBranchesValid && employeeIdValid;
+
+    // Live guidance: once all text fields are valid, prompt user to choose dropdowns
+    const allTextValid =
+      firstNameValid &&
+      lastNameValid &&
+      emailValid &&
+      contactValid &&
+      countryCodeValid &&
+      reportingToValid &&
+      availBranchesValid &&
+      employeeIdValid;
+
+    if (allTextValid) {
+      if (!branchValid && branch) {
+        setFieldError(branch, "Please select a Branch.");
+      }
+      if (!departmentValid && department) {
+        setFieldError(department, "Please select a Department.");
+      }
+      if (!roleValid && role) {
+        setFieldError(role, "Please select a Role.");
+      }
+    }
 
     saveButton.disabled = !allValid;
   }

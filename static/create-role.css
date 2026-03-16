@@ -77,21 +77,40 @@ body {
     width: 100%;
 }
 
+/* Match Create New Department & Roles / Create User field styling */
 .form-group input,
 .form-group select {
-    padding: 10px;
-    border: 1px solid #ccc;
-    border-radius: 6px;
-      border: 1px solid #e7b7b5;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid #e7b7b5;
   background-color: #fff5f5;
   transition: 0.2s ease;
   outline: none;
 }
 
 
-.form-group input::placeholder,
-.form-group select {
+.form-group input::placeholder {
   color: #d18a84;
+}
+
+/* Match Create New Department & Roles: dropdown text in black */
+.form-group select {
+  color: #000;
+}
+
+/* Hover / focus same as Create New Department & Roles branch select */
+.form-group input:hover,
+.form-group select:hover {
+  background: #f5d4d4;
+  border-color: #b9473e;
+  box-shadow: 0 4px 10px rgba(161, 40, 40, 0.12);
+  transform: scale(1.01);
+}
+
+.form-group input:focus,
+.form-group select:focus {
+  border-color: #a12828;
+  box-shadow: 0 0 0 1px rgba(161, 40, 40, 0.25);
 }
 
 .form-group label{
