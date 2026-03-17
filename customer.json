@@ -814,5 +814,29 @@
     "paymentTerms": "Net 15",
     "creditTerm": "Extended",
     "availableLimit": "4343"
+  },
+  {
+    "customer_id": "C1246",
+    "name": "hghg ghgfhf",
+    "company": "hghg ghgfhf",
+    "customer_type": "Business",
+    "status": "Active",
+    "email": "jerisht92@gmail.com",
+    "credit_limit": "5665",
+    "city": "utuf",
+    "sales_rep": "jerish",
+    "company_type": "Business",
+    "phone": "7868686786",
+    "gstNumber": "24AAACI1681G1ZV",
+    "address": "weweffwe",
+    "street": "jhgjg",
+    "state": "ghjghg",
+    "zipCode": "786768",
+    "country": "jhgjhgjg",
+    "billingAddress": "tyfyfh",
+    "shippingAddress": "ytfhtf",
+    "paymentTerms": "Net 45",
+    "creditTerm": "Prepaid",
+    "availableLimit": "5665"
   }
 ]

@@ -28,6 +28,7 @@ from reportlab.lib import colors  # type: ignore[import]
 from reportlab.lib.pagesizes import A4  # type: ignore[import]
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer  # type: ignore[import]
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle  # type: ignore[import]
+from reportlab.lib.enums import TA_CENTER  # type: ignore[import]
 from reportlab.lib.units import inch, mm  # type: ignore[import]
 from reportlab.pdfbase import pdfmetrics  # type: ignore[import]
 from reportlab.pdfbase.ttfonts import TTFont  # type: ignore[import]
@@ -6403,6 +6404,19 @@ def _get_current_user_role():
     return "user"
 
 
+def _get_logged_in_user_name():
+    """Helper to fetch the current logged-in user's display name for profile dropdown."""
+    user_email = session.get("user")
+    if not user_email:
+        return "User"
+
+    users = load_users()
+    for u in users:
+        if isinstance(u, dict) and (u.get("email") or "").lower() == str(user_email).lower():
+            return u.get("name") or "User"
+    return "User"
+
+
 @app.route("/enquiry-list")
 def enquiry_list():
     user_email = session.get("user")
@@ -11007,7 +11021,22 @@ def send_email_with_attachments(to_email, subject, body, from_email, password, a
 
 @app.route("/delivery_note")
 def delivery_note():
-    return render_template("delivery-note.html", page="delivery_note")
+    user_email = session.get("user")
+    user_name = "User"
+
+    if user_email:
+        users = load_users()
+        for u in users:
+            if isinstance(u, dict) and (u.get("email") or "").lower() == user_email.lower():
+                user_name = u.get("name") or "User"
+                break
+
+    return render_template(
+        "delivery-note.html",
+        page="delivery_note",
+        user_email=user_email,
+        user_name=user_name,
+    )
 
 
 # =========================================
@@ -11028,6 +11057,8 @@ def delivery_note_new():
         sales_orders=sales_orders,
         next_dn_id=next_id,
         so_id=request.args.get("so_id", "").strip(),
+        user_email=session.get("user"),
+        user_name=_get_logged_in_user_name(),
     )
 
 
@@ -11042,6 +11073,8 @@ def delivery_note_form():
         dn_id=dn_id,
         mode=mode,
         sales_orders=sales_orders,
+        user_email=session.get("user"),
+        user_name=_get_logged_in_user_name(),
     )
 
 
@@ -11182,30 +11215,26 @@ def cancel_delivery_note(dn_id):
 
 
 # =========================================
-# DELIVERY NOTE - API (PDF)
+# DELIVERY NOTE - API (PDF) - REPORTLAB
 # =========================================
-
 @app.get("/api/delivery-notes/<dn_id>/pdf")
 def delivery_note_pdf(dn_id):
-    notes = load_delivery_notes()
-    dn = next((x for x in notes if x.get("dn_id") == dn_id), None)
+    dn = get_dn_by_id(dn_id)
 
     if not dn:
-        return {"success": False, "message": "Delivery Note not found"}, 404
+        return jsonify({"success": False, "message": "Delivery Note not found"}), 404
 
-    html = render_template("delivery-note-pdf.html", dn=dn)
-    pdf_bytes = HTML(string=html, base_url=request.root_url).write_pdf()
+    pdf_bytes = generate_delivery_note_pdf_bytes(dn)
 
     response = make_response(pdf_bytes)
     response.headers["Content-Type"] = "application/pdf"
-    response.headers["Content-Disposition"] = f'inline; filename="DN-{dn_id}.pdf"'
+    response.headers["Content-Disposition"] = f'inline; filename="{dn_id}.pdf"'
     return response
 
 
 # =========================================
-# DELIVERY NOTE - API (Email with PDF)
+# DELIVERY NOTE - API (Email with PDF) - REPORTLAB
 # =========================================
-
 @app.post("/api/delivery-notes/<dn_id>/email")
 def email_delivery_note(dn_id):
     dns = load_delivery_notes()
@@ -11235,13 +11264,12 @@ def email_delivery_note(dn_id):
     if not customer_email:
         return jsonify({"success": False, "message": "Customer email not available"}), 400
 
-    html = render_template("delivery-note-pdf.html", dn=dn)
-    pdf_bytes = HTML(string=html, base_url=request.root_url).write_pdf()
+    pdf_bytes = generate_delivery_note_pdf_bytes(dn)
 
     ok = send_email_with_attachments(
         to_email=customer_email,
         subject=f"Delivery Note {dn_id}",
-        body=f"Dear {dn.get('customer_name','')},\n\nPlease find attached Delivery Note {dn_id}.",
+        body=f"Dear {dn.get('customer_name','Customer')},\n\nPlease find attached Delivery Note {dn_id}.\n\nRegards,\nStackly POS",
         from_email=EMAIL_ADDRESS,
         password=EMAIL_PASSWORD,
         attachments=[
@@ -11257,14 +11285,393 @@ def email_delivery_note(dn_id):
 
 # =========================================
 # DELIVERY NOTE - PRINT PAGE (Optional route)
+# Uses same PDF generator and streams inline
 # =========================================
-
 @app.get("/delivery-note/<dn_id>/print")
 def delivery_note_print(dn_id):
     dn = get_dn_by_id(dn_id)
     if not dn:
         return "DN not found", 404
-    return render_template("delivery-note-pdf.html", dn=dn)
+
+    pdf_bytes = generate_delivery_note_pdf_bytes(dn)
+    response = make_response(pdf_bytes)
+    response.headers["Content-Type"] = "application/pdf"
+    response.headers["Content-Disposition"] = f'inline; filename="{dn_id}.pdf"'
+    return response
+
+
+# =========================================
+# DELIVERY NOTE - PDF GENERATOR (REPORTLAB)
+# =========================================
+def generate_delivery_note_pdf_bytes(dn):
+    buffer = io.BytesIO()
+
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        rightMargin=18,
+        leftMargin=18,
+        topMargin=16,
+        bottomMargin=18
+    )
+
+    styles = getSampleStyleSheet()
+
+    # ---------------------------------------------------
+    # STYLES
+    # ---------------------------------------------------
+    company_style = ParagraphStyle(
+        name="CompanyName",
+        parent=styles["Normal"],
+        fontName="DejaVuSans-Bold",
+        fontSize=20,
+        leading=24,
+        textColor=colors.HexColor("#8c1f1f"),
+        alignment=TA_CENTER,
+        spaceAfter=4,
+    )
+
+    company_info_style = ParagraphStyle(
+        name="CompanyInfo",
+        parent=styles["Normal"],
+        fontName="DejaVuSans",
+        fontSize=9,
+        leading=12,
+        textColor=colors.black,
+        alignment=TA_CENTER,
+        spaceAfter=1,
+    )
+
+    page_title_style = ParagraphStyle(
+        name="PageTitle",
+        parent=styles["Heading1"],
+        fontName="DejaVuSans-Bold",
+        fontSize=16,
+        leading=20,
+        textColor=colors.green,
+        alignment=TA_CENTER,
+        spaceBefore=12,
+        spaceAfter=12,
+    )
+
+    section_style = ParagraphStyle(
+        name="DNSection",
+        parent=styles["Heading3"],
+        fontName="DejaVuSans-Bold",
+        fontSize=11,
+        leading=14,
+        textColor=colors.HexColor("#8c1f1f"),
+        spaceAfter=6,
+        spaceBefore=10,
+    )
+
+    label_style = ParagraphStyle(
+        name="DNLabel",
+        parent=styles["Normal"],
+        fontName="DejaVuSans-Bold",
+        fontSize=8.5,
+        leading=11,
+        textColor=colors.HexColor("#6b1a1a"),
+    )
+
+    value_style = ParagraphStyle(
+        name="DNValue",
+        parent=styles["Normal"],
+        fontName="DejaVuSans",
+        fontSize=8.5,
+        leading=11,
+        textColor=colors.black,
+    )
+
+    summary_white_style = ParagraphStyle(
+        name="DNSummaryWhite",
+        parent=styles["Normal"],
+        fontName="DejaVuSans-Bold",
+        fontSize=8.5,
+        leading=11,
+        textColor=colors.white,
+    )
+
+    small_style = ParagraphStyle(
+        name="DNSmall",
+        parent=styles["Normal"],
+        fontName="DejaVuSans",
+        fontSize=8,
+        leading=10,
+        textColor=colors.HexColor("#444444"),
+    )
+
+    header_small_style = ParagraphStyle(
+        name="DNHeaderSmall",
+        parent=styles["Normal"],
+        fontName="DejaVuSans-Bold",
+        fontSize=8,
+        leading=10,
+        textColor=colors.white,
+        alignment=TA_CENTER,
+    )
+
+    terms_style = ParagraphStyle(
+        name="TermsStyle",
+        parent=styles["Normal"],
+        fontName="DejaVuSans",
+        fontSize=8,
+        leading=11,
+        textColor=colors.black,
+        leftIndent=8,
+    )
+
+    elements = []
+
+    # ---------------------------------------------------
+    # SAFE HELPERS
+    # ---------------------------------------------------
+    def safe_str(val, default="-"):
+        if val is None:
+            return default
+        s = str(val).strip()
+        return s if s else default
+
+    def safe_float(val, default=0.0):
+        try:
+            if val in (None, ""):
+                return default
+            return float(val)
+        except Exception:
+            return default
+
+    # ---------------------------------------------------
+    # COMPANY HEADER
+    # ---------------------------------------------------
+    elements.append(Paragraph("STACKLY", company_style))
+    elements.append(Paragraph(
+        "MMR Complex, Chinna Thirupathi, near Chinna Muniyappan Kovil, Salem, Tamil Nadu - 636008",
+        company_info_style
+    ))
+    elements.append(Paragraph("Phone: +91 7010792745", company_info_style))
+    elements.append(Paragraph("Email: info@stackly.com", company_info_style))
+    elements.append(Spacer(1, 10))
+
+    # ---------------------------------------------------
+    # PAGE TITLE
+    # ---------------------------------------------------
+    status_text = safe_str(dn.get("delivery_status") or dn.get("status") or "SUBMITTED").upper()
+    elements.append(Paragraph(f"DELIVERY NOTE - {status_text}", page_title_style))
+    elements.append(Spacer(1, 2))
+
+    # ---------------------------------------------------
+    # TOP DETAILS TABLE
+    # ---------------------------------------------------
+    dn_details_data = [
+        [
+            Paragraph("<b>Delivery Note Number:</b>", label_style),
+            Paragraph(safe_str(dn.get("dn_id")), value_style),
+            Paragraph("<b>Date:</b>", label_style),
+            Paragraph(safe_str(dn.get("delivery_date")), value_style),
+        ],
+        [
+            Paragraph("<b>Customer:</b>", label_style),
+            Paragraph(safe_str(dn.get("customer_name")), value_style),
+            Paragraph("<b>Sales Order Ref:</b>", label_style),
+            Paragraph(safe_str(dn.get("so_ref")), value_style),
+        ],
+        [
+            Paragraph("<b>Delivery Type:</b>", label_style),
+            Paragraph(safe_str(dn.get("delivery_type")), value_style),
+            Paragraph("<b>Delivery By:</b>", label_style),
+            Paragraph(safe_str(dn.get("delivery_by")), value_style),
+        ],
+        [
+            Paragraph("<b>Vehicle Number:</b>", label_style),
+            Paragraph(safe_str(dn.get("vehicle_no")), value_style),
+            Paragraph("<b>Tracking ID:</b>", label_style),
+            Paragraph(safe_str(dn.get("tracking_id")), value_style),
+        ],
+        [
+            Paragraph("<b>Destination Address:</b>", label_style),
+            Paragraph(safe_str(dn.get("destination_address")), value_style),
+            Paragraph("<b>Status:</b>", label_style),
+            Paragraph(status_text, value_style),
+        ],
+    ]
+
+    details_table = Table(dn_details_data, colWidths=[110, 170, 95, 145])
+    details_table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f3f3f3")),
+        ("BOX", (0, 0), (-1, -1), 0.8, colors.HexColor("#8a8a8a")),
+        ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#a5a5a5")),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 6),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+    ]))
+    elements.append(details_table)
+    elements.append(Spacer(1, 16))
+
+    # ---------------------------------------------------
+    # DELIVERY NOTE ITEMS
+    # ---------------------------------------------------
+    elements.append(Paragraph("DELIVERY NOTE ITEMS", section_style))
+    elements.append(Spacer(1, 2))
+
+    items = dn.get("items", []) or []
+
+    item_data = [[
+        Paragraph("S.No", header_small_style),
+        Paragraph("Product Name", header_small_style),
+        Paragraph("Product ID", header_small_style),
+        Paragraph("Qty", header_small_style),
+        Paragraph("UOM", header_small_style),
+        Paragraph("Rate", header_small_style),
+        Paragraph("Tax %", header_small_style),
+        Paragraph("Disc %", header_small_style),
+        Paragraph("Total", header_small_style),
+    ]]
+
+    grand_total = 0.0
+    subtotal_sum = 0.0
+    total_tax_sum = 0.0
+    total_discount_sum = 0.0
+
+    for idx, item in enumerate(items, start=1):
+        product_name = safe_str(item.get("product_name"))
+        product_id = safe_str(item.get("product_id"))
+        qty = safe_float(item.get("qty"), 0.0)
+        uom = safe_str(item.get("uom"))
+        rate = safe_float(item.get("rate"), 0.0)
+        tax = safe_float(item.get("tax"), 0.0)
+        discount = safe_float(item.get("discount"), 0.0)
+
+        line_subtotal = rate * qty
+        line_tax = (line_subtotal * tax) / 100
+        line_discount = (line_subtotal * discount) / 100
+
+        total = item.get("total", None)
+        if total in (None, ""):
+            total = line_subtotal + line_tax - line_discount
+        total = safe_float(total, 0.0)
+
+        subtotal_sum += line_subtotal
+        total_tax_sum += line_tax
+        total_discount_sum += line_discount
+        grand_total += total
+
+        item_data.append([
+            Paragraph(str(idx), value_style),
+            Paragraph(product_name, value_style),
+            Paragraph(product_id, value_style),
+            Paragraph(f"{qty:.2f}".rstrip("0").rstrip("."), value_style),
+            Paragraph(uom, value_style),
+            Paragraph(f"₹{rate:.2f}", value_style),
+            Paragraph(f"{tax:.1f}%", value_style),
+            Paragraph(f"{discount:.1f}%", value_style),
+            Paragraph(f"₹{total:.2f}", value_style),
+        ])
+
+    if len(item_data) == 1:
+        item_data.append(["-", "No line items available", "-", "-", "-", "-", "-", "-", "-"])
+
+    items_table = Table(
+        item_data,
+        colWidths=[35, 135, 72, 42, 45, 58, 45, 45, 60],
+        repeatRows=1
+    )
+    items_table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#a12828")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTNAME", (0, 0), (-1, 0), "DejaVuSans-Bold"),
+        ("FONTNAME", (0, 1), (-1, -1), "DejaVuSans"),
+        ("FONTSIZE", (0, 0), (-1, -1), 7.5),
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ("ALIGN", (1, 1), (2, -1), "LEFT"),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#999999")),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f7f7f7")]),
+        ("LEFTPADDING", (0, 0), (-1, -1), 4),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+    ]))
+    elements.append(items_table)
+    elements.append(Spacer(1, 16))
+
+    # ---------------------------------------------------
+    # TAX AND TOTAL SUMMARY
+    # ---------------------------------------------------
+    elements.append(Paragraph("TAX AND TOTALS SUMMARY", section_style))
+    elements.append(Spacer(1, 3))
+
+    shipping_charge = safe_float(dn.get("shipping_charge"), 0.0)
+    global_discount = safe_float(dn.get("global_discount"), 0.0)
+    final_total = grand_total + shipping_charge - global_discount
+
+    summary_data = [
+        [Paragraph("Subtotal:", value_style), Paragraph(f"₹{subtotal_sum:.2f}", value_style)],
+        [Paragraph("Total Discount (Item Level):", value_style), Paragraph(f"₹{total_discount_sum:.2f}", value_style)],
+        [Paragraph("Total Tax:", value_style), Paragraph(f"₹{total_tax_sum:.2f}", value_style)],
+        [Paragraph("Shipping Charge:", value_style), Paragraph(f"₹{shipping_charge:.2f}", value_style)],
+        [Paragraph("Global Discount:", value_style), Paragraph(f"₹{global_discount:.2f}", value_style)],
+        [Paragraph("GRAND TOTAL:", summary_white_style), Paragraph(f"₹{final_total:.2f}", summary_white_style)],
+    ]
+
+    summary_table = Table(summary_data, colWidths=[380, 120])
+    summary_table.setStyle(TableStyle([
+        ("ALIGN", (1, 0), (1, -1), "RIGHT"),
+        ("FONTNAME", (0, 0), (-1, -2), "DejaVuSans"),
+        ("FONTNAME", (0, -1), (-1, -1), "DejaVuSans-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 8.5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+        ("TOPPADDING", (0, 0), (-1, -1), 7),
+        ("LEFTPADDING", (0, 0), (-1, -1), 8),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+        ("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#a12828")),
+        ("TEXTCOLOR", (0, -1), (-1, -1), colors.white),
+    ]))
+    elements.append(summary_table)
+    elements.append(Spacer(1, 18))
+
+    # ---------------------------------------------------
+    # DELIVERY NOTES
+    # ---------------------------------------------------
+    delivery_notes = safe_str(dn.get("delivery_notes"), "").strip()
+    if delivery_notes:
+        elements.append(Paragraph("Delivery Notes", section_style))
+        notes_table = Table([[Paragraph(delivery_notes, value_style)]], colWidths=[500])
+        notes_table.setStyle(TableStyle([
+            ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor("#999999")),
+            ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#fafafa")),
+            ("LEFTPADDING", (0, 0), (-1, -1), 8),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+            ("TOPPADDING", (0, 0), (-1, -1), 8),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+        ]))
+        elements.append(notes_table)
+        elements.append(Spacer(1, 12))
+
+    # ---------------------------------------------------
+    # TERMS AND CONDITIONS
+    # ---------------------------------------------------
+    elements.append(Paragraph("Terms and Conditions", section_style))
+
+    terms_list = [
+        "1. This Delivery Note is issued based on the confirmed order details.",
+        "2. Delivery will be made as per the agreed schedule.",
+        "3. Kindly verify the delivered items at the time of receipt.",
+        "4. Any shortage or damage should be reported immediately.",
+        "5. Goods once delivered will be considered accepted unless otherwise notified.",
+    ]
+
+    for term in terms_list:
+        elements.append(Paragraph(term, terms_style))
+
+    # ---------------------------------------------------
+    # BUILD PDF
+    # ---------------------------------------------------
+    doc.build(elements)
+    pdf_bytes = buffer.getvalue()
+    buffer.close()
+    return pdf_bytes
 
 # =========================================
 # ✅ RUN APP

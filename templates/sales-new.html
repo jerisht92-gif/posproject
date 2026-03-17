@@ -1,5 +1,6 @@
 
 
+
 {% extends "menu.html" %}
 {% block title %}New Sales Order{% endblock %}
 
@@ -243,7 +244,7 @@
 
         <div class="form-group">
           <label>Tracking Number</label>
-          <input type="text" id="trackingNumber" placeholder="Enter tracking number" maxlength="14">
+          <input type="text" id="trackingNumber" placeholder="Enter tracking number">
           <small class="field-error" id="trackingError"></small>
         </div>
 
@@ -274,9 +275,10 @@
               <th class="so-small-col">S.No</th>
               <th>Product Name</th>
               <th>Product ID</th>
-              <th>In Stock</th>
+             
               <th>Quantity</th>
               <th>UOM</th>
+              <th>Unit Price</th>
               <th>Tax (%)</th>
               <th>Discount (%)</th>
               <th>Total</th>
@@ -293,12 +295,12 @@
                 </select>
               </td>
               <td class="prodIdCell">-</td>
-              <td class="stockCell">0</td>
-              <td>
-                <input type="number" class="qtyInput" value="1" min="1" oninput="calculateRow(this)">
-              </td>
-              <td class="uomCell">-</td>
-              <td class="taxCell">0</td>
+<td>
+  <input type="number" class="qtyInput" value="1" min="1" oninput="calculateRow(this)">
+</td>
+<td class="uomCell">-</td>
+<td class="priceCell">₹ 0.00</td>
+<td class="taxCell">0</td>
               <td>
                 <input type="number" class="discInput" value="0" min="0" oninput="calculateRow(this)">
               </td>

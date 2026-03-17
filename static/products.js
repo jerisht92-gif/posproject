@@ -255,6 +255,15 @@ document.addEventListener("DOMContentLoaded", () => {
     }, 2000);
   }
 
+  // Show cross-page success toast when redirected after creating a product
+  try {
+    const created = window.localStorage.getItem("productCreatedSuccess");
+    if (created === "1") {
+      showSuccessNotification("Product has been created successfully.");
+      window.localStorage.removeItem("productCreatedSuccess");
+    }
+  } catch (e) {}
+
   // ==========================
   // ✅ ERROR NOTIFICATION FUNCTION
   // ==========================

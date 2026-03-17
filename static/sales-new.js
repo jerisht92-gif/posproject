@@ -443,10 +443,10 @@ function refreshProductDropdowns() {
 
 function applyProductToRow(row, productId) {
   const pidCell = row.querySelector(".prodIdCell");
-  const stockCell = row.querySelector(".stockCell");
-  const uomCell = row.querySelector(".uomCell");
-  const taxCell = row.querySelector(".taxCell");
-  const discInput = row.querySelector(".discInput");
+const uomCell = row.querySelector(".uomCell");
+const taxCell = row.querySelector(".taxCell");
+const priceCell = row.querySelector(".priceCell");   
+const discInput = row.querySelector(".discInput");
 
   if (!productId || !window.SO_PRODUCTS_MAP[productId]) {
     if (pidCell) pidCell.textContent = "-";
@@ -458,6 +458,7 @@ function applyProductToRow(row, productId) {
   }
 
   const p = window.SO_PRODUCTS_MAP[productId];
+  const price = Number(p?.unit_price ?? p?.price ?? p?.selling_price ?? 0);
 
   const pid = String(p.product_id || p.id || p.code || productId);
   const stock = Number(
@@ -478,9 +479,9 @@ function applyProductToRow(row, productId) {
   }
 
   if (pidCell) pidCell.textContent = pid;
-  if (stockCell) stockCell.textContent = String(stock);
-  if (uomCell) uomCell.textContent = uomVal;
-  if (taxCell) taxCell.textContent = String(taxPct);
+if (uomCell) uomCell.textContent = uomVal;
+if (priceCell) priceCell.textContent = `${CURRENCY} ${price.toFixed(2)}`; // 
+if (taxCell) taxCell.textContent = String(taxPct);
 
   row.dataset.taxPct = String(taxPct);
 
@@ -541,14 +542,17 @@ function calculateRow(el) {
   const price = Number(p?.unit_price ?? p?.price ?? p?.selling_price ?? 0);
 
   const base = qty * price;
-  const tax = base * (taxPct / 100);
+  // Discount first
   const disc = base * (discPct / 100);
-
-  row.dataset.base = String(base);
+  const afterDiscount = base - disc;
+  // Tax after discount
+  const tax = afterDiscount * (taxPct / 100);
+  // Final row total
+  const total = afterDiscount + tax;
+  row.dataset.base = String(afterDiscount);
   row.dataset.tax = String(tax);
   row.dataset.disc = String(disc);
-
-  const total = base + tax - disc;
+  row.dataset.total = String(total);
 
   const totalCell = row.querySelector(".rowTotal");
   if (totalCell) totalCell.textContent = `${CURRENCY} ${total.toFixed(2)}`;
@@ -630,34 +634,37 @@ function calculateTotals() {
   let taxTotal = 0;
 
   document.querySelectorAll("#orderItemsBody tr").forEach((row) => {
-    subTotal += Number(row.dataset.base || 0);
+    subTotal += Number(row.dataset.total || 0);
     taxTotal += Number(row.dataset.tax || 0);
   });
 
   const globalDiscountInput = document.getElementById("globalDiscount");
-  let globalDiscAmt = Number(globalDiscountInput?.value || 0);
+  let globalDiscPercent = Number(globalDiscountInput?.value || 0);
 
-  if (globalDiscAmt < 0) {
-    globalDiscAmt = 0;
+  // Match quotation behaviour: percentage 0–90 with warning toasts
+  if (globalDiscPercent > 90) {
+    globalDiscPercent = 90;
+    if (globalDiscountInput) globalDiscountInput.value = 90;
+    showToast("Global discount limited to 90%", "error");
+  } else if (globalDiscPercent < 0) {
+    globalDiscPercent = 0;
     if (globalDiscountInput) globalDiscountInput.value = 0;
+    showToast("Global discount cannot be negative", "error");
   }
 
-  if (globalDiscAmt > subTotal) {
-    globalDiscAmt = subTotal;
-    if (globalDiscountInput) globalDiscountInput.value = subTotal;
-    showToast("Global Discount cannot exceed Subtotal", "error");
-  }
+  const globalDiscAmt = (subTotal * globalDiscPercent) / 100;
 
   const shippingInput = document.getElementById("shipping");
   let ship = Number(shippingInput?.value || 0);
 
+  // Shipping validation similar to quotation: no negative values
   if (ship < 0) {
     ship = 0;
     if (shippingInput) shippingInput.value = 0;
     showToast("Shipping charges cannot be negative", "error");
   }
 
-  const grandBeforeRound = subTotal - globalDiscAmt + taxTotal + ship;
+  const grandBeforeRound = subTotal - globalDiscAmt + ship;
   const roundedGrand = Math.round(grandBeforeRound);
   const roundingAdj = +(roundedGrand - grandBeforeRound).toFixed(2);
 
@@ -671,6 +678,104 @@ function calculateTotals() {
   if (roundEl) roundEl.textContent = `${CURRENCY} ${roundingAdj.toFixed(2)}`;
   if (grandEl) grandEl.textContent = `${CURRENCY} ${(grandBeforeRound + roundingAdj).toFixed(2)}`;
 }
+
+// Attach live validation handlers for global discount and shipping, like quotation
+document.addEventListener("DOMContentLoaded", () => {
+  const gd = document.getElementById("globalDiscount");
+  const ship = document.getElementById("shipping");
+
+  if (gd) {
+    // Restrict to digits only and positive values
+    gd.addEventListener("input", () => {
+      // Keep only digits
+      let v = gd.value.replace(/\D/g, "");
+      gd.value = v;
+      calculateTotals();
+    });
+
+    gd.addEventListener("keydown", (e) => {
+      // Allow control keys: backspace, delete, arrows, tab, enter, home/end
+      const ctrlKeys = [
+        "Backspace",
+        "Delete",
+        "ArrowLeft",
+        "ArrowRight",
+        "ArrowUp",
+        "ArrowDown",
+        "Tab",
+        "Enter",
+        "Home",
+        "End",
+      ];
+      if (ctrlKeys.includes(e.key)) return;
+
+      // Block minus sign and any non-digit
+      if (!/^\d$/.test(e.key)) {
+        e.preventDefault();
+        return;
+      }
+    });
+
+    gd.addEventListener("paste", (e) => {
+      e.preventDefault();
+      const pasted = (e.clipboardData || window.clipboardData).getData("text") || "";
+      const digits = pasted.replace(/\D/g, "");
+      gd.value = digits;
+      calculateTotals();
+    });
+
+    gd.addEventListener("change", calculateTotals);
+    gd.addEventListener("blur", calculateTotals);
+  }
+
+  if (ship) {
+    // Restrict Shipping Charges to digits only, max 5 digits
+    ship.addEventListener("input", () => {
+      let v = ship.value.replace(/\D/g, "");
+      if (v.length > 5) v = v.slice(0, 5);
+      ship.value = v;
+      calculateTotals();
+    });
+
+    ship.addEventListener("keydown", (e) => {
+      const ctrlKeys = [
+        "Backspace",
+        "Delete",
+        "ArrowLeft",
+        "ArrowRight",
+        "ArrowUp",
+        "ArrowDown",
+        "Tab",
+        "Enter",
+        "Home",
+        "End",
+      ];
+      if (ctrlKeys.includes(e.key)) return;
+
+      if (!/^\d$/.test(e.key)) {
+        e.preventDefault();
+        return;
+      }
+
+      // Enforce max 5 digits at keypress
+      if (ship.value.replace(/\D/g, "").length >= 5) {
+        e.preventDefault();
+      }
+    });
+
+    ship.addEventListener("paste", (e) => {
+      e.preventDefault();
+      const pasted = (e.clipboardData || window.clipboardData).getData("text") || "";
+      let digits = pasted.replace(/\D/g, "");
+      if (digits.length > 5) digits = digits.slice(0, 5);
+      ship.value = digits;
+      calculateTotals();
+    });
+
+    ship.addEventListener("change", calculateTotals);
+    ship.addEventListener("blur", calculateTotals);
+  }
+});
 
 // =========================================
 // COMMENTS / HISTORY
@@ -1539,12 +1644,12 @@ async function prefillSalesOrderIfEdit() {
             ${buildProductOptions()}
           </select>
         </td>
-        <td class="prodIdCell">${item.product_id || "-"}</td>
-        <td class="stockCell">0</td>
+        <td class="prodIdCell">-</td>
         <td>
           <input type="number" class="qtyInput" value="${item.qty || 0}" min="1" oninput="calculateRow(this)">
         </td>
         <td class="uomCell">${item.uom || "-"}</td>
+        <td class="priceCell">${CURRENCY} ${Number(item.line_total || 0).toFixed(2)}</td>
         <td class="taxCell">${item.tax_pct || 0}</td>
         <td>
           <input type="number" class="discInput" value="${item.disc_pct || 0}" min="0" oninput="calculateRow(this)">

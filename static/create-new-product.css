@@ -187,8 +187,29 @@ select,
 textarea {
   padding: 8px 10px;
   font-size: 13px;
-  border: 1px solid #ddd;
   border-radius: 8px;
+  box-sizing: border-box;
+  background-color: #fff5f5;
+  border: 1px solid #e7b7b5;
+  transition: 0.2s ease;
+}
+
+/* Hover / focus interactions – maroon theme like Create New Branch Users */
+.create-product-page input:hover,
+.create-product-page select:hover,
+.create-product-page textarea:hover {
+  background: #f5d4d4;
+  border-color: #b9473e;
+  box-shadow: 0 4px 10px rgba(161, 40, 40, 0.12);
+  transform: scale(1.01);
+}
+
+.create-product-page input:focus,
+.create-product-page select:focus,
+.create-product-page textarea:focus {
+  outline: none;
+  border-color: #a12828;
+  box-shadow: 0 0 0 1px rgba(161, 40, 40, 0.25);
 }
 
 

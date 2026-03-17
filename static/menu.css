@@ -360,6 +360,7 @@ body {
   padding: 16px;
   box-shadow: 0 14px 24px rgba(0,0,0,0.12);
   display: none;
+  z-index: 2000; /* ensure dropdown appears above page content */
 }
 
 .profile-dropdown.show {

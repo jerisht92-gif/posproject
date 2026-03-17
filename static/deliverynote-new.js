@@ -655,7 +655,15 @@ function calcRowTotal(qty, rate, tax, discount) {
   });
 
   discountInput.addEventListener("input", () => {
-    if (Number(discountInput.value) < 0) discountInput.value = 0;
+    let v = Number(discountInput.value || 0);
+    if (v < 0) {
+      v = 0;
+      showToast("Discount cannot be negative", "error");
+    } else if (v > 90) {
+      v = 90;
+      showToast("Discount limited to 90%", "error");
+    }
+    discountInput.value = v;
     updateRowTotal();
     validateSubmit();
   });

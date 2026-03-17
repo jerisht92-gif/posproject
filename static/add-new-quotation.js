@@ -299,7 +299,7 @@ function applyNumberRestrictions() {
         });
     }
     
-    console.log("✅ Number restrictions applied");
+    console.log(" Number restrictions applied");
 }
 
 // ===================================================
@@ -322,7 +322,7 @@ function observeNewRows() {
     });
     
     observer.observe(itemsTable, { childList: true, subtree: true });
-    console.log("👀 Observer set up for new rows");
+    console.log(" Observer set up for new rows");
 }
 
 
@@ -343,7 +343,7 @@ function hasFormChanges() {
     for (let id of fields) {
         const element = document.getElementById(id);
         if (element && initialFormState[id] !== element.value) {
-            console.log(`📝 Change detected in ${id}: ${initialFormState[id]} -> ${element.value}`);
+            console.log(` Change detected in ${id}: ${initialFormState[id]} -> ${element.value}`);
             return true;
         }
     }
@@ -415,12 +415,12 @@ document.addEventListener("DOMContentLoaded", function() {
     setExpiryDate();
     
     if (!quotationField.value) {
-        console.log("🔄 Generating quotation ID...");
+        console.log(" Generating quotation ID...");
         fetch("/generate-quotation-id")
             .then(response => response.json())
             .then(data => {
                 quotationField.value = data.quotation_id;
-                console.log("✅ Quotation ID generated:", data.quotation_id);
+                console.log(" Quotation ID generated:", data.quotation_id);
                 initializeAllComponents();
             })
             .catch(error => {
@@ -429,7 +429,7 @@ document.addEventListener("DOMContentLoaded", function() {
                 initializeAllComponents();
             });
     } else {
-        console.log("✅ Quotation ID exists:", quotationField.value);
+        console.log(" Quotation ID exists:", quotationField.value);
         initializeAllComponents();
     }
     
@@ -509,13 +509,13 @@ function checkAndUpdateEditableButtons() {
             } else {
                 submitBtn.textContent = 'Submit';
             }
-            console.log(`✅ Submit button ENABLED - Changes detected`);
+            console.log(` Submit button ENABLED - Changes detected`);
         } else {
             submitBtn.disabled = true;
             submitBtn.style.opacity = '0.5';
             submitBtn.style.cursor = 'not-allowed';
             submitBtn.setAttribute('title', hasChanges ? 'Please fill all mandatory fields' : 'No changes detected');
-            console.log(`❌ Submit button DISABLED - ${hasChanges ? 'Invalid form' : 'No changes'}`);
+            console.log(` Submit button DISABLED - ${hasChanges ? 'Invalid form' : 'No changes'}`);
         }
         
         // Update Draft button
@@ -524,13 +524,13 @@ function checkAndUpdateEditableButtons() {
             draftBtn.style.opacity = '1';
             draftBtn.style.cursor = 'pointer';
             draftBtn.removeAttribute('title');
-            console.log(`✅ Draft button ENABLED - Changes detected`);
+            console.log(` Draft button ENABLED - Changes detected`);
         } else {
             draftBtn.disabled = true;
             draftBtn.style.opacity = '0.5';
             draftBtn.style.cursor = 'not-allowed';
             draftBtn.setAttribute('title', hasChanges ? 'Fill all required fields to enable Save Draft' : 'No changes detected');
-            console.log(`❌ Draft button DISABLED - ${hasChanges ? 'Invalid draft requirements' : 'No changes'}`);
+            console.log(` Draft button DISABLED - ${hasChanges ? 'Invalid draft requirements' : 'No changes'}`);
         }
     }
 }
@@ -581,7 +581,7 @@ function updateButtonsForSentMode(changesMade) {
         return;
     }
     
-    console.log(`🔄 Updating buttons for status: ${currentQuotationStatus}, changes: ${changesMade}, mode: ${isEditMode ? 'edit' : 'other'}`);
+    console.log(` Updating buttons for status: ${currentQuotationStatus}, changes: ${changesMade}, mode: ${isEditMode ? 'edit' : 'other'}`);
     
     // ============================================
     // PROFESSIONAL ERP RULES FOR EDIT MODE
@@ -592,7 +592,7 @@ function updateButtonsForSentMode(changesMade) {
         approveBtn.style.display = 'flex';
         rejectBtn.style.display = 'flex';
         submitBtn.style.display = 'none';
-        console.log("✅ Send/Submitted status - showing Approve/Reject buttons");
+        console.log(" Send/Submitted status - showing Approve/Reject buttons");
         return;
     }
     
@@ -2354,7 +2354,7 @@ window.handleProductSelect = function(selectElement, rowId) {
     // STEP 1: Check if currency is selected
     const currencySelect = document.getElementById('currency');
     if (!currencySelect || !currencySelect.value) {
-        showToast('❌ Please select a currency first before adding products', 'error');
+        showToast(' Please select a currency first before adding products', 'error');
         selectElement.value = '';
         currencySelect.style.borderColor = '#dc3545';
         currencySelect.style.borderWidth = '2px';
@@ -3416,7 +3416,7 @@ function renderAttachments(files) {
     filesList.innerHTML = html;
     
     updateAttachmentBadge(files.length);
-    console.log(`✅ Rendered ${files.length} attachments`);
+    console.log(` Rendered ${files.length} attachments`);
 }
 function updateAttachmentBadge(count) {
     const tab = document.querySelector('.tab[data-tab="attachments"]');

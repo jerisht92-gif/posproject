@@ -6792,21 +6792,45 @@ document.addEventListener("DOMContentLoaded", () => {
           el.classList.remove("input-error");
         }
     
-        // Realtime “required” on blur / change
+        // Realtime “required” with live validation (similar to Create New Branch Users)
         function attachRealtimeRequired(selector, message) {
           const el = form.querySelector(selector);
           if (!el) return;
-    
-          const eventName = el.tagName === "SELECT" ? "change" : "blur";
-    
-          el.addEventListener(eventName, () => {
-            const value = (el.value || "").toString().trim();
-            if (!value) {
-              showFieldError(el, message);
-            } else {
-              clearFieldError(el);
-            }
-          });
+
+          const isSelect = el.tagName === "SELECT";
+
+          // For selects: validate on change + blur
+          if (isSelect) {
+            ["change", "blur"].forEach(evt => {
+              el.addEventListener(evt, () => {
+                const value = (el.value || "").toString().trim();
+                if (!value) {
+                  showFieldError(el, message);
+                } else {
+                  clearFieldError(el);
+                }
+                // keep Add Product button in sync
+                if (typeof updateAddProductButtonState === "function") {
+                  updateAddProductButtonState();
+                }
+              });
+            });
+          } else {
+            // For text/number inputs: validate on input + blur for live feedback
+            ["input", "blur"].forEach(evt => {
+              el.addEventListener(evt, () => {
+                const value = (el.value || "").toString().trim();
+                if (!value) {
+                  showFieldError(el, message);
+                } else {
+                  clearFieldError(el);
+                }
+                if (typeof updateAddProductButtonState === "function") {
+                  updateAddProductButtonState();
+                }
+              });
+            });
+          }
         }
     
         requiredFields.forEach(cfg => {
@@ -6942,6 +6966,7 @@ document.addEventListener("DOMContentLoaded", () => {
           
           // Check all required fields
           let allValid = true;
+          let allTextFieldsFilled = true; // for guiding dropdown selection later
           
           // Check required fields
           requiredFields.forEach(cfg => {
@@ -6953,6 +6978,10 @@ document.addEventListener("DOMContentLoaded", () => {
             const value = (el.value || "").toString().trim();
             if (!value) {
               allValid = false;
+              // Track whether all non-select (text/number) fields are filled
+              if (el.tagName !== "SELECT") {
+                allTextFieldsFilled = false;
+              }
             }
           });
           
@@ -7046,6 +7075,40 @@ document.addEventListener("DOMContentLoaded", () => {
             const percentNum = percentStr ? parseFloat(percentStr) : NaN;
             if (taxText && (isNaN(percentNum) || percentNum < 1 || percentNum > 100)) {
               allValid = false;
+            }
+          }
+
+          // When all text/number fields are filled, guide user to choose dropdowns
+          if (allTextFieldsFilled) {
+            const dropdownGuides = [
+              { selector: "select[name='product_type']",  msg: "Please select Product Type" },
+              { selector: "select[name='category']",      msg: "Please select Category" },
+              { selector: "select[name='uom']",           msg: "Please select UOM" },
+              { selector: "select[name='size']",          msg: "Please select Size" },
+              { selector: "select[name='color']",         msg: "Please select Color" },
+              { selector: "select[name='supplier']",      msg: "Please select Supplier" },
+              { selector: "select[name='status']",        msg: "Please select Status" },
+              { selector: "select[name='product_usage']", msg: "Please select Product Usage" },
+              { selector: "select[name='tax_code']",      msg: "Please select Tax Code" }
+            ];
+
+            dropdownGuides.forEach(cfg => {
+              const el = form.querySelector(cfg.selector);
+              if (!el) return;
+              const value = (el.value || "").toString().trim();
+              if (!value) {
+                showFieldError(el, cfg.msg);
+              } else {
+                clearFieldError(el);
+              }
+            });
+
+            // After dropdown guidance, also guide user to upload photo
+            if (imageInput && !imageInput.files.length) {
+              // Show message under the "Allowed formats" text in the upload box
+              showFieldError(imageInput, "Please upload a product photo (JPG or PNG, max 2MB).");
+            } else if (imageInput) {
+              clearFieldError(imageInput);
             }
           }
           
@@ -7357,20 +7420,19 @@ document.addEventListener("DOMContentLoaded", () => {
                   updateAddProductButtonState();
                 }
                 
-                // Show success toast
-                showSuccessNotification("Product has been created successfully");
+                // Flag for success toast on Product Master page
+                try {
+                  window.localStorage.setItem("productCreatedSuccess", "1");
+                } catch (e) {}
                 
-                showSuccessModal(
-                  `✅ Product saved successfully (ID: ${data.product_id})`,
-                  "/products"
-                );
+                // Redirect to Product Master page
+                window.location.href = "/products";
     
                 if (data.product_id && productIdInput) {
                   productIdInput.value = data.product_id;
                 }
     
-                form.reset();
-                if (categorySelect) categorySelect.disabled = true;
+                // No need to reset form here because we redirect
               } else {
                 // Show specific error message from server (e.g., duplicate validation)
                 const errorMsg = data.message || "❌ Failed to save product";
