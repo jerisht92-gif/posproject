@@ -6796,19 +6796,19 @@ document.addEventListener("DOMContentLoaded", () => {
         function attachRealtimeRequired(selector, message) {
           const el = form.querySelector(selector);
           if (!el) return;
-
+    
           const isSelect = el.tagName === "SELECT";
-
+    
           // For selects: validate on change + blur
           if (isSelect) {
             ["change", "blur"].forEach(evt => {
               el.addEventListener(evt, () => {
-                const value = (el.value || "").toString().trim();
-                if (!value) {
-                  showFieldError(el, message);
-                } else {
-                  clearFieldError(el);
-                }
+            const value = (el.value || "").toString().trim();
+            if (!value) {
+              showFieldError(el, message);
+            } else {
+              clearFieldError(el);
+            }
                 // keep Add Product button in sync
                 if (typeof updateAddProductButtonState === "function") {
                   updateAddProductButtonState();

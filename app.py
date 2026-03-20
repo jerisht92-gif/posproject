@@ -316,13 +316,92 @@ def ensure_role():
 
 
 # =========================================
-# ✅ JSON HELPERS
+# ✅ JSON HELPERS — Users storage shape
 # =========================================
+# Persisted users.json records: full branch-user fields + password, never "id".
+# DEFAULT_BRANCH_USER_PASSWORD applies when admin-created users have no password yet.
+_USER_PHONE_COUNTRY_PREFIXES = tuple(
+    sorted(
+        ["+91", "+971", "+974", "+966", "+94", "+880", "+977", "+1", "+44", "+61"],
+        key=len,
+        reverse=True,
+    )
+)
+DEFAULT_BRANCH_USER_PASSWORD = os.getenv("DEFAULT_BRANCH_USER_PASSWORD", "Stackly@123")
+
+
+def _infer_country_and_contact_from_phone(phone: str):
+    """Split +… phone into (country_code, contact_number) when prefix matches a known code."""
+    phone = (phone or "").strip()
+    if not phone:
+        return "", ""
+    if not phone.startswith("+"):
+        return "", re.sub(r"\D", "", phone)
+    digits_only = "".join(c for c in phone[1:] if c.isdigit())
+    for prefix in _USER_PHONE_COUNTRY_PREFIXES:
+        p_digits = prefix[1:]
+        if digits_only.startswith(p_digits):
+            rest = digits_only[len(p_digits) :]
+            return prefix, rest
+    return "", digits_only
+
+
+def normalize_user_record_for_storage(u: dict) -> dict:
+    """Normalize one user dict for users.json: drop id, ensure password + full field set."""
+    if not isinstance(u, dict):
+        return {}
+    out = {k: v for k, v in u.items() if k != "id"}
+    pwd = (out.get("password") or "").strip() if out.get("password") is not None else ""
+    if not pwd:
+        out["password"] = DEFAULT_BRANCH_USER_PASSWORD
+    else:
+        out["password"] = pwd
+    name = (out.get("name") or "").strip()
+    fn = (out.get("first_name") or "").strip()
+    ln = (out.get("last_name") or "").strip()
+    if not fn and name:
+        parts = name.split(None, 1)
+        fn = parts[0]
+        ln = parts[1] if len(parts) > 1 else (ln or "")
+    out["first_name"] = fn
+    out["last_name"] = ln or ""
+    out["name"] = name or f"{fn} {ln}".strip()
+    cc = (out.get("country_code") or "").strip()
+    cn = (out.get("contact_number") or "").strip()
+    phone = (out.get("phone") or "").strip()
+    if cc and cn:
+        out["country_code"] = cc
+        out["contact_number"] = cn
+        out["phone"] = phone or f"{cc}{cn}"
+    elif phone:
+        icc, icn = _infer_country_and_contact_from_phone(phone)
+        out["phone"] = phone
+        out["country_code"] = icc
+        out["contact_number"] = icn
+    else:
+        out["phone"] = phone
+        out["country_code"] = cc
+        out["contact_number"] = cn
+    out["email"] = (out.get("email") or "").strip()
+    out["role"] = (out.get("role") or "").strip() or "User"
+    for key in ("branch", "department", "reporting_to", "available_branches", "employee_id"):
+        val = out.get(key)
+        out[key] = (val or "").strip() if val is not None else ""
+    return out
+
+
+def user_public_dict(u: dict) -> dict:
+    """User object safe for JSON responses (no password or id)."""
+    if not isinstance(u, dict):
+        return {}
+    return {k: v for k, v in u.items() if k not in ("password", "id")}
+
+
 def load_users():
     """Read users from users.json as a list of dicts."""
     if not os.path.exists(USER_FILE):
         return []
-    with open(USER_FILE, "r") as f:
+    with open(USER_FILE, "r", encoding="utf-8") as f:
         try:
             data = json.load(f)
             if isinstance(data, list):
@@ -350,11 +429,18 @@ def load_roles():
 
 
 def save_users(data):
-    """Write users back to users.json as list."""
+    """Write users back to users.json as list (no id; always password + full keys)."""
     if isinstance(data, dict):
         data = list(data.values())
-    with open(USER_FILE, "w") as f:
-        json.dump(data, f, indent=2)
+    normalized = []
+    for item in data:
+        if isinstance(item, dict):
+            norm = normalize_user_record_for_storage(item)
+            item.clear()
+            item.update(norm)
+            normalized.append(item)
+    with open(USER_FILE, "w", encoding="utf-8") as f:
+        json.dump(normalized, f, indent=2, ensure_ascii=False)
 
 
 def load_failed_attempts():
@@ -2137,6 +2223,7 @@ def create_user():
         reporting_to = (data.get("reporting_to") or "").strip()
         available_branches = (data.get("available_branches") or "").strip()
         employee_id = (data.get("employee_id") or "").strip()
+        new_password = (data.get("password") or "").strip()
     else:
         first_name = request.form.get("first_name", "").strip()
         last_name = request.form.get("last_name", "").strip()
@@ -2149,6 +2236,7 @@ def create_user():
         reporting_to = request.form.get("reporting_to", "").strip()
         available_branches = request.form.get("available_branches", "").strip()
         employee_id = request.form.get("employee_id", "").strip()
+        new_password = request.form.get("password", "").strip()
 
     # Validation errors list
     errors = []
@@ -2272,12 +2360,12 @@ def create_user():
                 flash(error, "error")
             return redirect(url_for("create_user"))
 
-    # Create new user
+    # Create new user (no persisted id; password required in file — default if not supplied)
     full_name = (first_name + " " + last_name).strip()
     full_phone = f"{country_code}{contact_number}" if country_code and contact_number else contact_number
+    stored_password = new_password or DEFAULT_BRANCH_USER_PASSWORD
 
     new_user = {
-        "id": str(uuid.uuid4()),
         "name": full_name,
         "phone": full_phone,
         "first_name": first_name,
@@ -2291,6 +2379,7 @@ def create_user():
         "reporting_to": reporting_to,
         "available_branches": available_branches,
         "employee_id": employee_id,
+        "password": stored_password,
     }
 
     users.append(new_user)
@@ -2302,7 +2391,6 @@ def create_user():
             "success": True,
             "message": "User created successfully",
             "user": {
-                "id": new_user["id"],
                 "name": new_user["name"],
                 "phone": new_user["phone"],
                 "first_name": new_user["first_name"],
@@ -2315,8 +2403,8 @@ def create_user():
                 "role": new_user["role"],
                 "reporting_to": new_user["reporting_to"],
                 "available_branches": new_user["available_branches"],
-                "employee_id": new_user["employee_id"]
-            }
+                "employee_id": new_user["employee_id"],
+            },
         }), 201
     else:
         flash("User created successfully", "success")
@@ -6124,7 +6212,7 @@ def api_get_users():
 
     return jsonify({
         "success": True,
-        "users": users,
+        "users": [user_public_dict(u) for u in users if isinstance(u, dict)],
         "total": len(users),
         "current_user": {
             "email": user_email,
@@ -6153,7 +6241,7 @@ def api_get_user(user_index):
 
     return jsonify({
         "success": True,
-        "user": user,
+        "user": user_public_dict(user),
         "index": user_index
     }), 200
 
@@ -6230,21 +6318,32 @@ def api_create_user():
 
     full_name = (first_name + " " + last_name).strip()
     full_phone = f"{country_code}{contact_number}" if country_code and contact_number else contact_number
+    api_password = (data.get("password") or "").strip() or DEFAULT_BRANCH_USER_PASSWORD
 
     new_user = {
-        "id": str(uuid.uuid4()),
-        "name": full_name, "phone": full_phone, "first_name": first_name, "last_name": last_name,
-        "email": email, "country_code": country_code, "contact_number": contact_number,
-        "branch": branch, "department": department, "role": role,
-        "reporting_to": reporting_to, "available_branches": available_branches, "employee_id": employee_id,
+        "name": full_name,
+        "phone": full_phone,
+        "first_name": first_name,
+        "last_name": last_name,
+        "email": email,
+        "country_code": country_code,
+        "contact_number": contact_number,
+        "branch": branch,
+        "department": department,
+        "role": role,
+        "reporting_to": reporting_to,
+        "available_branches": available_branches,
+        "employee_id": employee_id,
+        "password": api_password,
     }
     users.append(new_user)
     save_users(users)
 
+    safe_user = {k: v for k, v in new_user.items() if k != "password"}
     return jsonify({
         "success": True,
         "message": "User created successfully",
-        "user": new_user
+        "user": safe_user,
     }), 201
 
 
@@ -6282,7 +6381,11 @@ def api_update_user(user_index):
         u["branch"] = str(data.get("branch", "")).strip()
 
     save_users(users)
-    return jsonify({"success": True, "message": "User updated", "user": users[user_index]}), 200
+    return jsonify({
+        "success": True,
+        "message": "User updated",
+        "user": user_public_dict(users[user_index]),
+    }), 200
 
 
 # =========================================
@@ -8350,13 +8453,13 @@ def get_email_count(quotation_id, customer_email):
     return len(email_attempts.get(key, []))
 
 # ===================================================
-# SEND OTP EMAIL
+# SEND QUOTATION OTP EMAIL (signup uses send_otp_email above — do not shadow it)
 # ===================================================
 
-def send_otp_email(email, otp, quotation_id=None):
-    """Send OTP via email"""
+def send_quotation_otp_email(email, otp, quotation_id=None):
+    """Send OTP via email for quotation / email flow (not signup)."""
     try:
-        print(f"📧 Sending OTP to {email}")
+        print(f"📧 Sending quotation OTP to {email}")
         
         msg = MIMEMultipart()
         msg['Subject'] = f"Your OTP for Quotation {quotation_id}" if quotation_id else "Your OTP for Quotation"
@@ -8962,7 +9065,7 @@ def api_send_otp():
         }
         
         # Send OTP email
-        result = send_otp_email(email, otp, quotation_id)
+        result = send_quotation_otp_email(email, otp, quotation_id)
         
         if result:
             record_otp_attempt(email, quotation_id, True)
@@ -9068,7 +9171,7 @@ def api_resend_otp():
         }
         
         # Send OTP email
-        result = send_otp_email(email, otp, quotation_id)
+        result = send_quotation_otp_email(email, otp, quotation_id)
         
         if result:
             remaining = record_resend_attempt(email, quotation_id)

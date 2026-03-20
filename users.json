@@ -4,32 +4,66 @@
     "phone": "+919876543210",
     "email": "ani@gmail.com",
     "password": "Ani@5005",
-    "role": "Super Admin"
+    "role": "Super Admin",
+    "first_name": "Anitha",
+    "last_name": "",
+    "country_code": "+91",
+    "contact_number": "9876543210",
+    "branch": "",
+    "department": "",
+    "reporting_to": "",
+    "available_branches": "",
+    "employee_id": ""
   },
   {
     "name": "hjh",
     "phone": "+61198745631",
     "email": "Ari@gmail.com",
     "password": "Ari@5005",
-    "role": "User"
+    "role": "User",
+    "first_name": "hjh",
+    "last_name": "",
+    "country_code": "+61",
+    "contact_number": "198745631",
+    "branch": "",
+    "department": "",
+    "reporting_to": "",
+    "available_branches": "",
+    "employee_id": ""
   },
   {
     "name": "zxd",
     "phone": "7412589630",
     "email": "wed@gmail.com",
     "password": "Wed@5005",
-    "role": "Admin"
+    "role": "Admin",
+    "first_name": "zxd",
+    "last_name": "",
+    "country_code": "",
+    "contact_number": "7412589630",
+    "branch": "",
+    "department": "",
+    "reporting_to": "",
+    "available_branches": "",
+    "employee_id": ""
   },
   {
-    "id": "1",
     "name": "Anithaganff",
     "email": "anitha@thestackly.com",
     "password": "Anil@5005",
     "phone": "9878654000",
-    "role": "Admin"
+    "role": "Admin",
+    "first_name": "Anithaganff",
+    "last_name": "",
+    "country_code": "",
+    "contact_number": "9878654000",
+    "branch": "",
+    "department": "",
+    "reporting_to": "",
+    "available_branches": "",
+    "employee_id": ""
   },
   {
-    "id": "2fa21bf1-01e1-496d-b266-60695824f466",
     "name": "Sivogam",
     "phone": "+918765444454",
     "first_name": "gggzzz",
@@ -42,10 +76,10 @@
     "role": "Manager",
     "reporting_to": "trtrtr",
     "available_branches": "123555",
-    "employee_id": "9111821"
+    "employee_id": "9111821",
+    "password": "Stackly@123"
   },
   {
-    "id": "5ea05092-7dc2-4897-83f9-77c019d789c5",
     "name": "dhdhdazaz zxxzxzx",
     "phone": "+917865467671",
     "first_name": "dhdhdazaz",
@@ -58,10 +92,10 @@
     "role": "Manager",
     "reporting_to": "vchsdd",
     "available_branches": "343",
-    "employee_id": "62622"
+    "employee_id": "62622",
+    "password": "Stackly@123"
   },
   {
-    "id": "c8127a4c-a0bb-4682-ba34-4ea8b510f583",
     "name": "VikramVedha ved",
     "phone": "+97412345678",
     "first_name": "VikramVedha",
@@ -74,24 +108,42 @@
     "role": "Admin",
     "reporting_to": "Sheela",
     "available_branches": "1",
-    "employee_id": "11012A"
+    "employee_id": "11012A",
+    "password": "Stackly@123"
   },
   {
     "name": "Vicky",
     "phone": "+61123456789",
     "email": "thaanig@gmail.com",
     "password": "Vik@5005",
-    "role": "User"
+    "role": "User",
+    "first_name": "Vicky",
+    "last_name": "",
+    "country_code": "+61",
+    "contact_number": "123456789",
+    "branch": "",
+    "department": "",
+    "reporting_to": "",
+    "available_branches": "",
+    "employee_id": ""
   },
   {
     "name": "jerry",
     "phone": "+918526515483",
     "email": "jerisht92@gmail.com",
     "password": "Jerishfdo@123",
-    "role": "Super Admin"
+    "role": "Super Admin",
+    "first_name": "jerry",
+    "last_name": "",
+    "country_code": "+91",
+    "contact_number": "8526515483",
+    "branch": "",
+    "department": "",
+    "reporting_to": "",
+    "available_branches": "",
+    "employee_id": ""
   },
   {
-    "id": "638b3d1f-f926-41ae-92c1-0828de6cf2be",
     "name": "sdhjdsh hjhhj",
     "phone": "+917576763334",
     "first_name": "sdhjdsh",
@@ -104,10 +156,10 @@
     "role": "Admin",
     "reporting_to": "sds",
     "available_branches": "23",
-    "employee_id": "3233"
+    "employee_id": "3233",
+    "password": "Stackly@123"
   },
   {
-    "id": "500a6a35-500b-4c7f-800e-cd4d0c9af66e",
     "name": "xhxj hhh",
     "phone": "+918989898986",
     "first_name": "xhxj",
@@ -120,10 +172,10 @@
     "role": "User",
     "reporting_to": "sdsd",
     "available_branches": "122",
-    "employee_id": "222333"
+    "employee_id": "222333",
+    "password": "Stackly@123"
   },
   {
-    "id": "7aae084c-3696-40e2-be79-ad6ecc5b0ae1",
     "name": "John Doe",
     "phone": "+911234567890",
     "first_name": "John",
@@ -136,10 +188,10 @@
     "role": "Admin",
     "reporting_to": "Manager Name",
     "available_branches": "123",
-    "employee_id": "EMP001"
+    "employee_id": "EMP001",
+    "password": "Stackly@123"
   },
   {
-    "id": "bb08c3f7-6f7e-4bd7-9b6e-5b784ecb7b3c",
     "name": "John Doe",
     "phone": "+911234567893",
     "first_name": "John",
@@ -152,10 +204,10 @@
     "role": "Admin",
     "reporting_to": "Manager Name",
     "available_branches": "123",
-    "employee_id": "EMP002"
+    "employee_id": "EMP002",
+    "password": "Stackly@123"
   },
   {
-    "id": "1e9d4fb3-a465-49ff-ae68-3549ffaa8194",
     "name": "sdd fgg",
     "phone": "+979345534352",
     "first_name": "sdd",
@@ -168,10 +220,10 @@
     "role": "sd",
     "reporting_to": "nbgf",
     "available_branches": "1",
-    "employee_id": "1212"
+    "employee_id": "1212",
+    "password": "Stackly@123"
   },
   {
-    "id": "07532192-774f-4f4f-8965-4694c4564687",
     "name": "sdd fgg",
     "phone": "+919345676234",
     "first_name": "sdd",
@@ -184,10 +236,10 @@
     "role": "sd",
     "reporting_to": "nbgf",
     "available_branches": "1",
-    "employee_id": "12122"
+    "employee_id": "12122",
+    "password": "Stackly@123"
   },
   {
-    "id": "8333bc7d-7918-4639-99e8-b1143271c5b6",
     "name": "sdd fgg",
     "phone": "+971934567625",
     "first_name": "sdd",
@@ -200,10 +252,10 @@
     "role": "sd",
     "reporting_to": "nbgf",
     "available_branches": "1",
-    "employee_id": "12124"
+    "employee_id": "12124",
+    "password": "Stackly@123"
   },
   {
-    "id": "120b0510-6b1c-4955-95a7-16f516087edb",
     "name": "gfhfgf",
     "phone": "+913434343434",
     "first_name": "asas",
@@ -216,10 +268,10 @@
     "role": "Admin",
     "reporting_to": "hghyg",
     "available_branches": "12",
-    "employee_id": "334"
+    "employee_id": "334",
+    "password": "Stackly@123"
   },
   {
-    "id": "754d282a-1298-4dde-8651-ab75838ef90f",
     "name": "kjkj uyu",
     "phone": "+917576576576",
     "first_name": "kjkj",
@@ -232,10 +284,10 @@
     "role": "Admin",
     "reporting_to": "uyu",
     "available_branches": "12",
-    "employee_id": "232"
+    "employee_id": "232",
+    "password": "Stackly@123"
   },
   {
-    "id": "7c625ed3-44bb-4892-ac8b-b1907131937b",
     "name": "jjh uyuy",
     "phone": "+917675765667",
     "first_name": "jjh",
@@ -248,10 +300,10 @@
     "role": "User",
     "reporting_to": "jhjh",
     "available_branches": "34",
-    "employee_id": "767"
+    "employee_id": "767",
+    "password": "Stackly@123"
   },
   {
-    "id": "57ac5f77-05e7-44dd-8dd1-9fb53b4fe827",
     "name": "sdd fgg",
     "phone": "+971930567625",
     "first_name": "sdd",
@@ -264,10 +316,10 @@
     "role": "sd",
     "reporting_to": "nbgf",
     "available_branches": "1",
-    "employee_id": "121242"
+    "employee_id": "121242",
+    "password": "Stackly@123"
   },
   {
-    "id": "ff117541-0495-40df-9ddc-925bc876c1c4",
     "name": "nbj vvcf",
     "phone": "+919305676252",
     "first_name": "nbj",
@@ -280,10 +332,10 @@
     "role": "sd",
     "reporting_to": "nbgf",
     "available_branches": "1",
-    "employee_id": "12emp242"
+    "employee_id": "12emp242",
+    "password": "Stackly@123"
   },
   {
-    "id": "97f712ae-5e90-4d18-9b21-57befc0e964e",
     "name": "nbd vvcf",
     "phone": "+919305676242",
     "first_name": "nbd",
@@ -296,10 +348,10 @@
     "role": "dfd",
     "reporting_to": "nbgf",
     "available_branches": "23",
-    "employee_id": "12emp2422"
+    "employee_id": "12emp2422",
+    "password": "Stackly@123"
   },
   {
-    "id": "5e825393-9295-4fb4-b9ba-35ac30e2434b",
     "name": "srinivas fgfg",
     "phone": "+919845984544",
     "first_name": "srinivas",
@@ -312,10 +364,10 @@
     "role": "User",
     "reporting_to": "tfgf",
     "available_branches": "12",
-    "employee_id": "4343"
+    "employee_id": "4343",
+    "password": "Stackly@123"
   },
   {
-    "id": "2165dad9-6533-4cbf-934e-4a4bae782406",
     "name": "dfg yuy",
     "phone": "+919844534356",
     "first_name": "dfg",
@@ -328,10 +380,10 @@
     "role": "Admin",
     "reporting_to": "fhh",
     "available_branches": "12",
-    "employee_id": "e545"
+    "employee_id": "e545",
+    "password": "Stackly@123"
   },
   {
-    "id": "f5aea3a0-d244-4b2c-b6a2-681cfc6a2c37",
     "name": "asda hghg",
     "phone": "+915656567567",
     "first_name": "asda",
@@ -344,10 +396,10 @@
     "role": "Admin",
     "reporting_to": "sdsd",
     "available_branches": "23",
-    "employee_id": "3434"
+    "employee_id": "3434",
+    "password": "Stackly@123"
   },
   {
-    "id": "487aa80f-8916-4734-aaf7-1294e3198ac2",
     "name": "jhsd weewuy",
     "phone": "+915465464564",
     "first_name": "jhsd",
@@ -360,10 +412,10 @@
     "role": "Admin",
     "reporting_to": "frdfd",
     "available_branches": "213",
-    "employee_id": "dfgddg"
+    "employee_id": "dfgddg",
+    "password": "Stackly@123"
   },
   {
-    "id": "290268ad-89a6-4ed9-ba6a-c54501e91ebc",
     "name": "ghgh ytyt",
     "phone": "+915456456464",
     "first_name": "ghgh",
@@ -376,10 +428,10 @@
     "role": "User",
     "reporting_to": "hjjhj",
     "available_branches": "675",
-    "employee_id": "tfy"
+    "employee_id": "tfy",
+    "password": "Stackly@123"
   },
   {
-    "id": "946bac9c-c363-41b7-9308-6b9ef08fd212",
     "name": "polo sdsd",
     "phone": "+915675675757",
     "first_name": "polo",
@@ -392,10 +444,10 @@
     "role": "Admin",
     "reporting_to": "sdsfd",
     "available_branches": "23",
-    "employee_id": "dfdfd"
+    "employee_id": "dfdfd",
+    "password": "Stackly@123"
   },
   {
-    "id": "50faf2b5-f39d-453f-b50a-8cd03c309836",
     "name": "jhjh tytg",
     "phone": "+916767576576",
     "first_name": "jhjh",
@@ -408,10 +460,10 @@
     "role": "Admin",
     "reporting_to": "jhjhj",
     "available_branches": "56",
-    "employee_id": "tyhg"
+    "employee_id": "tyhg",
+    "password": "Stackly@123"
   },
   {
-    "id": "5e12761a-c87e-4227-98b2-8cea07ce062c",
     "name": "jjhjh rtf",
     "phone": "+917667676767",
     "first_name": "jjhjh",
@@ -424,10 +476,10 @@
     "role": "dfd",
     "reporting_to": "vvffggf",
     "available_branches": "44",
-    "employee_id": "rdtrdrt"
+    "employee_id": "rdtrdrt",
+    "password": "Stackly@123"
   },
   {
-    "id": "7d576335-a871-491d-9eaf-47e359a4e550",
     "name": "jhhjh yujh",
     "phone": "+918878787877",
     "first_name": "jhhjh",
@@ -440,10 +492,10 @@
     "role": "zdsd",
     "reporting_to": "khkk",
     "available_branches": "78787",
-    "employee_id": "jjhj"
+    "employee_id": "jjhj",
+    "password": "Stackly@123"
   },
   {
-    "id": "0a6b0b95-90ab-4ae7-bb95-010e98a2ebe5",
     "name": "dsds hjhj",
     "phone": "+913453534534",
     "first_name": "dsds",
@@ -456,10 +508,10 @@
     "role": "nvfgh",
     "reporting_to": "dssdfds",
     "available_branches": "2323",
-    "employee_id": "sdsdsd"
+    "employee_id": "sdsdsd",
+    "password": "Stackly@123"
   },
   {
-    "id": "a4e21265-31a5-46c0-b0fe-42eb8ca5c414",
     "name": "ghg fgdtr",
     "phone": "+917768685585",
     "first_name": "ghg",
@@ -472,6 +524,39 @@
     "role": "Senior Manager",
     "reporting_to": "fgfdgd",
     "available_branches": "76",
-    "employee_id": "fjhfj"
+    "employee_id": "fjhfj",
+    "password": "Stackly@123"
+  },
+  {
+    "name": "doshini",
+    "phone": "+917868768687",
+    "email": "doshini3082000@gmail.com",
+    "password": "Doshini@123.",
+    "role": "Super Admin",
+    "first_name": "doshini",
+    "last_name": "",
+    "country_code": "+91",
+    "contact_number": "7868768687",
+    "branch": "",
+    "department": "",
+    "reporting_to": "",
+    "available_branches": "",
+    "employee_id": ""
+  },
+  {
+    "name": "ffhfh ytyuty",
+    "phone": "+917657575675",
+    "first_name": "ffhfh",
+    "last_name": "ytyuty",
+    "email": "sdfrdgdr@gmail.com",
+    "country_code": "+91",
+    "contact_number": "7657575675",
+    "branch": "Main Branch",
+    "department": "xfdf",
+    "role": "zdsd",
+    "reporting_to": "eadwde",
+    "available_branches": "656",
+    "employee_id": "gfyf",
+    "password": "Stackly@123"
   }
 ]
