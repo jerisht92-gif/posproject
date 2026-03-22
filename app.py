@@ -849,8 +849,8 @@ def set_security_headers(resp):
 # 4. MASTERS — Department & Roles — /department-roles, /api/departments, /api/roles
 # 5. MASTERS — Products  — /products, /products/create, /import, /api/products
 # 6. MASTERS — Customer  — /customer, /import-customer, /addnew-customer, /api/customer, /api/customers
-# 7. CRM — Enquiry List  — /enquiry-list
-# 8. CRM — New Enquiry   — /new-enquiry, /save-enquiry, /add-product, enquiry APIs
+# 7. CRM — Enquiry List  — /enquiry-list, /api/enquiries (REST for Postman)
+# 8. CRM — New Enquiry   — /new-enquiry, /save-enquiry, /add-product, /api/enquiry/…
 # 9. UTILITY             — /profile, /search, /logout
 # =========================================
 
@@ -6471,25 +6471,78 @@ def delete_user(user_id):
 # 7. CRM — Enquiry List
 # =========================================
 
-def generate_enquiry_id():
-    """Generate next enquiry ID based on the file at ENQUIRY_FILE."""
+def _load_enquiry_file():
+    """Load new-enquiry.json as a dict keyed by enquiry_id."""
     if not os.path.exists(ENQUIRY_FILE):
-        return "ENQ0001"
-
+        return {}
     try:
         with open(ENQUIRY_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except (json.JSONDecodeError, OSError, TypeError):
+        return {}
 
-        # if file is empty or not list
-        if not data or not isinstance(data, list):
-            return "ENQ0001"
 
-        last_id = data[-1].get("enquiry_id", "ENQ-0000")
-        number = int(last_id.replace("ENQ", ""))
-        return f"ENQ-{number + 1:04d}"
+def _save_enquiry_file(data):
+    """Persist enquiry dict to new-enquiry.json."""
+    if not isinstance(data, dict):
+        data = {}
+    with open(ENQUIRY_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=4, ensure_ascii=False)
 
-    except Exception:
-        return "ENQ0001"
+
+def generate_enquiry_id():
+    """Next ENQ-#### id from existing keys in ENQUIRY_FILE (dict format)."""
+    data = _load_enquiry_file()
+    if not data:
+        return "ENQ-0001"
+    max_n = 0
+    for key in data.keys():
+        if not isinstance(key, str):
+            continue
+        k = key.strip().upper()
+        if not k.startswith("ENQ"):
+            continue
+        try:
+            tail = k.split("-")[-1] if "-" in k else k[3:]
+            tail = tail.lstrip("0") or "0"
+            n = int(tail)
+            max_n = max(max_n, n)
+        except ValueError:
+            continue
+    return f"ENQ-{max_n + 1:04d}"
+
+
+def _normalize_incoming_enquiry_details(details: dict) -> dict:
+    """Accept phone_number from API clients; store as phone."""
+    if not isinstance(details, dict):
+        return {}
+    out = dict(details)
+    if out.get("phone_number") and not out.get("phone"):
+        out["phone"] = str(out.pop("phone_number", "")).strip()
+    elif "phone_number" in out:
+        out.pop("phone_number", None)
+    return out
+
+
+def _enquiry_to_api_dict(enquiry_id: str, enq_data: dict, include_items: bool = True) -> dict:
+    """Single enquiry payload for JSON APIs."""
+    if not isinstance(enq_data, dict):
+        enq_data = {}
+    details = _normalize_incoming_enquiry_details(enq_data.get("enquiry_details") or {})
+    row = {
+        "enquiry_id": enquiry_id,
+        "enquiry_details": details,
+        "first_name": details.get("first_name", ""),
+        "last_name": details.get("last_name", ""),
+        "email": details.get("email", ""),
+        "phone": details.get("phone", ""),
+        "phone_number": details.get("phone", ""),
+        "status": details.get("status", "New"),
+    }
+    if include_items:
+        row["items"] = enq_data.get("items") if isinstance(enq_data.get("items"), dict) else {}
+    return row
 
 
 
@@ -6537,10 +6590,8 @@ def enquiry_list():
 
     # Load enquiries from JSON file (new-enquiry.json)
     enquiries = []
-    if os.path.exists(ENQUIRY_FILE):
-        with open(ENQUIRY_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-
+    data = _load_enquiry_file()
+    if data:
         # Convert dict to list
         for enq_id, enq_data in data.items():
             details = enq_data.get("enquiry_details", {})
@@ -6672,7 +6723,181 @@ def delete_enquiry(enquiry_id):
     return jsonify(success=True, message="Enquiry deleted successfully")
 
 
+# =========================================
+# 7b. CRM — Enquiries REST API (Postman / JSON clients)
+#   GET    /api/enquiries              — list (optional ?search=&status=)
+#   GET    /api/enquiries/<id>         — one enquiry (details + items)
+#   POST   /api/enquiries              — create (optional enquiry_id; auto if omitted)
+#   PUT    /api/enquiries/<id>         — update details (merge) + optional items (merge)
+#   DELETE /api/enquiries/<id>         — delete (Super Admin only)
+# =========================================
+@app.route("/api/enquiries", methods=["GET"])
+def api_enquiries_list():
+    """List all enquiries. Requires login. Use Accept: application/json from Postman."""
+    user_email = session.get("user")
+    if not user_email:
+        return jsonify({"success": False, "message": "Session expired. Please login first."}), 401
 
+    data = _load_enquiry_file()
+    q = (request.args.get("search") or "").strip().lower()
+    status_filter = (request.args.get("status") or "").strip()
+
+    users = load_users()
+    user_name = "User"
+    user_role = "User"
+    for u in users:
+        if isinstance(u, dict) and (u.get("email") or "").lower() == user_email.lower():
+            user_name = u.get("name") or "User"
+            user_role = (u.get("role") or "User").strip()
+            break
+
+    enquiries = []
+    for enq_id, enq_data in data.items():
+        row = _enquiry_to_api_dict(enq_id, enq_data, include_items=True)
+        st = row.get("status") or "New"
+        if status_filter and st != status_filter:
+            continue
+        if q:
+            blob = " ".join(
+                [
+                    str(enq_id),
+                    row.get("first_name") or "",
+                    row.get("last_name") or "",
+                    row.get("email") or "",
+                    row.get("phone") or "",
+                    st,
+                ]
+            ).lower()
+            if q not in blob:
+                continue
+        enquiries.append(row)
+
+    return jsonify(
+        {
+            "success": True,
+            "enquiries": enquiries,
+            "total": len(enquiries),
+            "current_user": {"email": user_email, "name": user_name, "role": user_role},
+        }
+    ), 200
+
+
+@app.route("/api/enquiries/<enquiry_id>", methods=["GET"])
+def api_enquiries_get_one(enquiry_id):
+    """Get one enquiry by id (full details + items)."""
+    user_email = session.get("user")
+    if not user_email:
+        return jsonify({"success": False, "message": "Session expired. Please login first."}), 401
+
+    data = _load_enquiry_file()
+    enq_data = data.get(enquiry_id)
+    if not enq_data:
+        return jsonify({"success": False, "message": "Enquiry not found"}), 404
+
+    return jsonify({"success": True, "enquiry": _enquiry_to_api_dict(enquiry_id, enq_data, include_items=True)}), 200
+
+
+@app.route("/api/enquiries", methods=["POST"])
+def api_enquiries_create():
+    """Create enquiry. Admin / Super Admin only. Body: { enquiry_details, items?, enquiry_id? }."""
+    user_email = session.get("user")
+    if not user_email:
+        return jsonify({"success": False, "message": "Session expired. Please login first."}), 401
+
+    role = _get_current_user_role()
+    if role not in ("admin", "superadmin"):
+        return jsonify({"success": False, "message": "Only Admin or Super Admin can create enquiries."}), 403
+
+    body = request.get_json(silent=True)
+    if not body:
+        return jsonify({"success": False, "message": "JSON body required"}), 400
+
+    enquiry_id = (body.get("enquiry_id") or "").strip() or generate_enquiry_id()
+    details = _normalize_incoming_enquiry_details(body.get("enquiry_details") or {})
+    items = body.get("items") if isinstance(body.get("items"), dict) else {}
+
+    data = _load_enquiry_file()
+    if enquiry_id in data:
+        return jsonify({"success": False, "message": "Enquiry ID already exists. Omit enquiry_id to auto-generate."}), 409
+
+    if not details.get("status"):
+        details["status"] = "New"
+
+    data[enquiry_id] = {"enquiry_details": details, "items": items}
+    _save_enquiry_file(data)
+
+    return jsonify(
+        {
+            "success": True,
+            "message": "Enquiry created",
+            "enquiry": _enquiry_to_api_dict(enquiry_id, data[enquiry_id], include_items=True),
+        }
+    ), 201
+
+
+@app.route("/api/enquiries/<enquiry_id>", methods=["PUT"])
+def api_enquiries_update(enquiry_id):
+    """Update enquiry: merge enquiry_details; merge items if provided."""
+    user_email = session.get("user")
+    if not user_email:
+        return jsonify({"success": False, "message": "Session expired. Please login first."}), 401
+
+    role = _get_current_user_role()
+    if role not in ("admin", "superadmin"):
+        return jsonify({"success": False, "message": "Only Admin or Super Admin can update enquiries."}), 403
+
+    body = request.get_json(silent=True)
+    if not body:
+        return jsonify({"success": False, "message": "JSON body required"}), 400
+
+    data = _load_enquiry_file()
+    if enquiry_id not in data:
+        return jsonify({"success": False, "message": "Enquiry not found"}), 404
+
+    if "enquiry_details" in body and isinstance(body["enquiry_details"], dict):
+        existing = data[enquiry_id].setdefault("enquiry_details", {})
+        merged = _normalize_incoming_enquiry_details(body["enquiry_details"])
+        for k, v in merged.items():
+            existing[k] = v
+        data[enquiry_id]["enquiry_details"] = existing
+
+    if "items" in body:
+        if not isinstance(body["items"], dict):
+            return jsonify({"success": False, "message": "items must be an object"}), 400
+        old_items = data[enquiry_id].setdefault("items", {})
+        old_items.update(body["items"])
+        data[enquiry_id]["items"] = old_items
+
+    _save_enquiry_file(data)
+
+    return jsonify(
+        {
+            "success": True,
+            "message": "Enquiry updated",
+            "enquiry": _enquiry_to_api_dict(enquiry_id, data[enquiry_id], include_items=True),
+        }
+    ), 200
+
+
+@app.route("/api/enquiries/<enquiry_id>", methods=["DELETE"])
+def api_enquiries_delete(enquiry_id):
+    """Delete enquiry. Super Admin only (same as /delete-enquiry)."""
+    user_email = session.get("user")
+    if not user_email:
+        return jsonify({"success": False, "message": "Session expired. Please login first."}), 401
+
+    role = _get_current_user_role()
+    if role != "superadmin":
+        return jsonify({"success": False, "message": "Only Super Admin can delete enquiries."}), 403
+
+    data = _load_enquiry_file()
+    if enquiry_id not in data:
+        return jsonify({"success": False, "message": "Enquiry not found"}), 404
+
+    del data[enquiry_id]
+    _save_enquiry_file(data)
+
+    return jsonify({"success": True, "message": "Enquiry deleted", "deleted_id": enquiry_id}), 200
 
 
 
@@ -6771,24 +6996,13 @@ def new_enquiry():
 
 
 def load_data():
-    if not os.path.exists(ENQUIRY_FILE):
-        return {}
-    with open(ENQUIRY_FILE, "r") as f:
-        return json.load(f)
+    """Backward-compatible alias for enquiry JSON dict (used by /add-item, /save-enquiry)."""
+    return _load_enquiry_file()
+
 
 def save_data(data):
-    with open(ENQUIRY_FILE, "w") as f:
-        json.dump(data, f, indent=4)
-
-def generate_enquiry_id():
-    data = load_data()
-    if not data:
-        return "ENQ-0001"
-
-    last_id = list(data.keys())[-1]
-    last_num = int(last_id.split("-")[1])
-    return f"ENQ-{last_num + 1:04d}"
-
+    """Backward-compatible save for enquiry JSON dict."""
+    _save_enquiry_file(data)
 
 
 @app.route("/generate-enquiry-id")
@@ -6814,11 +7028,7 @@ def save_enquiry():
     enquiry_details = payload.get("enquiry_details") or {}
     new_items = payload.get("items") or {}
 
-    if os.path.exists(ENQUIRY_FILE):
-        with open(ENQUIRY_FILE, "r") as f:
-            data = json.load(f)
-    else:
-        data = {}
+    data = _load_enquiry_file()
 
     if enquiry_id in data:
         # update details
@@ -6835,8 +7045,7 @@ def save_enquiry():
             "items": new_items
         }
 
-    with open(ENQUIRY_FILE, "w") as f:
-        json.dump(data, f, indent=4)
+    _save_enquiry_file(data)
 
     return jsonify({"success": True})
 
