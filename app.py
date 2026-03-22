@@ -241,9 +241,19 @@ otp_storage = {}
 # =========================================
 def wants_json():
     """Check if client wants JSON response (API/Postman).
-    Returns True for: Accept: application/json, ?format=json, or request.is_json"""
-    accept = request.headers.get("Accept", "")
-    return "application/json" in accept or request.args.get("format") == "json" or request.is_json
+    True when: Accept: application/json, ?format=json, request.is_json,
+    or Content-Type: application/json (many clients send this on GET in Postman)."""
+    accept = (request.headers.get("Accept") or "").lower()
+    if "application/json" in accept:
+        return True
+    if request.args.get("format") == "json":
+        return True
+    if request.is_json:
+        return True
+    ct = (request.headers.get("Content-Type") or "").lower()
+    if "application/json" in ct:
+        return True
+    return False
 
 
 # =========================================

@@ -2,6 +2,14 @@
 
 Base URL: `http://127.0.0.1:5000` (adjust for your environment).
 
+### If you see HTML “Login” instead of JSON
+
+1. **Use the API URL:** `GET /api/enquiries` — not `/enquiry-list` (that URL is mainly for the browser UI).
+2. **Session:** Log in first, then send the **Cookie** Postman stores (`session=...`). Expired or wrong-domain cookies will look “logged in” in Postman but the server will treat you as a guest.
+3. **Headers:** Prefer **`Accept: application/json`**. (`Content-Type: application/json` on a GET is also treated as JSON mode in this app.)
+
+---
+
 All endpoints require a **logged-in session** (same as the web app). In Postman:
 
 1. **POST** `http://127.0.0.1:5000/login`  
