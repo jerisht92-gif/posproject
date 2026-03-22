@@ -1,82 +1,5 @@
-document.addEventListener("DOMContentLoaded", () => {
-  const tableBody = document.getElementById("enquiryTable");
-  const showingCount = document.getElementById("showingCount");
-  const pageInfo = document.getElementById("pageInfo");
-
-  if (!tableBody) return;
-
-  // ==========================
-  // Role-based access (same as Product module)
-  // ==========================
-  const pageEl = document.querySelector(".enquiry-page");
-  const roleRaw = pageEl?.dataset.currentRole || pageEl?.dataset.role || "";
-  const role = roleRaw.toLowerCase().replace(/\s+/g, "").replace(/_/g, "");
-  const canEdit = ["superadmin", "admin"].includes(role);
-  const canDelete = ["superadmin"].includes(role);
-
-  const editDisabledAttr = canEdit ? "" : " disabled title=\"Only Admin / Super Admin can edit\"";
-  const deleteDisabledAttr = canDelete ? "" : " disabled title=\"Only Super Admin can delete\"";
-  const editClass = canEdit ? "edit-btn action-btn" : "edit-btn action-btn edit-btn-disabled";
-  const deleteClass = canDelete ? "delete-btn action-btn" : "delete-btn action-btn delete-btn-disabled";
-
-  function renderRows(items) {
-    // Keep header/footer behaviour from server render; just replace body rows
-    tableBody.innerHTML = "";
-
-    if (!items || items.length === 0) {
-      const tr = document.createElement("tr");
-      tr.className = "no-data-row";
-      const td = document.createElement("td");
-      td.colSpan = 7;
-      td.className = "no-data-cell";
-      td.textContent = "No data Found";
-      tr.appendChild(td);
-      tableBody.appendChild(tr);
-      if (showingCount) showingCount.textContent = "0";
-      if (pageInfo) pageInfo.textContent = "Page 1 of 0";
-      return;
-    }
-
-    items.forEach((e) => {
-      const tr = document.createElement("tr");
-
-      tr.innerHTML = `
-        <td><span class="enquiry-id-link" data-id="${e.enquiry_id}">${e.enquiry_id}</span></td>
-        <td>${(e.first_name || "").replace(/</g, "&lt;")}</td>
-        <td>${(e.last_name || "").replace(/</g, "&lt;")}</td>
-        <td>${(e.email || "").replace(/</g, "&lt;")}</td>
-        <td>${(e.phone_number || "").replace(/</g, "&lt;")}</td>
-        <td>${(e.status || "").replace(/</g, "&lt;")}</td>
-        <td class="action-cell">
-          <div class="action-buttons">
-            <button class="${editClass}" data-id="${e.enquiry_id}"${editDisabledAttr}>Edit</button>
-            <button class="${deleteClass}" data-id="${e.enquiry_id}"${deleteDisabledAttr}>Delete</button>
-          </div>
-        </td>
-      `;
-
-      tableBody.appendChild(tr);
-    });
-
-    if (showingCount) showingCount.textContent = String(items.length);
-    if (pageInfo) pageInfo.textContent = `Page 1 of 1`;
-  }
-
-  // Fetch using JSON Accept header so it appears under Fetch/XHR
-  fetch("/enquiry-list", {
-    headers: { Accept: "application/json" },
-    cache: "no-store",
-  })
-    .then((res) => res.json())
-    .then((payload) => {
-      if (payload && payload.success && Array.isArray(payload.data)) {
-        renderRows(payload.data);
-      }
-    })
-    .catch((err) => {
-      console.error("Error loading enquiries via XHR:", err);
-    });
-});
+/** Same REST base as Postman: /api/enquiries */
+const ENQUIRIES_API = "/api/enquiries";
 
 // ==========================
 // ✅ GLOBAL VARIABLES & FUNCTIONS (outside DOMContentLoaded)
@@ -220,13 +143,118 @@ document.addEventListener('click', function(e) {
 // ==========================
 // ✅ DOM CONTENT LOADED
 // ==========================
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", async () => {
     // ==========================
     // ✅ Elements
     // ==========================
     const searchInput = document.getElementById("searchEnquiries");
-  const tableBody = document.getElementById("enquiryTable");
+    const tableBody = document.getElementById("enquiryTable");
     const showingCount = document.getElementById("showingCount");
+    const pageInfo = document.getElementById("pageInfo");
+    const prevPageBtn = document.getElementById("prevPage");
+    const nextPageBtn = document.getElementById("nextPage");
+
+    if (!tableBody) return;
+
+    // ==========================
+    // Role + table render (data from GET /api/enquiries — same as Postman)
+    // ==========================
+    const pageEl = document.querySelector(".enquiry-page");
+    const roleRaw = pageEl?.dataset.currentRole || pageEl?.dataset.role || "";
+    const role = roleRaw.toLowerCase().replace(/\s+/g, "").replace(/_/g, "");
+    const canEdit = ["superadmin", "admin"].includes(role);
+    const canDelete = ["superadmin"].includes(role);
+    const editDisabledAttr = canEdit ? "" : " disabled title=\"Only Admin / Super Admin can edit\"";
+    const deleteDisabledAttr = canDelete ? "" : " disabled title=\"Only Super Admin can delete\"";
+    const editClass = canEdit ? "edit-btn action-btn" : "edit-btn action-btn edit-btn-disabled";
+    const deleteClass = canDelete ? "delete-btn action-btn" : "delete-btn action-btn delete-btn-disabled";
+
+    const rowsPerPage = 10;
+    let currentPage = 1;
+
+    function renderRows(items) {
+        tableBody.innerHTML = "";
+        if (!items || items.length === 0) {
+            const tr = document.createElement("tr");
+            tr.className = "no-data-row";
+            const td = document.createElement("td");
+            td.colSpan = 7;
+            td.className = "no-data-cell";
+            td.textContent = "No data Found";
+            tr.appendChild(td);
+            tableBody.appendChild(tr);
+            return;
+        }
+        items.forEach((e) => {
+            const tr = document.createElement("tr");
+            const esc = (s) => String(s ?? "").replace(/</g, "&lt;");
+            tr.innerHTML = `
+        <td><span class="enquiry-id-link" data-id="${esc(e.enquiry_id)}">${esc(e.enquiry_id)}</span></td>
+        <td>${esc(e.first_name)}</td>
+        <td>${esc(e.last_name)}</td>
+        <td>${esc(e.email)}</td>
+        <td>${esc(e.phone_number || e.phone)}</td>
+        <td>${esc(e.status)}</td>
+        <td class="action-cell">
+          <div class="action-buttons">
+            <button class="${editClass}" data-id="${esc(e.enquiry_id)}"${editDisabledAttr}>Edit</button>
+            <button class="${deleteClass}" data-id="${esc(e.enquiry_id)}"${deleteDisabledAttr}>Delete</button>
+          </div>
+        </td>`;
+            tableBody.appendChild(tr);
+        });
+    }
+
+    function getDataRows() {
+        return Array.from(tableBody.querySelectorAll("tr")).filter((row) => !row.classList.contains("no-data-row"));
+    }
+
+    function renderPagination() {
+        const rows = getDataRows();
+        const totalEntries = rows.length;
+        const totalPages = Math.max(1, Math.ceil(totalEntries / rowsPerPage) || 1);
+        if (currentPage > totalPages) currentPage = Math.max(1, totalPages);
+        rows.forEach((row) => {
+            row.style.display = "none";
+        });
+        const start = (currentPage - 1) * rowsPerPage;
+        const end = start + rowsPerPage;
+        rows.slice(start, end).forEach((row) => {
+            row.style.display = "";
+        });
+        const startEntry = totalEntries === 0 ? 0 : start + 1;
+        const endEntry = Math.min(end, totalEntries);
+        if (showingCount) {
+            showingCount.textContent = totalEntries > 0 ? `${startEntry}-${endEntry} of ${totalEntries}` : "0";
+        }
+        if (pageInfo) pageInfo.textContent = `Page ${currentPage} of ${totalPages}`;
+        if (prevPageBtn) prevPageBtn.disabled = currentPage <= 1;
+        if (nextPageBtn) nextPageBtn.disabled = currentPage >= totalPages;
+    }
+
+    async function loadEnquiriesFromApi() {
+        try {
+            const res = await fetch(ENQUIRIES_API, {
+                headers: { Accept: "application/json" },
+                credentials: "same-origin",
+                cache: "no-store",
+            });
+            const payload = await res.json();
+            if (!res.ok || !payload.success) {
+                console.error("Enquiry list API:", payload);
+                return;
+            }
+            if (Array.isArray(payload.enquiries)) {
+                renderRows(payload.enquiries);
+                currentPage = 1;
+                renderPagination();
+            }
+        } catch (err) {
+            console.error("Error loading enquiries:", err);
+        }
+    }
+
+    await loadEnquiriesFromApi();
 
     // Edit modal elements
     const editModal = document.getElementById("editEnquiryModal");
@@ -421,22 +449,26 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // ==========================
-    // ✅ Search Function
+    // ✅ Search (client-side; clears pagination while typing)
     // ==========================
-  if (searchInput && tableBody) {
-    searchInput.addEventListener("keyup", () => {
-      const filter = searchInput.value.toLowerCase();
-      const rows = tableBody.querySelectorAll("tr");
-      let visible = 0;
-            rows.forEach(row => {
-                if (row.classList.contains("no-data-row")) return;
-        const show = row.textContent.toLowerCase().includes(filter);
-        row.style.display = show ? "" : "none";
-        if (show) visible++;
-      });
-            if (showingCount) {
-                showingCount.textContent = visible > 0 ? `1-${visible} of ${visible}` : "0";
+    if (searchInput && tableBody) {
+        searchInput.addEventListener("keyup", () => {
+            const filter = searchInput.value.toLowerCase().trim();
+            const rows = getDataRows();
+            if (!filter) {
+                renderPagination();
+                return;
             }
+            let visible = 0;
+            rows.forEach((row) => {
+                const show = row.textContent.toLowerCase().includes(filter);
+                row.style.display = show ? "" : "none";
+                if (show) visible++;
+            });
+            if (showingCount) showingCount.textContent = visible > 0 ? `${visible} match(es)` : "0";
+            if (pageInfo) pageInfo.textContent = "Search results";
+            if (prevPageBtn) prevPageBtn.disabled = true;
+            if (nextPageBtn) nextPageBtn.disabled = true;
         });
     }
 
@@ -455,14 +487,17 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!enquiryId) return alert("No enquiry ID found");
 
         try {
-            const res = await fetch(`/api/enquiry/${encodeURIComponent(enquiryId)}`);
+            const res = await fetch(`${ENQUIRIES_API}/${encodeURIComponent(enquiryId)}`, {
+                headers: { Accept: "application/json" },
+                credentials: "same-origin",
+            });
             const response = await res.json();
             if (!res.ok || !response.success) {
                 alert(response.message || "Unable to load enquiry");
                 return;
             }
 
-            const enquiry = response.data;
+            const enquiry = response.enquiry || response.data || {};
 
             // Fill fields
             if (editId) editId.value = enquiry.enquiry_id || "";
@@ -557,72 +592,26 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     // ==========================
-    // ✅ FOOTER PART
+    // ✅ Pagination controls
     // ==========================
-    const rowsPerPage = 10;
-
-    const tbody = document.getElementById("enquiryTable");
-    if (!tbody) return;
-
-    // get only real data rows
-    const rows = Array.from(tbody.querySelectorAll("tr"))
-        .filter(row => !row.classList.contains("no-data-row"));
-
-    const prevBtn = document.getElementById("prevPage");
-    const nextBtn = document.getElementById("nextPage");
-    const pageInfo = document.getElementById("pageInfo");
-    const pagination = document.querySelector(".pagination-controls");
-
-    let currentPage = 1;
-    const totalEntries = rows.length;
-    const totalPages = Math.ceil(totalEntries / rowsPerPage);
-
-    function renderTable() {
-        // hide all rows
-        rows.forEach(row => row.style.display = "none");
-
-        const start = (currentPage - 1) * rowsPerPage;
-        const end = start + rowsPerPage;
-
-        rows.slice(start, end).forEach(row => {
-            row.style.display = "";
+    if (prevPageBtn) {
+        prevPageBtn.addEventListener("click", () => {
+            if (currentPage > 1) {
+                currentPage--;
+                renderPagination();
+            }
         });
-
-        // footer text
-        const startEntry = totalEntries === 0 ? 0 : start + 1;
-        const endEntry = Math.min(end, totalEntries);
-        if (showingCount) {
-            showingCount.textContent = totalEntries > 0 ? `${startEntry}-${endEntry} of ${totalEntries}` : "0";
-        }
-        pageInfo.textContent = `Page ${currentPage} of ${totalPages}`;
-
-        // button state
-        prevBtn.disabled = currentPage === 1;
-        nextBtn.disabled = currentPage === totalPages;
     }
-
-    // events
-    prevBtn.addEventListener("click", () => {
-        if (currentPage > 1) {
-            currentPage--;
-            renderTable();
-        }
-    });
-
-    nextBtn.addEventListener("click", () => {
-        if (currentPage < totalPages) {
-            currentPage++;
-            renderTable();
-        }
-    });
-
-    // hide pagination if not needed
-    // if (totalEntries <= rowsPerPage) {
-    //     pagination.style.display = "none";
-    // }
-
-    // initial render
-    renderTable();
+    if (nextPageBtn) {
+        nextPageBtn.addEventListener("click", () => {
+            const rows = getDataRows();
+            const totalPages = Math.max(1, Math.ceil(rows.length / rowsPerPage));
+            if (currentPage < totalPages) {
+                currentPage++;
+                renderPagination();
+            }
+        });
+    }
 
     // ==========================
     // ✅ Save Edit
@@ -645,22 +634,28 @@ document.addEventListener("DOMContentLoaded", () => {
             if (!isValidEmail(email)) { errEmail.textContent = "Enter a valid email address"; editEmail.classList.add("input-error"); hasError = true; }
             if (hasError) {
                 updateEnquirySaveButtonState();
-      return;
-    }
+                return;
+            }
 
             saveEditBtn.disabled = true;
 
-    try {
-                const res = await fetch(`/update-enquiry/${encodeURIComponent(id)}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-                        first_name: firstName,
-                        last_name: lastName,
-                        phone_number: phone,
-                        email: email
-        })
-      });
+            try {
+                const res = await fetch(`${ENQUIRIES_API}/${encodeURIComponent(id)}`, {
+                    method: "PUT",
+                    headers: {
+                        "Content-Type": "application/json",
+                        Accept: "application/json",
+                    },
+                    credentials: "same-origin",
+                    body: JSON.stringify({
+                        enquiry_details: {
+                            first_name: firstName,
+                            last_name: lastName,
+                            phone: phone,
+                            email: email,
+                        },
+                    }),
+                });
 
                 const response = await res.json();
                 if (!res.ok || !response.success) {
@@ -671,7 +666,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
                 showSuccessNotification("Enquiry updated successfully");
                 closeModal(editModal);
-                setTimeout(() => { window.location.reload(); }, 500);
+                await loadEnquiriesFromApi();
+                saveEditBtn.disabled = false;
             } catch (err) {
                 console.error("Save error:", err);
                 alert("Server error while updating enquiry");
@@ -700,18 +696,19 @@ document.addEventListener("DOMContentLoaded", () => {
         confirmDeleteBtn.addEventListener("click", async () => {
             if (!deleteTargetId) return;
             try {
-                const res = await fetch(`/delete-enquiry/${encodeURIComponent(deleteTargetId)}`, { 
-                    method: "DELETE", 
-                    headers: { "Content-Type": "application/json" }
+                const res = await fetch(`${ENQUIRIES_API}/${encodeURIComponent(deleteTargetId)}`, {
+                    method: "DELETE",
+                    headers: { "Content-Type": "application/json", Accept: "application/json" },
+                    credentials: "same-origin",
                 });
                 const data = await res.json();
-                if (!res.ok || !data.success) { 
-                    alert(data.message || "Delete failed"); 
-                    return; 
+                if (!res.ok || !data.success) {
+                    alert(data.message || "Delete failed");
+                    return;
                 }
                 showSuccessNotification("Enquiry deleted successfully");
                 closeModal(deleteModal);
-                setTimeout(() => window.location.reload(), 500);
+                await loadEnquiriesFromApi();
             } catch { 
                 alert("Network error. Try again."); 
             }
@@ -781,17 +778,18 @@ document.addEventListener("DOMContentLoaded", () => {
         currentEnquiryId = enquiryId;
 
         try {
-            // ✅ Use the CORRECT endpoint
-            const res = await fetch(`/get-enquiry-add-items/${encodeURIComponent(enquiryId)}`);
-      const data = await res.json();
+            const res = await fetch(`${ENQUIRIES_API}/${encodeURIComponent(enquiryId)}`, {
+                headers: { Accept: "application/json" },
+                credentials: "same-origin",
+            });
+            const data = await res.json();
 
-            if(!data.success) { 
+            if (!data.success || !data.enquiry) {
                 showErrorToast("No items found");
-                return; 
+                return;
             }
 
-            // ✅ Get items directly - NO FILTERING
-            const items = data.items || {};
+            const items = data.enquiry.items || {};
             
             if (Object.keys(items).length === 0) {
                 showErrorToast("This enquiry has no items");
@@ -1052,17 +1050,22 @@ console.log("Length:", currentItems.length);
         };
 
         try {
-            const res = await fetch(`/update-enquiry-items/${encodeURIComponent(currentEnquiryId)}`, {
-                method: "POST",
-                headers: {"Content-Type": "application/json"},
-                body: JSON.stringify({ items: newEnquiryData[currentEnquiryId].items })
+            const res = await fetch(`${ENQUIRIES_API}/${encodeURIComponent(currentEnquiryId)}`, {
+                method: "PUT",
+                headers: {
+                    "Content-Type": "application/json",
+                    Accept: "application/json",
+                },
+                credentials: "same-origin",
+                body: JSON.stringify({ items: newEnquiryData[currentEnquiryId].items }),
             });
             const result = await res.json();
-            if(result.success){
+            if (result.success) {
                 alert("Items saved successfully!");
-                window.location.href = "/enquiry-list";
+                closeProductModal();
+                await loadEnquiriesFromApi();
             } else {
-                alert("Failed to save: " + result.message);
+                alert("Failed to save: " + (result.message || "Unknown error"));
             }
         } catch(err){
             console.error(err);

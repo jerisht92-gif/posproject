@@ -134,3 +134,7 @@ Body (JSON) — all keys optional:
 - `POST /update-enquiry/<enquiry_id>`, `DELETE /delete-enquiry/<enquiry_id>` — UI/AJAX style  
 
 Prefer **`/api/enquiries/...`** for full CRUD in Postman.
+
+### Browser UI (Enquiry List page)
+
+The **Enquiry List** screen (`/enquiry-list`) loads and mutates data through the **same** `/api/enquiries` endpoints in `static/enquiry-list.js` (list, get one for edit / view products, PUT for edit & line items, DELETE for row delete).
