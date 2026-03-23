@@ -33,7 +33,8 @@ from reportlab.lib.units import inch, mm  # type: ignore[import]
 from reportlab.pdfbase import pdfmetrics  # type: ignore[import]
 from reportlab.pdfbase.ttfonts import TTFont  # type: ignore[import]
 from reportlab.pdfbase.pdfmetrics import registerFontFamily  # type: ignore[import]
-from dotenv import load_dotenv
+from dotenv import load_dotenv  # env loader
+from sqlalchemy import create_engine
 
 # PDF
 from flask import make_response, request
@@ -49,10 +50,126 @@ from email.mime.text import MIMEText
 import string
 from collections import defaultdict
 
+import psycopg2
+from psycopg2 import pool as psycopg2_pool
+import atexit
+
+DB_POOL = None
+
+
+class _PooledConnection:
+    """Proxy connection that returns underlying conn to pool on close()."""
+
+    def __init__(self, conn, pool_obj):
+        self._conn = conn
+        self._pool = pool_obj
+
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
+
+    def close(self):
+        if self._conn is None:
+            return
+        try:
+            # Keep pooled connections clean if caller forgot to commit/rollback.
+            if getattr(self._conn, "status", None) != psycopg2.extensions.STATUS_READY:
+                self._conn.rollback()
+        except Exception:
+            pass
+        try:
+            self._pool.putconn(self._conn)
+        finally:
+            self._conn = None
+
+
+def _db_conn_params():
+    db_host = os.getenv("DB_HOST") or os.getenv("host") or "localhost"
+    db_name = os.getenv("DB_NAME") or os.getenv("dbname") or "POS_Billing"
+    db_user = os.getenv("DB_USER") or os.getenv("user") or "postgres"
+    db_pass = os.getenv("DB_PASSWORD") or os.getenv("password") or "Pos@123"
+    db_port = int(os.getenv("DB_PORT") or os.getenv("port") or 5432)
+    db_sslmode = os.getenv("DB_SSLMODE") or ("require" if "supabase.co" in (db_host or "") else "prefer")
+    db_connect_timeout = int(os.getenv("DB_CONNECT_TIMEOUT") or 5)
+    return {
+        "host": db_host,
+        "database": db_name,
+        "user": db_user,
+        "password": db_pass,
+        "port": db_port,
+        "sslmode": db_sslmode,
+        "connect_timeout": db_connect_timeout,
+    }
+
+
+def _init_db_pool():
+    """Initialize global postgres pool once (lazy)."""
+    global DB_POOL
+    if DB_POOL is not None:
+        return DB_POOL
+    min_conn = int(os.getenv("DB_POOL_MINCONN") or 1)
+    max_conn = int(os.getenv("DB_POOL_MAXCONN") or 20)
+    DB_POOL = psycopg2_pool.ThreadedConnectionPool(min_conn, max_conn, **_db_conn_params())
+    return DB_POOL
+
+
+def _close_db_pool():
+    global DB_POOL
+    if DB_POOL is not None:
+        try:
+            DB_POOL.closeall()
+        finally:
+            DB_POOL = None
+
+
+atexit.register(_close_db_pool)
+
+
+def get_db_connection():
+    """Get DB connection from global pool; fallback to direct connect."""
+    try:
+        p = _init_db_pool()
+        conn = p.getconn()
+        return _PooledConnection(conn, p)
+    except Exception:
+        # Fallback if pool init/get fails for any reason.
+        return psycopg2.connect(**_db_conn_params())
+
 # Base directory for building absolute paths
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 load_dotenv()  # Load variables from .env if present
+
+# Pre-warm DB pool on startup to reduce first-login latency.
+try:
+    _init_db_pool()
+except Exception as e:
+    print(f"DB pool warmup skipped: {e}")
+
+# =========================================
+# ✅ SQLALCHEMY ENGINE (optional)
+# - Used for Supabase/Postgres connectivity
+# - Driven by lowercase keys in .env: user/password/host/port/dbname
+# - Exposes `engine` for scripts like `main.py`
+# =========================================
+SQLALCHEMY_ENGINE = None
+engine = None
+
+_USER = os.getenv("user")
+_PASSWORD = os.getenv("password")
+_HOST = os.getenv("host")
+_PORT = os.getenv("port")
+_DBNAME = os.getenv("dbname")
+
+if _USER and _PASSWORD and _HOST and _PORT and _DBNAME and _PASSWORD != "[YOUR-PASSWORD]":
+    _DATABASE_URL = (
+        f"postgresql+psycopg2://{_USER}:{_PASSWORD}@{_HOST}:{_PORT}/{_DBNAME}?sslmode=require"
+    )
+    try:
+        SQLALCHEMY_ENGINE = create_engine(_DATABASE_URL)
+        engine = SQLALCHEMY_ENGINE
+    except Exception as e:
+        # Keep app importable even if DB env is not configured yet.
+        print(f"Failed to create SQLAlchemy engine: {e}")
 
 
 # =========================================
@@ -983,6 +1100,83 @@ def check_your_mail_page():
 # =========================================
 # 3. MASTERS — Manage Users
 # =========================================
+def _db_fetch_users_ordered(include_id: bool = False):
+    """Return users in the same order as Manage Users table (latest first)."""
+    conn = get_db_connection()
+    cur = conn.cursor()
+    if include_id:
+        cur.execute(
+            """
+            SELECT id, name, email, phone, role, first_name, last_name, country_code,
+                   contact_number, branch, department, reporting_to, available_branches, employee_id
+            FROM users
+            ORDER BY id DESC
+            """
+        )
+        rows = cur.fetchall()
+        users = []
+        for r in rows:
+            users.append(
+                {
+                    "id": r[0],
+                    "name": r[1],
+                    "email": r[2],
+                    "phone": r[3],
+                    "role": r[4],
+                    "first_name": r[5],
+                    "last_name": r[6],
+                    "country_code": r[7],
+                    "contact_number": r[8],
+                    "branch": r[9],
+                    "department": r[10],
+                    "reporting_to": r[11],
+                    "available_branches": str(r[12]) if r[12] is not None else "",
+                    "employee_id": r[13],
+                }
+            )
+    else:
+        cur.execute("SELECT name, email, phone, role FROM users ORDER BY id DESC")
+        rows = cur.fetchall()
+        users = [{"name": r[0], "email": r[1], "phone": r[2], "role": r[3]} for r in rows]
+    cur.close()
+    conn.close()
+    return users
+
+
+def _db_get_user_by_email(email: str):
+    """Get single DB user row by email (case-insensitive)."""
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT id, name, email, phone, role
+        FROM users
+        WHERE LOWER(email) = LOWER(%s)
+        LIMIT 1
+        """,
+        ((email or "").strip(),),
+    )
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    if not row:
+        return None
+    return {"id": row[0], "name": row[1], "email": row[2], "phone": row[3], "role": row[4]}
+
+
+def _db_sync_users_id_sequence(cur):
+    """Fix out-of-sync users.id sequence (common after manual imports)."""
+    cur.execute(
+        """
+        SELECT setval(
+            pg_get_serial_sequence('users', 'id'),
+            COALESCE((SELECT MAX(id) FROM users), 0) + 1,
+            false
+        )
+        """
+    )
+
+
 @app.route("/manage-users")
 def manage_users():
     user_email = session.get("user")
@@ -991,7 +1185,8 @@ def manage_users():
             return jsonify({"success": False, "message": "Session expired"}), 401
         return redirect(url_for("login", message="session_expired"))
 
-    users = load_users()
+    users = _db_fetch_users_ordered(include_id=False)
+
     user_name = "User"
     user_role = "User"
 
@@ -2191,6 +2386,7 @@ def reset_password_submit():
         return jsonify({"status": "error", "message": "Server error while updating password."}), 500
 
 
+
 # =========================================
 # 3. MASTERS — Manage Users — Create User
 # =========================================
@@ -2203,18 +2399,27 @@ def create_user():
             return jsonify({"success": False, "message": "Session expired"}), 401
         return redirect(url_for("login", message="session_expired"))
 
-    users = load_users()
+    # ✅ DB USER FETCH
+    
 
-    user_name = "User"
-    user_role = "User"
+    # ✅ GET CURRENT USER FROM DB
+    conn = get_db_connection()
+    cursor = conn.cursor()
 
-    for u in users:
-        if isinstance(u, dict) and (u.get("email") or "").lower() == user_email.lower():
-            user_name = u.get("name") or "User"
-            user_role = u.get("role") or "User"
-            break
+    cursor.execute("""
+        SELECT name, role FROM users WHERE LOWER(email) = LOWER(%s)
+    """, (user_email,))
 
-    # JSON metadata for Fetch/XHR on Create User page
+    current_user = cursor.fetchone()
+
+    cursor.close()
+    conn.close()
+
+    if current_user:
+        user_name, user_role = current_user
+    else:
+        user_name = "User"
+        user_role = "User"
     if request.method == "GET" and wants_json():
         return jsonify({
             "success": True,
@@ -2374,28 +2579,30 @@ def create_user():
         errors.append("Employee ID is required")
     elif not re.match(r"^[A-Za-z0-9\-]{1,20}$", employee_id):
         errors.append("Employee ID may have letters, numbers and '-' (max 20 characters)")
+    # 🔥 DB DUPLICATE CHECK
+    conn = get_db_connection()
+    cursor = conn.cursor()
 
-    # Check for duplicate email
-    if email:
-        for u in users:
-            if isinstance(u, dict) and (u.get("email") or "").strip().lower() == email.lower():
-                errors.append("Email already exists")
-                break
+    cursor.execute("SELECT email, contact_number, employee_id FROM users")
+    db_users = cursor.fetchall()
 
-    # Check for duplicate contact number
-    if contact_number:
-        for u in users:
-            if isinstance(u, dict) and (u.get("contact_number") or "") == contact_number:
-                errors.append("Contact number already exists")
-                break
+    for u in db_users:
+        db_email = (u[0] or "").lower()
+        db_contact = u[1]
+        db_emp_id = u[2]
 
-    # Check for duplicate employee ID
-    if employee_id:
-        for u in users:
-            if isinstance(u, dict) and (u.get("employee_id") or "") == employee_id:
-                errors.append("Employee ID already exists")
-                break
+        if email.lower() == db_email:
+            errors.append("Email already exists")
 
+        if contact_number == db_contact:
+            errors.append("Contact number already exists")
+
+        if employee_id == db_emp_id:
+            errors.append("Employee ID already exists")
+
+    cursor.close()
+    conn.close()
+   
     # Return errors if any
     if errors:
         if is_json_request:
@@ -2409,6 +2616,11 @@ def create_user():
     full_name = (first_name + " " + last_name).strip()
     full_phone = f"{country_code}{contact_number}" if country_code and contact_number else contact_number
     stored_password = new_password or DEFAULT_BRANCH_USER_PASSWORD
+
+
+
+
+
 
     new_user = {
         "name": full_name,
@@ -2427,8 +2639,63 @@ def create_user():
         "password": stored_password,
     }
 
-    users.append(new_user)
-    save_users(users)
+    # data = request.get_json() if request.is_json else request.form
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    print("DEBUG NAME:", full_name)
+    print("DEBUG PHONE:", full_phone)
+
+    insert_sql = """
+    INSERT INTO users (
+        name, phone, first_name, last_name, email,
+        country_code, contact_number, branch, department,
+        role, reporting_to, available_branches, employee_id, password
+    )
+    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+    """
+    insert_vals = (
+        full_name,
+        full_phone,
+        first_name,
+        last_name,
+        email,
+        country_code,
+        contact_number,
+        branch,
+        department,
+        role,
+        reporting_to,
+        int(available_branches),
+        employee_id,
+        stored_password,
+    )
+    try:
+        cursor.execute(insert_sql, insert_vals)
+        conn.commit()
+    except psycopg2.errors.UniqueViolation as e:
+        # If users.id sequence is behind, sync once and retry.
+        conn.rollback()
+        if "users_pkey" in str(e):
+            _db_sync_users_id_sequence(cursor)
+            conn.commit()
+            cursor.execute(insert_sql, insert_vals)
+            conn.commit()
+        else:
+            raise
+    except Exception as e:
+        conn.rollback()
+        if is_json_request:
+            return jsonify({"success": False, "message": f"Failed to create user: {e}"}), 500
+        flash("Failed to create user. Please try again.", "error")
+        return redirect(url_for("create_user"))
+    finally:
+        cursor.close()
+        conn.close()
+
+
+
 
     # Return appropriate response
     if is_json_request:
@@ -2456,8 +2723,8 @@ def create_user():
         return redirect(url_for("manage_users"))
 
 def normalize_role(role: str) -> str:
-    return (role or "").strip().lower().replace(" ", "").replace("_", "")
-# =========================================
+    return (role or "").strip().lower().replace(" ", "").replace("_", "")# =========================================
+
 # 3. MASTERS — Manage Users — Update User
 # =========================================
 @app.route("/update-user", methods=["POST"])
@@ -2465,27 +2732,6 @@ def update_user():
     user_email = session.get("user")
     if not user_email:
         return jsonify({"success": False, "message": "Session expired"}), 401
-
-    users = load_users()
-
-    current_email = (user_email or "").strip().lower()
-    current_user = None
-
-    for usr in users:
-        if not isinstance(usr, dict):
-            continue
-        u_email = (usr.get("email") or "").strip().lower()
-        if u_email == current_email:
-            current_user = usr
-            break
-
-    if not current_user:
-        return jsonify({"success": False, "message": "Current user not found"}), 403
-
-    current_role = (current_user.get("role") or "").strip().lower()
-    current_role = normalize_role(current_user.get("role"))
-    if current_role not in ["superadmin", "admin"]:
-        return jsonify({"success": False, "message": "Only Super Admin / Admin can edit users."}), 403
 
     data = request.get_json(silent=True) or {}
     try:
@@ -2496,20 +2742,45 @@ def update_user():
     if idx < 0:
         return jsonify({"success": False, "message": "Invalid index"}), 400
 
-    if idx >= len(users):
-        return jsonify({"success": False, "message": "User index out of range"}), 400
+    name = (data.get("name") or "").strip()
+    email = (data.get("email") or "").strip()
+    phone = (data.get("phone") or "").strip()
+    role = (data.get("role") or "").strip() or "Admin"
 
-    u = users[idx]
-    if not isinstance(u, dict):
-        return jsonify({"success": False, "message": "User record invalid"}), 400
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        # one lightweight role check query
+        cur.execute(
+            "SELECT role FROM users WHERE LOWER(email)=LOWER(%s) LIMIT 1",
+            ((user_email or "").strip(),),
+        )
+        row = cur.fetchone()
+        if not row:
+            return jsonify({"success": False, "message": "Current user not found"}), 403
+        if normalize_role(row[0]) not in ["superadmin", "admin"]:
+            return jsonify({"success": False, "message": "Only Super Admin / Admin can edit users."}), 403
 
-    u["name"]  = (data.get("name") or "").strip()
-    u["email"] = (data.get("email") or "").strip()
-    u["phone"] = (data.get("phone") or "").strip()
-    u["role"]  = (data.get("role") or "").strip() or "Admin"
+        # map current table index -> DB id
+        cur.execute("SELECT id FROM users ORDER BY id DESC OFFSET %s LIMIT 1", (idx,))
+        target = cur.fetchone()
+        if not target:
+            return jsonify({"success": False, "message": "User index out of range"}), 400
+        user_id = target[0]
 
-    save_users(users)
-    return jsonify({"success": True, "message": "User updated"}), 200
+        cur.execute(
+            """
+            UPDATE users
+            SET name=%s, email=%s, phone=%s, role=%s
+            WHERE id=%s
+            """,
+            (name, email, phone, role, user_id),
+        )
+        conn.commit()
+        return jsonify({"success": True, "message": "User updated"}), 200
+    finally:
+        cur.close()
+        conn.close()
 
 
 # =========================================
@@ -5767,35 +6038,63 @@ def login_post():
             return jsonify({"success": False, "message": "Password is required"}), 400
 
         # Load users and failed attempts with error handling
+        
+        # ✅ DB LOGIN
         try:
-            users = load_users()
-            failed_attempts = load_failed_attempts()
-        except Exception as e:  # pragma: no cover - defensive
-            print(f"❌ Error loading users/failed attempts: {e}")
-            return (
-                jsonify(
-                    {
-                        "success": False,
-                        "message": "Server error. Please try again later.",
-                    }
-                ),
-                500,
-            )
+            conn = get_db_connection()
+            cursor = conn.cursor()
 
-        # Find user
-        user = next(
-            (
-                u
-                for u in users
-                if (u.get("email") or "").strip().lower() == email
-            ),
-            None,
-        )
-        if not user:
-            return (
-                jsonify({"success": False, "message": "User not found"}),
-                404,
+            # Fast path: index-friendly exact match (all new emails are stored lowercase).
+            cursor.execute(
+                """
+                SELECT name, role, password FROM users
+                WHERE email = %s
+                LIMIT 1
+                """,
+                (email,),
             )
+            db_user = cursor.fetchone()
+
+            # Backward compatibility: fallback for old mixed-case rows.
+            if not db_user:
+                cursor.execute(
+                    """
+                    SELECT name, role, password FROM users
+                    WHERE LOWER(email) = LOWER(%s)
+                    LIMIT 1
+                    """,
+                    (email,),
+                )
+                db_user = cursor.fetchone()
+
+            cursor.close()
+            conn.close()
+
+        except Exception as e:
+            print("❌ DB error:", e)
+            return jsonify({"success": False, "message": "Database error"}), 500
+
+
+        # ❌ User not found
+        if not db_user:
+            return jsonify({"success": False, "message": "User not found"}), 404
+
+
+        # Extract values
+        db_name, db_role, db_password = db_user
+
+
+        # ❌ Password wrong
+        if db_password != password:
+            return jsonify({"success": False, "message": "Incorrect password"}), 401
+
+        # ✅ Login success
+        session.permanent = bool(remember_me)
+        session["user"] = email
+        session["role"] = db_role
+        session["last_active"] = time.time()
+
+        return jsonify({"success": True, "message": "Login successful"}), 200
 
         # Check if account is locked
         info = failed_attempts.get(email, {})
@@ -6239,7 +6538,7 @@ def api_get_users():
     if not user_email:
         return jsonify({"success": False, "message": "Session expired. Please login first."}), 401
 
-    users = load_users()
+    users = _db_fetch_users_ordered(include_id=False)
 
     user_name = "User"
     user_role = "User"
@@ -6275,14 +6574,43 @@ def api_get_user(user_index):
     if not user_email:
         return jsonify({"success": False, "message": "Session expired. Please login first."}), 401
 
-    users = load_users()
-
-    if user_index < 0 or user_index >= len(users):
+    if user_index < 0:
         return jsonify({"success": False, "message": "User index out of range"}), 404
 
-    user = users[user_index]
-    if not isinstance(user, dict):
-        return jsonify({"success": False, "message": "Invalid user data"}), 400
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            SELECT name, email, phone, role, first_name, last_name, country_code,
+                   contact_number, branch, department, reporting_to, available_branches, employee_id
+            FROM users
+            ORDER BY id DESC
+            OFFSET %s LIMIT 1
+            """,
+            (user_index,),
+        )
+        row = cur.fetchone()
+        if not row:
+            return jsonify({"success": False, "message": "User index out of range"}), 404
+        user = {
+            "name": row[0],
+            "email": row[1],
+            "phone": row[2],
+            "role": row[3],
+            "first_name": row[4],
+            "last_name": row[5],
+            "country_code": row[6],
+            "contact_number": row[7],
+            "branch": row[8],
+            "department": row[9],
+            "reporting_to": row[10],
+            "available_branches": str(row[11]) if row[11] is not None else "",
+            "employee_id": row[12],
+        }
+    finally:
+        cur.close()
+        conn.close()
 
     return jsonify({
         "success": True,
@@ -6402,35 +6730,68 @@ def api_update_user(user_index):
     if not user_email:
         return jsonify({"success": False, "message": "Session expired. Please login first."}), 401
 
-    users = load_users()
-    current_user = next((u for u in users if isinstance(u, dict) and (u.get("email") or "").strip().lower() == user_email.strip().lower()), None)
-    if not current_user or normalize_role(current_user.get("role")) not in ["superadmin", "admin"]:
-        return jsonify({"success": False, "message": "Only Super Admin/Admin can edit users."}), 403
-
-    if user_index < 0 or user_index >= len(users):
+    if user_index < 0:
         return jsonify({"success": False, "message": "User index out of range"}), 404
 
     data = request.get_json(silent=True) or {}
-    u = users[user_index]
-    if data.get("name") is not None:
-        u["name"] = str(data.get("name", "")).strip()
-    if data.get("email") is not None:
-        u["email"] = str(data.get("email", "")).strip()
-    if data.get("phone") is not None:
-        u["phone"] = str(data.get("phone", "")).strip()
-    if data.get("role") is not None:
-        u["role"] = str(data.get("role", "")).strip() or "User"
-    if data.get("department") is not None:
-        u["department"] = str(data.get("department", "")).strip()
-    if data.get("branch") is not None:
-        u["branch"] = str(data.get("branch", "")).strip()
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            "SELECT role FROM users WHERE LOWER(email)=LOWER(%s) LIMIT 1",
+            ((user_email or "").strip(),),
+        )
+        current = cur.fetchone()
+        if not current or normalize_role(current[0]) not in ["superadmin", "admin"]:
+            return jsonify({"success": False, "message": "Only Super Admin/Admin can edit users."}), 403
 
-    save_users(users)
-    return jsonify({
-        "success": True,
-        "message": "User updated",
-        "user": user_public_dict(users[user_index]),
-    }), 200
+        cur.execute(
+            """
+            SELECT id, name, email, phone, role, department, branch
+            FROM users
+            ORDER BY id DESC
+            OFFSET %s LIMIT 1
+            """,
+            (user_index,),
+        )
+        base = cur.fetchone()
+        if not base:
+            return jsonify({"success": False, "message": "User index out of range"}), 404
+
+        user_id = base[0]
+        new_name = str(data.get("name", base[1] or "")).strip()
+        new_email = str(data.get("email", base[2] or "")).strip()
+        new_phone = str(data.get("phone", base[3] or "")).strip()
+        new_role = str(data.get("role", base[4] or "User")).strip() or "User"
+        new_department = str(data.get("department", base[5] or "")).strip()
+        new_branch = str(data.get("branch", base[6] or "")).strip()
+
+        cur.execute(
+            """
+            UPDATE users
+            SET name=%s, email=%s, phone=%s, role=%s, department=%s, branch=%s
+            WHERE id=%s
+            """,
+            (new_name, new_email, new_phone, new_role, new_department, new_branch, user_id),
+        )
+        conn.commit()
+
+        refreshed = {
+            "name": new_name,
+            "email": new_email,
+            "phone": new_phone,
+            "role": new_role,
+            "department": new_department,
+            "branch": new_branch,
+        }
+        return jsonify({
+            "success": True,
+            "message": "User updated",
+            "user": user_public_dict(refreshed),
+        }), 200
+    finally:
+        cur.close()
+        conn.close()
 
 
 # =========================================
@@ -6443,21 +6804,39 @@ def api_delete_user(user_index):
     if not user_email:
         return jsonify({"success": False, "message": "Session expired. Please login first."}), 401
 
-    users = load_users()
-    current_user = next((u for u in users if isinstance(u, dict) and (u.get("email") or "").strip().lower() == user_email.strip().lower()), None)
-    if not current_user or normalize_role(current_user.get("role")) not in ["superadmin", "admin"]:
-        return jsonify({"success": False, "message": "Only Super Admin/Admin can delete users."}), 403
-
-    if user_index < 0 or user_index >= len(users):
+    if user_index < 0:
         return jsonify({"success": False, "message": "User index out of range"}), 404
 
-    deleted_user = users.pop(user_index)
-    save_users(users)
-    return jsonify({
-        "success": True,
-        "message": "User deleted successfully",
-        "deleted_email": deleted_user.get("email", "")
-    }), 200
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            "SELECT role FROM users WHERE LOWER(email)=LOWER(%s) LIMIT 1",
+            ((user_email or "").strip(),),
+        )
+        current = cur.fetchone()
+        if not current or normalize_role(current[0]) not in ["superadmin", "admin"]:
+            return jsonify({"success": False, "message": "Only Super Admin/Admin can delete users."}), 403
+
+        cur.execute(
+            "SELECT id, email FROM users ORDER BY id DESC OFFSET %s LIMIT 1",
+            (user_index,),
+        )
+        target = cur.fetchone()
+        if not target:
+            return jsonify({"success": False, "message": "User index out of range"}), 404
+
+        user_id, deleted_email = target
+        cur.execute("DELETE FROM users WHERE id=%s", (user_id,))
+        conn.commit()
+        return jsonify({
+            "success": True,
+            "message": "User deleted successfully",
+            "deleted_email": deleted_email or "",
+        }), 200
+    finally:
+        cur.close()
+        conn.close()
 
 
 # 3. MASTERS — Manage Users — Delete API
@@ -6468,40 +6847,44 @@ def delete_user(user_id):
         if not user_email:
             return jsonify({"success": False, "message": "Not logged in"}), 401
 
-        users = load_users()
+        conn = get_db_connection()
+        cur = conn.cursor()
+        try:
+            cur.execute(
+                "SELECT role FROM users WHERE LOWER(email)=LOWER(%s) LIMIT 1",
+                ((user_email or "").strip(),),
+            )
+            current = cur.fetchone()
+            if not current:
+                return jsonify({"success": False, "message": "Current user not found"}), 403
+            if normalize_role(current[0]) != "superadmin":
+                return jsonify({
+                    "success": False,
+                    "message": "Only super admins can delete users."
+                }), 403
 
-        current_email = (user_email or "").strip().lower()
-        current_user = None
+            if user_id < 0:
+                return jsonify({"success": False, "message": "Invalid user ID"}), 404
 
-        for u in users:
-            if not isinstance(u, dict):
-                continue
-            u_email = (u.get("email") or "").strip().lower()
-            if u_email == current_email:
-                current_user = u
-                break
+            cur.execute(
+                "SELECT id, email FROM users ORDER BY id DESC OFFSET %s LIMIT 1",
+                (user_id,),
+            )
+            target = cur.fetchone()
+            if not target:
+                return jsonify({"success": False, "message": "Invalid user ID"}), 404
+            db_id, deleted_email = target
 
-        if not current_user:
-            return jsonify({"success": False, "message": "Current user not found"}), 403
-
-        current_role = (current_user.get("role") or "").strip().lower()
-        if current_role != "admin":
+            cur.execute("DELETE FROM users WHERE id=%s", (db_id,))
+            conn.commit()
             return jsonify({
-                "success": False,
-                "message": "Only admins can delete users."
-            }), 403
-
-        if user_id < 0 or user_id >= len(users):
-            return jsonify({"success": False, "message": "Invalid user ID"}), 404
-
-        deleted_user = users.pop(user_id)
-        save_users(users)
-
-        return jsonify({
-            "success": True,
-            "message": "User deleted successfully",
-            "deleted_email": deleted_user.get("email", "")
-        }), 200
+                "success": True,
+                "message": "User deleted successfully",
+                "deleted_email": deleted_email or ""
+            }), 200
+        finally:
+            cur.close()
+            conn.close()
 
     except Exception as e:
         print("❌ Delete user error:", e)
