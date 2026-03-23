@@ -87,6 +87,19 @@ def _supabase_project_ref_from_host(host):
     return m.group(1) if m else None
 
 
+def _alternate_supabase_pooler_host(host):
+    """
+    Toggle pooler host prefix between aws-0 and aws-1 for same region.
+    Some projects are provisioned on one prefix only.
+    """
+    h = (host or "").strip().lower()
+    m = re.match(r"^aws-(0|1)-([a-z0-9-]+)\.pooler\.supabase\.com$", h)
+    if not m:
+        return None
+    alt_prefix = "1" if m.group(1) == "0" else "0"
+    return f"aws-{alt_prefix}-{m.group(2)}.pooler.supabase.com"
+
+
 class _PooledConnection:
     """Proxy connection that returns underlying conn to pool on close()."""
 
@@ -293,6 +306,20 @@ def get_db_connection():
         try:
             return psycopg2.connect(**params)
         except Exception as e2:
+            # Supabase pooler can return "Tenant or user not found" when aws-0/aws-1 host
+            # prefix is mismatched for a project. Try the alternate host once.
+            msg = str(e2)
+            host = str(params.get("host") or "")
+            alt_host = _alternate_supabase_pooler_host(host)
+            if alt_host and "Tenant or user not found" in msg:
+                alt_params = dict(params)
+                alt_params["host"] = alt_host
+                alt_params.pop("hostaddr", None)  # recalculate DNS/IP for alternate host
+                try:
+                    print(f"Retrying DB connect with alternate pooler host: {alt_host}")
+                    return psycopg2.connect(**alt_params)
+                except Exception:
+                    pass
             print(f"Direct DB connect failed: {e2}")
             print(traceback.format_exc())
             raise

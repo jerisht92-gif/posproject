@@ -1,6 +1,10 @@
 # Python 3.10
 # Create & activate a 3.10 virtualenv, then:
 #   pip install -r requirements.txt
+#
+# Supabase / SQLAlchemy quick install (equivalent):
+#   pip install python-dotenv sqlalchemy psycopg2-binary
+# (Use psycopg2-binary on Windows; plain psycopg2 needs build tools.)
 
 # --- Core web framework ---
 Flask>=2.3.0,<4.0
