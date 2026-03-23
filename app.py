@@ -53,6 +53,7 @@ from collections import defaultdict
 import psycopg2
 from psycopg2 import pool as psycopg2_pool
 import atexit
+import traceback
 
 DB_POOL = None
 
@@ -91,6 +92,11 @@ def _db_conn_params():
         or os.getenv("SUPABASE_DB_URL")
     )
     dsn = (dsn or "").strip()
+    # psycopg2 expects postgres:// or postgresql:// (not sqlalchemy dialect suffixes)
+    if dsn.startswith("postgresql+psycopg2://"):
+        dsn = "postgresql://" + dsn[len("postgresql+psycopg2://") :]
+    elif dsn.startswith("postgres+psycopg2://"):
+        dsn = "postgres://" + dsn[len("postgres+psycopg2://") :]
 
     db_host = (os.getenv("DB_HOST") or os.getenv("host") or "localhost").strip()
     db_name = (os.getenv("DB_NAME") or os.getenv("dbname") or "POS_Billing").strip()
@@ -146,13 +152,20 @@ atexit.register(_close_db_pool)
 
 def get_db_connection():
     """Get DB connection from global pool; fallback to direct connect."""
+    params = _db_conn_params()
     try:
         p = _init_db_pool()
         conn = p.getconn()
         return _PooledConnection(conn, p)
-    except Exception:
+    except Exception as e:
+        print(f"DB pool get failed, falling back to direct connect: {e}")
         # Fallback if pool init/get fails for any reason.
-        return psycopg2.connect(**_db_conn_params())
+        try:
+            return psycopg2.connect(**params)
+        except Exception as e2:
+            print(f"Direct DB connect failed: {e2}")
+            print(traceback.format_exc())
+            raise
 
 # Base directory for building absolute paths
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
