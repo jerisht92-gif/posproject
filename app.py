@@ -105,12 +105,19 @@ class _PooledConnection:
 
 def _db_conn_params():
     # Deployment-friendly DSN support (Vercel/PythonAnywhere/custom envs)
-    dsn = (
-        os.getenv("DATABASE_URL")
-        or os.getenv("POSTGRES_URL")
-        or os.getenv("POSTGRES_PRISMA_URL")
-        or os.getenv("SUPABASE_DB_URL")
-    )
+    # Prefer pooler/prisma-style URLs first; direct DB URLs can be IPv6-only on some hosts.
+    dsn_env_key = None
+    for k in (
+        "POSTGRES_PRISMA_URL",
+        "SUPABASE_POOLER_URL",
+        "DATABASE_URL",
+        "POSTGRES_URL",
+        "SUPABASE_DB_URL",
+    ):
+        if os.getenv(k):
+            dsn_env_key = k
+            break
+    dsn = (os.getenv(dsn_env_key) if dsn_env_key else "")
     dsn = (dsn or "").strip()
     # psycopg2 expects postgres:// or postgresql:// (not sqlalchemy dialect suffixes)
     if dsn.startswith("postgresql+psycopg2://"):
@@ -128,6 +135,8 @@ def _db_conn_params():
     force_ipv4 = _env_truthy("DB_FORCE_IPV4", True)
 
     if dsn:
+        if dsn_env_key:
+            print(f"DB DSN source: {dsn_env_key}")
         # Some providers use postgres://; psycopg2 accepts both, but normalize anyway.
         if dsn.startswith("postgres://"):
             dsn = "postgresql://" + dsn[len("postgres://") :]
