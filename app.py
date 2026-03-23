@@ -131,11 +131,6 @@ def _db_conn_params():
             break
     dsn = (os.getenv(dsn_env_key) if dsn_env_key else "")
     dsn = (dsn or "").strip()
-    # psycopg2 expects postgres:// or postgresql:// (not sqlalchemy dialect suffixes)
-    if dsn.startswith("postgresql+psycopg2://"):
-        dsn = "postgresql://" + dsn[len("postgresql+psycopg2://") :]
-    elif dsn.startswith("postgres+psycopg2://"):
-        dsn = "postgres://" + dsn[len("postgres+psycopg2://") :]
 
     db_host = (os.getenv("DB_HOST") or os.getenv("host") or "localhost").strip()
     db_name = (os.getenv("DB_NAME") or os.getenv("dbname") or "POS_Billing").strip()
@@ -148,12 +143,42 @@ def _db_conn_params():
     pooler_host = (os.getenv("SUPABASE_POOLER_HOST") or "").strip()
     pooler_port = int(os.getenv("SUPABASE_POOLER_PORT") or 6543)
     supabase_region = (os.getenv("SUPABASE_REGION") or "").strip()
+    deployed_region = (os.getenv("SUPABASE_DEFAULT_POOLER_REGION") or "ap-south-1").strip()
+    is_deployed_runtime = bool(
+        os.getenv("PYTHONANYWHERE_SITE")
+        or os.getenv("PA_SITE")
+        or os.getenv("WEBSITE_HOSTNAME")
+        or os.getenv("RENDER")
+    )
+    # Runtime-aware DSN selection so localhost and deployed can coexist.
+    if is_deployed_runtime and os.getenv("DEPLOY_DB_DSN"):
+        dsn_env_key = "DEPLOY_DB_DSN"
+        dsn = (os.getenv("DEPLOY_DB_DSN") or "").strip()
+    elif (not is_deployed_runtime) and os.getenv("LOCAL_DB_DSN"):
+        dsn_env_key = "LOCAL_DB_DSN"
+        dsn = (os.getenv("LOCAL_DB_DSN") or "").strip()
+    elif (
+        not is_deployed_runtime
+        and dsn_env_key == "DB_DSN"
+        and _env_truthy("LOCAL_PREFER_HOST_CONFIG", True)
+        and not os.getenv("LOCAL_DB_DSN")
+    ):
+        # Keep local dev on host/user/password config unless LOCAL_DB_DSN is set.
+        dsn = ""
+        dsn_env_key = None
+
+    # psycopg2 expects postgres:// or postgresql:// (not sqlalchemy dialect suffixes)
+    if dsn.startswith("postgresql+psycopg2://"):
+        dsn = "postgresql://" + dsn[len("postgresql+psycopg2://") :]
+    elif dsn.startswith("postgres+psycopg2://"):
+        dsn = "postgres://" + dsn[len("postgres+psycopg2://") :]
 
     # Auto-convert direct Supabase host to pooler host when region is provided.
     # We avoid guessing regions because wrong poolers cause "Tenant or user not found".
     project_ref = _supabase_project_ref_from_host(db_host)
-    if not pooler_host and project_ref and supabase_region:
-        pooler_host = f"aws-0-{supabase_region}.pooler.supabase.com"
+    effective_region = supabase_region or (deployed_region if is_deployed_runtime else "")
+    if not pooler_host and project_ref and effective_region:
+        pooler_host = f"aws-0-{effective_region}.pooler.supabase.com"
         pooler_port = int(os.getenv("SUPABASE_POOLER_PORT") or 6543)
         print(f"Using derived Supabase pooler host: {pooler_host}:{pooler_port}")
 
