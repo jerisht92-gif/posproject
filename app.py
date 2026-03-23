@@ -83,13 +83,33 @@ class _PooledConnection:
 
 
 def _db_conn_params():
-    db_host = os.getenv("DB_HOST") or os.getenv("host") or "localhost"
-    db_name = os.getenv("DB_NAME") or os.getenv("dbname") or "POS_Billing"
-    db_user = os.getenv("DB_USER") or os.getenv("user") or "postgres"
-    db_pass = os.getenv("DB_PASSWORD") or os.getenv("password") or "Pos@123"
-    db_port = int(os.getenv("DB_PORT") or os.getenv("port") or 5432)
-    db_sslmode = os.getenv("DB_SSLMODE") or ("require" if "supabase.co" in (db_host or "") else "prefer")
+    # Deployment-friendly DSN support (Vercel/PythonAnywhere/custom envs)
+    dsn = (
+        os.getenv("DATABASE_URL")
+        or os.getenv("POSTGRES_URL")
+        or os.getenv("POSTGRES_PRISMA_URL")
+        or os.getenv("SUPABASE_DB_URL")
+    )
+    dsn = (dsn or "").strip()
+
+    db_host = (os.getenv("DB_HOST") or os.getenv("host") or "localhost").strip()
+    db_name = (os.getenv("DB_NAME") or os.getenv("dbname") or "POS_Billing").strip()
+    db_user = (os.getenv("DB_USER") or os.getenv("user") or "postgres").strip()
+    db_pass = (os.getenv("DB_PASSWORD") or os.getenv("password") or "Pos@123").strip()
+    db_port = int((os.getenv("DB_PORT") or os.getenv("port") or 5432))
+    db_sslmode = (os.getenv("DB_SSLMODE") or ("require" if "supabase.co" in (db_host or "") else "prefer")).strip()
     db_connect_timeout = int(os.getenv("DB_CONNECT_TIMEOUT") or 5)
+
+    if dsn:
+        # Some providers use postgres://; psycopg2 accepts both, but normalize anyway.
+        if dsn.startswith("postgres://"):
+            dsn = "postgresql://" + dsn[len("postgres://") :]
+        return {
+            "dsn": dsn,
+            "connect_timeout": db_connect_timeout,
+            "sslmode": db_sslmode,
+        }
+
     return {
         "host": db_host,
         "database": db_name,
