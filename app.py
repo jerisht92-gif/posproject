@@ -54,8 +54,28 @@ import psycopg2
 from psycopg2 import pool as psycopg2_pool
 import atexit
 import traceback
+import socket
+from urllib.parse import urlparse, unquote
 
 DB_POOL = None
+
+
+def _env_truthy(name, default=True):
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return str(raw).strip().lower() not in {"0", "false", "no", "off", ""}
+
+
+def _resolve_ipv4_hostaddr(host, port):
+    """Resolve host to IPv4 address so deployments without IPv6 can connect."""
+    try:
+        infos = socket.getaddrinfo(host, int(port), socket.AF_INET, socket.SOCK_STREAM)
+        if infos:
+            return infos[0][4][0]
+    except Exception:
+        return None
+    return None
 
 
 class _PooledConnection:
@@ -105,18 +125,37 @@ def _db_conn_params():
     db_port = int((os.getenv("DB_PORT") or os.getenv("port") or 5432))
     db_sslmode = (os.getenv("DB_SSLMODE") or ("require" if "supabase.co" in (db_host or "") else "prefer")).strip()
     db_connect_timeout = int(os.getenv("DB_CONNECT_TIMEOUT") or 5)
+    force_ipv4 = _env_truthy("DB_FORCE_IPV4", True)
 
     if dsn:
         # Some providers use postgres://; psycopg2 accepts both, but normalize anyway.
         if dsn.startswith("postgres://"):
             dsn = "postgresql://" + dsn[len("postgres://") :]
-        return {
-            "dsn": dsn,
-            "connect_timeout": db_connect_timeout,
-            "sslmode": db_sslmode,
-        }
 
-    return {
+        parsed = urlparse(dsn)
+        host = (parsed.hostname or db_host or "").strip()
+        port = int(parsed.port or db_port)
+        database = ((parsed.path or "").lstrip("/") or db_name).strip()
+        user = (unquote(parsed.username) if parsed.username is not None else db_user).strip()
+        password = (unquote(parsed.password) if parsed.password is not None else db_pass).strip()
+
+        params = {
+            "host": host,
+            "database": database,
+            "user": user,
+            "password": password,
+            "port": port,
+            "sslmode": db_sslmode,
+            "connect_timeout": db_connect_timeout,
+        }
+        if force_ipv4 and host and host not in {"localhost", "127.0.0.1"}:
+            hostaddr = _resolve_ipv4_hostaddr(host, port)
+            if hostaddr:
+                params["hostaddr"] = hostaddr
+                print(f"Using IPv4 DB hostaddr for {host}: {hostaddr}")
+        return params
+
+    params = {
         "host": db_host,
         "database": db_name,
         "user": db_user,
@@ -125,6 +164,12 @@ def _db_conn_params():
         "sslmode": db_sslmode,
         "connect_timeout": db_connect_timeout,
     }
+    if force_ipv4 and db_host and db_host not in {"localhost", "127.0.0.1"}:
+        hostaddr = _resolve_ipv4_hostaddr(db_host, db_port)
+        if hostaddr:
+            params["hostaddr"] = hostaddr
+            print(f"Using IPv4 DB hostaddr for {db_host}: {hostaddr}")
+    return params
 
 
 def _init_db_pool():

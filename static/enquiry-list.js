@@ -148,7 +148,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     // ✅ Elements
     // ==========================
     const searchInput = document.getElementById("searchEnquiries");
-    const tableBody = document.getElementById("enquiryTable");
+  const tableBody = document.getElementById("enquiryTable");
     const showingCount = document.getElementById("showingCount");
     const pageInfo = document.getElementById("pageInfo");
     const prevPageBtn = document.getElementById("prevPage");
@@ -451,20 +451,20 @@ document.addEventListener("DOMContentLoaded", async () => {
     // ==========================
     // ✅ Search (client-side; clears pagination while typing)
     // ==========================
-    if (searchInput && tableBody) {
-        searchInput.addEventListener("keyup", () => {
+  if (searchInput && tableBody) {
+    searchInput.addEventListener("keyup", () => {
             const filter = searchInput.value.toLowerCase().trim();
             const rows = getDataRows();
             if (!filter) {
                 renderPagination();
                 return;
             }
-            let visible = 0;
-            rows.forEach((row) => {
-                const show = row.textContent.toLowerCase().includes(filter);
-                row.style.display = show ? "" : "none";
-                if (show) visible++;
-            });
+      let visible = 0;
+      rows.forEach((row) => {
+        const show = row.textContent.toLowerCase().includes(filter);
+        row.style.display = show ? "" : "none";
+        if (show) visible++;
+      });
             if (showingCount) showingCount.textContent = visible > 0 ? `${visible} match(es)` : "0";
             if (pageInfo) pageInfo.textContent = "Search results";
             if (prevPageBtn) prevPageBtn.disabled = true;
@@ -584,7 +584,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     // Input + blur: live validation for each Edit Enquiry field
     [editFirstName, editLastName, editPhoneNumber, editEmail].forEach(el => {
         if (!el) return;
-        el.addEventListener("input", () => {
+    el.addEventListener("input", () => {
             formChanged = true;
             validateEditField(el);
         });
@@ -782,7 +782,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                 headers: { Accept: "application/json" },
                 credentials: "same-origin",
             });
-            const data = await res.json();
+      const data = await res.json();
 
             if (!data.success || !data.enquiry) {
                 showErrorToast("No items found");
