@@ -158,7 +158,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const code = (d.code || "").trim();
       const name = (d.name || "").trim();
       const desc = (d.description || "").trim();
-      const id = d.id != null ? String(d.id) : "";
+      const codeAttr = escapeHtml(code);
 
       tr.innerHTML = `
         <td>${escapeHtml(code)}</td>
@@ -167,10 +167,10 @@ document.addEventListener("DOMContentLoaded", () => {
         <td class="action-cell">
           <div class="action-buttons">
             ${canEditBtn
-              ? `<button class="action-btn edit-btn" type="button" data-id="${escapeHtml(id)}">Edit</button>`
+              ? `<button class="action-btn edit-btn" type="button" data-code="${codeAttr}">Edit</button>`
               : `<button class="action-btn edit-btn-disabled" disabled title="No access">Edit</button>`}
             ${canDeleteBtn
-              ? `<button class="action-btn delete-btn" type="button" data-id="${escapeHtml(id)}">Delete</button>`
+              ? `<button class="action-btn delete-btn" type="button" data-code="${codeAttr}">Delete</button>`
               : `<button class="action-btn delete-btn-disabled" disabled title="Only Super Admin can delete">Delete</button>`}
           </div>
         </td>
@@ -602,7 +602,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const row = btn.closest("tr");
     if (!row) return;
 
-    editId.value   = btn.dataset.id || "";
+    editId.value   = btn.dataset.code || "";
     editCode.value = row.children[0]?.innerText.trim() || "";
     editName.value = row.children[1]?.innerText.trim() || "";
     editDesc.value = row.children[2]?.innerText.trim() || "";
@@ -755,7 +755,7 @@ document.addEventListener("DOMContentLoaded", () => {
       headers: { "Content-Type": "application/json" },
       credentials: "same-origin",
       body: JSON.stringify({
-        id: editId.value,
+        original_code: editId.value,
         code,
         name,
         description: desc,
@@ -811,7 +811,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const cancelDel   = document.getElementById("cancelDeptDeleteBtn");
   const confirmDel  = document.getElementById("confirmDeptDeleteBtn");
 
-  let pendingDeptId = null;
+  let pendingDeptCode = null;
   let lastFocusedDelete = null;
 
   function openDeleteDeptModal() {
@@ -831,7 +831,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!deleteModal) return;
 
     deleteModal.style.display = "none";
-    pendingDeptId = null;
+    pendingDeptCode = null;
 
     // ✅ disable trap
     disableTrap();
@@ -844,10 +844,10 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!delBtn || delBtn.disabled || delBtn.classList.contains("delete-btn-disabled")) return;
 
     const row = delBtn.closest("tr");
-    const deptId = delBtn.getAttribute("data-id");
-    if (!deptId || !row) return;
+    const codeFromBtn = delBtn.getAttribute("data-code");
+    if (!codeFromBtn || !row) return;
 
-    pendingDeptId = deptId;
+    pendingDeptCode = codeFromBtn;
 
     const deptCode = row.children[0]?.innerText.trim() || "this department";
     if (deleteText) {
@@ -864,12 +864,12 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   confirmDel?.addEventListener("click", () => {
-    if (!pendingDeptId) return;
+    if (!pendingDeptCode) return;
 
     fetch("/department-roles/delete", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: pendingDeptId }),
+      body: JSON.stringify({ code: pendingDeptCode }),
     })
       .then((res) => res.json())
       .then((data) => {

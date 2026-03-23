@@ -597,7 +597,7 @@
     "customer_name": "vijayv",
     "currency": "SGD",
     "expected_date": "2026-03-10",
-    "status": "send",
+    "status": "expired",
     "status_date": "2026-03-07T05:51:15.587Z",
     "submitted_by": "Current User",
     "rejection_reason": "",
@@ -647,8 +647,16 @@
         "date": "2026-03-07T05:51:15.587Z",
         "user": "Current User",
         "notes": "Quotation send"
+      },
+      {
+        "status": "expired",
+        "date": "2026-03-23",
+        "time": "13:13:37",
+        "reason": "Auto-expired",
+        "notes": "Expired on 2026-03-23 (valid until 2026-03-22)"
       }
-    ]
+    ],
+    "expired_date": "2026-03-23"
   },
   {
     "quotation_id": "QA-0012",

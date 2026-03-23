@@ -580,20 +580,63 @@ def send_otp_email(to_email, otp):
 # =========================================
 # ✅ DEPARTMENT HELPERS
 # =========================================
+def normalize_department_for_storage(d):
+    """Departments.json stores code, name, branch, description — never id."""
+    if not isinstance(d, dict):
+        return {}
+    return {k: v for k, v in d.items() if k != "id"}
+
+
+def department_for_api(d):
+    """Department dict safe for JSON (no id)."""
+    if not isinstance(d, dict):
+        return {}
+    return {k: v for k, v in d.items() if k != "id"}
+
+
+def _dept_code_key(d):
+    return (d.get("code") or "").strip().lower()
+
+
+def find_department_by_code(departments, code_ref):
+    """Find a department by code (case-insensitive)."""
+    if not code_ref or not isinstance(departments, list):
+        return None
+    cref = str(code_ref).strip().lower()
+    if not cref:
+        return None
+    for d in departments:
+        if isinstance(d, dict) and _dept_code_key(d) == cref:
+            return d
+    return None
+
+
 def load_departments():
     if not os.path.exists(DEPARTMENT_FILE):
         return []
     try:
         with open(DEPARTMENT_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
-            return data if isinstance(data, list) else []
+            if not isinstance(data, list):
+                return []
+            return [normalize_department_for_storage(d) if isinstance(d, dict) else d for d in data]
     except Exception:
         return []
 
 
 def save_departments(departments):
+    """Persist departments without id field."""
+    if not isinstance(departments, list):
+        departments = []
+    normalized = []
+    for d in departments:
+        if isinstance(d, dict):
+            norm = normalize_department_for_storage(d)
+            d.clear()
+            d.update(norm)
+            normalized.append(d)
     with open(DEPARTMENT_FILE, "w", encoding="utf-8") as f:
-        json.dump(departments, f, indent=2, ensure_ascii=False)
+        json.dump(normalized, f, indent=2, ensure_ascii=False)
 
 
 def load_products():
@@ -1151,7 +1194,6 @@ def create_department():
                 )
 
         new_dept = {
-            "id": str(uuid.uuid4()),
             "code": code,
             "name": name,
             "branch": branch,
@@ -1187,26 +1229,29 @@ def edit_department():
 
     try:
         data = request.get_json(silent=True) or {}
-        dept_id = data.get("id")
+        # Original code identifies the row (before rename); legacy clients may send "id" with the old code
+        original_code = (data.get("original_code") or data.get("id") or "").strip()
         code = (data.get("code") or "").strip()
         name = (data.get("name") or "").strip()
         description = data.get("description")
 
-        # Allow 0 as valid id; reject only None or empty string
-        if dept_id is None or (isinstance(dept_id, str) and not dept_id.strip()):
-            return jsonify(success=False, error="Missing department ID"), 400
+        if not original_code:
+            return jsonify(success=False, error="Missing department identifier (original code)"), 400
 
         departments = load_departments()
         if not isinstance(departments, list):
             departments = []
 
-        # Check for duplicates (case-insensitive) - exclude current department (compare as string)
+        current = find_department_by_code(departments, original_code)
+        if not current:
+            return jsonify(success=False, error="Department not found"), 404
+
+        # Check for duplicates (case-insensitive) - exclude current department
         new_code = code.lower()
         new_name = name.lower()
-        dept_id_str = str(dept_id)
-        
+
         for dept in departments:
-            if str(dept.get("id")) == dept_id_str:
+            if dept is current:
                 continue
             existing_code = (dept.get("code") or "").strip().lower()
             existing_name = (dept.get("name") or "").strip().lower()
@@ -1215,18 +1260,10 @@ def edit_department():
             if existing_name == new_name:
                 return jsonify(success=False, error="Department name already exists. Please use a different name."), 409
 
-        updated = False
-        for dept in departments:
-            if str(dept.get("id")) == dept_id_str:
-                dept["code"] = code
-                dept["name"] = name
-                if description is not None:
-                    dept["description"] = description
-                updated = True
-                break
-
-        if not updated:
-            return jsonify(success=False, error="Department ID not found"), 404
+        current["code"] = code
+        current["name"] = name
+        if description is not None:
+            current["description"] = description
 
         save_departments(departments)
         return jsonify(success=True), 200
@@ -1243,15 +1280,16 @@ def delete_department():
         return jsonify({"success": False, "error": "session_expired"}), 401
 
     data = request.get_json(silent=True) or {}
-    dept_id = data.get("id")
+    code_ref = (data.get("code") or data.get("id") or "").strip()
 
-    if not dept_id:
-        return jsonify({"success": False, "error": "missing_id"}), 400
+    if not code_ref:
+        return jsonify({"success": False, "error": "missing_code"}), 400
 
     departments = load_departments()
     before_count = len(departments)
+    cref = code_ref.lower()
 
-    departments = [d for d in departments if str(d.get("id")) != str(dept_id)]
+    departments = [d for d in departments if _dept_code_key(d) != cref]
     after_count = len(departments)
 
     if after_count == before_count:
@@ -1285,7 +1323,7 @@ def api_departments():
     
     return jsonify({
         "success": True,
-        "departments": departments,
+        "departments": [department_for_api(d) for d in departments if isinstance(d, dict)],
         "total": len(departments),
         "current_user": {
             "email": user_email,
@@ -1295,22 +1333,22 @@ def api_departments():
     }), 200
 
 
-@app.route("/api/departments/<dept_id>", methods=["GET"])
-def api_get_department(dept_id):
-    """Get single department by ID"""
+@app.route("/api/departments/<path:dept_ref>", methods=["GET"])
+def api_get_department(dept_ref):
+    """Get single department by code (URL path, case-insensitive)."""
     user_email = session.get("user")
     if not user_email:
         return jsonify({"success": False, "message": "Session expired. Please login first."}), 401
     
     departments = load_departments()
-    department = next((d for d in departments if str(d.get("id")) == str(dept_id)), None)
+    department = find_department_by_code(departments, dept_ref)
     
     if not department:
         return jsonify({"success": False, "message": "Department not found"}), 404
     
     return jsonify({
         "success": True,
-        "department": department
+        "department": department_for_api(department)
     }), 200
 
 
@@ -1371,7 +1409,6 @@ def api_create_department():
             }), 409
     
     new_dept = {
-        "id": str(uuid.uuid4()),
         "code": code,
         "name": name,
         "branch": branch,
@@ -1383,12 +1420,12 @@ def api_create_department():
     return jsonify({
         "success": True,
         "message": "Department created successfully",
-        "department": new_dept
+        "department": department_for_api(new_dept)
     }), 201
 
 
-@app.route("/api/departments/<dept_id>", methods=["PUT"])
-def api_update_department(dept_id):
+@app.route("/api/departments/<path:dept_ref>", methods=["PUT"])
+def api_update_department(dept_ref):
     """Update existing department"""
     user_email = session.get("user")
     if not user_email:
@@ -1414,58 +1451,55 @@ def api_update_department(dept_id):
     name = (data.get("name") or "").strip()
     description = (data.get("description") or "").strip()
     
-    if not dept_id:
-        return jsonify({"success": False, "message": "Department ID is required."}), 400
+    if not dept_ref or not str(dept_ref).strip():
+        return jsonify({"success": False, "message": "Department code is required in the URL."}), 400
     
     departments = load_departments()
+    current = find_department_by_code(departments, dept_ref)
+    if not current:
+        return jsonify({"success": False, "message": "Department not found"}), 404
     
     # Check for duplicates (case-insensitive) - exclude current department
-    new_code = code.lower()
-    new_name = name.lower()
-    
+    merged_code = (code or current.get("code") or "").strip().lower()
+    merged_name = (name or current.get("name") or "").strip().lower()
+
     for dept in departments:
-        if str(dept.get("id")) == str(dept_id):
+        if dept is current:
             continue
-        
+
         existing_code = (dept.get("code") or "").strip().lower()
         existing_name = (dept.get("name") or "").strip().lower()
-        
-        if existing_code == new_code:
+
+        if existing_code == merged_code:
             return jsonify({
                 "success": False,
                 "message": "Department code already exists. Please use a different code."
             }), 409
-        
-        if existing_name == new_name:
+
+        if existing_name == merged_name:
             return jsonify({
                 "success": False,
                 "message": "Department name already exists. Please use a different name."
             }), 409
-    
-    updated = False
-    for dept in departments:
-        if str(dept.get("id")) == str(dept_id):
-            dept["code"] = code
-            dept["name"] = name
-            if description:
-                dept["description"] = description
-            updated = True
-            break
-    
-    if not updated:
-        return jsonify({"success": False, "message": "Department not found"}), 404
+
+    if code:
+        current["code"] = code
+    if name:
+        current["name"] = name
+    if description is not None:
+        current["description"] = description
     
     save_departments(departments)
     return jsonify({
         "success": True,
         "message": "Department updated successfully",
-        "department": next((d for d in departments if str(d.get("id")) == str(dept_id)), None)
+        "department": department_for_api(current)
     }), 200
 
 
-@app.route("/api/departments/<dept_id>", methods=["DELETE"])
-def api_delete_department(dept_id):
-    """Delete department by ID"""
+@app.route("/api/departments/<path:dept_ref>", methods=["DELETE"])
+def api_delete_department(dept_ref):
+    """Delete department by code (URL path segment)."""
     user_email = session.get("user")
     if not user_email:
         return jsonify({"success": False, "message": "Session expired. Please login first."}), 401
@@ -1485,13 +1519,14 @@ def api_delete_department(dept_id):
             "message": "Only Super Admin or Admin can delete departments."
         }), 403
     
-    if not dept_id:
-        return jsonify({"success": False, "message": "Department ID is required."}), 400
+    if not dept_ref or not str(dept_ref).strip():
+        return jsonify({"success": False, "message": "Department code is required in the URL."}), 400
     
     departments = load_departments()
     before_count = len(departments)
+    cref = str(dept_ref).strip().lower()
     
-    departments = [d for d in departments if str(d.get("id")) != str(dept_id)]
+    departments = [d for d in departments if _dept_code_key(d) != cref]
     after_count = len(departments)
     
     if after_count == before_count:
