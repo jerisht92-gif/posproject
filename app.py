@@ -150,19 +150,19 @@ def _db_conn_params():
     supabase_region = (os.getenv("SUPABASE_REGION") or "").strip()
 
     # Auto-convert direct Supabase host to pooler host when region is provided.
-    # This avoids IPv6-only direct endpoints on hosts like PythonAnywhere.
-    if not pooler_host:
-        project_ref = _supabase_project_ref_from_host(db_host)
-        if project_ref and supabase_region:
-            pooler_host = f"aws-0-{supabase_region}.pooler.supabase.com"
-            pooler_port = int(os.getenv("SUPABASE_POOLER_PORT") or 6543)
-            if db_user == "postgres":
-                db_user = f"postgres.{project_ref}"
-            print(f"Using derived Supabase pooler host: {pooler_host}:{pooler_port}")
+    # We avoid guessing regions because wrong poolers cause "Tenant or user not found".
+    project_ref = _supabase_project_ref_from_host(db_host)
+    if not pooler_host and project_ref and supabase_region:
+        pooler_host = f"aws-0-{supabase_region}.pooler.supabase.com"
+        pooler_port = int(os.getenv("SUPABASE_POOLER_PORT") or 6543)
+        print(f"Using derived Supabase pooler host: {pooler_host}:{pooler_port}")
 
     if pooler_host:
         db_host = pooler_host
         db_port = pooler_port
+        # Supabase pooler expects tenant-suffixed username (e.g. postgres.<project_ref>).
+        if project_ref and db_user and "." not in db_user:
+            db_user = f"{db_user}.{project_ref}"
 
     if dsn:
         if dsn_env_key:
