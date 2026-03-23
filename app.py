@@ -78,6 +78,15 @@ def _resolve_ipv4_hostaddr(host, port):
     return None
 
 
+def _supabase_project_ref_from_host(host):
+    """
+    Extract project ref from direct Supabase host:
+    db.<project-ref>.supabase.co -> <project-ref>
+    """
+    m = re.match(r"^db\.([a-z0-9]+)\.supabase\.co$", (host or "").strip(), flags=re.IGNORECASE)
+    return m.group(1) if m else None
+
+
 class _PooledConnection:
     """Proxy connection that returns underlying conn to pool on close()."""
 
@@ -108,7 +117,10 @@ def _db_conn_params():
     # Prefer pooler/prisma-style URLs first; direct DB URLs can be IPv6-only on some hosts.
     dsn_env_key = None
     for k in (
+        "DB_DSN",
         "POSTGRES_PRISMA_URL",
+        "SUPABASE_TRANSACTION_POOLER_URL",
+        "SUPABASE_SESSION_POOLER_URL",
         "SUPABASE_POOLER_URL",
         "DATABASE_URL",
         "POSTGRES_URL",
@@ -133,6 +145,24 @@ def _db_conn_params():
     db_sslmode = (os.getenv("DB_SSLMODE") or ("require" if "supabase.co" in (db_host or "") else "prefer")).strip()
     db_connect_timeout = int(os.getenv("DB_CONNECT_TIMEOUT") or 5)
     force_ipv4 = _env_truthy("DB_FORCE_IPV4", True)
+    pooler_host = (os.getenv("SUPABASE_POOLER_HOST") or "").strip()
+    pooler_port = int(os.getenv("SUPABASE_POOLER_PORT") or 6543)
+    supabase_region = (os.getenv("SUPABASE_REGION") or "").strip()
+
+    # Auto-convert direct Supabase host to pooler host when region is provided.
+    # This avoids IPv6-only direct endpoints on hosts like PythonAnywhere.
+    if not pooler_host:
+        project_ref = _supabase_project_ref_from_host(db_host)
+        if project_ref and supabase_region:
+            pooler_host = f"aws-0-{supabase_region}.pooler.supabase.com"
+            pooler_port = int(os.getenv("SUPABASE_POOLER_PORT") or 6543)
+            if db_user == "postgres":
+                db_user = f"postgres.{project_ref}"
+            print(f"Using derived Supabase pooler host: {pooler_host}:{pooler_port}")
+
+    if pooler_host:
+        db_host = pooler_host
+        db_port = pooler_port
 
     if dsn:
         if dsn_env_key:
@@ -157,7 +187,11 @@ def _db_conn_params():
             "sslmode": db_sslmode,
             "connect_timeout": db_connect_timeout,
         }
-        if force_ipv4 and host and host not in {"localhost", "127.0.0.1"}:
+        explicit_hostaddr = (os.getenv("DB_HOSTADDR") or "").strip()
+        if explicit_hostaddr:
+            params["hostaddr"] = explicit_hostaddr
+            print(f"Using DB_HOSTADDR override: {explicit_hostaddr}")
+        elif force_ipv4 and host and host not in {"localhost", "127.0.0.1"}:
             hostaddr = _resolve_ipv4_hostaddr(host, port)
             if hostaddr:
                 params["hostaddr"] = hostaddr
@@ -173,11 +207,28 @@ def _db_conn_params():
         "sslmode": db_sslmode,
         "connect_timeout": db_connect_timeout,
     }
-    if force_ipv4 and db_host and db_host not in {"localhost", "127.0.0.1"}:
+    explicit_hostaddr = (os.getenv("DB_HOSTADDR") or "").strip()
+    if explicit_hostaddr:
+        params["hostaddr"] = explicit_hostaddr
+        print(f"Using DB_HOSTADDR override: {explicit_hostaddr}")
+    elif force_ipv4 and db_host and db_host not in {"localhost", "127.0.0.1"}:
         hostaddr = _resolve_ipv4_hostaddr(db_host, db_port)
         if hostaddr:
             params["hostaddr"] = hostaddr
             print(f"Using IPv4 DB hostaddr for {db_host}: {hostaddr}")
+    if (
+        "supabase.co" in (params.get("host") or "")
+        and (params.get("host") or "").startswith("db.")
+        and "hostaddr" not in params
+        and not os.getenv("SUPABASE_POOLER_HOST")
+        and not os.getenv("SUPABASE_REGION")
+        and not os.getenv("DB_DSN")
+    ):
+        print(
+            "Supabase direct host detected without IPv4 override. "
+            "Set DB_DSN to Supabase pooler URL (recommended), "
+            "or set SUPABASE_POOLER_HOST/SUPABASE_REGION."
+        )
     return params
 
 
