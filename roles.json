@@ -307,9 +307,9 @@
     }
   },
   {
-    "department": "Accounts",
+    "department": "hhghh",
     "branch": "Branch 1",
-    "role": "nvfgh",
+    "role": "Admin",
     "description": "gfhf",
     "permissions": {
       "new_enquiry": {
@@ -346,49 +346,6 @@
         "create": false,
         "edit": false,
         "delete": false
-      }
-    }
-  },
-  {
-    "department": "Accounts",
-    "branch": "Branch 1",
-    "role": "Admin",
-    "description": "ftyryuu",
-    "permissions": {
-      "new_enquiry": {
-        "full_access": true,
-        "view": true,
-        "create": true,
-        "edit": true,
-        "delete": true
-      },
-      "quotation": {
-        "full_access": false,
-        "view": false,
-        "create": false,
-        "edit": true,
-        "delete": false
-      },
-      "sales": {
-        "full_access": false,
-        "view": false,
-        "create": true,
-        "edit": false,
-        "delete": false
-      },
-      "delivery": {
-        "full_access": false,
-        "view": true,
-        "create": false,
-        "edit": false,
-        "delete": false
-      },
-      "invoice": {
-        "full_access": true,
-        "view": true,
-        "create": true,
-        "edit": true,
-        "delete": true
       }
     }
   },

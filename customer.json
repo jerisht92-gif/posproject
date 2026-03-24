@@ -53,9 +53,9 @@
     "company": "ujg",
     "customer_type": "Online",
     "company_type": "Online",
-    "status": "Inactive",
+    "status": "Blocked",
     "email": "ccgcx@gmail.com",
-    "credit_limit": "8787",
+    "credit_limit": "9898",
     "city": "lilk",
     "sales_rep": ""
   },
@@ -73,18 +73,6 @@
   },
   {
     "customer_id": "C106",
-    "name": "sd",
-    "company": "kj",
-    "customer_type": "Retail",
-    "company_type": "Retail",
-    "status": "Active",
-    "email": "sdsd@abc.com",
-    "credit_limit": "1231",
-    "city": "dsdf",
-    "sales_rep": ""
-  },
-  {
-    "customer_id": "13",
     "name": "sd",
     "company": "kj",
     "customer_type": "Retail",

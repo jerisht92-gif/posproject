@@ -162,12 +162,15 @@ document.addEventListener("DOMContentLoaded", async () => {
     const pageEl = document.querySelector(".enquiry-page");
     const roleRaw = pageEl?.dataset.currentRole || pageEl?.dataset.role || "";
     const role = roleRaw.toLowerCase().replace(/\s+/g, "").replace(/_/g, "");
-    const canEdit = ["superadmin", "admin"].includes(role);
-    const canDelete = ["superadmin"].includes(role);
-    const editDisabledAttr = canEdit ? "" : " disabled title=\"Only Admin / Super Admin can edit\"";
-    const deleteDisabledAttr = canDelete ? "" : " disabled title=\"Only Super Admin can delete\"";
+    const permEdit = pageEl?.dataset.permEdit === "1";
+    const permDelete = pageEl?.dataset.permDelete === "1";
+    const isPlatformAdmin = ["superadmin", "admin"].includes(role);
+    const canEdit = permEdit || isPlatformAdmin;
+    const canDeleteFinal = permDelete || role === "superadmin";
+    const editDisabledAttr = canEdit ? "" : " disabled title=\"No permission to edit\"";
+    const deleteDisabledAttr = canDeleteFinal ? "" : " disabled title=\"No permission to delete\"";
     const editClass = canEdit ? "edit-btn action-btn" : "edit-btn action-btn edit-btn-disabled";
-    const deleteClass = canDelete ? "delete-btn action-btn" : "delete-btn action-btn delete-btn-disabled";
+    const deleteClass = canDeleteFinal ? "delete-btn action-btn" : "delete-btn action-btn delete-btn-disabled";
 
     const rowsPerPage = 10;
     let currentPage = 1;

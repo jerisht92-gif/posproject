@@ -5,12 +5,12 @@
     "type": "Electronics",
     "category": "Home Appliances",
     "sub_category": "Fans",
-    "status": "Inactive",
+    "status": "Active",
     "product_usage": "sale",
     "unit_price": 2000,
     "discount": 5,
     "tax_code": "GST(18%)",
-    "stock_level": 24,
+    "stock_level": 28,
     "quantity": 20,
     "uom": "Nos",
     "reorder_level": 5,
@@ -23,7 +23,7 @@
     "supplier": "Crompton Distributor",
     "related_products": "Ceiling Fan 36 inch",
     "image": "ceiling_fan.png",
-    "price": 123.0
+    "price": 7667.0
   },
   {
     "product_id": "P134",

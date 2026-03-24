@@ -10,10 +10,10 @@
   {% set role = (user_role or 'user')|lower %}
 <div id="rbac"
      data-role="{{ role }}"
-     data-can-create="{{ 1 if role in ['superadmin','super admin','admin'] else 0 }}"
-     data-can-edit="{{ 1 if role in ['superadmin','super admin','admin'] else 0 }}"
-     data-can-delete="{{ 1 if role in ['superadmin','super admin'] else 0 }}"
-     data-can-import="{{ 1 if role in ['superadmin','super admin','admin'] else 0 }}">
+     data-can-create="{{ 1 if rbac and (rbac.get('customer', {}).get('full_access') or rbac.get('customer', {}).get('create')) else 0 }}"
+     data-can-edit="{{ 1 if rbac and (rbac.get('customer', {}).get('full_access') or rbac.get('customer', {}).get('edit')) else 0 }}"
+     data-can-delete="{{ 1 if rbac and (rbac.get('customer', {}).get('full_access') or rbac.get('customer', {}).get('delete')) else 0 }}"
+     data-can-import="{{ 1 if rbac and (rbac.get('customer', {}).get('full_access') or rbac.get('customer', {}).get('create') or rbac.get('customer', {}).get('edit')) else 0 }}">
 </div>
 
   <!-- ================= HEADER ================= -->

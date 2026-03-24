@@ -6,10 +6,14 @@
 
 {% block content %}
 {% set role_norm = (user_role or '')|lower|replace(' ', '')|replace('_', '') %}
-{% set can_create = role_norm in ['admin', 'superadmin'] %}
-{% set can_edit = role_norm in ['admin', 'superadmin'] %}
-{% set can_delete = role_norm == 'superadmin' %}
-<div class="manage-page enquiry-page" data-current-role="{{ role_norm }}" data-role="{{ user_role|default('User') }}">
+{% set ne = rbac.get('new_enquiry', {}) if rbac else {} %}
+{% set can_create = (ne.get('full_access') or ne.get('create')) or (role_norm in ['admin', 'superadmin']) %}
+{% set can_edit = (ne.get('full_access') or ne.get('edit')) or (role_norm in ['admin', 'superadmin']) %}
+{% set can_delete = (ne.get('full_access') or ne.get('delete')) or (role_norm == 'superadmin') %}
+<div class="manage-page enquiry-page" data-current-role="{{ role_norm }}" data-role="{{ user_role|default('User') }}"
+  data-perm-create="{{ 1 if can_create else 0 }}"
+  data-perm-edit="{{ 1 if can_edit else 0 }}"
+  data-perm-delete="{{ 1 if can_delete else 0 }}">
 
   <!-- Header: title + search + create button -->
   <div class="manage-header-row">

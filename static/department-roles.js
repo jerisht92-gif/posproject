@@ -55,6 +55,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const PAGE_SIZE = 10;
   let currentPage = 1;
   let currentUserRole = "user";
+  /** From /api/departments — roles.json matrix for Department & Roles */
+  let rbacDept = { full_access: false, view: false, create: false, edit: false, delete: false };
 
   function normalizeRole(r) {
     return (r || "").toLowerCase().replace(/\s+/g, "").replace(/_/g, "");
@@ -75,7 +77,11 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         const role = (payload && payload.current_user && payload.current_user.role) ? payload.current_user.role : "User";
         currentUserRole = normalizeRole(role);
-        // Update header Create button RBAC based on role
+        if (payload && payload.permissions && payload.permissions.department_roles) {
+          rbacDept = payload.permissions.department_roles;
+        } else {
+          rbacDept = { full_access: false, view: false, create: false, edit: false, delete: false };
+        }
         updateCreateButtonState();
         applyFilter();
       })
@@ -87,6 +93,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function canCreate() {
+    if (rbacDept.full_access || rbacDept.create) return true;
     return currentUserRole === "admin" || currentUserRole === "superadmin";
   }
 
@@ -94,15 +101,21 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!createBtn) return;
     if (!canCreate()) {
       createBtn.disabled = true;
-      createBtn.title = "Only Admin / Super Admin can create departments";
+      createBtn.title = "No permission to create departments";
     } else {
       createBtn.disabled = false;
       createBtn.title = "";
     }
   }
 
-  const canEdit = () => currentUserRole === "admin" || currentUserRole === "superadmin";
-  const canDelete = () => currentUserRole === "superadmin";
+  function canEdit() {
+    if (rbacDept.full_access || rbacDept.edit) return true;
+    return currentUserRole === "admin" || currentUserRole === "superadmin";
+  }
+  function canDelete() {
+    if (rbacDept.full_access || rbacDept.delete) return true;
+    return currentUserRole === "superadmin";
+  }
 
   function escapeHtml(s) {
     const div = document.createElement("div");

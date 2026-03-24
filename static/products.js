@@ -61,24 +61,22 @@ document.addEventListener("DOMContentLoaded", () => {
   const errPrice = document.getElementById("errProductPrice");
 
 // ==========================
-  // ✅ Role access (ONLY ONCE)
+  // ✅ RBAC: data-perm-* from server (roles.json matrix) + legacy admin
   // ==========================
   const pageEl = document.querySelector(".product-page");
   const roleRaw = pageEl?.dataset.role || "";
-  // Normalize role: lowercase, remove spaces and underscores
   const role = roleRaw.toLowerCase().replace(/\s+/g, "").replace(/_/g, "");
-  console.log("ROLE FROM HTML:", roleRaw, "-> cleaned:", role);
+  const permCreate = pageEl?.dataset.permCreate === "1";
+  const permEdit = pageEl?.dataset.permEdit === "1";
+  const permDelete = pageEl?.dataset.permDelete === "1";
+  const permImport = pageEl?.dataset.permImport === "1";
+  const isPlatformAdmin = ["superadmin", "admin"].includes(role);
+  const canEdit = permEdit || isPlatformAdmin;
+  const canDelete = permDelete || role === "superadmin";
+  const canCreateHeader = permCreate || isPlatformAdmin;
 
-
-  // superadmin/admin => can edit
-  const canEdit = ["superadmin", "admin"].includes(role);
-
-  // only superadmin => can delete
-  const canDelete = ["superadmin"].includes(role);
-
-  // Disable header buttons (extra safety)
-  if (addProductBtn) addProductBtn.disabled = !canEdit;
-  if (importBtn) importBtn.disabled = !canEdit;
+  if (addProductBtn) addProductBtn.disabled = !canCreateHeader;
+  if (importBtn) importBtn.disabled = !permImport && !isPlatformAdmin;
 
   // ==========================
   // ✅ State

@@ -550,7 +550,7 @@
                 "price": 2000,
                 "tax_pct": 18,
                 "disc_pct": 3,
-                "line_total": 2300
+                "line_total": 2289.2
             },
             {
                 "product_id": "P134",
@@ -560,22 +560,22 @@
                 "price": 160,
                 "tax_pct": 5,
                 "disc_pct": 3,
-                "line_total": 163.2
+                "line_total": 162.96
             }
         ],
-        "subtotal": 2160,
-        "tax_total": 368,
-        "rounding": 0,
+        "subtotal": 2452.16,
+        "tax_total": 356.96,
+        "rounding": 0.36,
         "global_discount": 1,
         "shipping_charges": 0,
-        "grand_total": 2527,
+        "grand_total": 2428,
         "comments": [],
         "status_history": [],
         "cancel_reason": "",
         "cancelled_by": "",
         "cancelled_at": "",
         "created_at": "2026-03-08T21:47:03",
-        "updated_at": "2026-03-12T13:55:21"
+        "updated_at": "2026-03-24T09:02:07"
     },
     {
         "so_id": "SO-0001",

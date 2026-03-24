@@ -1334,24 +1334,206 @@ def _db_fetch_users_ordered(include_id: bool = False):
 
 
 def _db_get_user_by_email(email: str):
-    """Get single DB user row by email (case-insensitive)."""
+    """Get single DB user row by email (case-insensitive). Includes branch/department for RBAC."""
     conn = get_db_connection()
     cur = conn.cursor()
-    cur.execute(
-        """
-        SELECT id, name, email, phone, role
-        FROM users
-        WHERE LOWER(email) = LOWER(%s)
-        LIMIT 1
-        """,
-        ((email or "").strip(),),
-    )
-    row = cur.fetchone()
-    cur.close()
-    conn.close()
+    row = None
+    try:
+        cur.execute(
+            """
+            SELECT id, name, email, phone, role, branch, department
+            FROM users
+            WHERE LOWER(email) = LOWER(%s)
+            LIMIT 1
+            """,
+            ((email or "").strip(),),
+        )
+        row = cur.fetchone()
+    except Exception:
+        try:
+            cur.execute(
+                """
+                SELECT id, name, email, phone, role
+                FROM users
+                WHERE LOWER(email) = LOWER(%s)
+                LIMIT 1
+                """,
+                ((email or "").strip(),),
+            )
+            row = cur.fetchone()
+        except Exception:
+            row = None
+    finally:
+        cur.close()
+        conn.close()
     if not row:
         return None
-    return {"id": row[0], "name": row[1], "email": row[2], "phone": row[3], "role": row[4]}
+    if len(row) >= 7:
+        return {
+            "id": row[0],
+            "name": row[1],
+            "email": row[2],
+            "phone": row[3],
+            "role": row[4],
+            "branch": row[5] or "",
+            "department": row[6] or "",
+        }
+    return {
+        "id": row[0],
+        "name": row[1],
+        "email": row[2],
+        "phone": row[3],
+        "role": row[4],
+        "branch": "",
+        "department": "",
+    }
+
+
+# --- RBAC: session + roles.json (matrix) + platform Admin / Super Admin ---
+RBAC_MODULES = (
+    "department_roles",
+    "products",
+    "customer",
+    "new_enquiry",
+    "quotation",
+    "sales",
+    "delivery",
+    "invoice",
+)
+
+
+def _rbac_empty_perm():
+    return {"full_access": False, "view": False, "create": False, "edit": False, "delete": False}
+
+
+def _rbac_full_perm():
+    return {"full_access": True, "view": True, "create": True, "edit": True, "delete": True}
+
+
+def normalize_menu_permissions(raw):
+    """Normalize roles.json permission block (nested or flat checkbox keys from create-role UI)."""
+    if not isinstance(raw, dict):
+        return _rbac_empty_perm()
+    if any(k in raw for k in ("full_access", "view", "create", "edit", "delete")):
+        return {
+            "full_access": bool(raw.get("full_access")),
+            "view": bool(raw.get("view")),
+            "create": bool(raw.get("create")),
+            "edit": bool(raw.get("edit")),
+            "delete": bool(raw.get("delete")),
+        }
+    fa = fv = fc = fe = fd = False
+    for k, v in raw.items():
+        if not v:
+            continue
+        ks = str(k).lower()
+        if ks.endswith("_full") or ks == "full_access":
+            fa = True
+        elif ks.endswith("_view"):
+            fv = True
+        elif ks.endswith("_create"):
+            fc = True
+        elif ks.endswith("_edit"):
+            fe = True
+        elif ks.endswith("_delete"):
+            fd = True
+    if fa:
+        return _rbac_full_perm()
+    return {"full_access": False, "view": fv, "create": fc, "edit": fe, "delete": fd}
+
+
+def get_current_user_profile():
+    """
+    Prefer PostgreSQL session + DB row (login uses DB). Fallback to users.json.
+    Fixes RBAC when user exists only in DB or role differs from stale JSON.
+    """
+    email = session.get("user")
+    if not email:
+        return None
+    role = session.get("role")
+    name = "User"
+    department = session.get("department")
+    branch = session.get("branch")
+
+    dbu = _db_get_user_by_email(email)
+    if dbu:
+        name = dbu.get("name") or "User"
+        if role is None:
+            role = dbu.get("role")
+        if department is None:
+            department = dbu.get("department")
+        if branch is None:
+            branch = dbu.get("branch")
+
+    users = load_users()
+    for u in users:
+        if isinstance(u, dict) and (u.get("email") or "").lower() == email.lower():
+            if name == "User":
+                name = u.get("name") or name
+            if not role:
+                role = u.get("role")
+            if department is None:
+                department = u.get("department")
+            if branch is None:
+                branch = u.get("branch")
+            break
+
+    role = (role or "User").strip()
+    return {
+        "email": email,
+        "name": name,
+        "role": role,
+        "department": (department or "").strip(),
+        "branch": (branch or "").strip() or "Main Branch",
+    }
+
+
+def get_effective_permissions_for_session():
+    """Effective menu permissions: platform Admin/Super Admin = full; else roles.json matrix."""
+    empty = {m: _rbac_empty_perm() for m in RBAC_MODULES}
+    if not session.get("user"):
+        return {"is_platform_admin": False, **empty}
+
+    prof = get_current_user_profile()
+    if not prof:
+        return {"is_platform_admin": False, **empty}
+
+    rn = (prof.get("role") or "").strip().lower().replace(" ", "").replace("_", "")
+    if rn in ("superadmin", "admin"):
+        full = {m: _rbac_full_perm() for m in RBAC_MODULES}
+        full["is_platform_admin"] = True
+        return full
+
+    roles = load_roles()
+    dept = (prof.get("department") or "").strip().lower()
+    branch = (prof.get("branch") or "Main Branch").strip().lower()
+    role_name = (prof.get("role") or "").strip().lower()
+    matched = None
+    for r in roles:
+        if not isinstance(r, dict):
+            continue
+        rd = (r.get("department") or "").strip().lower()
+        rb = (r.get("branch") or "").strip().lower()
+        rr = (r.get("role") or "").strip().lower()
+        if rd == dept and rb == branch and rr == role_name:
+            matched = r
+            break
+
+    out = {"is_platform_admin": False}
+    perms = (matched or {}).get("permissions") or {}
+    for m in RBAC_MODULES:
+        out[m] = normalize_menu_permissions(perms.get(m) or {})
+    return out
+
+
+@app.context_processor
+def inject_rbac():
+    try:
+        if session.get("user"):
+            return {"rbac": get_effective_permissions_for_session()}
+    except Exception:
+        pass
+    return {"rbac": {}}
 
 
 def _db_sync_users_id_sequence(cur):
@@ -1425,23 +1607,21 @@ def department_roles():
             return jsonify({"success": False, "message": "Session expired. Please login first."}), 401
         return redirect(url_for("login", message="session_expired"))
 
-    users = load_users()
     departments = load_departments()
-    user_name = "User"
-    user_role = "User"
-    for u in users:
-        if isinstance(u, dict) and (u.get("email") or "").lower() == user_email.lower():
-            user_name = u.get("name") or "User"
-            user_role = u.get("role") or "User"
-            break
+    prof = get_current_user_profile() or {}
+    user_name = prof.get("name") or "User"
+    user_role = prof.get("role") or "User"
 
     if wants_json():
-        return jsonify({
-            "success": True,
-            "departments": departments,
-            "total": len(departments),
-            "current_user": {"email": user_email, "name": user_name, "role": user_role}
-        }), 200
+        return jsonify(
+            {
+                "success": True,
+                "departments": departments,
+                "total": len(departments),
+                "current_user": {"email": user_email, "name": user_name, "role": user_role},
+                "permissions": get_effective_permissions_for_session(),
+            }
+        ), 200
 
     return render_template(
         "department-roles.html",
@@ -1461,14 +1641,9 @@ def create_department():
     if not user_email:
         return redirect(url_for("login", message="session_expired"))
 
-    users = load_users()
-    user_name = "User"
-    user_role = "User"
-    for u in users:
-        if isinstance(u, dict) and (u.get("email") or "").lower() == user_email.lower():
-            user_name = u.get("name") or "User"
-            user_role = u.get("role") or "User"
-            break
+    prof = get_current_user_profile() or {}
+    user_name = prof.get("name") or "User"
+    user_role = prof.get("role") or "User"
 
     branches_list = [
         {"id": "main_branch", "name": "Main Branch"},
@@ -1688,34 +1863,46 @@ def delete_department():
 # =========================================
 # 4. MASTERS — Department & Roles — APIs
 # =========================================
+@app.route("/api/me/permissions", methods=["GET"])
+def api_me_permissions():
+    """JSON: effective RBAC matrix for the logged-in user (session + roles.json)."""
+    if not session.get("user"):
+        return jsonify({"success": False, "message": "Session expired. Please login first."}), 401
+    return jsonify(
+        {
+            "success": True,
+            "permissions": get_effective_permissions_for_session(),
+            "profile": get_current_user_profile(),
+        }
+    ), 200
+
+
 @app.route("/api/departments", methods=["GET"])
 def api_departments():
     """Get all departments - supports JSON response for Postman"""
     user_email = session.get("user")
     if not user_email:
         return jsonify({"success": False, "message": "Session expired. Please login first."}), 401
-    
-    users = load_users()
+
     departments = load_departments()
-    
-    user_name = "User"
-    user_role = "User"
-    for u in users:
-        if isinstance(u, dict) and (u.get("email") or "").lower() == user_email.lower():
-            user_name = u.get("name") or "User"
-            user_role = (u.get("role") or "User").strip()
-            break
-    
-    return jsonify({
-        "success": True,
-        "departments": [department_for_api(d) for d in departments if isinstance(d, dict)],
-        "total": len(departments),
-        "current_user": {
-            "email": user_email,
-            "name": user_name,
-            "role": user_role
+    prof = get_current_user_profile() or {}
+    user_name = prof.get("name") or "User"
+    user_role = prof.get("role") or "User"
+    perms = get_effective_permissions_for_session()
+
+    return jsonify(
+        {
+            "success": True,
+            "departments": [department_for_api(d) for d in departments if isinstance(d, dict)],
+            "total": len(departments),
+            "current_user": {
+                "email": user_email,
+                "name": user_name,
+                "role": user_role,
+            },
+            "permissions": perms,
         }
-    }), 200
+    ), 200
 
 
 @app.route("/api/departments/<path:dept_ref>", methods=["GET"])
@@ -2983,30 +3170,23 @@ def products():
         if wants_json():
             return jsonify({"success": False, "message": "Session expired. Please login first."}), 401
         return redirect(url_for("login"))
-    
-    users = load_users()
-    user_name = "User"
-    user_role = "User"
-    current_email = (user_email or "").strip().lower()
-    
-    for u in users:
-        if not isinstance(u, dict):
-            continue
-        u_email = (u.get("email") or "").strip().lower()
-        if u_email == current_email:
-            user_name = u.get("name") or "User"
-            user_role = (u.get("role") or "User").strip()
-            break
-    
+
+    prof = get_current_user_profile() or {}
+    user_name = prof.get("name") or "User"
+    user_role = prof.get("role") or "User"
+
     if wants_json():
         products_list = load_products()
-        return jsonify({
-            "success": True,
-            "products": products_list,
-            "total": len(products_list),
-            "current_user": {"email": user_email, "name": user_name, "role": user_role}
-        }), 200
-    
+        return jsonify(
+            {
+                "success": True,
+                "products": products_list,
+                "total": len(products_list),
+                "current_user": {"email": user_email, "name": user_name, "role": user_role},
+                "permissions": get_effective_permissions_for_session(),
+            }
+        ), 200
+
     return render_template(
         "products.html",
         title="Product Master - Stackly",
@@ -3014,7 +3194,7 @@ def products():
         section="masters",
         user_email=user_email,
         user_name=user_name,
-        user_role=user_role
+        user_role=user_role,
     )
 
 
@@ -4722,32 +4902,30 @@ def customer():
         if wants_json():
             return jsonify({"success": False, "message": "Session expired. Please login first."}), 401
         return redirect(url_for("login", message="session_expired"))
-    
-    users = load_users()
-    user_name = "User"
-    user_role = "User"
-    for u in users:
-        if isinstance(u, dict) and (u.get("email") or "").lower() == user_email.lower():
-            user_name = u.get("name") or "User"
-            user_role = u.get("role") or "User"
-            break
-    
+
+    prof = get_current_user_profile() or {}
+    user_name = prof.get("name") or "User"
+    user_role = prof.get("role") or "User"
+
     if wants_json():
         customers_list = load_customer()
-        return jsonify({
-            "success": True,
-            "customers": customers_list,
-            "total": len(customers_list),
-            "current_user": {"email": user_email, "name": user_name, "role": user_role}
-        }), 200
-    
+        return jsonify(
+            {
+                "success": True,
+                "customers": customers_list,
+                "total": len(customers_list),
+                "current_user": {"email": user_email, "name": user_name, "role": user_role},
+                "permissions": get_effective_permissions_for_session(),
+            }
+        ), 200
+
     return render_template(
         "customer.html",
         page="customer",
         section="masters",
         user_email=user_email,
         user_name=user_name,
-        user_role=user_role
+        user_role=user_role,
     )
 
 
@@ -6234,28 +6412,49 @@ def login_post():
             conn = get_db_connection()
             cursor = conn.cursor()
 
-            # Fast path: index-friendly exact match (all new emails are stored lowercase).
-            cursor.execute(
-                """
-                SELECT name, role, password FROM users
-                WHERE email = %s
-                LIMIT 1
-                """,
-                (email,),
-            )
-            db_user = cursor.fetchone()
-
-            # Backward compatibility: fallback for old mixed-case rows.
-            if not db_user:
+            db_user = None
+            try:
                 cursor.execute(
                     """
-                    SELECT name, role, password FROM users
-                    WHERE LOWER(email) = LOWER(%s)
+                    SELECT name, role, password, branch, department FROM users
+                    WHERE email = %s
                     LIMIT 1
                     """,
                     (email,),
                 )
                 db_user = cursor.fetchone()
+            except Exception:
+                cursor.execute(
+                    """
+                    SELECT name, role, password FROM users
+                    WHERE email = %s
+                    LIMIT 1
+                    """,
+                    (email,),
+                )
+                db_user = cursor.fetchone()
+
+            if not db_user:
+                try:
+                    cursor.execute(
+                        """
+                        SELECT name, role, password, branch, department FROM users
+                        WHERE LOWER(email) = LOWER(%s)
+                        LIMIT 1
+                        """,
+                        (email,),
+                    )
+                    db_user = cursor.fetchone()
+                except Exception:
+                    cursor.execute(
+                        """
+                        SELECT name, role, password FROM users
+                        WHERE LOWER(email) = LOWER(%s)
+                        LIMIT 1
+                        """,
+                        (email,),
+                    )
+                    db_user = cursor.fetchone()
 
             cursor.close()
             conn.close()
@@ -6269,19 +6468,22 @@ def login_post():
         if not db_user:
             return jsonify({"success": False, "message": "User not found"}), 404
 
-
-        # Extract values
-        db_name, db_role, db_password = db_user
-
+        db_name = db_user[0]
+        db_role = db_user[1]
+        db_password = db_user[2]
+        db_branch = db_user[3] if len(db_user) > 3 else ""
+        db_department = db_user[4] if len(db_user) > 4 else ""
 
         # ❌ Password wrong
         if db_password != password:
             return jsonify({"success": False, "message": "Incorrect password"}), 401
 
-        # ✅ Login success
+        # ✅ Login success (store branch/department for roles.json RBAC matching)
         session.permanent = bool(remember_me)
         session["user"] = email
         session["role"] = db_role
+        session["branch"] = (db_branch or "").strip() or "Main Branch"
+        session["department"] = (db_department or "").strip()
         session["last_active"] = time.time()
 
         return jsonify({"success": True, "message": "Login successful"}), 200
@@ -6819,12 +7021,8 @@ def api_create_user():
     if not user_email:
         return jsonify({"success": False, "message": "Session expired. Please login first."}), 401
 
-    users = load_users()
-    user_role = "User"
-    for u in users:
-        if isinstance(u, dict) and (u.get("email") or "").lower() == user_email.lower():
-            user_role = (u.get("role") or "User").strip()
-            break
+    prof = get_current_user_profile() or {}
+    user_role = prof.get("role") or "User"
 
     if normalize_role(user_role) not in ["superadmin", "admin"]:
         return jsonify({"success": False, "message": "Only Super Admin/Admin can create users."}), 403
@@ -7166,10 +7364,16 @@ def _enquiry_to_api_dict(enquiry_id: str, enq_data: dict, include_items: bool = 
 
 
 def _get_current_user_role():
-    """Get current user's role from session; returns normalized role (superadmin, admin, user)."""
+    """Get current user's role from session / DB profile (not users.json alone)."""
     user_email = session.get("user")
     if not user_email:
         return None
+    sr = session.get("role")
+    if sr:
+        return (str(sr).strip()).replace(" ", "").replace("_", "").lower()
+    prof = get_current_user_profile()
+    if prof and prof.get("role"):
+        return (prof.get("role") or "User").strip().replace(" ", "").replace("_", "").lower()
     users = load_users()
     for u in users:
         if isinstance(u, dict) and (u.get("email") or "").lower() == user_email.lower():
@@ -7197,14 +7401,9 @@ def enquiry_list():
     if not user_email:
         return redirect(url_for("login", message="session_expired"))
 
-    users = load_users()
-    user_name = "User"
-    user_role = "User"
-    for u in users:
-        if isinstance(u, dict) and (u.get("email") or "").lower() == user_email.lower():
-            user_name = u.get("name") or "User"
-            user_role = (u.get("role") or "User").strip()
-            break
+    prof = get_current_user_profile() or {}
+    user_name = prof.get("name") or "User"
+    user_role = prof.get("role") or "User"
 
     # Load enquiries from JSON file (new-enquiry.json)
     enquiries = []
@@ -7225,16 +7424,19 @@ def enquiry_list():
 
     # JSON API variant for Fetch/XHR (same pattern as manage users)
     if wants_json():
-        return jsonify({
-            "success": True,
-            "data": enquiries,
-            "total": len(enquiries),
-            "current_user": {
-                "email": user_email,
-                "name": user_name,
-                "role": user_role,
-            },
-        }), 200
+        return jsonify(
+            {
+                "success": True,
+                "data": enquiries,
+                "total": len(enquiries),
+                "current_user": {
+                    "email": user_email,
+                    "name": user_name,
+                    "role": user_role,
+                },
+                "permissions": get_effective_permissions_for_session(),
+            }
+        ), 200
 
     return render_template(
         "enquiry-list.html",
