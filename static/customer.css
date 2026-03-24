@@ -656,8 +656,8 @@
 button:disabled,
 .pager-btn.disabled {
   opacity: 0.45;
-  cursor: default !important;   /* ✅ NO no-access symbol */
-  pointer-events: none;         /* ✅ blocks hover + click */
+  cursor: not-allowed !important;
+  pointer-events: auto;         /* keep hover so native title tooltip can show */
 }
 
 /* Edit Customer Save Button - Disabled State (same as edit department) */

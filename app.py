@@ -1410,6 +1410,11 @@ def _rbac_full_perm():
     return {"full_access": True, "view": True, "create": True, "edit": True, "delete": True}
 
 
+def _rbac_admin_perm():
+    """Admin policy: create/view/edit allowed, delete denied."""
+    return {"full_access": False, "view": True, "create": True, "edit": True, "delete": False}
+
+
 def normalize_menu_permissions(raw):
     """Normalize roles.json permission block (nested or flat checkbox keys from create-role UI)."""
     if not isinstance(raw, dict):
@@ -1499,10 +1504,14 @@ def get_effective_permissions_for_session():
         return {"is_platform_admin": False, **empty}
 
     rn = (prof.get("role") or "").strip().lower().replace(" ", "").replace("_", "")
-    if rn in ("superadmin", "admin"):
+    if rn == "superadmin":
         full = {m: _rbac_full_perm() for m in RBAC_MODULES}
         full["is_platform_admin"] = True
         return full
+    if rn == "admin":
+        admin_perms = {m: _rbac_admin_perm() for m in RBAC_MODULES}
+        admin_perms["is_platform_admin"] = True
+        return admin_perms
 
     roles = load_roles()
     dept = (prof.get("department") or "").strip().lower()
@@ -8118,12 +8127,9 @@ def quotation():
     if not user_email:
        return redirect(url_for("login", message="session_expired"))
 
-    users = load_users()
-    user_name = "User"
-    for u in users:
-        if isinstance(u, dict) and (u.get("email") or "").lower() == user_email.lower():
-            user_name = u.get("name") or "User"
-            break
+    prof = get_current_user_profile() or {}
+    user_name = prof.get("name") or "User"
+    user_role = prof.get("role") or "User"
 
     return render_template(
         "quotation.html",
@@ -8132,6 +8138,7 @@ def quotation():
         section="crm",
         user_email=user_email,
         user_name=user_name,
+        user_role=user_role,
     )
 
 # ============ API LIST ============
@@ -8222,12 +8229,17 @@ def add_new_quotation():
     if not user_email:
         return redirect(url_for("login", message="session_expired"))
 
-    users = load_users()
-    user_name = "User"
-    for u in users:
-        if isinstance(u, dict) and (u.get("email") or "").lower() == user_email.lower():
-            user_name = u.get("name") or "User"
-            break
+    prof = get_current_user_profile() or {}
+    user_name = prof.get("name") or "User"
+    user_role = prof.get("role") or "User"
+
+    # RBAC guard: users without quotation create/edit access cannot open this page.
+    role_norm = normalize_role(user_role)
+    can_by_role = role_norm in ["superadmin", "admin"]
+    q_perm = (get_effective_permissions_for_session() or {}).get("quotation", {})
+    can_by_matrix = bool(q_perm.get("full_access") or q_perm.get("create") or q_perm.get("edit"))
+    if not (can_by_role or can_by_matrix):
+        return redirect(url_for("quotation"))
 
     return render_template(
         "add-new-quotation.html", 
@@ -8236,6 +8248,7 @@ def add_new_quotation():
         section="crm",
         user_email=user_email,
         user_name=user_name,
+        user_role=user_role,
     )
 
 # automatically fill dropdown customer type,sales rep,payment term

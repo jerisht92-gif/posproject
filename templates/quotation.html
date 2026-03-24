@@ -5,7 +5,14 @@
 {% endblock %}
 
 {% block content %}
-<div class="quotation-page" id="rbac" data-role="{{ (role or 'user')|lower }}">
+{% set role_norm = (user_role or 'user')|lower|replace(' ', '')|replace('_', '') %}
+{% set q = rbac.get('quotation', {}) if rbac else {} %}
+{% set can_create = (q.get('full_access') or q.get('create')) or (role_norm in ['admin', 'superadmin']) %}
+{% set can_edit = (q.get('full_access') or q.get('edit')) or (role_norm in ['admin', 'superadmin']) %}
+<div class="quotation-page" id="rbac"
+  data-role="{{ role_norm }}"
+  data-perm-create="{{ 1 if can_create else 0 }}"
+  data-perm-edit="{{ 1 if can_edit else 0 }}">
 
   <div class="quotation-header">
     <div>
@@ -13,7 +20,11 @@
     </div>
 
     <div class="quotation-header-right">
+      {% if can_create %}
       <button class="btn-primary" id="addQuotationBtn">+ Add New Quotation</button>
+      {% else %}
+      <button class="btn-primary primary-btn-disabled" id="addQuotationBtn" disabled title="No permission to create quotation">+ Add New Quotation</button>
+      {% endif %}
     </div>
   </div>
 

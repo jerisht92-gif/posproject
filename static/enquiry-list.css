@@ -137,7 +137,7 @@ color: #a12828;
   box-shadow: none !important;
   cursor: not-allowed !important;
   opacity: 0.8;
-  pointer-events: none;
+  pointer-events: auto; /* allow hover tooltip text */
   text-decoration: none;
 }
 

@@ -13,10 +13,27 @@ document.addEventListener("DOMContentLoaded", () => {
   const pageTotal = document.getElementById("pageTotal");
   const prevBtn = document.getElementById("prevBtn");
   const nextBtn = document.getElementById("nextBtn");
+  const pageEl = document.querySelector(".quotation-page");
+  const roleRaw = pageEl?.dataset.role || "";
+  const role = roleRaw.toLowerCase().replace(/\s+/g, "").replace(/_/g, "");
+  const permCreate = pageEl?.dataset.permCreate === "1";
+  const permEdit = pageEl?.dataset.permEdit === "1";
+  const isPlatformAdmin = ["superadmin", "admin"].includes(role);
+  const canCreate = permCreate || isPlatformAdmin;
+  const canEdit = permEdit || isPlatformAdmin;
+  const canView = canEdit;
 
-  document.getElementById("addQuotationBtn").addEventListener("click", () => {
-    window.location.href = "/add-new-quotation";
-  });
+  const addQuotationBtn = document.getElementById("addQuotationBtn");
+  if (addQuotationBtn) {
+    addQuotationBtn.disabled = !canCreate;
+    if (!canCreate && !addQuotationBtn.title) {
+      addQuotationBtn.title = "No permission to create quotation";
+    }
+    addQuotationBtn.addEventListener("click", () => {
+      if (!canCreate) return;
+      window.location.href = "/add-new-quotation";
+    });
+  }
 
   let state = {
     q: "",
@@ -174,8 +191,8 @@ function render(rows) {
         <td>${getStatusPill(r.status)}</td>
         <td class="right">${formattedTotal}</td>
         <td class="center action-buttons">
-          <button class="action-btn edit-btn" data-id="${r.quotation_id}" style="color: white;">Edit</button>
-          <button class="action-btn view-btn" data-id="${r.quotation_id}" style="color:white">View</button>
+          <button class="action-btn edit-btn ${canEdit ? "" : "edit-btn-disabled"}" data-id="${r.quotation_id}" style="color: white;" ${canEdit ? "" : "disabled title=\"No permission to edit quotation\""}>Edit</button>
+          <button class="action-btn view-btn ${canView ? "" : "view-btn-disabled"}" data-id="${r.quotation_id}" style="color:white" ${canView ? "" : "disabled title=\"No permission to view quotation\""}>View</button>
         </td>
       `;
       tbody.appendChild(tr);
@@ -185,6 +202,7 @@ function render(rows) {
     document.querySelectorAll('.edit-btn').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
+        if (!canEdit) return;
         const quotationId = btn.getAttribute('data-id');
         window.location.href = `/add-new-quotation?edit=${quotationId}`;
       });
@@ -194,6 +212,7 @@ function render(rows) {
     document.querySelectorAll('.view-btn').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
+        if (!canView) return;
         const quotationId = btn.getAttribute('data-id');
         window.location.href = `/add-new-quotation?view=${quotationId}`;
       });

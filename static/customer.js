@@ -435,12 +435,12 @@ document.addEventListener("DOMContentLoaded", () => {
         <td>${city}</td>
         <td>
           <button class="action-btn edit-btn ${CAN_EDIT ? "" : "is-disabled"}"
-                  data-id="${id}" ${CAN_EDIT ? "" : "disabled"}>
+                  data-id="${id}" ${CAN_EDIT ? "" : "disabled title=\"No access\""}>
             Edit
           </button>
 
           <button class="action-btn delete-btn ${CAN_DELETE ? "" : "is-disabled"}"
-                  data-id="${id}" data-name="${name || company || id}" ${CAN_DELETE ? "" : "disabled"}>
+                  data-id="${id}" data-name="${name || company || id}" ${CAN_DELETE ? "" : "disabled title=\"Only Super Admin can delete\""}>
             Delete
           </button>
         </td>

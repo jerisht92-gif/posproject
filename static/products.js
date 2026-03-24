@@ -75,8 +75,15 @@ document.addEventListener("DOMContentLoaded", () => {
   const canDelete = permDelete || role === "superadmin";
   const canCreateHeader = permCreate || isPlatformAdmin;
 
-  if (addProductBtn) addProductBtn.disabled = !canCreateHeader;
-  if (importBtn) importBtn.disabled = !permImport && !isPlatformAdmin;
+  if (addProductBtn) {
+    addProductBtn.disabled = !canCreateHeader;
+    if (!canCreateHeader) addProductBtn.title = "No access";
+  }
+  if (importBtn) {
+    const canImport = permImport || isPlatformAdmin;
+    importBtn.disabled = !canImport;
+    if (!canImport) importBtn.title = "No access";
+  }
 
   // ==========================
   // ✅ State
