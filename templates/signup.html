@@ -8,6 +8,12 @@
   <script src="https://unpkg.com/lucide@latest"></script>
   {% include '_stackly_config_scripts.html' %}
   <script src="{{ url_for('static', filename='signup.js') }}" defer></script>
+  
+  <!-- Vercel Web Analytics -->
+  <script>
+    window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
+  </script>
+  <script defer src="/_vercel/insights/script.js"></script>
 </head>
 <body>
   <div class="animated-bg">
