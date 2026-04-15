@@ -1,0 +1,5 @@
+{# Injected on every page that loads app JS. APP_BASE_URL env → full API/browser root. #}
+<script>
+  window.__STACKLY_APP_BASE_URL__ = {{ (app_base_url | default('', true)) | tojson }};
+</script>
+<script src="{{ url_for('static', filename='stackly-api-base.js') }}"></script>

@@ -1,0 +1,471 @@
+
+
+
+{% extends "menu.html" %}
+{% block title %}New Sales Order{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='sales-new.css') }}">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+{% endblock %}
+
+{% block content %}
+<div class="sales-wrapper">
+
+  <!-- =========================================
+       PAGE HEADER
+  ========================================== -->
+  <div class="page-header">
+  <div class="page-title-wrap">
+    <h2>New Sales Order</h2>
+    <span id="salesOrderStatusBadge" class="so-head-status so-status-hidden"></span>
+  </div>
+
+  <div class="header-actions">
+
+    <button class="btn-secondary" type="button"  id="genDNBtn"  data-dn-url="{{ url_for('delivery_note_new') }}"
+      onclick="generateDeliveryNote()">  Generate Delivery Note</button>
+
+    <button class="btn-secondary" type="button" id="genInvBtn">Generate Invoice</button>
+  </div>
+</div>
+  <div class="so-page-body">
+
+    <!-- =========================================
+         BASIC DETAILS
+    ========================================== -->
+    <div class="card">
+      <h3>Basic Details</h3>
+
+      <div class="grid-2">
+        <div class="form-group">
+          <label>Sales Order ID</label>
+          <input type="text" id="salesOrderId" value="{{ so_id }}" readonly>
+        </div>
+
+        <div class="form-group">
+          <label>Order Date</label>
+          <input type="date" id="orderDate">
+          <small class="field-error" id="orderDateErr"></small>
+        </div>
+
+        <div class="form-group">
+          <label>Sales Rep</label>
+
+          <div class="custom-dropdown">
+            <div class="dropdown-selected" id="salesRepSelected" onclick="toggleSalesRepDropdown()">
+              Select Sales Rep
+            </div>
+
+            <div class="dropdown-menu" id="salesRepDropdown">
+              <input
+                type="text"
+                id="salesRepSearch"
+                placeholder="Search Sales Rep..."
+                onkeyup="filterSalesRep()"
+              >
+
+              <div class="dropdown-list" id="salesRepList">
+                {% if sales_reps %}
+                  {% for rep in sales_reps %}
+                    <div
+                      class="dropdown-item"
+                      data-name="{{ rep }}"
+                      onclick="selectSalesRep(this)"
+                    >
+                      {{ rep }}
+                    </div>
+                  {% endfor %}
+                {% else %}
+                  <div class="dropdown-item">No Sales Reps Found</div>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+
+          <input type="hidden" id="salesRep" name="sales_rep">
+          <small class="field-error" id="salesRepErr"></small>
+        </div>
+
+        <div class="form-group">
+          <label>Order Type</label>
+          <select name="order_type" id="orderType" required>
+            <option value="">Select Order</option>
+            <option value="Standard">Standard</option>
+            <option value="Rush">Rush</option>
+            <option value="Backorder">Backorder</option>
+          </select>
+          <small class="field-error" id="orderTypeErr"></small>
+        </div>
+      </div>
+    </div>
+
+    <!-- =========================================
+         CUSTOMER INFORMATION
+    ========================================== -->
+    <div class="card">
+      <h3>Customer Information</h3>
+
+      <div class="grid-2">
+        <div class="form-group">
+          <label>Customer Name</label>
+
+          <div class="custom-dropdown">
+            <div class="dropdown-selected" id="customerSelected" onclick="toggleCustomerDropdown()">
+              Select Customer
+            </div>
+
+            <div class="dropdown-menu" id="customerDropdown">
+              <input
+                type="text"
+                id="customerSearch"
+                placeholder="Search Customer..."
+                onkeyup="filterCustomers()"
+              >
+
+              <div class="dropdown-list" id="customerList">
+                {% if customers %}
+                  {% for customer in customers %}
+
+
+
+
+
+                    <div
+                      class="dropdown-item"
+                      data-id="{{ customer['customer_id'] }}"
+                      data-email="{{ customer.get('email','') }}"
+                      data-phone="{{ customer.get('phone','') }}"
+                      data-billing="{{ customer.get('billingAddress','') }}"
+                      data-shipping="{{ customer.get('shippingAddress','') }}"
+                      data-sales-rep="{{ customer.get('sales_rep','') }}"
+                      onclick="selectCustomer(this)"
+                    >
+                      {{ customer['name'] }}
+                    </div>
+
+
+
+
+
+
+                  {% endfor %}
+                {% else %}
+                  <div class="dropdown-item">No Customers Found</div>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+          <small class="field-error" id="customerErr"></small>
+        </div>
+
+        <div class="form-group">
+          <label>Customer ID</label>
+          <input type="text" id="customer_id" placeholder="Auto Generate" readonly>
+        </div>
+
+        <div class="form-group">
+          <label>Billing Address</label>
+          <input type="text" id="billingAddress" placeholder="Enter Address">
+          <small class="field-error" id="billingAddressErr"></small>
+        </div>
+
+        <div class="form-group">
+          <label>Shipping Address</label>
+          <input type="text" id="shippingAddress" placeholder="Enter Address">
+          <small class="field-error" id="shippingAddressErr"></small>
+        </div>
+
+        <div class="form-group">
+          <label>Email ID</label>
+          <input type="email" id="email">
+          <small class="field-error" id="emailErr"></small>
+        </div>
+
+        <div class="form-group">
+          <label>Phone Number</label>
+          <input type="text" id="phone">
+          <small class="field-error" id="phoneErr"></small>
+        </div>
+      </div>
+    </div>
+
+    <!-- =========================================
+         PAYMENT DETAILS
+    ========================================== -->
+    <div class="card">
+      <h3>Payment Details</h3>
+
+      <div class="grid-2">
+        <div class="form-group">
+          <label>Payment Method</label>
+          <select id="paymentMethod">
+            <option value="">Select Payment</option>
+            <option value="Cash">Cash</option>
+            <option value="Card">Card</option>
+            <option value="UPI">UPI</option>
+            <option value="Bank Transfer">Bank Transfer</option>
+          </select>
+          <small class="field-error" id="paymentMethodErr"></small>
+        </div>
+
+        <div class="form-group">
+  <label>Currency</label>
+  <input type="text" id="currency" value="INR" readonly>
+</div>
+
+        <div class="form-group">
+          <label>Due Date</label>
+          <input type="date" id="dueDate">
+          <small class="field-error" id="dueDateErr"></small>
+        </div>
+
+        <div class="form-group">
+          <label>Terms & Conditions</label>
+          <input type="text" id="terms" placeholder="Enter Terms & Conditions">
+          <small class="field-error" id="termsErr"></small>
+        </div>
+      </div>
+    </div>
+
+    <!-- =========================================
+         LOGISTICS & NOTES
+    ========================================== -->
+    <div class="card">
+      <h3>Logistics &amp; Notes</h3>
+
+      <div class="grid-2">
+        <div class="form-group">
+          <label>Shipping Method</label>
+          <select id="shippingMethod">
+            <option value="">Select Method</option>
+            <option value="FedEx">FedEx</option>
+            <option value="DHL">DHL</option>
+            <option value="UPS">UPS</option>
+          </select>
+          <small class="field-error" id="shippingMethodErr"></small>
+        </div>
+
+        <div class="form-group">
+          <label>Expected Delivery</label>
+          <input type="date" id="deliveryDate">
+          <small class="field-error" id="deliveryDateErr"></small>
+        </div>
+
+        <div class="form-group">
+          <label>Tracking Number</label>
+          <input type="text" id="trackingNumber" placeholder="Enter tracking number">
+          <small class="field-error" id="trackingError"></small>
+        </div>
+
+        <div class="form-group">
+          <label>Internal Notes</label>
+          <input type="text" id="internalNotes" placeholder="Enter Internal Notes">
+          <small class="field-error" id="internalNotesErr"></small>
+        </div>
+
+        <div class="form-group">
+          <label>Customer Notes</label>
+          <input type="text" id="customerNotes" placeholder="Enter Customer Notes">
+          <small class="field-error" id="customerNotesErr"></small>
+        </div>
+      </div>
+    </div>
+
+    <!-- =========================================
+         SALES ORDER ITEMS
+    ========================================== -->
+    <div class="card">
+      <h3>Sales Order Items</h3>
+
+      <div class="so-items-box">
+        <table class="so-items-table" id="orderTable">
+          <thead>
+            <tr>
+              <th class="so-small-col">S.No</th>
+              <th>Product Name</th>
+              <th>Product ID</th>
+             
+              <th>Quantity</th>
+              <th>UOM</th>
+              <th>Unit Price</th>
+              <th>Tax (%)</th>
+              <th>Discount (%)</th>
+              <th>Total</th>
+              <th class="so-action-col">Action</th>
+            </tr>
+          </thead>
+
+          <tbody id="orderItemsBody">
+            <tr>
+              <td class="sno">1</td>
+              <td>
+                <div class="so-product-select-wrap">
+                  <select class="productSelect" onchange="onProductChange(this)">
+                    <option value="">Loading products...</option>
+                  </select>
+                  <span class="field-error so-product-select-error" aria-live="polite"></span>
+                </div>
+              </td>
+              <td class="prodIdCell">-</td>
+<td>
+  <input type="text" class="qtyInput" value="1" inputmode="numeric" pattern="[0-9]*" autocomplete="off">
+</td>
+<td class="uomCell">-</td>
+<td class="priceCell">₹ 0.00</td>
+<td class="taxCell">0</td>
+              <td>
+                <input type="text" class="discInput" value="0" inputmode="numeric" pattern="[0-9]*" autocomplete="off">
+              </td>
+              <td class="rowTotal">₹ 0.00</td>
+              <td class="so-action-col">
+                <button class="so-delete-btn" type="button" onclick="deleteRow(this)" title="Delete">
+                  <i class="fa-solid fa-trash"></i>
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="so-add-item-wrap">
+          <button class="so-add-item-btn" type="button" onclick="addItem()">+ Add Item</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- =========================================
+         ORDER SUMMARY
+    ========================================== -->
+    <div class="card">
+      <h3>Order Summary</h3>
+
+      <div class="summary-row">
+        <span>Subtotal</span>
+        <span class="money" id="subtotal">₹ 0.00</span>
+      </div>
+
+      <div class="summary-row has-input">
+        <span>Global Discount</span>
+        <div class="amt-right stacked">
+          <input type="number" id="globalDiscount" value="0" min="0" max="90" step="1">
+        </div>
+      </div>
+
+      <div class="summary-row">
+        <span>Tax Summary</span>
+        <span class="money" id="tax">₹ 0.00</span>
+      </div>
+
+      <div class="summary-row has-input">
+        <span>Shipping Charges</span>
+        <div class="amt-right stacked">
+          <input type="number" id="shipping" value="0" min="0">
+        </div>
+      </div>
+
+      <div class="summary-row">
+        <span>Rounding Adjustment</span>
+        <span class="money" id="rounding">₹ 0.00</span>
+      </div>
+
+      <div class="summary-row total">
+        <strong>Grand Total</strong>
+        <strong class="money" id="grandTotal">₹ 0.00</strong>
+      </div>
+    </div>
+
+    <!-- =========================================
+         COMMENTS / HISTORY
+    ========================================== -->
+    <div class="so-ch-card">
+      <div class="so-ch-topbar">
+        <button type="button" class="so-ch-pill active" id="soTabComments">
+          <i class="fa-solid fa-comment-dots"></i> Comments
+        </button>
+
+        <button type="button" class="so-ch-pill" id="soTabHistory">
+          <i class="fa-solid fa-clock-rotate-left"></i> History
+        </button>
+      </div>
+
+      <div class="so-ch-panel" id="soCommentsPanel">
+        <div class="so-ch-title">Add Comment</div>
+
+        <textarea
+          id="commentInput"
+          class="so-ch-textarea"
+          placeholder="Enter your comment"
+        ></textarea>
+
+        <div class="so-ch-actions">
+          <button type="button" class="so-ch-addbtn" id="commentAddBtn" disabled onclick="addComment()">
+            Add New
+          </button>
+        </div>
+
+        <div class="so-ch-list" id="commentList"></div>
+        <div class="so-ch-empty" id="commentsEmpty">No comments yet</div>
+      </div>
+
+      <div class="so-ch-panel hidden" id="soHistoryPanel">
+        <div class="so-ch-empty" id="historyEmpty">No history</div>
+        <div class="so-ch-history" id="historyList"></div>
+      </div>
+    </div>
+
+    <!-- =========================================
+         FOOTER ACTIONS
+    ========================================== -->
+    <div class="action-bar">
+      <button type="button" class="btn cancel-order" onclick="cancelOrder()">Cancel Order</button>
+
+      <div class="right-actions">
+        <button class="btn cancel" type="button" onclick="goBack()">Cancel</button>
+        <button class="btn btn-outline" type="button" onclick="saveDraft()">Save Draft</button>
+        <button id="submitBtn" type="button" onclick="submitOrder()" disabled>Submit</button>
+        <button class="btn primary" type="button" onclick="generatePO()">Generate (PO)</button>
+
+        <button type="button" class="btn-icon" id="pdfBtn" title="Download PDF" onclick="openSoPdf()">
+          📄
+        </button>
+
+        <button type="button" class="btn-icon" id="emailBtn" title="Send Mail" onclick="sendSalesOrderEmail()">
+          ✉
+        </button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- =========================================
+     CANCEL ORDER MODAL
+========================================== -->
+<div class="pos-modal-backdrop" id="cancelSoBackdrop" style="display:none;">
+  <div class="pos-modal" role="dialog" aria-modal="true" aria-labelledby="cancelSoTitle">
+    <div class="pos-modal-head">
+      <h4 id="cancelSoTitle">Cancel Sales Order</h4>
+      <button type="button" class="pos-modal-x" id="cancelSoX">×</button>
+    </div>
+
+    <div class="pos-modal-body">
+      <p class="pos-modal-msg">Are you sure you want to cancel this order?</p>
+      <label class="pos-modal-label" for="cancelSoReason">Reason for cancellation</label>
+      <textarea
+        id="cancelSoReason"
+        class="pos-modal-textarea"
+        placeholder="Enter cancellation reason"
+      ></textarea>
+    </div>
+
+    <div class="pos-modal-actions">
+      <button type="button" class="pos-btn pos-btn-outline" id="cancelSoNo">No</button>
+      <button type="button" class="pos-btn pos-btn-primary" id="cancelSoYes">Yes, Cancel</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', filename='sales-new.js') }}"></script>
+{% endblock %}

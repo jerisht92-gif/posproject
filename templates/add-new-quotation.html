@@ -1,0 +1,354 @@
+{% extends "menu.html" %}
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='add-new-quotation.css') }}">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+{% endblock %}
+{% block content %}
+<div class="modal">
+
+<h2 class="quotation-title">Create New Quotation</h2>
+
+<div class="quotation-full">
+  <!-- FORM SECTION -->
+  <form class="form-grid">
+    <div class="form-group">
+      <label>Quotation Number</label>
+      <input type="text" placeholder="QA-XXXX" id="quotationNumber" value="{{quotation_id}}" readonly>
+    </div>
+
+    <div class="form-group">
+      <label>Quotation Type</label>
+      <select id="quotationType">
+        <option value="">Select Quotation Type</option>
+        <option>Standard</option>
+                <option>Blanket</option>
+        <option>Service</option>
+
+      </select>
+      <span class="field-error" id="quotationTypeLiveError" aria-live="polite"></span>
+    </div>
+
+    <div class="form-group">
+      <label>Quotation Date</label>
+      <input type="date" id="quotationDate" />
+    </div>
+
+    <div class="form-group">
+      <label>Expiry Date</label>
+      <input type="date" id="expiryDate" />
+    </div>
+
+    <div class="form-group">
+      <label>Customer Name</label>
+      <select id="customerSelect" >
+        <option value="">Select Customer</option>
+      </select>
+      <span class="field-error" id="customerSelectLiveError" aria-live="polite"></span>
+    </div>
+
+    <div class="form-group">
+      <label>Customer PO Reference</label>
+      <input type="text" id="customerPo"  placeholder="CP-0001"        maxlength="10"/>
+      <span class="field-error" id="customerPoLiveError" aria-live="polite"></span>
+    </div>
+
+    <div class="form-group">
+      <label>Sales Rep</label>
+      <select id="salesRep">
+        <option value="">Select Sales Rep</option>
+      </select>
+      <span class="field-error" id="salesRepLiveError" aria-live="polite"></span>
+    </div>
+
+    <div class="form-group">
+      <label>Currency</label>
+      <select id="currency">
+        <option value="">Select Currency</option>
+        <option value="IND">IND (₹)</option>
+      </select>
+      <span class="field-error" id="currencyLiveError" aria-live="polite"></span>
+    </div>
+
+    <div class="form-group">
+      <label>Payment Terms</label>
+      <select id="paymentTerms">
+        <option value="">Select Payment Terms</option>
+      </select>
+      <span class="field-error" id="paymentTermsLiveError" aria-live="polite"></span>
+    </div>
+
+    <div class="form-group">
+      <label>Expected Date</label>
+      <input type="date"  id="expectedDate"  />
+      <span class="field-error" id="expectedDateLiveError" aria-live="polite"></span>
+    </div>
+</form>
+
+  <!-- QUOTATION ITEMS -->
+ <!-- QUOTATION ITEMS -->
+   <!-- QUOTATION ITEMS -->
+<h3 class="section-title">Quotation Items</h3>
+
+<div class="quotation-items-box">
+  <table class="items-table" id="itemsTable">
+    <thead>
+      <tr>
+        <th>S.No</th>
+        <th>Product Name</th>
+        <th>Product ID</th>
+        <th>Quantity</th>
+        <th>UOM</th>
+        <th>Unit Price</th>
+        <th>Tax (%)</th>
+        <th>Discount (%)</th>
+        <th>Total</th>
+        <th>Action</th>
+      </tr>
+    </thead>
+    <tbody id="itemsTableBody">
+      <!-- Dynamic rows will be added here -->
+    </tbody>
+  </table>
+
+  <div class="add-item-wrapper">
+    <button class="add-item-btn" id="addItemBtn" type="button">+ Add Item</button>
+  </div>
+</div>
+
+  <!-- TAX & TOTALS -->
+  <h3 class="section-title">Tax & Totals</h3>
+
+  <div class="totals" id="tax_total">
+    <!-- <div id="subTotal"><span>Subtotal</span><span>0.00</span></div> -->
+    <!-- <div><span>Global Discount</span><span>0.00</span></div> -->
+    <!-- <div id="taxSummary"><span>Tax Summary</span><span>0.00</span></div> -->
+    <!-- <div><span>Shipping Charge</span><span>0.00</span></div> -->
+        <!-- <div id="roundAdjust"><span>Rounding adjustment</span><span>0.00</span></div> -->
+
+    <!-- <div class="grand-total" id="GrandTotal"><span>Grand Total</span><span>0.00</span></div> -->
+  </div>
+
+  <!-- COMMENTS -->
+ <!-- COMMENTS / HISTORY / ATTACHMENTS -->
+<div class="comment-box">
+
+  <!-- Top Tabs -->
+  <div class="comment-tabs">
+    <button class="tab active" data-tab="comments">💬 Comments</button>
+    <button class="tab" data-tab="history">🕘 History</button>
+    <button class="tab" data-tab="attachments">📎 Attachments</button>
+  </div>
+
+  <!-- Comment Input -->
+  <div class="comment-body tab-content" id="comments">
+    <label>Add Comment:</label>
+    <textarea id="commentText" placeholder="Enter Your Comment" maxlength="100"></textarea>
+    <button class="add-btn" id="addCommentBtn">Add New</button>
+  </div>
+
+  <!-- History List -->
+ <!-- History List -->
+<div class="comment-history tab-content" id="history" style="display:none;">
+
+   <div class="no-history-message" id="noHistoryMsg">
+    No history available.
+  </div>
+
+</div>
+
+
+  <!-- Attachments Section -->
+ <!-- ATTACHMENTS SECTION - SINGLE CLEAN VERSION -->
+<div class="tab-content" id="attachments" style="display:none;">
+    
+    <!-- Upload Area -->
+    <div class="upload-section">
+        <input type="file" id="fileInput" hidden>
+        
+        <div class="upload-card" id="uploadCard">
+            <i class="fa-solid fa-cloud-upload-alt"></i>
+            <h4>Upload Attachment</h4>
+            <p>Click to select or drag & drop</p>
+            <small>PDF, DOC, XLS, JPG, PNG (Max 10MB)</small>
+        </div>
+        
+        <button class="btn-upload" id="uploadBtn">
+            <i class="fa-solid fa-upload"></i> Choose File
+        </button>
+    </div>
+
+    <!-- Uploaded Files List -->
+    <div class="files-section">
+        <div class="files-header">
+            <h4><i class="fa-solid fa-paperclip"></i> Attached Files</h4>
+            <span class="file-count" id="fileCount">0 files</span>
+        </div>
+        
+        <div class="files-list" id="filesList">
+            <div class="no-files">
+                <i class="fa-regular fa-folder-open"></i>
+                <p>No files attached yet</p>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+  </div>
+
+  <!-- FOOTER BUTTONS -->
+<div class="modal-footer">
+  <!-- FOOTER ICONS -->
+<div class="footer-icon-bar">
+
+
+   <!-- Add these two new buttons -->
+  <div class="footer-item edit" style="display: none;">
+    <i class="fa-solid fa-pen-to-square"></i>
+    <span>Edit</span>
+  </div>
+  
+  <div class="footer-item delete" style="display: none;">
+    <i class="fa-solid fa-trash"></i>
+    <span>Delete</span>
+  </div>
+
+  <div class="footer-item approve">
+    <i class="fa-solid fa-check"></i>
+    <span>Approve</span>
+  </div>
+
+  <div class="footer-item reject">
+    <i class="fa-solid fa-xmark"></i>
+    <span>Reject</span>
+  </div>
+
+  <div class="footer-item pdf">
+    <!-- <i class="fa-solid fa-file-pdf"></i> -->
+     <i class="fa-solid fa-file-pdf"></i>
+    <span>PDF</span>
+  </div>
+
+  <div class="footer-item email">
+    <i class="fa-regular fa-envelope"></i>
+    <span>Email</span>
+  </div>
+
+</div>
+
+  <div class="modal-footer-button">
+    <button class="btn-discard" id="cancelBtn" type="button">Cancel</button>
+    <button class="btn-draft">Save Draft</button>
+<button class=" btn-save" type="submit" id="submitBtn" >Submit</button>
+  </div>
+
+</div>
+
+</div>
+
+
+
+
+
+<!-- OTP Modal/Popup -->
+<div id="otpModal" class="otp-modal" style="display: none;">
+    <div class="otp-modal-content">
+        <div class="otp-modal-header">
+            <h3>Email Verification</h3>
+            <span class="close-otp-modal">&times;</span>
+        </div>
+        <div class="otp-modal-body">
+            <p id="otpEmailDisplay">Enter the 6-digit OTP sent to <strong>user@example.com</strong></p>
+            
+            <div class="otp-input-container">
+                <input type="text" class="otp-digit" maxlength="1" pattern="[0-9]" inputmode="numeric" autofocus>
+                <input type="text" class="otp-digit" maxlength="1" pattern="[0-9]" inputmode="numeric">
+                <input type="text" class="otp-digit" maxlength="1" pattern="[0-9]" inputmode="numeric">
+                <input type="text" class="otp-digit" maxlength="1" pattern="[0-9]" inputmode="numeric">
+                <input type="text" class="otp-digit" maxlength="1" pattern="[0-9]" inputmode="numeric">
+                <input type="text" class="otp-digit" maxlength="1" pattern="[0-9]" inputmode="numeric">
+            </div>
+            
+            <div class="otp-timer">
+                <span id="otpTimer">05:00</span> remaining
+            </div>
+            
+            <div class="otp-error" id="otpError" style="display: none;">
+                Invalid OTP. Please try again.
+            </div>
+            
+            <div class="otp-actions">
+                <button class="otp-btn otp-btn-secondary" id="resendOtpBtn">Resend OTP</button>
+                <button class="otp-btn otp-btn-primary" id="verifyOtpBtn">Verify & Send</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Approve Quotation Modal -->
+<div id="approveModal" class="reject-modal-overlay" style="display:none;">
+  <div class="reject-modal" role="dialog" aria-labelledby="approveModalTitle" aria-modal="true">
+    <h3 class="reject-title" id="approveModalTitle">Approve Quotation</h3>
+    <p class="reject-text">Are you want to approve this quotation?</p>
+    <div class="reject-actions">
+      <button type="button" id="approveCancelBtn" class="reject-btn cancel">Cancel</button>
+      <button type="button" id="approveConfirmBtn" class="reject-btn delete">Approve</button>
+    </div>
+  </div>
+</div>
+
+<!-- Reject Quotation Modal -->
+<div id="rejectModal" class="reject-modal-overlay" style="display:none;">
+  <div class="reject-modal">
+    <h3 class="reject-title">Reject Quotation</h3>
+    <p class="reject-text">Are you sure you want to reject this quotation?</p>
+    <textarea id="rejectReasonInput" class="reject-input" rows="3" placeholder="Enter reason for rejection"></textarea>
+    <div class="reject-actions">
+      <button type="button" id="rejectCancelBtn" class="reject-btn cancel">Cancel</button>
+      <button type="button" id="rejectOkBtn" class="reject-btn delete">Reject</button>
+    </div>
+  </div>
+</div>
+
+<!-- Customer Email Modal -->
+<div id="emailModal" class="reject-modal-overlay" style="display:none;">
+  <div class="reject-modal">
+    <h3 class="reject-title">Customer Email</h3>
+    <p class="reject-text">Enter customer email address:</p>
+    <input type="email" id="emailInputModal" class="reject-input" placeholder="abc@gmail.com" />
+    <div class="reject-actions">
+      <button type="button" id="emailCancelBtn" class="reject-btn cancel">Cancel</button>
+      <button type="button" id="emailOkBtn" class="reject-btn delete">OK</button>
+    </div>
+  </div>
+</div>
+
+<!-- Delete Item Modal (Quotation Items) -->
+<div id="deleteItemModal" class="reject-modal-overlay" style="display:none;">
+  <div class="reject-modal">
+    <h3 class="reject-title">Delete Item</h3>
+    <p class="reject-text" id="deleteItemText">Are you sure want to delete this item?</p>
+    <div class="reject-actions">
+      <button type="button" id="deleteItemCancelBtn" class="reject-btn cancel">Cancel</button>
+      <button type="button" id="deleteItemConfirmBtn" class="reject-btn delete">Delete</button>
+    </div>
+  </div>
+</div>
+
+<!-- Delete File Modal (Attachments) -->
+<div id="deleteFileModal" class="reject-modal-overlay" style="display:none;">
+  <div class="reject-modal">
+    <h3 class="reject-title">Delete File</h3>
+    <p class="reject-text">Are you sure want to delete this file ?</p>
+    <div class="reject-actions">
+      <button type="button" id="deleteFileCancelBtn" class="reject-btn cancel">Cancel</button>
+      <button type="button" id="deleteFileConfirmBtn" class="reject-btn delete">Delete</button>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', filename='add-new-quotation.js') }}"></script>
+{% endblock %}

@@ -1,0 +1,194 @@
+/* =========================
+   PAGE & LAYOUT
+========================= */
+body.profile-page {
+  margin: 0;
+  font-family: "Poppins", sans-serif;
+  background: #f5f7fb;
+  color: #111827;
+}
+
+.profile-wrapper {
+  max-width: 1100px;
+  margin: 40px auto;
+  padding: 0 16px 40px;
+}
+
+/* =========================
+   HEADER: Avatar + Name + Email
+========================= */
+.profile-header {
+  text-align: center;
+  margin-bottom: 24px;
+}
+
+.avatar-circle {
+  width: 140px;
+  height: 140px;
+  border-radius: 50%;
+  background: #111827;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 16px;
+  color: #fff;
+  font-size: 64px;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.25);
+}
+
+.profile-name {
+  font-size: 28px;
+  font-weight: 700;
+  margin: 4px 0;
+}
+
+.profile-email {
+  font-size: 18px;
+  color: #4b5563;
+}
+
+/* =========================
+   STATUS MESSAGE
+========================= */
+.status-msg {
+  text-align: center;
+  color: #16a34a;
+  font-weight: 500;
+  margin-bottom: 16px;
+}
+
+/* =========================
+   CARD
+========================= */
+.profile-card {
+  background: #ffffff;
+  border-radius: 18px;
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.08);
+  padding: 24px 28px 28px;
+}
+
+/* =========================
+   FORM & FIELDS
+========================= */
+.profile-form .form-row {
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+
+.form-group {
+  flex: 1;
+  min-width: 240px;
+  display: flex;
+  flex-direction: column;
+}
+
+.form-group label {
+  font-size: 16px;
+  color: #111827;
+  margin-bottom: 6px;
+  font-weight: 500;
+}
+
+.form-group input {
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid #d1d5db;
+  font-size: 15px;
+  outline: none;
+}
+
+.form-group input:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2);
+}
+
+/* =========================
+   BUTTONS (CENTERED)
+   Match Create New Branch Users styling
+========================= */
+.form-actions {
+  margin-top: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+}
+
+/* primary button – same as create-user .btn-primary */
+.btn-primary {
+  background: linear-gradient(#a12828, #8c1f1f);
+  color: #fff;
+  border: none;
+  padding: 10px 26px;
+  font-size: 14px;
+  border-radius: 10px;
+  font-weight: 500;
+  cursor: pointer;
+  box-shadow: 0 5px 0 #6d1717;
+  transition: 0.25s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-primary:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 0 #6d1717;
+}
+
+.btn-primary:active {
+  transform: translateY(3px);
+  box-shadow: 0 2px 0 #6d1717;
+}
+
+.btn-primary:disabled {
+  background: #cccccc;
+  color: #666666;
+  cursor: not-allowed;
+  box-shadow: 0 2px 0 #999999;
+  transform: none;
+}
+
+.btn-primary:disabled:hover {
+  transform: none;
+  box-shadow: 0 2px 0 #999999;
+}
+
+/* outline button – same as create-user .btn-outline */
+.btn-outline {
+  background: #ffffff;
+  border: 1.5px solid #a12828;
+  color: #a12828;
+  padding: 9px 24px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 500;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 3px 0 rgba(0, 0, 0, 0.08);
+  transition: 0.2s;
+}
+
+.btn-outline:hover {
+  background: #a12828;
+  color: #ffffff;
+  transform: translateY(-2px);
+}
+
+/* =========================
+   MOBILE (≤ 640px)
+========================= */
+@media (max-width: 640px) {
+  .profile-card {
+    padding: 20px 18px 24px;
+  }
+
+  .profile-form .form-row {
+    flex-direction: column;  /* stack Email + Mobile */
+    gap: 16px;
+  }
+}

@@ -1,0 +1,616 @@
+/* =============================
+   PAGE WRAPPER
+============================= */
+.manage-users-page {
+  padding: 20px;
+  font-family: "Poppins", sans-serif;
+  color: #4a1f1a;
+  background: #f6f1f1;
+}
+
+/* =============================
+   TITLE
+============================= */
+.manage-title {
+  font-size: 28px;
+  font-weight: 600;
+  color: #a12828;
+  margin-bottom: 12px;
+  text-shadow: 1px 1px 2px #d8b7b7;
+  margin-right: 24px;
+  display: inline-block;
+}
+
+/* =============================
+   HEADER
+============================= */
+.manage-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 18px;
+}
+
+.manage-header-left { flex: 1; }
+
+.manage-header-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding-top: 6px;
+}
+
+/* =============================
+   3D SEARCH BOX
+============================= */
+.mini-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #ffffff;
+  border: 1.5px solid #a12828;
+  border-radius: 25px;
+  padding: 6px 12px;
+  margin-top: 4px;
+  box-shadow: 0 4px 10px rgba(161, 40, 40, 0.25);
+  transition: 0.2s ease;
+}
+
+.mini-search:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 14px rgba(161, 40, 40, 0.35);
+}
+
+.mini-search input {
+  border: none;
+  outline: none;
+  font-size: 14px;
+  width: 180px;
+}
+
+.search-icon-btn {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 16px;
+  color: #a12828;
+}
+
+/* =============================
+   3D PRIMARY BUTTON
+============================= */
+
+.primary-btn{
+  background: linear-gradient(#a12828, #8c1f1f);
+  color:#fff;
+  border:none;
+  padding:10px 20px;
+  font-size:14px;
+  border-radius:10px;
+  cursor:pointer;
+
+  transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
+
+  box-shadow:0 5px 0 #6d1717;
+  outline:none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.primary-btn:hover{
+  transform: translateY(-1px);
+  box-shadow: 0 4px 0 #6d1717;
+}
+
+.primary-btn:active{
+  transform: translateY(1px);
+  box-shadow: 0 2px 0 #6d1717;
+}
+
+
+.primary-btn:focus,
+.primary-btn:focus-visible{
+  outline:none !important;
+  box-shadow:0 5px 0 #6d1717;  
+}
+
+/* =============================
+   DISABLED
+============================= */
+.primary-btn:disabled{
+  background:#cccccc;
+  color:#666666;
+  cursor:not-allowed;
+  box-shadow:0 2px 0 #999999;
+  transform:none;
+  filter:none;
+}
+
+.primary-btn:disabled:hover{
+  transform:none;
+  box-shadow:0 2px 0 #999999;
+  background:#cccccc;
+  color:#666666;
+}
+
+#createUserBtn:disabled{
+  background:#e9c2c2 !important;
+  color:#3c3a3a !important;
+  box-shadow:none !important;
+  border:1px solid #e0e0e0 !important;
+}
+
+/* =============================
+   CARD
+============================= */
+.card {
+  background: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.12);
+  overflow: hidden; /* ✅ keep clean edges */
+  transition: 0.3s ease;
+}
+
+.card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 14px 26px rgba(0, 0, 0, 0.18);
+}
+
+/* =============================
+   ✅ TABLE SCROLL WRAPPER (same as Product Master .table-wrap)
+   (scroll bar will appear BELOW table only)
+============================= */
+.table-scroll {
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  border-radius: 10px;
+  /* Keep scrollbar visible (classic bar below table, like Product Master) */
+  scrollbar-gutter: stable;
+}
+/* Visible horizontal scrollbar for table (shows at bottom when content overflows) */
+.table-scroll::-webkit-scrollbar {
+  height: 12px;
+}
+.table-scroll::-webkit-scrollbar-track {
+  background: #f0eaea;
+  border-radius: 0 0 10px 10px;
+}
+.table-scroll::-webkit-scrollbar-thumb {
+  background: #a12828;
+  border-radius: 6px;
+}
+.table-scroll::-webkit-scrollbar-thumb:hover {
+  background: #821f1f;
+}
+
+/* =============================
+   TABLE
+============================= */
+.user-table {
+  width: 100%;
+  min-width: 900px; /* Force horizontal overflow so scrollbar appears (like Product Master) */
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.user-table thead {
+  background: #fff4f4;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.user-table th {
+  text-align: left;
+  padding: 14px 10px;
+  font-size: 15px;
+  color: #992525;
+  font-weight: 600;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+
+.user-table td {
+  padding: 14px 10px;
+  border-bottom: 1px solid #f0eaea;
+  font-size: 14px;
+  background: #ffffff;
+  transition: 0.25s;
+  white-space: nowrap;
+}
+
+/* Row hover 3D lift */
+.user-table tbody tr:hover td {
+  background: #e3bdbd;
+  /* transform: scale(1.01);
+  transition: 0.25s ease; */
+}
+
+/* No data row */
+.no-data-row td {
+  text-align: center;
+  color: #888;
+}
+
+/* =============================
+   ACTION COLUMN
+============================= */
+.user-table th.action-header {
+  text-align: right !important;
+  padding-right: 60px;
+}
+
+.action-cell {
+  width: 150px;
+  padding-right: 20px;
+}
+
+.action-buttons {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 10px;
+  white-space: nowrap;
+}
+
+.action-btn {
+  padding: 7px 15px;
+  font-size: 13px;
+  border-radius: 8px;
+  cursor: pointer;
+  border: none;
+  transition: 0.25s ease;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+}
+
+.edit-btn, .delete-btn {
+  background: #d9534f;
+  color: #fff;
+}
+
+.edit-btn:hover,
+.delete-btn:hover {
+  transform: translateY(-3px);
+  background-color: #4a1f1a;
+  color: beige;
+}
+
+/* Disabled action buttons */
+.edit-btn-disabled,
+.delete-btn-disabled {
+  background: #e9c2c2 !important;
+  color: #3c3a3a !important;
+  box-shadow: none !important;
+  cursor: not-allowed !important;
+  opacity: 0.6 !important;
+  border: 1px solid #e0e0e0 !important;
+}
+
+/* =============================
+   MODAL
+============================= */
+.modal {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.45);
+  display: none;
+  justify-content: center;
+  align-items: center;
+  z-index: 9999;
+}
+
+.modal-content {
+  background: white;
+  padding: 30px;
+  width: 420px;
+  border-radius: 14px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
+}
+
+.modal-title {
+  margin: 0 0 12px;
+  font-size: 22px;
+  font-weight: 700;
+  color: #7a1d1d;
+}
+
+.modal-content input,
+.modal-content select {
+  width: 100%;
+  padding: 6px 12px;
+  margin-bottom: 6px;
+  border-radius: 8px;
+  border: 1px solid #e7b7b5;
+  background-color: #fff5f5;
+  font-size: 13px;
+  box-sizing: border-box;
+  transition: 0.2s ease;
+}
+
+/* Hover / focus – match Create New Branch Users */
+.modal-content input:hover,
+.modal-content select:hover {
+  background: #f5d4d4;
+  border-color: #b9473e;
+  box-shadow: 0 4px 10px rgba(161, 40, 40, 0.12);
+  transform: scale(1.01);
+}
+
+.modal-content input:focus,
+.modal-content select:focus {
+  outline: none;
+  border-color: #a12828;
+  box-shadow: 0 0 0 1px rgba(161, 40, 40, 0.25);
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.field-error {
+  color: #d9534f;
+  font-size: 12px;
+  margin-top: 4px;
+  min-height: 14px;
+}
+
+/* Match Create New Branch Users error style */
+.input-error{
+  border: 2px solid #e63946 !important;
+  background-color: #fff5f5 !important;
+  box-shadow: 0 0 0 1px rgba(230, 57, 70, 0.15);
+}
+
+.delete-text{
+  font-size: 14px;
+  margin: 10px 0 18px;
+  color: #4a1f1a;
+  line-height: 1.4;
+}
+
+.danger-btn{
+  background: #b71c1c;
+  color: #fff;
+  border: none;
+  padding: 10px 18px;
+  border-radius: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 8px 18px rgba(183, 28, 28, 0.25);
+}
+.danger-btn:hover{ filter: brightness(0.95); }
+
+.cancel-btn{
+  padding: 10px 18px;
+  border-radius: 10px;
+  border: 1.5px solid #cfcfd4;
+  background: #f6f6f7;
+  color: #1d2430;
+  font-weight: 600;
+  cursor: pointer;
+}
+.cancel-btn:hover{ filter: brightness(0.95); }
+
+/* =============================
+   FOOTER / PAGINATION
+   ✅ stays normal (NOT inside scroll)
+============================= */
+.table-footer {
+  display:flex;
+  justify-content: space-between;
+  align-items:center;
+  gap: 8px;
+  padding: 12px 14px;
+  border-top: 1px solid rgba(170, 70, 70, 0.12);
+  background: #f7f2f2;
+}
+
+.pagination-controls{
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-right: 20px;
+}
+
+.page-info{
+  color: #7a1d1d !important;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.entries-info{
+  font-size: 13px;
+  font-weight: 600;
+  color: #7a1d1d;
+  white-space: nowrap;
+}
+
+/* Pagination buttons */
+.pager-btn {
+  padding: 6px 18px;
+  border-radius: 4px;
+  background: linear-gradient(#a12828, #821f1f);
+  border: none;
+  color: #fff;
+  font-size: 14px;
+  cursor: pointer;
+  box-shadow: 0 4px 0 #6d1717;
+  transition: 0.25s ease;
+  min-width: 80px;
+}
+
+.pager-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+}
+
+.pager-btn:disabled {
+  opacity: 0.5;
+}
+.page-info{
+  color: #7a1d1d !important;
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.page-info .page-num{
+  font-size: 12px;
+  font-weight: 700;           
+  color: #6a2a2a;    
+}
+
+/* "No users" row hidden by default */
+#noUserRow { display: none; }
+#noUserRow td { text-align: center; }
+
+/* SUCCESS NOTIFICATION */
+.success-notification {
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-100px);
+  background: linear-gradient(135deg, #fff4f4, #ffe8e8);
+  color: #a12828;
+  padding: 14px 28px;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(161, 40, 40, 0.25);
+  font-size: 15px;
+  font-weight: 600;
+  z-index: 10000;
+  opacity: 0;
+  border: 1.5px solid #a12828;
+  transition: all 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+  pointer-events: none;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.success-notification.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+  pointer-events: auto;
+}
+
+.success-notification::before {
+  content: "✓";
+  font-size: 18px;
+  font-weight: bold;
+}
+
+/* ERROR NOTIFICATION (e.g. no changes to save) */
+.error-notification {
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-100px);
+  background: linear-gradient(135deg, #ffe6e6, #ffc2c2);
+  color: #a12828;
+  padding: 14px 28px;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(161, 40, 40, 0.35);
+  font-size: 15px;
+  font-weight: 600;
+  z-index: 10000;
+  opacity: 0;
+  border: 1.5px solid #a12828;
+  transition: all 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+  pointer-events: none;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.error-notification.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+  pointer-events: auto;
+}
+
+.error-notification::before {
+  content: "✕";
+  font-size: 18px;
+  font-weight: bold;
+}
+
+/* =============================
+   RESPONSIVE (keep your layout safe)
+============================= */
+@media (max-width: 768px){
+  .manage-header-row{
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .manage-header-right{
+    width: 100%;
+    display: flex;
+    gap: 10px;
+    padding-top: 0;
+  }
+
+  .mini-search{ flex: 1; }
+  .mini-search input{ width: 100%; }
+  .primary-btn{ white-space: nowrap; }
+
+  /* Table scroll (same as Product Master): force horizontal scroll when viewport is narrow */
+  .table-scroll {
+    overflow-x: auto;
+  }
+  .user-table {
+    min-width: 650px;
+  }
+
+  .table-footer{
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .pagination-controls{
+    margin-right: 0;
+  }
+}
+
+@media (max-width: 480px){
+  .manage-users-page{ padding: 10px; }
+
+  .manage-header-right{
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .primary-btn{ width: 100%; }
+
+  /* Keep table scroll on small screens (same as Product Master) */
+  .table-scroll {
+    overflow-x: auto;
+  }
+  .user-table {
+    min-width: 650px;
+  }
+
+  .table-footer{
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+  }
+
+  .pagination-controls{
+    width: 100%;
+    justify-content: center;
+  }
+}

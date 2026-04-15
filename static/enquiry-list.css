@@ -1,0 +1,1077 @@
+/* =========================================
+   ENQUIRY LIST PAGE
+========================================= */
+
+/* PAGE WRAPPER */
+.manage-page.enquiry-page {
+  max-width: 1200px;
+  margin: 0px auto 40px;
+  padding: 20px;
+  box-sizing: border-box;
+  font-family: "Poppins", sans-serif;
+  background: #f6f1f1;
+  color: #4a1f1a;
+}
+
+
+
+.enquiry-id.clickable {
+color: #a12828;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+
+/* -----------------------------------------
+   HEADER BAR
+------------------------------------------ */
+.enquiry-page .manage-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 18px;
+}
+
+.enquiry-page .manage-header-left {
+  flex: 1;
+}
+
+.enquiry-page .manage-title {
+  font-size: 28px;
+  font-weight: 600;
+  color: #a12828;
+  margin-bottom: 18px;
+  text-shadow: 1px 1px 2px #d8b7b7;
+}
+
+.enquiry-page .manage-subtitle {
+  font-size: 10px;
+  color: #888;
+}
+
+.enquiry-page .manage-header-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+/* -----------------------------------------
+   SEARCH BOX (mini-search)
+------------------------------------------ */
+.enquiry-page .mini-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #ffffff;
+  border: 1.5px solid #a12828;
+  border-radius: 25px;
+  padding: 6px 12px;
+  margin-top: 4px;
+  box-shadow: 0 4px 10px rgba(161, 40, 40, 0.25);
+  transition: 0.2s ease;
+  width: 230px;
+}
+
+.enquiry-page .mini-search:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 14px rgba(161, 40, 40, 0.35);
+}
+
+.enquiry-page .mini-search .search-icon {
+  font-size: 18px;
+  color: #7a001f;
+  display: flex;
+  align-items: center;
+}
+
+.enquiry-page .search-icon-btn {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 16px;
+  color: #a12828;
+}
+
+.enquiry-page .mini-search input {
+  border: none;
+  outline: none;
+  font-size: 14px;
+  width: 180px;
+  background: transparent;
+}
+
+/* -----------------------------------------
+   CREATE BUTTON (3D)
+------------------------------------------ */
+.enquiry-page .primary-btn {
+  background: linear-gradient(#a12828, #8c1f1f);
+  color: #fff;
+  border: none;
+  padding: 10px 20px;
+  font-size: 14px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: 0.25s;
+  box-shadow: 0 5px 0 #6d1717;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.enquiry-page .primary-btn:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 0 #6d1717;
+  color: #fff;
+}
+
+.enquiry-page .primary-btn:active {
+  transform: translateY(3px);
+  box-shadow: 0 2px 0 #6d1717;
+}
+
+/* Role-based: disabled Create New (no access) */
+.enquiry-page .primary-btn-disabled {
+  background: #e9c2c2 !important;
+  color: #5c5a5a !important;
+  box-shadow: none !important;
+  cursor: not-allowed !important;
+  opacity: 0.8;
+  pointer-events: auto; /* allow hover tooltip text */
+  text-decoration: none;
+}
+
+/* -----------------------------------------
+   MAIN CARD BLOCK
+------------------------------------------ */
+.enquiry-page .card {
+  background: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 10px 20px rgba(0,0,0,0.12);
+  overflow: hidden;
+}
+
+/* -----------------------------------------
+   TABLE WRAPPER – scrollable like Products page
+------------------------------------------ */
+.enquiry-page .table-wrapper {
+  overflow-x: auto;
+  overflow-y: auto;
+  max-height: 420px;
+  border-radius: 10px;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* -----------------------------------------
+   TABLE
+------------------------------------------ */
+.enquiry-page .enquiry-table {
+  width: 100%;
+  min-width: 900px;
+  border-collapse: collapse;
+  table-layout: auto;
+}
+
+.enquiry-page .enquiry-table thead {
+  background: #fff4f4;
+}
+
+/* base – no truncation; show full values */
+.enquiry-page .enquiry-table th,
+.enquiry-page .enquiry-table td {
+  padding: 14px 14px;
+  text-align: left;
+  vertical-align: middle;
+}
+
+/* headers */
+.enquiry-page .enquiry-table th {
+  font-size: 15px;
+  font-weight: 600;
+  color: #992525;
+  text-transform: capitalize;
+  background: #fff4f4;
+  white-space: nowrap;
+}
+
+/* body – full value visible; wrap only if very long */
+.enquiry-page .enquiry-table td {
+  font-size: 14px;
+  border-bottom: 1px solid #f0eaea;
+  background: #ffffff;
+  white-space: nowrap;
+}
+
+/* Email column: allow enough space for full address */
+.enquiry-page .enquiry-table th:nth-child(4),
+.enquiry-page .enquiry-table td:nth-child(4) {
+  min-width: 180px;
+}
+
+/* 🔴 underline */
+.enquiry-page .enquiry-table thead tr {
+  border-bottom: 2px solid #992525 !important;
+}
+
+/* hover */
+/* Row hover – same as Manage Users master table (light red/pink) */
+.enquiry-page .enquiry-table tbody tr:hover td {
+  background: #e3bdbd;
+  transition: 0.25s ease;
+}
+
+/* -----------------------------------------
+   NO DATA FOUND
+------------------------------------------ */
+.enquiry-page .no-data-row td.no-data-cell {
+  background: #000000 !important;
+  color: #ffffff !important;
+  text-align: center;
+  font-weight: 600;
+  font-size: 12px;
+  border-top: 40px solid #ffffff !important;
+  padding: 10px !important;
+  border-bottom: none !important;
+}
+
+/* -----------------------------------------
+   ACTION BUTTONS
+------------------------------------------ */
+
+.enquiry-page .action-buttons {
+  /* match product .action-wrap */
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+  gap: 10px;
+
+}
+
+/* match product master .action-btn styling */
+.enquiry-page .action-btn {
+  padding: 7px 15px;
+  font-size: 13px;
+  border-radius: 8px;
+  cursor: pointer;
+  border: none;
+  transition: 0.25s ease;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  background: #d9534f;
+}
+
+/* keep separate classes for clarity, but same colors as product master */
+.enquiry-page .edit-btn {
+  background: #d9534f;
+}
+
+.enquiry-page .delete-btn {
+  background: #d9534f;
+}
+
+.enquiry-page .action-btn:hover {
+  transform: translateY(-3px);
+  background-color: #4a1f1a;
+  color: beige;
+}
+
+/* Role-based: disabled Edit/Delete (no access) */
+.enquiry-page .edit-btn-disabled,
+.enquiry-page .delete-btn-disabled {
+  background: #e9c2c2 !important;
+  color: #3c3a3a !important;
+  box-shadow: none !important;
+  cursor: not-allowed !important;
+  opacity: 0.7;
+  border: 1px solid #e0e0e0 !important;
+}
+.enquiry-page .edit-btn-disabled:hover,
+.enquiry-page .delete-btn-disabled:hover {
+  transform: none;
+  background: #e9c2c2 !important;
+}
+
+/* Status text – same colour and normal weight as other cells */
+.enquiry-page .status-text {
+  font-weight: normal;
+  color: inherit;
+}
+
+
+
+.enquiry-page .enquiry-table th.action-header,
+.enquiry-page .enquiry-table td.action-cell {
+  width: 130px;
+  text-align: left;
+}
+
+
+
+/* =============================
+   MODAL
+============================= */
+.modal {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  z-index: 9999;
+  justify-content: center;
+  align-items: center;
+  padding: 18px;
+}
+
+.modal-content {
+  width: min(420px, 92vw);
+  background: #fff;
+  border-radius: 14px;
+  padding: 18px;
+  box-shadow: 0 18px 50px rgba(0,0,0,0.25);
+}
+
+.enquiry-edit-modal {
+  max-width: 500px;
+  width: 50%;
+}
+
+.modal-title {
+  margin-bottom: 15px;
+  font-size: 22px;
+  font-weight: 700;
+  color: #7a1d1d;
+}
+
+/* Delete confirmation body text */
+.delete-text {
+  font-size: 14px;
+  margin: 10px 0 18px;
+  color: #4a1f1a;
+  line-height: 1.4;
+}
+
+/* Grid system */
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  column-gap: 15px;
+  row-gap: 15px;
+}
+
+/* Full width row */
+.form-group.full-width {
+  grid-column: 1 / -1;
+}
+
+/* Label */
+.form-group label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 4px;
+  color: #4a1f1a;
+}
+
+/* Inputs */
+.form-group input,
+.form-group select {
+  width: 100%;
+  height: 30px;
+  padding: 2px 15px;
+  border-radius: 12px;
+  border: 1.5px solid #d9a7a7;
+  font-size: 12px;
+  box-sizing: border-box;
+  background: #fff;
+  line-height: normal;
+}
+
+/* Disabled field */
+.form-group input:disabled {
+  background: #f3eeee;
+  color: #7a5a5a;
+  cursor: not-allowed;
+}
+
+/* Focus – same #a12828 for all modal fields when clicked */
+.form-group input:focus,
+.form-group select:focus,
+.enquiry-edit-modal .form-group input:focus,
+.enquiry-edit-modal .form-group select:focus {
+  outline: none;
+  border-color: #a12828;
+  border-width: 2px;
+  box-shadow: 0 0 0 2px rgba(161, 40, 40, 0.2);
+}
+
+/* Buttons alignment */
+.modal-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 22px;
+}
+
+.field-error {
+  display: block;
+  margin-top: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #d9534f;
+}
+
+/* Invalid field: red border + light red background (same as Create New Branch Users) */
+.input-error,
+.enquiry-edit-modal .form-group input.input-error,
+.enquiry-edit-modal .form-group select.input-error {
+  border: 2px solid #e63946 !important;
+  background-color: #fff5f5 !important;
+  box-shadow: 0 0 0 1px rgba(230, 57, 70, 0.15);
+}
+
+.btn-primary {
+  background: linear-gradient(#a12828, #8c1f1f);
+  color: #fff;
+  border: none;
+  padding: 8px 14px;
+  font-size: 13px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: 0.25s;
+  box-shadow: 0 5px 0 #6d1717;
+}
+
+.btn-primary:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 0 #6d1717;
+}
+
+/* Disabled state for edit enquiry save button (same as edit product) */
+.btn-primary:disabled {
+  background: #cccccc !important;
+  color: #666666 !important;
+  cursor: not-allowed !important;
+  box-shadow: 0 2px 0 #999999 !important;
+  transform: none !important;
+}
+
+.btn-primary:disabled:hover {
+  transform: none !important;
+  box-shadow: 0 2px 0 #999999 !important;
+  background: #cccccc !important;
+  color: #666666 !important;
+}
+
+.cancel-btn {
+  padding: 10px 18px;
+  border-radius: 10px;
+  border: 1.5px solid #cfcfd4;
+  background: #f6f6f7;
+  color: #1d2430;
+  font-weight: 600;
+  cursor: pointer;
+  transition: filter 0.2s ease;
+}
+.cancel-btn:hover {
+  filter: brightness(0.95);
+}
+
+/* Danger button (used in delete confirmation modal) */
+.danger-btn{
+ background: linear-gradient(#a12828, #8c1f1f);
+  color: #fff;
+  border: none;
+  padding: 8px 14px;
+  font-size: 13px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: 0.25s;
+  box-shadow: 0 5px 0 #6d1717;
+}
+
+
+.danger-btn:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 0 #6d1717;
+}
+
+/* =============================
+   SUCCESS NOTIFICATION
+============================= */
+.success-notification {
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-100px);
+  background: linear-gradient(135deg, #fff4f4, #ffe8e8);
+  color: #a12828;
+  padding: 14px 28px;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(161, 40, 40, 0.25);
+  font-size: 15px;
+  font-weight: 600;
+  z-index: 10000;
+  opacity: 0;
+  border: 1.5px solid #a12828;
+  transition: all 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+  pointer-events: none;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.success-notification.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+  pointer-events: auto;
+}
+
+.success-notification::before {
+  content: "✓";
+  font-size: 18px;
+  font-weight: bold;
+}
+
+/* Error toast – same layout as success, different color */
+.error-notification {
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-100px);
+  background: linear-gradient(135deg, #ffe6e6, #ffd4d4);
+  color: #b3261e;
+  padding: 14px 28px;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(179, 38, 30, 0.25);
+  font-size: 15px;
+  font-weight: 600;
+  z-index: 10000;
+  opacity: 0;
+  border: 1.5px solid #c62828;
+  transition: all 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+  pointer-events: none;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.error-notification.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+  pointer-events: auto;
+}
+
+.error-notification::before {
+  content: "✕";
+  font-size: 18px;
+  font-weight: bold;
+}
+
+.enquiry-page .modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+}
+
+.enquiry-page .modal-header h3 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+  color: #7a1d1d;
+}
+
+.enquiry-page .modal-close {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 18px;
+  font-weight: 700;
+  color: #7a1d1d;
+}
+
+/* ========================
+   EDIT MODAL FORM GRID 
+============================ */
+.enquiry-page .form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  column-gap: 15px;
+  row-gap: 15px;
+}
+
+.enquiry-page .form-group.full {
+  grid-column: 1 / -1;
+}
+
+.enquiry-page .form-group label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 4px;
+  color: #4a1f1a;
+}
+
+.enquiry-page .form-group input {
+  width: 100%;
+  height: 30px;
+  padding: 2px 15px;
+  border-radius: 12px;
+  border: 1.5px solid #d9a7a7;
+  font-size: 12px;
+  box-sizing: border-box;
+  background: #fff;
+  line-height: normal;
+}
+
+.enquiry-page .form-group input:disabled {
+  background: #f3eeee;
+  color: #7a5a5a;
+  cursor: not-allowed;
+}
+
+.enquiry-page .form-group input:focus {
+  border-color: #a12828;
+  box-shadow: 0 0 0 2px rgba(161, 40, 40, 0.15);
+}
+
+/* Error text */
+.enquiry-page .error {
+  display: block;
+  margin-top: 6px;
+  font-size: 10px;
+  font-weight: 500;
+  color: #d10000;
+}
+
+/* Input error border */
+.enquiry-page .input-error {
+  border: 2px solid #d10000 !important;
+}
+
+/* ======================
+   MODAL ACTION BUTTONS 
+========================= */
+.enquiry-page .modal-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 22px;
+}
+
+.enquiry-page .btn-primary,
+.enquiry-page .btn-secondary {
+  background: linear-gradient(#a12828, #8c1f1f);
+  color: #fff;
+  border: none;
+  padding: 8px 14px;
+  font-size: 13px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: 0.25s;
+  box-shadow: 0 5px 0 #6d1717;
+}
+
+.enquiry-page .btn-primary:hover:not(:disabled),
+.enquiry-page .btn-secondary:hover:not(:disabled) {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 0 #6d1717;
+}
+
+.enquiry-page .btn-primary:disabled,
+.enquiry-page .btn-secondary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  pointer-events: none;
+  transform: none;
+}
+
+/* Toast  */
+.enquiry-page .toast {
+  margin-top: 12px;
+  font-size: 15px;
+  font-weight: 600;
+  display: none;
+  padding: 14px 28px;
+  border-radius: 10px;
+  white-space: nowrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.enquiry-page .toast.show {
+  display: flex;
+}
+
+.enquiry-page .toast.success {
+  background: linear-gradient(135deg, #fff4f4, #ffe8e8);
+  color: #a12828;
+  border: 1.5px solid #a12828;
+  box-shadow: 0 8px 24px rgba(161, 40, 40, 0.25);
+}
+
+.enquiry-page .toast.error {
+  background: linear-gradient(135deg, #ffe6e6, #ffc2c2);
+  color: #a12828;
+  border: 1.5px solid #a12828;
+  box-shadow: 0 8px 24px rgba(161, 40, 40, 0.35);
+}
+
+/* Table scroll is defined in TABLE WRAPPER above */
+
+
+
+
+/* ======================
+   VIEW PRODUCT
+========================= */  .enquiry-id-link {
+  cursor: pointer;
+  font-weight: 600;
+}
+.enquiry-id-link:hover {
+color: #a12828;
+}
+
+/* Modal overlay(view product) */
+#productModal {
+  display: none; 
+  position: fixed;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  background-color: rgba(0,0,0,0.6);
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+  display: flex;
+  padding: 20px; /* space around modal */
+}
+
+/* Modal content */
+.modalContent {
+  background: #fff;
+  padding: 25px 30px;
+  border-radius: 12px;
+  width: 420px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 12px 30px rgba(0,0,0,0.2);
+  text-align: left;
+  position: relative;
+  font-family: 'Segoe UI', sans-serif;
+}
+
+.view-title {
+  position: absolute;
+  top: 10px;
+  left: 0;
+  right: 0;              /* 🔑 allow full width */
+  display: flex;
+  align-items: center;
+}
+
+.closeBtn {
+  margin-left: auto;     /* 🔑 pushes it to the right */
+  font-size: 50px;
+  cursor: pointer;
+  color: #a12828;
+  padding-right: 40px;
+}
+.closeBtn:hover{
+    transform: translateY(-3px);
+}
+.view-product {
+  font-weight: bold;
+  font-size: 25px;
+  color: #a12828;
+  padding-left: 40px;
+}
+
+/* Product row layout */
+.productRow {
+  display: flex;
+  padding: 10px 0;      /* more space */
+  border-bottom: 1px solid #eee;
+}
+.boxed{
+    border-left: 1px solid #eee;   /* | */
+  border-right: 1px solid #eee;  /* | */
+
+}
+.rowLabel {
+    width: 180px;          
+  font-weight: 600;
+  color: #333;
+  margin-left: 60px;
+    text-align: left;     
+
+}
+.rowValue {
+  color: #555;
+  text-align: right;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+    /* margin-left: 60px; */
+    padding-left: 20px;
+}
+
+.rowValue1 {
+  color: #555;
+  text-align: right;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rowColon {
+  text-align: center;
+  font-weight: 600;
+}
+
+/* Grand total style */
+.grandTotal {
+  font-size: 16px;
+  font-weight: bold;
+  border-top: 2px solid #007bff;
+  margin-top: 10px;
+  padding-top: 10px;
+}
+
+
+/* ======================
+   NAVIGATION ARROW(VIEW PRODUCT)
+========================= */
+.navButtons {
+  text-align: center;
+  margin: 20px 0;
+}
+.navBtn {
+  font-size: 20px;
+  padding: 8px 16px;
+  margin: 0 8px;
+  border-radius: 6px;
+  border: none;
+  /* background: #007bff; */
+  color: #fff;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.navBtn:active { 
+  background: linear-gradient(#a12828, #8c1f1f);
+ }
+
+/* Action buttons */
+.actionButtons {
+  margin-top: 20px;
+  display: flex ;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+.actionButtons button {
+  padding: 8px 14px;
+border-radius: 10px;
+border: 1.5px solid #a12828;
+background: #ffffff;
+color: #a12828;
+  cursor: pointer;
+display: inline-flex;
+align-items: center;
+justify-content: center;
+box-shadow: 0 5px 0 #ffffff;
+transition: 0.2s;
+}
+.actionButtons button:active {
+ background: #a12828;
+color: #ffffff;
+transform: translateY(-2px);
+}
+.actionButtons #saveBtn {
+  background: linear-gradient(#a12828, #8c1f1f);
+  color: #fff;
+  border: none;
+  padding: 8px 14px;
+  font-size: 13px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: 0.25s;
+  box-shadow: 0 5px 0 #6d1717;
+}
+
+.actionButtons #saveBtn:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 0 #6d1717;
+}
+
+.actionButtons #saveBtn:disabled {
+  background: #cccccc !important;
+  color: #666666 !important;
+  cursor: not-allowed !important;
+  box-shadow: 0 2px 0 #999999 !important;
+  transform: none !important;
+}
+
+.actionButtons #saveBtn:disabled:hover {
+  transform: none !important;
+  box-shadow: 0 2px 0 #999999 !important;
+  background: #cccccc !important;
+  color: #666666 !important;
+}
+.navBtn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
+
+
+
+/* ======================
+   TABLE FOOTER
+========================= */
+
+.table-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #f7f2f2;
+  padding: 14px 20px;
+  font-size: 15px;
+  color: #2b2b2b;
+  border-top: 1px solid #e8dede;
+  box-shadow: 0 -4px 10px rgba(0, 0, 0, 0.08);
+}
+
+/* Consistent \"Showing entries\" text colour across modules */
+.table-footer .entries-info {
+  font-size: 13px;
+  font-weight: 600;
+  color: #7a1d1d;
+}
+
+/* Pagination buttons */
+.pager-btn {
+  padding: 6px 18px;
+  border-radius: 4px;
+  background: linear-gradient(#a12828, #821f1f);
+  border: none;
+  color: white;
+  font-size: 14px;
+  cursor: pointer;
+  box-shadow: 0 4px 0 #6d1717;
+  transition: 0.25s ease;
+}
+
+.pager-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+}
+
+.pager-btn:disabled {
+  opacity: 0.5;
+}
+
+/* "No users" row hidden by default, JS will show if needed */
+#noUserRow {
+  display: none;
+}
+
+#noUserRow td {
+  text-align: center;
+}
+
+
+
+/* ======================
+   VIEW PRODUCT(DELETE) 
+========================= */
+#deleteModal.modal {
+    display: none;
+    position: fixed;
+    z-index: 10000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0,0,0,0.5);
+    justify-content: center;
+    align-items: center;
+}
+
+#deleteModal.modal[style*="display: block"] {
+    display: flex !important;
+}
+
+#deleteModal .modal-content {
+    background-color: white;
+    margin: auto;
+    padding: 20px;
+    border-radius: 5px;
+    width: 350px;
+    max-width: 90%;
+    text-align: center;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+}
+
+#deleteModal .modal-content h3{
+ margin-bottom: 15px;
+  font-size: 22px;
+  font-weight: 700;
+  color: #7a1d1d;
+}
+
+#deleteModal .modal-content p{
+ font-size: 14px;
+  margin: 10px 0 18px;
+  color: #4a1f1a;
+  line-height: 1.4;
+}
+
+/* ============================= RESPONSIVE ============================= */
+@media (max-width: 1024px) {
+  .enquiry-page .enquiry-table {
+    table-layout: auto;
+    min-width: 800px;
+  }
+}
+
+@media (max-width: 768px) {
+  .enquiry-page .enquiry-table {
+    min-width: 700px;
+  }
+
+  .enquiry-page .manage-header-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .enquiry-page .manage-title {
+    font-size: 25px;
+  }
+
+  .enquiry-page .mini-search,
+  .enquiry-page .primary-btn {
+    width: 100%;
+  }
+
+  .enquiry-page .mini-search input {
+    width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  .enquiry-page .enquiry-table {
+    min-width: 600px;
+  }
+
+  .enquiry-page .enquiry-table th,
+  .enquiry-page .enquiry-table td {
+    font-size: 12px;
+    padding: 6px 8px;
+  }
+}

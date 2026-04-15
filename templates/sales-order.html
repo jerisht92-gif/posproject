@@ -1,0 +1,155 @@
+
+{% extends "menu.html" %}
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='sales-order.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="sales-order-page">
+
+  <!-- =========================================
+       PAGE HEADER
+  ========================================== -->
+  <div class="header-row">
+    <h2 class="main-heading">Sales Order</h2>
+
+    <div class="header-actions">
+      <button class="btn-primary" type="button" id="newSalesOrderBtn">
+        + New Sales Order
+      </button>
+    </div>
+  </div>
+
+  <!-- =========================================
+       MAIN CARD
+  ========================================== -->
+  <div class="card">
+
+    <!-- Search + Clear Filter -->
+    <div class="top-controls">
+      <div class="search">
+        <input
+          type="text"
+          id="searchInput"
+          class="search-input"
+          placeholder="Search by ID number 🔍︎ "
+          autocomplete="off"
+        />
+      </div>
+
+      <button type="button" id="clearFilterBtn" class="clearfilter">
+        Clear Filter
+      </button>
+    </div>
+
+    <!-- Filters -->
+    <div class="heading-tabs">
+      <div class="filter-group">
+        <label for="statusFilter">Status</label>
+        <select id="statusFilter">
+          <option value="">All</option>
+          <option value="Draft">Draft</option>
+          <option value="Purchased">Purchased</option>
+          <option value="Submitted(PA)">Submitted(PA)</option>
+          <option value="Delivered">Delivered</option>
+          <option value="Partially Delivered">Partially Delivered</option>
+          <option value="Cancelled">Cancelled</option>
+        </select>
+      </div>
+
+      <div class="filter-group">
+        <label for="orderTypeFilter">Order Type</label>
+        <select id="orderTypeFilter">
+          <option value="">All</option>
+          <option value="Standard">Standard</option>
+          <option value="Rush">Rush</option>
+          <option value="Back Order">Back Order</option>
+        </select>
+      </div>
+
+      <div class="filter-group">
+        <label for="salesRepFilter">Sales Rep</label>
+        <select id="salesRepFilter">
+          <option value="">All</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Bulk Actions -->
+    <div class="so-bulkbar" id="soBulkBar">
+      <div class="so-bulktext">Select orders to enable actions</div>
+
+      <div class="so-bulkbtns">
+        <button type="button" class="so-bulkbtn" id="genPurchaseBtn" disabled>
+          Generate Purchase order
+        </button>
+
+        <button type="button" class="so-bulkbtn" id="genDnBtn" disabled>
+          Generate Delivery Note
+        </button>
+
+        <button type="button" class="so-bulkbtn" id="genInvBtn" disabled>
+          Generate Invoice
+        </button>
+      </div>
+    </div>
+
+    <!-- Table -->
+    <div class="table-wrap">
+      <table class="table" id="salesOrderTable">
+        <thead>
+          <tr>
+            <th class="so-check-th">Mark</th>
+            <th>Sales Order ID</th>
+            <th>Order Type</th>
+            <th>Customer Name</th>
+            <th>Sales Rep</th>
+            <th>Order Date</th>
+
+            <th class="so-sort-th" id="statusSortTh">
+              Status <span class="so-sort-caret">▾</span>
+
+              <div class="so-sort-menu" id="statusSortMenu">
+                <button type="button" data-sort="newest">Newest First</button>
+                <button type="button" data-sort="oldest">Oldest First</button>
+                <button type="button" data-sort="progress">
+                  Progressing (Draft → Cancelled)
+                </button>
+                <button type="button" data-sort="reverse">
+                  Reverse Progressing (Cancelled → Draft)
+                </button>
+              </div>
+            </th>
+
+            <th>Stock Status</th>
+            <th>Grand Total</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+
+        <tbody id="salesOrderTbody">
+          <tr id="noDataRow">
+            <td class="empty" colspan="10">No Sales Orders Found.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Footer -->
+    <div class="table-footer">
+      <div class="showing" id="showingText">Showing 0 Entries</div>
+
+      <div class="pager">
+        <button class="pager-btn" id="prevBtn" type="button" disabled>‹ Prev</button>
+        <span class="pager-text">
+          Page <b id="pageNow">1</b> of <b id="pageTotal">1</b>
+        </span>
+        <button class="pager-btn" id="nextBtn" type="button" disabled>Next ›</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='sales-order.js') }}"></script>
+{% endblock %}

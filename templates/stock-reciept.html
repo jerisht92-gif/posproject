@@ -1,0 +1,123 @@
+{% extends "menu.html" %}
+ 
+{% block title %}Stock Receipt{% endblock %}
+ 
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='stock-reciept.css') }}">
+ 
+ 
+<div class="page-header">
+    <h2>Stock Receipt Note</h2>
+    <button class="btn">+ New Stock Receipt</button>
+</div>
+ 
+<input type="text" placeholder="Search by ID number" style="width:100%; margin-top:15px; padding:8px;">
+ 
+<div class="filters">
+    <select>
+        <option>Select Status</option>
+        <option>Draft</option>
+        <option>Cancelled</option>
+        <option>Submitted</option>
+        <option>Returned</option>
+    </select>
+ 
+    <select>
+        <option>Select Supplier</option>
+        <option>Vasu</option>
+        <option>Srinu</option>
+        <option>Praveen</option>
+    </select>
+ 
+    <input type="date">
+    <input type="date">
+</div>
+ 
+<table>
+    <thead>
+        <tr>
+            <th>S.No</th>
+            <th>GRN ID</th>
+            <th>PO ID</th>
+            <th>Supplier</th>
+            <th>Date</th>
+            <th>Total</th>
+            <th>Status</th>
+            <th>Received By</th>
+            <th>QC Done By</th>
+        </tr>
+    </thead>
+    <tbody id="tableBody">
+        <tr>
+            <td>1</td>
+            <td>GRN-0001</td>
+            <td>PO-0001</td>
+            <td>Vasu</td>
+            <td>10-01-2026</td>
+            <td>20</td>
+            <td><span class="status draft">Draft</span></td>
+            <td>Mandy</td>
+            <td>Sans</td>
+        </tr>
+ 
+        <tr>
+            <td>2</td>
+            <td>GRN-0002</td>
+            <td>PO-0002</td>
+            <td>Srinu</td>
+            <td>10-01-2026</td>
+            <td>20</td>
+            <td><span class="status draft">Draft</span></td>
+            <td>Mandy</td>
+            <td>Sans</td>
+        </tr>
+ 
+        <tr>
+            <td>3</td>
+            <td>GRN-0003</td>
+            <td>PO-0003</td>
+            <td>Praveen</td>
+            <td>10-01-2026</td>
+            <td>20</td>
+            <td><span class="status cancelled">Cancelled</span></td>
+            <td>Mandy</td>
+            <td>Sans</td>
+        </tr>
+ 
+        <tr>
+            <td>4</td>
+            <td>GRN-0004</td>
+            <td>PO-0004</td>
+            <td>Hemanth</td>
+            <td>10-01-2026</td>
+            <td>20</td>
+            <td><span class="status submitted">Submitted</span></td>
+            <td>Mandy</td>
+            <td>Sans</td>
+        </tr>
+ 
+        <tr>
+            <td>5</td>
+            <td>GRN-0005</td>
+            <td>PO-0005</td>
+            <td>Dinesh</td>
+            <td>10-01-2026</td>
+            <td>20</td>
+            <td><span class="status returned">Returned</span></td>
+            <td>Mandy</td>
+            <td>Sans</td>
+        </tr>
+    </tbody>
+</table>
+ 
+<div class="pagination">
+    <span>Showing 5 entries</span>
+    <div>
+        <button class="btn" onclick="prevPage()">Prev</button>
+        <button class="btn" onclick="nextPage()">Next</button>
+    </div>
+</div>
+<script src="{{ url_for('static', filename='stock-reciept.js') }}"></script>
+ 
+ 
+{% endblock %}

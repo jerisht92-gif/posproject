@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quotation {{ quotation.quotation_id }}</title>
+    <style>
+        /* (same styles as before) */
+        body {
+            font-family: 'Roboto', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            line-height: 1.6;
+            color: #202124;
+            margin: 0;
+            padding: 20px;
+            background-color: #ffffff;
+        }
+        .email-container {
+            max-width: 600px;
+            margin: 0 auto;
+            background-color: #ffffff;
+        }
+        .header {
+            background-color: #e42529;
+            padding: 30px 25px;
+            text-align: left;
+        }
+        .logo {
+            font-size: 32px;
+            font-weight: 700;
+            color: white;
+            letter-spacing: 2px;
+            margin-bottom: 5px;
+        }
+        .logo span {
+            font-weight: 300;
+        }
+        .greeting {
+            color: white;
+            font-size: 16px;
+            margin-top: 10px;
+            opacity: 0.95;
+        }
+        .success-message {
+            background-color: #f0f9f0;
+            border-left: 4px solid #28a745;
+            padding: 20px 25px;
+            margin: 25px 0;
+            border-radius: 4px;
+        }
+        .success-title {
+            color: #28a745;
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+        .success-text {
+            color: #3c4043;
+            font-size: 15px;
+        }
+        .order-info {
+            background-color: #f8f9fa;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 25px 0;
+        }
+        .order-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            font-size: 14px;
+        }
+        .order-row:last-child {
+            margin-bottom: 0;
+        }
+        .order-label {
+            color: #5f6368;
+            font-weight: 400;
+        }
+        .order-value {
+            color: #202124;
+            font-weight: 600;
+        }
+        .delivery-address {
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px dashed #e0e0e0;
+        }
+        .section-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #202124;
+            margin: 30px 0 20px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #e42529;
+        }
+        .items-list {
+            margin: 15px 0;
+        }
+        .item-card {
+            display: flex;
+            padding: 20px 0;
+            border-bottom: 1px solid #e8eaed;
+        }
+        .item-details {
+            flex: 1;
+        }
+        .item-name {
+            font-size: 16px;
+            font-weight: 600;
+            color: #202124;
+            margin-bottom: 5px;
+        }
+        .item-meta {
+            font-size: 13px;
+            color: #5f6368;
+            margin-bottom: 8px;
+        }
+        .item-meta span {
+            display: inline-block;
+        }
+        .item-price-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 5px;
+        }
+        .item-quantity {
+            font-size: 14px;
+            color: #3c4043;
+        }
+        .item-price {
+            font-size: 16px;
+            font-weight: 700;
+            color: #e42529;
+        }
+        .price-section {
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 25px 0;
+        }
+        .price-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 12px;
+            font-size: 15px;
+        }
+        .price-row:last-child {
+            margin-bottom: 0;
+        }
+        .price-label {
+            color: #5f6368;
+        }
+        .price-value {
+            color: #202124;
+            font-weight: 600;
+        }
+        .price-row.total {
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 2px solid #e42529;
+            font-size: 18px;
+        }
+        .total .price-label {
+            color: #202124;
+            font-weight: 700;
+        }
+        .total .price-value {
+            color: #e42529;
+            font-size: 20px;
+        }
+        .address-card {
+            background-color: #f8f9fa;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        .address-text {
+            font-size: 14px;
+            color: #3c4043;
+            line-height: 1.8;
+            margin-bottom: 5px;
+        }
+        .address-phone {
+            font-size: 14px;
+            color: #5f6368;
+            margin-top: 8px;
+        }
+        .payment-info {
+            background-color: #e8f0fe;
+            border-radius: 8px;
+            padding: 15px 20px;
+            margin: 20px 0;
+        }
+        .payment-row {
+            display: flex;
+            justify-content: space-between;
+            font-size: 14px;
+            margin-bottom: 8px;
+        }
+        .payment-row:last-child {
+            margin-bottom: 0;
+        }
+        .payment-label {
+            color: #1a73e8;
+            font-weight: 500;
+        }
+        .payment-value {
+            color: #202124;
+            font-weight: 600;
+        }
+        .warning-box {
+            background-color: #fef7e0;
+            border: 1px solid #f9a825;
+            border-radius: 8px;
+            padding: 15px 20px;
+            margin: 25px 0;
+            font-size: 13px;
+            color: #5f6368;
+        }
+        .warning-title {
+            color: #f9a825;
+            font-weight: 600;
+            margin-bottom: 5px;
+        }
+        .footer {
+            margin-top: 40px;
+            padding: 25px 0;
+            border-top: 1px solid #e8eaed;
+            text-align: center;
+        }
+        .footer-text {
+            font-size: 12px;
+            color: #5f6368;
+            line-height: 1.8;
+            margin-bottom: 5px;
+        }
+        .footer-copyright {
+            font-size: 11px;
+            color: #9aa0a6;
+            margin-top: 15px;
+        }
+        .footer-divider {
+            height: 1px;
+            background-color: #e8eaed;
+            margin: 20px 0;
+        }
+        @media screen and (max-width: 480px) {
+            body { padding: 10px; }
+            .item-card { flex-direction: column; }
+        }
+    </style>
+</head>
+<body>
+    <div class="email-container">
+        <!-- Header -->
+        <div class="header">
+            <div class="logo">STACKLY</div>
+            <div class="greeting">Hi {{ quotation.customer_name or 'Customer' }},</div>
+        </div>
+
+        <!-- Success Message -->
+        <div class="success-message">
+            <div class="success-title">✓ Quotation Generated Successfully</div>
+            <div class="success-text">Your quotation has been created. Please find the attached PDF for the complete details.</div>
+        </div>
+
+        <!-- Quotation Details -->
+        <div class="order-info">
+            <div class="order-row">
+                <span class="order-label">Quotation ID:</span>
+                <span class="order-value">{{ quotation.quotation_id }}</span>
+            </div>
+            <div class="order-row">
+                <span class="order-label">Quotation Date:</span>
+                <span class="order-value">{{ quotation.quotation_date or now.strftime('%d %b, %Y') }}</span>
+            </div>
+            <div class="order-row">
+                <span class="order-label">Expiry Date:</span>
+                <span class="order-value">{{ quotation.expiry_date or 'N/A' }}</span>
+            </div>
+            <div class="order-row">
+                <span class="order-label">Quotation Type:</span>
+                <span class="order-value">{{ quotation.quotation_type or 'N/A' }}</span>
+            </div>
+            <div class="order-row delivery-address">
+                <span class="order-label">Customer Name:</span>
+                <span class="order-value">{{ quotation.customer_name or quotation.customer_id or 'Customer' }}</span>
+            </div>
+            <div class="order-row">
+                <span class="order-label">Sales Rep:</span>
+                <span class="order-value">{{ quotation.sales_rep or 'N/A' }}</span>
+            </div>
+            <div class="order-row">
+                <span class="order-label">Expected Date:</span>
+                <span class="order-value">{{ quotation.expected_date or 'N/A' }}</span>
+            </div>
+        </div>
+
+        <!-- Items Summary -->
+        <div class="section-title">Item(s) Quoted</div>
+        
+        {% set items = quotation.get('items', []) %}
+        {% set ns = namespace(has_valid_items=false, subtotal=0) %}
+        {% set currency_symbols = {'USD': '$', 'EUR': '€', 'GBP': '£', 'SGD': 'S$', 'IND': '₹'} %}
+        {% set symbol = currency_symbols.get(quotation.currency, '₹') %}
+        
+        {% for item in items %}
+            {% if item.product_name or item.product_id %}
+                {% set ns.has_valid_items = true %}
+                {# Extract numeric value from item.total if it contains a symbol #}
+                {% set item_total = item.total|replace('$', '')|replace('€', '')|replace('£', '')|replace('S$', '')|replace('₹', '')|replace(',', '')|float %}
+                {% set ns.subtotal = ns.subtotal + item_total %}
+            {% endif %}
+        {% endfor %}
+        
+        {% if ns.has_valid_items %}
+        <div class="items-list">
+            {% for item in items %}
+                {% if item.product_name or item.product_id %}
+                <div class="item-card">
+                    <div class="item-details">
+                        <div class="item-name">{{ item.product_name or 'Product' }}</div>
+                        
+                        <!-- Product Meta Information -->
+                        <div class="item-meta">
+                            <span>Product ID: {{ item.product_id or 'SKU' }}</span> &nbsp;|&nbsp;
+                            <span>Qty: {{ item.quantity or '1' }}</span> &nbsp;|&nbsp;
+                                                        <span class="item-quantity">Unit Price: {{ symbol }} {{ "%.2f"|format(item.unit_price|replace('$', '')|replace('€', '')|replace('£', '')|replace('S$', '')|replace('₹', '')|replace(',', '')|float) }}</span>&nbsp;|&nbsp;
+                            <span>UOM: {{ item.uom or 'Unit' }}</span> &nbsp;|&nbsp;
+                            <span>Tax: {{ item.tax or '0' }}%</span> &nbsp;|&nbsp;
+                            <span>Discount: {{ item.discount or '0' }}%</span>
+                        </div>
+                        
+                        <div class="item-price-row">
+                            <!-- Unit Price with symbol -->
+                            <!-- Item Total with symbol -->
+                            <span class="item-price">Total: {{ symbol }} {{ "%.2f"|format(item.total|replace('$', '')|replace('€', '')|replace('£', '')|replace('S$', '')|replace('₹', '')|replace(',', '')|float) }}</span>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+            {% endfor %}
+        </div>
+
+        <!-- Price Summary -->
+        {% if quotation.totals %}
+        <div class="price-section">
+            {% if quotation.totals.subtotal is defined and quotation.totals.subtotal != 0 %}
+            <div class="price-row">
+                <span class="price-label">Sub Total:</span>
+                <span class="price-value">{{ symbol }} {{ "%.2f"|format(quotation.totals.subtotal|float) }}</span>
+            </div>
+            {% endif %}
+            
+            {% if quotation.totals.tax_summary is defined and quotation.totals.tax_summary != 0 %}
+            <div class="price-row">
+                <span class="price-label">Tax Summary:</span>
+                <span class="price-value">{{ symbol }} {{ "%.2f"|format(quotation.totals.tax_summary|float) }}</span>
+            </div>
+            {% endif %}
+            
+            {% if quotation.totals.shipping_charge is defined and quotation.totals.shipping_charge != 0 %}
+            <div class="price-row">
+                <span class="price-label">Shipping Charge:</span>
+                <span class="price-value">{{ symbol }} {{ "%.2f"|format(quotation.totals.shipping_charge|float) }}</span>
+            </div>
+            {% endif %}
+            
+            {% if quotation.totals.global_discount_percent is defined and quotation.totals.global_discount_percent != 0 %}
+            <div class="price-row">
+                <span class="price-label">Global Discount:</span>
+                <span class="price-value">{{ quotation.totals.global_discount_percent }}%</span>
+            </div>
+            {% endif %}
+            
+            {% if quotation.totals.rounding_adjustment is defined and quotation.totals.rounding_adjustment != 0 %}
+            <div class="price-row">
+                <span class="price-label">Rounding Adjustment:</span>
+                <span class="price-value">{{ symbol }} {{ "%.2f"|format(quotation.totals.rounding_adjustment|float) }}</span>
+            </div>
+            {% endif %}
+
+            <div class="price-row total">
+                <span class="price-label">Grand Total:</span>
+                <span class="price-value">{{ symbol }} {{ "%.2f"|format(quotation.totals.grand_total|float) }}</span>
+            </div>
+        </div>
+        {% else %}
+        <!-- Fallback if totals object doesn't exist -->
+        <div class="price-section">
+            <div class="price-row">
+                <span class="price-label">Sub Total:</span>
+                <span class="price-value">{{ symbol }} {{ "%.2f"|format(ns.subtotal) }}</span>
+            </div>
+            <div class="price-row total">
+                <span class="price-label">Grand Total:</span>
+                <span class="price-value">{{ symbol }} {{ "%.2f"|format(ns.subtotal) }}</span>
+            </div>
+        </div>
+        {% endif %}
+        
+        {% else %}
+        <div style="text-align: center; padding: 40px; background: #f8f9fa; border-radius: 8px; color: #5f6368;">
+            No items in this quotation
+        </div>
+        {% endif %}
+
+        <!-- Customer Details -->
+        <div class="section-title">Customer Details</div>
+        <div class="address-card">
+            <div class="address-text"><strong>{{ quotation.customer_name or 'Customer' }}</strong></div>
+            <div class="address-phone">Email: {{ recipient_email or 'Email not provided' }}</div>
+        </div>
+
+        <!-- Payment Terms -->
+        <div class="section-title">Payment Information</div>
+        <div class="payment-info">
+            <div class="payment-row">
+                <span class="payment-label">Payment Type:</span>
+                <span class="payment-value">{{ quotation.payment_term or 'Due on Receipt' }}</span>
+            </div>
+            <div class="payment-row">
+                <span class="payment-label">Currency:</span>
+                <span class="payment-value">{{ quotation.currency or 'IND' }} ({{ symbol }})</span>
+            </div>
+        </div>
+
+        <!-- Important Notes -->
+        <div class="warning-box">
+            <div class="warning-title">📌 Please Note</div>
+            <div>• The detailed quotation is attached as a PDF with this email.</div>
+            <div>• This quotation is valid until {{ quotation.expiry_date or 'the expiry date' }}.</div>
+            <div>• Prices are subject to change without prior notice.</div>
+        </div>
+
+        <!-- Footer -->
+        <div class="footer">
+            <div class="footer-text">
+                <strong>STACKLY</strong><br>
+                MMR Complex, Chinna Thirupathi, near Chinna Muniyappan Kovil, Salem, Tamil Nadu - 636008
+            </div>
+            
+            <div class="footer-divider"></div>
+            
+            <div class="footer-text">
+                For any questions, contact us at support@stackly.com<br>
+                Call: +91 7010792745
+            </div>
+            
+            <div class="footer-copyright">
+                © {{ now.strftime('%Y') }} Stackly. All rights reserved.
+            </div>
+        </div>
+    </div>
+</body>
+</html>

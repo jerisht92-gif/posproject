@@ -1,0 +1,290 @@
+{% extends "menu.html" %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='enquiry-list.css') }}">
+{% endblock %}
+
+{% block content %}
+{% set role_norm = (user_role or '')|lower|replace(' ', '')|replace('_', '') %}
+{% set ne = rbac.get('new_enquiry', {}) if rbac else {} %}
+{% set can_create = (ne.get('full_access') or ne.get('create')) or (role_norm in ['admin', 'superadmin']) %}
+{% set can_edit = (ne.get('full_access') or ne.get('edit')) or (role_norm in ['admin', 'superadmin']) %}
+{% set can_delete = (ne.get('full_access') or ne.get('delete')) or (role_norm == 'superadmin') %}
+<div class="manage-page enquiry-page" data-current-role="{{ role_norm }}" data-role="{{ user_role|default('User') }}"
+  data-perm-create="{{ 1 if can_create else 0 }}"
+  data-perm-edit="{{ 1 if can_edit else 0 }}"
+  data-perm-delete="{{ 1 if can_delete else 0 }}">
+
+  <!-- Header: title + search + create button -->
+  <div class="manage-header-row">
+    <div class="manage-header-left">
+      <h1 class="manage-title">Enquiry List</h1>
+      <p class="manage-subtitle">
+        Easily view, manage, and track all customer enquiries.
+      </p>
+    </div>
+
+    <div class="manage-header-right">
+      <!-- 🔍 Search -->
+      <div class="mini-search">
+        <input type="text" id="searchEnquiries" placeholder="Search Enquiries">
+        <button class="search-icon-btn" type="button">🔍</button>
+      </div>
+
+      <!-- Create New (Admin / Super Admin only) -->
+      {% if can_create %}
+      <a href="{{ url_for('new_enquiry') }}" class="primary-btn">+ Create New</a>
+      {% else %}
+      <span class="primary-btn primary-btn-disabled" title="Only Admin / Super Admin can create enquiries">+ Create New</span>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Card with table + footer -->
+  <div class="card">
+    <div class="table-wrapper">
+      <table class="enquiry-table">
+        <thead>
+          <tr>
+            <th>Enquiry ID</th>
+            <th>First Name</th>
+            <th>Last Name</th>
+            <th>Email</th>
+            <th>Phone Number</th>
+            <th>Status</th>
+            <th class="action-header">Action</th>
+          </tr>
+        </thead>
+
+          
+<tbody id="enquiryTable">
+{% for e in enquiries %}
+<tr>
+  <td >
+    <span class="enquiry-id-link" data-id="{{ e.enquiry_id }}">{{ e.enquiry_id }}</span>
+  </td>
+  <td>{{ e.first_name }}</td>
+  <td>{{ e.last_name }}</td>
+  <td>{{ e.email }}</td>
+  <td>{{ e.phone_number }}</td>
+  <td>{{ e.status }}</td>
+  <td class="action-cell">
+    <div class="action-buttons">
+      {% if can_edit %}
+      <button class="edit-btn action-btn" data-id="{{ e.enquiry_id }}">Edit</button>
+      {% else %}
+      <button class="edit-btn action-btn edit-btn-disabled" disabled title="Only Admin / Super Admin can edit">Edit</button>
+      {% endif %}
+      {% if can_delete %}
+      <button class="delete-btn action-btn" data-id="{{ e.enquiry_id }}">Delete</button>
+      {% else %}
+      <button class="delete-btn action-btn delete-btn-disabled" disabled title="Only Super Admin can delete">Delete</button>
+      {% endif %}
+    </div>
+  </td>
+</tr>
+{% else %}
+<tr class="no-data-row">
+  <td colspan="7" class="no-data-cell">No data Found</td>
+</tr>
+{% endfor %}
+</tbody>
+      </table>
+    </div>
+
+    <!-- Footer -->
+   <!-- Pagination Footer -->
+    <div class="table-footer">
+      <div class="entries-info">
+        Showing <span id="showingCount">{{ enquiries|length if enquiries else 0 }}</span> entries
+      </div>
+
+      <div class="pagination-controls">
+        <button id="prevPage" class="pager-btn">Prev</button>
+
+        <span id="pageInfo" class="page-info">
+          Page 1 of {{ (enquiries|length and 1) or 0 }}
+        </span>
+
+        <button id="nextPage" class="pager-btn">Next</button>
+      </div>
+    </div>
+
+  </div> <!-- End card -->
+
+
+
+
+<!-- ✅ EDIT ENQUIRY MODAL -->
+<div id="editEnquiryModal" class="modal" aria-hidden="true" role="dialog" aria-modal="true">
+  <div class="modal-content enquiry-edit-modal" role="document">
+
+    <h2 class="modal-title">Edit Enquiry</h2>
+
+    <input type="hidden" id="editEnquiryId">
+
+    <div class="form-grid">
+
+      <!-- Row 1 -->
+      <div class="form-group">
+        <label for="editEnquiryCode">Enquiry ID</label>
+        <input type="text" id="editEnquiryCode" disabled>
+      </div>
+
+      <div class="form-group">
+        <label for="editFirstName">First Name</label>
+        <input type="text" id="editFirstName" autocomplete="off" minlength="3" maxlength="40"/>
+        <small class="field-error" id="errFirstName"></small>
+      </div>
+
+      <!-- Row 2 -->
+      <div class="form-group">
+        <label for="editLastName">Last Name</label>
+        <input type="text" id="editLastName" autocomplete="off" minlength="3" maxlength="40"/>
+        <small class="field-error" id="errLastName"></small>
+      </div>
+
+      <div class="form-group">
+        <label for="editPhoneNumber">Phone Number</label>
+        <input type="text" id="editPhoneNumber" autocomplete="off" maxlength="10" inputmode="numeric" pattern="[0-9]*"/>
+        <small class="field-error" id="errPhoneNumber"></small>
+      </div>
+
+      <!-- Row 3 -->
+      <div class="form-group full-width">
+        <label for="editEmail">Email</label>
+        <input type="email" id="editEmail" autocomplete="off"/>
+        <small class="field-error" id="errEmail"></small>
+      </div>
+
+    </div>
+
+    <div class="modal-actions">
+      <button id="saveEnquiryEditBtn" class="btn-primary" type="button">Save</button>
+      <button id="closeEnquiryEditBtn" class="cancel-btn" type="button">Cancel</button>
+    </div>
+
+  </div>
+</div>
+
+<!-- ✅ DELETE ENQUIRY MODAL -->
+<div id="deleteEnquiryModal" class="modal" aria-hidden="true" role="dialog" aria-modal="true">
+  <div class="modal-content" role="document">
+    <h2 class="modal-title">Delete Enquiry</h2>
+    <p id="deleteEnquiryText" class="delete-text"></p>
+
+    <div class="modal-actions">
+      <button id="cancelEnquiryDeleteBtn" class="cancel-btn" type="button">Cancel</button>
+      <button id="confirmEnquiryDeleteBtn" class="danger-btn" type="button">Delete</button>
+    </div>
+  </div>
+</div>
+
+<!--✅ VIEW PRODUCT -->
+
+<div id="productModal" style="display: none;">
+  <div class="modalContent">
+    <div class="view-title">
+          <h3 class="view-product"id="modalTitle"  >View Product</h3>
+              <span class="closeBtn" id="closeModal" role="button" tabindex="0" aria-label="Close">&times;</span>
+
+    </div>
+   <div class="productRow" style="margin-top: 40px;"></div>
+    <!-- Product details in row layout -->
+      <div class="productRow boxed">
+      <div class="rowLabel">Product Id         </div>
+        <div class="rowColon">:</div>
+      <div class="rowValue" id="modalProductId"></div>
+    </div>
+
+    <div class="productRow boxed">
+      <div class="rowLabel">Product Name</div>
+        <div class="rowColon">:</div>
+      <div class="rowValue" id="modalProductName"></div>
+    </div>
+    <div class="productRow boxed">
+      <div class="rowLabel">Product Description</div>
+        <div class="rowColon">:</div>
+      <div class="rowValue" id="modalDescription"></div>
+    </div>
+    <div class="productRow boxed">
+      <div class="rowLabel">Unit Price</div>
+        <div class="rowColon">:</div>
+      <div class="rowValue" id="modalUnitPrice"></div>
+    </div>
+
+   <!-- Quantity -->
+<div class="productRow boxed">
+  <div class="rowLabel">Quantity</div>
+    <div class="rowColon">:</div>
+  <div class="rowValue editable" id="modalQuantity" contenteditable="false"></div>
+</div>
+
+<!-- Selling Price -->
+<div class="productRow boxed">
+  <div class="rowLabel">Selling Price</div>
+    <div class="rowColon">:</div>
+  <div class="rowValue editable" id="modalSellingPrice" contenteditable="false"></div>
+</div>
+
+    <div class="productRow boxed">
+      <div class="rowLabel">
+        Total
+      </div>
+        <div class="rowColon">:</div>
+      <div class="rowValue" id="modalTotal"></div>
+    </div>
+
+    <!-- Navigation arrows -->
+
+    <!-- Navigation arrows with dynamic info -->
+    <div class="navButtons">
+      <button class="navBtn" id="prevBtn">⬅️</button>
+      <span id="productCounter" style="margin: 0 15px;font-size: 12px;  color: #2b2b2b;">
+        Product 1 of 1 
+      </span>
+      <button class="navBtn" id="nextBtn">➡️</button>
+    </div>
+
+
+    <!-- Action buttons (role-based: Edit/Save = Admin or Super Admin, Delete = Super Admin only) -->
+    <div class="actionButtons">
+      {% if can_edit %}
+      <button id="editBtn" class="btn-primary">Edit</button>
+      <button id="saveBtn" disabled>Save</button>
+      {% endif %}
+      {% if can_delete %}
+      <button id="deleteItemBtn" class="delete-item-btn">Delete</button>
+      {% endif %}
+    </div>
+
+    <!-- Grand Total -->
+    <div class="productRow" style="margin-top:10px; font-weight:bold;">
+      <div >Grand Total:</div>
+      <div class="rowValue1" id="modalGrandTotal" ></div>
+    </div>
+  </div>
+</div>
+
+
+
+<!--✅ DELETE ITEM MODAL -->
+<div id="deleteModal" class="modal" style="display:none;">
+  <div class="modal-content">
+    <h3>Confirm Delete</h3>
+    <p>Are you sure you want to delete this item?</p>
+    <div class="modal-actions">
+      <button id="confirmDelete" class="danger-btn">OK</button>
+      <button id="cancelDelete" class="cancel-btn">Cancel</button>
+    </div>
+  </div>
+</div>
+
+
+{% endblock %}
+
+{% block extra_js %}
+
+
+<script src="{{ url_for('static', filename='enquiry-list.js') }}"></script>
+{% endblock %}

@@ -1,0 +1,681 @@
+
+/* =========================================================
+   SALES ORDER PAGE
+========================================================= */
+.sales-order-page {
+  padding: 20px;
+  font-family: "Poppins", sans-serif;
+  color: #4a1f1a;
+  background: #f6f1f1;
+}
+
+/* =========================================================
+   HEADER
+========================================================= */
+.sales-order-page .header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.sales-order-page .main-heading {
+ font-size: 28px;
+  font-weight: 600;
+  color: #a12828;
+  margin-bottom: 12px;  
+  text-shadow: 1px 1px 2px #d8b7b7;
+  margin-right: 24px;
+  display: inline-block;
+}
+
+.sales-order-page .header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* =========================================================
+   PRIMARY BUTTON
+========================================================= */
+.btn-primary {
+  padding: 8px 14px;
+  font-size: 13px;
+  color: #fff;
+  background: linear-gradient(#a12828, #8c1f1f);
+  border: none;
+  border-radius: 10px;
+  cursor: default;
+  transition: 0.25s;
+  box-shadow: 0 5px 0 #6d1717;
+}
+
+.btn-primary:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 0 #6d1717;
+}
+
+.btn-primary:disabled {
+  background: #cccccc !important;
+  color: #666 !important;
+  cursor: default !important;
+  box-shadow: 0 2px 0 #999 !important;
+  transform: none !important;
+}
+
+/* =========================================================
+   CARD
+========================================================= */
+.sales-order-page .card {
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.65);
+  border: 1px solid rgba(190, 140, 140, 0.35);
+  border-radius: 18px;
+  box-shadow: 0 18px 40px rgba(70, 10, 10, 0.08);
+}
+
+/* =========================================================
+   TOP CONTROLS
+========================================================= */
+.sales-order-page .top-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sales-order-page .search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 40px;
+  background: #fff;
+  border: 1.5px solid #a12828;
+  border-radius: 999px;
+  box-shadow: 0 4px 10px rgba(161, 40, 40, 0.25);
+  transition: 0.2s ease;
+}
+
+.sales-order-page .search:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 14px rgba(161, 40, 40, 0.35);
+}
+
+.sales-order-page .search .search-input {
+  width: 100%;
+  height: 100%;
+  padding: 0 18px;
+  font-size: 14px;
+  color: #4a1f1a;
+  background: transparent;
+  border: none;
+  outline: none;
+}
+
+.sales-order-page .search .search-input::placeholder {
+  color: #9b9b9b;
+}
+
+.sales-order-page .clearfilter {
+  font-size: 15px;
+  font-weight: 700;
+  color: #8d1f1f;
+  text-align: right;
+  white-space: nowrap;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+/* =========================================================
+   FILTERS
+========================================================= */
+.sales-order-page .heading-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-top: 10px;
+  margin-bottom: 18px;
+}
+
+.sales-order-page .filter-group label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #4a1f1a;
+}
+
+.sales-order-page .filter-group select {
+  width: 100%;
+  height: 30px;
+  padding: 6px 12px;
+  border-radius: 10px;
+  border: 1px solid #e7b7b5;
+  background-color: #fff5f5;
+  font-size: 13px;
+  outline: none;
+  color: #000;
+  box-sizing: border-box;
+  transition: 0.2s ease;
+}
+
+.sales-order-page .filter-group select option {
+  background-color: #d7aaaa;
+  color: #000;
+}
+
+.sales-order-page .filter-group select:hover {
+  background-color: #f5d4d4;
+  border-color: #b9473e;
+}
+
+.sales-order-page .filter-group select:focus {
+  background-color: #fff5f5;
+  border-color: #a12828;
+}
+
+
+/* =========================================================
+   SUCCESS / ERROR TOASTS (match Quotation/Sales Order form)
+========================================================= */
+.success-notification,
+.error-notification {
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-100px);
+  padding: 14px 28px;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 600;
+  z-index: 10000;
+  opacity: 0;
+  transition: all 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+  pointer-events: none;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.success-notification {
+  background: linear-gradient(135deg, #fff4f4, #ffe8e8);
+  color: #a12828;
+  border: 1.5px solid #a12828;
+  box-shadow: 0 8px 24px rgba(161, 40, 40, 0.25);
+}
+
+.error-notification {
+  background: linear-gradient(135deg, #ffe6e6, #ffc2c2);
+  color: #a12828;
+  border: 1.5px solid #a12828;
+  box-shadow: 0 8px 24px rgba(161, 40, 40, 0.35);
+}
+
+.success-notification.show,
+.error-notification.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+  pointer-events: auto;
+}
+
+.success-notification::before {
+  content: "✓";
+  font-size: 18px;
+  font-weight: bold;
+}
+
+.error-notification::before {
+  content: "✕";
+  font-size: 18px;
+  font-weight: bold;
+}
+
+/* =========================================================
+   BULK ACTION BAR
+========================================================= */
+.so-bulkbar {
+ 
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin: -8px 0 10px;
+  padding: 0;
+  flex-wrap: nowrap;
+}
+
+
+.so-bulktext {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  font-size: 15px;
+  text-align: left;
+}
+
+.so-bulkbtns {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-wrap: nowrap;
+  margin-top: 0px;
+  margin-left: auto;
+}
+
+.so-bulkbtn {
+  padding: 8px 10px;
+  font-size: 13px;
+  letter-spacing: 0.2px;
+  color: #a12828;
+  background: #fff;
+  border: 2px solid #a12828;
+  border-radius: 999px;
+  box-shadow: 0 6px 14px rgba(161, 40, 40, 0.12);
+  transition: 0.2s ease;
+}
+
+.so-bulkbtn:hover:not(:disabled) {
+  color: #fff;
+  background: linear-gradient(#a12828, #8c1f1f);
+  transform: translateY(-1px);
+  box-shadow: 0 10px 18px rgba(161, 40, 40, 0.20);
+}
+
+.so-bulkbtn:disabled {
+  color: #c77a7a;
+  background: #fff;
+  border-color: #c77a7a;
+  opacity: 1;
+  cursor: default;
+  box-shadow: none;
+}
+
+/* =========================================================
+   CHECKBOX COLUMN
+========================================================= */
+.so-check-th,
+.so-check-td {
+  width: 44px;
+  text-align: center;
+}
+
+.so-check-td input,
+.so-check-th input {
+  width: 16px;
+  height: 16px;
+  accent-color: #a12828;
+}
+
+/* =========================================================
+   TABLE
+========================================================= */
+.sales-order-page .table-wrap {
+  overflow-x: auto;
+  overflow-y: visible;
+  border-radius: 10px;
+}
+
+.sales-order-page .table {
+  width: 100%;
+  font-size: 14px;
+  border-collapse: collapse;
+}
+
+.sales-order-page .table thead th {
+  padding: 8px 12px;
+  text-align: left;
+  white-space: nowrap;
+  color: #7a1d1d;
+  background: rgba(170, 70, 70, 0.10);
+  border-bottom: 1px solid rgba(170, 70, 70, 0.2);
+}
+
+.sales-order-page .table thead th:last-child {
+  padding-right: 0;
+  text-align: center;
+}
+
+.sales-order-page .table tbody td {
+  padding: 8px 12px;
+  white-space: nowrap;
+  border-bottom: 1px solid rgba(170, 70, 70, 0.12);
+}
+
+.sales-order-page .table tbody tr:hover {
+  background: rgba(141, 31, 31, 0.06);
+}
+
+.sales-order-page .table tbody tr:hover td {
+  background: #e3bdbd;
+}
+
+.sales-order-page .empty {
+  padding: 16px 12px;
+  color: #8a5a5a;
+}
+
+/* =========================================================
+   ACTION MENU
+========================================================= */
+.so-td-action {
+  text-align: center;
+}
+
+.so-act-dots {
+  width: 38px;
+  height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  font-weight: 900;
+  color: #a12828;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+.so-act-fly {
+  position: fixed;
+  z-index: 999999;
+  width: 180px;
+  padding: 4px 0;
+  overflow: hidden;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.18);
+}
+
+.so-act-item {
+  width: 100%;
+  padding: 10px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: left;
+  white-space: nowrap;
+  color: #111;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+.so-act-item:hover {
+  background: #e3bdbd;
+}
+
+.so-act-item:disabled {
+  color: #bfbfbf;
+  cursor: default;
+}
+
+.so-act-item:disabled:hover {
+  background: transparent;
+}
+
+/* =========================================================
+   TABLE FOOTER
+========================================================= */
+.sales-order-page .table-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(170, 70, 70, 0.12);
+}
+
+.sales-order-page .showing {
+  font-size: 13px;
+  font-weight: 600;
+  color: #7a1d1d;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sales-order-page .pager {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex: 0 0 auto;
+}
+
+.sales-order-page .pager-btn {
+  min-width: 80px;
+  padding: 6px 18px;
+  font-size: 13px;
+  white-space: nowrap;
+  color: #fff;
+  background: linear-gradient(#a12828, #821f1f);
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  box-shadow: 0 4px 0 #6d1717;
+  transition: 0.25s ease;
+}
+
+.sales-order-page .pager-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+}
+
+.sales-order-page .pager-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+  transform: none;
+}
+
+.sales-order-page .pager-text {
+  font-size: 13px;
+  color: #7a1d1d;
+  white-space: nowrap;
+}
+
+#pageNow,
+#pageTotal {
+  font-weight: 700;
+}
+
+/* =========================================================
+   STATUS SORT MENU
+========================================================= */
+.so-sort-th {
+  position: relative;
+  cursor: pointer;
+  user-select: none;
+}
+
+.so-sort-caret {
+  margin-left: 6px;
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+.so-sort-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 50;
+  display: none;
+  flex-direction: column;
+  width: 260px;
+  padding: 8px;
+  background: #fff;
+  border: 1px solid rgba(170, 70, 70, 0.25);
+  border-radius: 10px;
+  box-shadow: 0 12px 30px rgba(70, 10, 10, 0.18);
+}
+
+.so-sort-th.open .so-sort-menu {
+  display: flex;
+}
+
+.so-sort-menu button {
+  display: block;
+  width: 100%;
+  padding: 10px 10px;
+  font-size: 13px;
+  text-align: left;
+  color: #4a1f1a;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.so-sort-menu button:hover {
+  background: rgba(161, 40, 40, 0.08);
+}
+
+.so-status-badge{
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 118px;
+  padding: 8px 16px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+  text-align: center;
+  border: 1px solid transparent;
+}
+
+
+.so-status-draft{
+  background:#ffe28a;
+  color:#000;
+}
+
+.so-status-submitted{
+  background:#0b762e;
+  color:#000;
+}
+
+.so-status-purchased{
+  background:#b65049;
+  color:#000;
+}
+
+.so-status-delivered{
+  background:#67c3ff;
+  color:#000;
+}
+
+.so-status-partial{
+  background:#ff8fb5;
+ color:#000;
+}
+
+.so-status-returned{
+  background:#ffb14a;
+  color:#000;
+}
+
+.so-status-cancelled{
+  background:#d6d6d6; 
+  color:#000;
+}
+
+/* =========================================================
+   RESPONSIVE
+========================================================= */
+@media (max-width: 1024px) {
+  .sales-order-page {
+    padding: 16px;
+  }
+
+  
+}
+
+@media (max-width: 768px) {
+  .sales-order-page {
+    padding: 12px;
+  }
+
+  .sales-order-page .header-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .sales-order-page .header-actions {
+    display: flex;
+    width: 100%;
+    gap: 10px;
+  }
+
+  .sales-order-page .btn-primary {
+    width: 100%;
+  }
+
+  .sales-order-page .heading-tabs {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .sales-order-page .table {
+    min-width: 900px;
+  }
+
+  .sales-order-page .pager {
+    gap: 8px;
+  }
+
+  .sales-order-page .top-controls .search {
+    width: 90%;
+  }
+}
+
+@media (max-width: 520px) {
+  .sales-order-page .main-heading {
+    font-size: 22px;
+    text-align: center;
+  }
+
+  .sales-order-page .heading-tabs {
+    grid-template-columns: 1fr;
+  }
+
+  .sales-order-page .table-footer {
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    text-align: center;
+  }
+
+  .sales-order-page .showing {
+    width: 100%;
+    max-width: 100%;
+    font-size: 13px;
+    font-weight: 700;
+    color: #7a1d1d;
+    white-space: normal;
+    overflow: visible;
+    text-overflow: unset;
+  }
+
+  .sales-order-page .pager {
+    width: 100%;
+    justify-content: center;
+    gap: 12px;
+  }
+
+  .sales-order-page .pager-btn {
+    min-width: 70px;
+    padding: 6px 12px;
+    font-size: 12px;
+  }
+
+.sales-order-page .pager-text{
+    font-size: 14px;
+    font-weight: 700;
+    color: #7a1d1d;
+    white-space: nowrap;
+  }
+}

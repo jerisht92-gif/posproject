@@ -1,0 +1,66 @@
+body{
+    font-family: 'Courier New', Courier, monospace;
+    background-color: #f9f9f9;
+    margin: 0;
+    padding: 20px;
+}
+    .page-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+ 
+    .btn {
+        background: #9f2d2d;
+        color: white;
+        padding: 8px 15px;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+    }
+ 
+    .filters {
+        display: flex;
+        gap: 20px;
+        margin: 20px 0;
+    }
+ 
+    select, input {
+        padding: 8px;
+        border-radius: 5px;
+        border: 1px solid #ccc;
+    }
+ 
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        background: white;
+    }
+ 
+    th, td {
+        padding: 10px;
+        border-bottom: 1px solid #ddd;
+        text-align: center;
+    }
+ 
+    th {
+        background: #f1f1f1;
+    }
+ 
+    .status {
+        padding: 5px 10px;
+        border-radius: 5px;
+        color: white;
+        font-size: 12px;
+    }
+ 
+    .draft { background: gold; color: black; }
+    .cancelled { background: red; }
+    .submitted { background: green; }
+    .returned { background: teal; }
+ 
+    .pagination {
+        margin-top: 15px;
+        display: flex;
+        justify-content: space-between;
+    }
