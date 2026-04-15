@@ -1039,55 +1039,179 @@ def save_departments(departments):
 
 
 def load_products():
-    
-    if not os.path.exists(PRODUCT_FILE):
-        return []
-
+    """Load all products from PostgreSQL."""
     try:
-        with open(PRODUCT_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-    except json.JSONDecodeError:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM products ORDER BY product_id")
+        rows = cur.fetchall()
+        col_names = [desc[0] for desc in cur.description]
+
+        products = []
+        for row in rows:
+            product = dict(zip(col_names, row))
+
+            # Convert numeric types used by frontend/API consumers
+            if product.get("unit_price") is not None:
+                product["unit_price"] = float(product["unit_price"])
+            if product.get("discount") is not None:
+                product["discount"] = float(product["discount"])
+            if product.get("price") is not None:
+                product["price"] = float(product["price"])
+            if product.get("tax_percent") is not None:
+                product["tax_percent"] = float(product["tax_percent"])
+
+            # Map DB fields to frontend keys
+            product["type"] = product.get("product_type") or ""
+            product["category"] = product.get("category_name") or ""
+
+            # Prefer unit_price for UI price; fallback to price column if present
+            ui_price = product.get("unit_price")
+            if ui_price is None:
+                ui_price = product.get("price")
+            product["price"] = float(ui_price or 0.0)
+
+            # Normalize status for filters/UI
+            status_raw = product.get("status", "")
+            if status_raw:
+                product["status"] = str(status_raw).strip().capitalize()
+            else:
+                product["status"] = ""
+
+            # Frontend compatibility defaults
+            product.setdefault("stock_level", 0)
+            product.setdefault("description", "")
+            product.setdefault("sub_category", "")
+            product.setdefault("quantity", 0)
+            product.setdefault("reorder_level", 0)
+            product.setdefault("weight", "")
+            product.setdefault("specifications", "")
+            product.setdefault("related_products", "")
+            product.setdefault("product_usage", "")
+            product.setdefault("image", "")
+
+            products.append(product)
+        return products
+    except Exception as e:
+        print(f"Error in load_products: {e}")
         return []
-
-    if isinstance(data, dict):
-        data = [data]
-
-    products = []
-    for p in data:
-        if not isinstance(p, dict):
-            continue
-
-        pid = p.get("product_id")
-        if pid is None:
-            continue
-        # ✅ always keep IDs as string
-        p["product_id"] = str(pid)
-
-        products.append(p)
-
-    return products
+    finally:
+        if "cur" in locals():
+            cur.close()
+        if "conn" in locals():
+            conn.close()
 
 
 def save_products(products):
-    with open(PRODUCT_FILE, "w", encoding="utf-8") as f:
-        json.dump(products, f, indent=2)
+    """
+    Replace all products with the provided list.
+    Warning: Deletes all existing records and inserts new ones.
+    """
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("DELETE FROM products")
+
+        for p in products:
+            tax_code = p.get("tax_code", "")
+            tax_percent = p.get("tax_percent")
+            if tax_percent in (None, "") and tax_code:
+                m = re.search(r"\((\d+(?:\.\d+)?)%\)", str(tax_code))
+                if m:
+                    tax_percent = float(m.group(1))
+
+            cur.execute(
+                """
+                INSERT INTO products (
+                    product_id, product_name, product_type, category_name,
+                    unit_price, discount, description, sub_category,
+                    quantity, stock_level, reorder_level,
+                    weight, specifications, related_products,
+                    status, product_usage, image,
+                    tax_code, tax_percent, tax_description,
+                    uom_name, uom_items, uom_description,
+                    warehouse_name, warehouse_location, warehouse_manager,
+                    warehouse_contact, warehouse_notes,
+                    size, color,
+                    supplier_name, supplier_contact, supplier_phone,
+                    supplier_email, supplier_address
+                ) VALUES (
+                    %s, %s, %s, %s,
+                    %s, %s, %s, %s,
+                    %s, %s, %s,
+                    %s, %s, %s,
+                    %s, %s, %s,
+                    %s, %s, %s,
+                    %s, %s, %s,
+                    %s, %s, %s,
+                    %s, %s,
+                    %s, %s,
+                    %s, %s, %s,
+                    %s, %s
+                )
+                """,
+                (
+                    p.get("product_id"),
+                    p.get("product_name"),
+                    p.get("type", "") or p.get("product_type", ""),
+                    p.get("category", "") or p.get("category_name", ""),
+                    p.get("unit_price", p.get("price", 0.0)),
+                    p.get("discount", 0.0),
+                    p.get("description", ""),
+                    p.get("sub_category", ""),
+                    p.get("quantity", 0),
+                    p.get("stock_level", 0),
+                    p.get("reorder_level", 0),
+                    p.get("weight", ""),
+                    p.get("specifications", ""),
+                    p.get("related_products", ""),
+                    p.get("status", "Active"),
+                    p.get("product_usage", ""),
+                    p.get("image", ""),
+                    tax_code,
+                    tax_percent,
+                    p.get("tax_description", ""),
+                    p.get("uom", "") or p.get("uom_name", ""),
+                    p.get("uom_items", 0),
+                    p.get("uom_description", ""),
+                    p.get("warehouse", "") or p.get("warehouse_name", ""),
+                    p.get("warehouse_location", ""),
+                    p.get("warehouse_manager", ""),
+                    p.get("warehouse_contact", ""),
+                    p.get("warehouse_notes", ""),
+                    p.get("size", ""),
+                    p.get("color", ""),
+                    p.get("supplier", "") or p.get("supplier_name", ""),
+                    p.get("supplier_contact", ""),
+                    p.get("supplier_phone", ""),
+                    p.get("supplier_email", ""),
+                    p.get("supplier_address", ""),
+                ),
+            )
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        raise e
+    finally:
+        cur.close()
+        conn.close()
 
 
 def generate_product_id():
-    """Generate a new product_id in format 'P101', 'P102', ..."""
-    products = load_products()
-    if not products:
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT product_id FROM products ORDER BY product_id DESC LIMIT 1")
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+
+    if not row:
         return "P101"
 
-    max_num = 0
-    for p in products:
-        pid = str(p.get("product_id", "")).strip()
-        # Extract numeric part from formats like "P101", "101", "P-101", etc.
-        match = re.search(r"(\d+)$", pid)
-        if match:
-            max_num = max(max_num, int(match.group(1)))
-
-    return f"P{max_num + 1}"
+    match = re.search(r"(\d+)$", str(row[0]))
+    if match:
+        return f"P{int(match.group(1)) + 1}"
+    return "P101"
 
 
 @app.route('/api/products/new-id', methods=['GET'])
@@ -1101,37 +1225,34 @@ def get_new_product_id():
 # ✅ PRODUCT CATEGORY HELPERS
 # =========================================
 def load_product_categories():
-    """
-    Load saved product categories from JSON.
-    Structure: [ { "product_type": "Electronics", "name": "Headphones" }, ... ]
-    """
-    if not os.path.exists(CATEGORY_FILE):
-        return []
-    try:
-        with open(CATEGORY_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        if isinstance(data, list):
-            cleaned = []
-            for item in data:
-                if not isinstance(item, dict):
-                    continue
-                name = (item.get("name") or "").strip()
-                ptype = (item.get("product_type") or "").strip()
-                if not name:
-                    continue
-                cleaned.append({"product_type": ptype, "name": name})
-            return cleaned
-        return []
-    except json.JSONDecodeError:
-        return []
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT product_type, name FROM product_categories ORDER BY name")
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return [{"product_type": r[0] or "", "name": r[1]} for r in rows]
 
 
 def save_product_categories(categories):
-    """Persist product categories list to JSON."""
-    if not isinstance(categories, list):
-        categories = []
-    with open(CATEGORY_FILE, "w", encoding="utf-8") as f:
-        json.dump(categories, f, indent=2, ensure_ascii=False)
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("DELETE FROM product_categories")
+        for item in categories or []:
+            if not isinstance(item, dict):
+                continue
+            cur.execute(
+                "INSERT INTO product_categories (product_type, name) VALUES (%s, %s)",
+                ((item.get("product_type") or "").strip(), (item.get("name") or "").strip()),
+            )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cur.close()
+        conn.close()
 
 
 # =========================================
@@ -1166,111 +1287,201 @@ def _save_simple_list(path, items):
 
 
 def load_tax_codes():
-    def cleaner(item):
-        name = (item.get("code") or "").strip()
-        if not name:
-            return None
-        return {
-            "code": name,
-            "percent": float(item.get("percent", 0)),
-            "description": (item.get("description") or "").strip(),
-        }
-
-    return _load_simple_list(TAX_CODE_FILE, cleaner)
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT code, percent, description FROM product_tax_codes ORDER BY code")
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return [{"code": r[0], "percent": float(r[1]), "description": r[2] or ""} for r in rows]
 
 
 def save_tax_codes(items):
-    _save_simple_list(TAX_CODE_FILE, items)
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("DELETE FROM product_tax_codes")
+        for item in items or []:
+            if not isinstance(item, dict):
+                continue
+            cur.execute(
+                "INSERT INTO product_tax_codes (code, percent, description) VALUES (%s, %s, %s)",
+                ((item.get("code") or "").strip(), item.get("percent", 0), item.get("description", "")),
+            )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cur.close()
+        conn.close()
 
 
 def load_uoms():
-    def cleaner(item):
-        name = (item.get("name") or "").strip()
-        if not name:
-            return None
-        try:
-            items = int(item.get("items", 0))
-        except (TypeError, ValueError):
-            items = 0
-        return {
-            "name": name,
-            "items": items,
-            "description": (item.get("description") or "").strip(),
-        }
-
-    return _load_simple_list(UOM_FILE, cleaner)
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT name, items, description FROM product_uoms ORDER BY name")
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return [{"name": r[0], "items": r[1] if r[1] is not None else 0, "description": r[2] or ""} for r in rows]
 
 
 def save_uoms(items):
-    _save_simple_list(UOM_FILE, items)
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("DELETE FROM product_uoms")
+        for item in items or []:
+            if not isinstance(item, dict):
+                continue
+            cur.execute(
+                "INSERT INTO product_uoms (name, items, description) VALUES (%s, %s, %s)",
+                ((item.get("name") or "").strip(), item.get("items", 0), item.get("description", "")),
+            )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cur.close()
+        conn.close()
 
 
 def load_warehouses():
-    def cleaner(item):
-        name = (item.get("name") or "").strip()
-        if not name:
-            return None
-        return {
-            "name": name,
-            "location": (item.get("location") or "").strip(),
-            "manager": (item.get("manager") or "").strip(),
-            "contact": (item.get("contact") or "").strip(),
-            "notes": (item.get("notes") or "").strip(),
-        }
-
-    return _load_simple_list(WAREHOUSE_FILE, cleaner)
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT name, location, manager, contact, notes FROM product_warehouses ORDER BY name")
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return [
+        {"name": r[0], "location": r[1] or "", "manager": r[2] or "", "contact": r[3] or "", "notes": r[4] or ""}
+        for r in rows
+    ]
 
 
 def save_warehouses(items):
-    _save_simple_list(WAREHOUSE_FILE, items)
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("DELETE FROM product_warehouses")
+        for item in items or []:
+            if not isinstance(item, dict):
+                continue
+            cur.execute(
+                "INSERT INTO product_warehouses (name, location, manager, contact, notes) VALUES (%s, %s, %s, %s, %s)",
+                (
+                    (item.get("name") or "").strip(),
+                    item.get("location", ""),
+                    item.get("manager", ""),
+                    item.get("contact", ""),
+                    item.get("notes", ""),
+                ),
+            )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cur.close()
+        conn.close()
 
 
 def load_sizes():
-    def cleaner(item):
-        name = (item.get("name") or "").strip()
-        if not name:
-            return None
-        return {"name": name}
-
-    return _load_simple_list(SIZE_FILE, cleaner)
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT name FROM product_sizes ORDER BY name")
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return [{"name": r[0]} for r in rows]
 
 
 def save_sizes(items):
-    _save_simple_list(SIZE_FILE, items)
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("DELETE FROM product_sizes")
+        for item in items or []:
+            if not isinstance(item, dict):
+                continue
+            cur.execute("INSERT INTO product_sizes (name) VALUES (%s)", ((item.get("name") or "").strip(),))
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cur.close()
+        conn.close()
 
 
 def load_colors():
-    def cleaner(item):
-        name = (item.get("name") or "").strip()
-        if not name:
-            return None
-        return {"name": name}
-
-    return _load_simple_list(COLOR_FILE, cleaner)
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT name FROM product_colors ORDER BY name")
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return [{"name": r[0]} for r in rows]
 
 
 def save_colors(items):
-    _save_simple_list(COLOR_FILE, items)
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("DELETE FROM product_colors")
+        for item in items or []:
+            if not isinstance(item, dict):
+                continue
+            cur.execute("INSERT INTO product_colors (name) VALUES (%s)", ((item.get("name") or "").strip(),))
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cur.close()
+        conn.close()
 
 
 def load_suppliers():
-    def cleaner(item):
-        name = (item.get("name") or "").strip()
-        if not name:
-            return None
-        return {
-            "name": name,
-            "contact": (item.get("contact") or "").strip(),
-            "phone": (item.get("phone") or "").strip(),
-            "email": (item.get("email") or "").strip(),
-            "address": (item.get("address") or "").strip(),
-        }
-
-    return _load_simple_list(SUPPLIER_FILE, cleaner)
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT name, contact, phone, email, address FROM product_suppliers ORDER BY name")
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return [
+        {"name": r[0], "contact": r[1] or "", "phone": r[2] or "", "email": r[3] or "", "address": r[4] or ""}
+        for r in rows
+    ]
 
 
 def save_suppliers(items):
-    _save_simple_list(SUPPLIER_FILE, items)
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("DELETE FROM product_suppliers")
+        for item in items or []:
+            if not isinstance(item, dict):
+                continue
+            cur.execute(
+                "INSERT INTO product_suppliers (name, contact, phone, email, address) VALUES (%s, %s, %s, %s, %s)",
+                (
+                    (item.get("name") or "").strip(),
+                    item.get("contact", ""),
+                    item.get("phone", ""),
+                    item.get("email", ""),
+                    item.get("address", ""),
+                ),
+            )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cur.close()
+        conn.close()
 
 
 # =========================================
@@ -8715,12 +8926,6 @@ def check_email_enquiry():
         print("❌ CHECK EMAIL ERROR:", e)
         return jsonify({"exists": False, "error": str(e)}), 500
 
-
-def load_products():
-    if not os.path.exists(PRODUCT_FILE):
-        return []
-    with open(PRODUCT_FILE, "r") as f:
-        return json.load(f)
 
 @app.route("/get-product/<product_id>")
 def get_product(product_id):
