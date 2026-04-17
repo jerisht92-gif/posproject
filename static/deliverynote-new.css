@@ -8,7 +8,6 @@
   font-family: "Poppins", sans-serif;
   color: #4a1f1a;
   box-sizing: border-box;
-  
 }
 
 .dn2-title-wrap{
@@ -62,40 +61,40 @@
 
 /* Status pill colors */
 .dn2-status-pill.draft{
-  background: #f75656;
+  background: #7eaaf1;
   color: #000;
 }
 
 .dn2-status-pill.delivered{
-  background: #59f663;
+  background: #22C55E;
   color: #000;
 }
 
 .dn2-status-pill.partially_delivered{
-  background: #27e391;
+  background: #F59E0B;
   color: #000;
 }
 
 .dn2-status-pill.returned{
-  background: #3c363d;
+  background: #9b72f9;
   color: #000;
 }
 
 .dn2-status-pill.cancelled{
-  background: #d6d2d2;
+  background: #EF4444;
   color: #000;
 }
 
-.dn2-status-pill.pending{
+/* .dn2-status-pill.pending{
   background: #e9b641;
   color: #000;
 }
 
 /* In Transit */
-.dn2-status-pill.in_transit{
+/* .dn2-status-pill.in_transit{
   background: #ad671612;
   color: #000;
-}
+}  */
 
 /* Return button */
 .dn2-return-btn{
@@ -433,14 +432,22 @@
 .dn2-table {
   width: 100%;
   border-collapse: separate;
+  border-spacing: 0;
   table-layout: fixed;   /* 🔥 VERY IMPORTANT */
 }
 /* Header row */
-
+.dn2-table thead tr {
+  background: linear-gradient(#f2bcbc, #f2bcbc) bottom / 100% 1px no-repeat;
+}
 
 /* Body rows */
 .dn2-table tbody tr {
   background: linear-gradient(#f2bcbc, #f2bcbc) bottom / 100% 1px no-repeat;
+}
+
+/* Remove extra last separator line */
+.dn2-table tbody tr:last-child {
+  background: none;
 }
 
 /* Cells */
@@ -508,41 +515,26 @@
   
 }
 
-.dn2-table .w-discount {
-  width: 100px;
-}
 
 
 
-/* input widths */
-.dn2-table select.prodSel {
-  width: 190px !important;
-  min-width: 190px !important;
-  max-width: 190px !important;
-  flex: 0 0 190px;
-}
 
 
 
-.dn2-table input.discountInput {
-  width: 100px;
-  text-align: center;
-}
+
+
 
 .dn2-table .productNameCell,
 .dn2-table .prodIdCell,
-.dn2-table .uomCell,
-.dn2-table .rateCell,
-.dn2-table .taxCell,
-.dn2-table .rowTotal,
-.dn2-table .stockCell {
+.dn2-table .uomCell
+ {
   color: #333;
   font-size: 12px;
   font-weight: 500;
 }
 
-.dn2-table input.qtyInput,
-.dn2-table input.discountInput {
+.dn2-table input.qtyInput
+ {
    width: 70px !important;   /* 🔥 reduce width */
   min-width: 70px;
   max-width: 70px;
@@ -556,6 +548,12 @@
   color: #000;
   outline: none;
   box-sizing: border-box;
+}
+
+.dn2-table input.serialInput {
+  width: 140px !important;
+  min-width: 140px;
+  max-width: 140px;
 }
 
 /* Line items Action column (match Sales Order items table) */
@@ -918,7 +916,7 @@
 }
 
 .pos-modal-textarea{
-  width: 100%;
+  width: 90%;
   min-height: 100px;
   padding: 12px;
   resize: vertical;

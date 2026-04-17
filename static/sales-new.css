@@ -4,8 +4,6 @@
 /* =========================================
    GLOBAL
 ========================================= */
-
-
 .sales-wrapper {
   min-height: 100vh;
   padding: 20px;
@@ -466,6 +464,11 @@ button {
   width: 100%;
   line-height: 1.3;
   min-height: 0;
+  display: none;
+}
+
+.so-items-table .so-product-select-wrap.show-error .so-product-select-error {
+  display: block;
 }
 
 .so-items-table select.productSelect.input-error {
@@ -833,6 +836,23 @@ button {
   transform: none !important;
 }
 
+.btn-outline:disabled {
+  opacity: 1 !important;
+  color: #666666 !important;
+  cursor: default !important;
+  border: 1.5px solid #cccccc !important;
+  background: #cccccc !important;
+  box-shadow: 0 2px 0 #999999 !important;
+  transform: none !important;
+}
+
+.btn-outline:disabled:hover {
+  transform: none !important;
+  border: 1.5px solid #cccccc !important;
+  background: #cccccc !important;
+  color: #666666 !important;
+}
+
 .btn-outline:active {
   transform: translateY(0);
   box-shadow: 0 2px 0 rgba(0, 0, 0, 0.08);
@@ -927,6 +947,24 @@ button {
 .btn-icon:not(:disabled):active {
   transform: translateY(0);
   box-shadow: 0 5px 0 #6d1717;
+}
+
+/* Generate PO disabled style */
+#generatePOBtn:disabled {
+  opacity: 1 !important;
+  color: #666666 !important;
+  cursor: default !important;
+  border: none !important;
+  background: #cccccc !important;
+  box-shadow: 0 2px 0 #999999 !important;
+  transform: none !important;
+}
+
+#generatePOBtn:disabled:hover {
+  transform: none !important;
+  background: #cccccc !important;
+  color: #666666 !important;
+  box-shadow: 0 2px 0 #999999 !important;
 }
 
 /* =========================================
@@ -1175,12 +1213,21 @@ button {
 
 #genDNBtn:disabled,
 #genInvBtn:disabled {
-  opacity: 0.5;
-  cursor: default;
-  background-color: #d6d6d6;
-  color: #666;
-  border-color: #d6d6d6;
-  box-shadow: none;
+  opacity: 1 !important;
+  color: #666666 !important;
+  cursor: default !important;
+  border: none !important;
+  background: #cccccc !important;
+  box-shadow: 0 2px 0 #999999 !important;
+  transform: none !important;
+}
+
+#genDNBtn:disabled:hover,
+#genInvBtn:disabled:hover {
+  transform: none !important;
+  background: #cccccc !important;
+  color: #666666 !important;
+  box-shadow: 0 2px 0 #999999 !important;
 }
 /* =========================================
    auto-selected rep highlighted
@@ -1189,6 +1236,29 @@ button {
   background:#6e6e6e;   /* ✅ grey */
   color:#fff;
   font-weight:600;
+}
+.productList {
+  display: none;
+  position: absolute;
+  background: #fff;
+  border: 1px solid #ddd;
+  max-height: 200px;
+  overflow-y: auto;
+  width: 100%;
+  z-index: 999;
+}
+
+.product-dropdown {
+  position: relative;
+}
+
+.dropdown-item {
+  padding: 8px;
+  cursor: pointer;
+}
+
+.dropdown-item:hover {
+  background: #f2f2f2;
 }
 
 /* =========================================

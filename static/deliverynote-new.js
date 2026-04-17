@@ -1,8 +1,3 @@
-
-
-
-
-
 console.log("✅ deliverynote-new.js loaded v100");
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -477,18 +472,7 @@ function formatMoney(value) {
   return Number(value || 0).toFixed(2);
 }
 
-function calcRowTotal(qty, rate, tax, discount) {
-  const q = Number(qty || 0);
-  const r = Number(rate || 0);
-  const t = Number(tax || 0);
-  const d = Number(discount || 0);
 
-  const subtotal = q * r;
-  const taxAmt = (subtotal * t) / 100;
-  const total = subtotal + taxAmt - d;
-
-  return total < 0 ? 0 : total;
-}
 
   function setDnIdValue(id) {
     if (dnId) dnId.value = id;
@@ -766,7 +750,7 @@ function calcRowTotal(qty, rate, tax, discount) {
   }
 
   // show instantly
-  showToast("Email sent successfully ✔", "success");
+  showToast("Email sent successfully", "success");
 
   try {
     await fetch(`/api/delivery-notes/${encodeURIComponent(id)}/email`, {
@@ -802,8 +786,15 @@ function calcRowTotal(qty, rate, tax, discount) {
     setAckDisabled(!canEnableAck);
 
     // Return button enable only for partial/delivered (not view)
-    const canReturn = statusKey === "partially_delivered" || statusKey === "delivered";
-    if (returnBtn) returnBtn.disabled = !(canReturn && mode !== "view");
+    const currentStatus = normalizeKey(
+    deliveryStatusEl?.value || statusKey
+  );
+
+  const canReturn =
+    currentStatus === "partially_delivered" ||
+    currentStatus === "delivered";
+
+  if (returnBtn) returnBtn.disabled = !canReturn;
 
     // Cancel DN enable/disable
     if (cancelDnBtn) {
@@ -838,56 +829,37 @@ function calcRowTotal(qty, rate, tax, discount) {
   const tr = document.createElement("tr");
 
   const qty = Math.max(1, Math.floor(Number(prefill.qty ?? 1)) || 1);
-  const discount = Number(prefill.discount ?? 0);
-  const rate = Number(prefill.rate ?? 0);
-  const tax = Number(prefill.tax ?? 0);
-  const total = calcRowTotal(qty, rate, tax, discount);
+
 
   tr.innerHTML = `
-<td class="w-sno" style="text-align:center;">
-  <span class="sno">1</span>
-</td>
+<td class="w-sno"><span class="sno">1</span></td>
 
 <td class="productNameCell">${prefill.product_name || ""}</td>
 <td class="prodIdCell">${prefill.product_id || ""}</td>
-<td class="uomCell">${prefill.uom || ""}</td>
-<td class="rateCell">${formatMoney(rate)}</td>
 
 <td class="w-qty">
-  <input class="qtyInput" type="number" min="1" step="1" value="${qty}">
+  <input class="qtyInput" type="number" min="1" value="${qty}">
 </td>
 
-<td class="taxCell">${Number(tax || 0)}%</td>
+<td class="uomCell">${prefill.uom || ""}</td>
 
-<td class="w-discount">
-  <input class="discountInput" type="number" min="0" max="90" step="1" value="${discount}">
+<td class="serialCell">
+  <input type="text" 
+       class="serialInput" 
+       placeholder="Enter Serial No(s)"
+       value="${prefill.serial_no || ""}">
 </td>
-
-<td class="rowTotal">${formatMoney(total)}</td>
 
 <td class="dn-action-col">
-  <button type="button" class="dn-delete-btn" title="Delete" aria-label="Delete row">
+  <button type="button" class="dn-delete-btn">
     <i class="fa-solid fa-trash"></i>
   </button>
 </td>
 `;
   const qtyInput = tr.querySelector(".qtyInput");
-  const discountInput = tr.querySelector(".discountInput");
-  const rateCell = tr.querySelector(".rateCell");
-  const taxCell = tr.querySelector(".taxCell");
-  const rowTotalCell = tr.querySelector(".rowTotal");
- 
 
-  function updateRowTotal() {
-    const qtyVal = Number(qtyInput.value || 0);
-    const discountVal = Number(discountInput.value || 0);
-    const rateVal = Number(rateCell.textContent || 0);
-    const taxVal = Number(String(taxCell.textContent || "").replace("%", "")) || 0;
 
-    rowTotalCell.textContent = formatMoney(
-      calcRowTotal(qtyVal, rateVal, taxVal, discountVal)
-    );
-  }
+
 
   qtyInput.addEventListener("keydown", (e) => {
     if (["e", "E", "+", "-", ".", ","].includes(e.key)) {
@@ -896,44 +868,33 @@ function calcRowTotal(qty, rate, tax, discount) {
   });
 
   qtyInput.addEventListener("input", () => {
-    let n = Number(qtyInput.value);
-    if (qtyInput.value === "" || Number.isNaN(n)) {
-      updateRowTotal();
-      validateSubmit();
-      return;
-    }
-    if (n < 1) {
-      qtyInput.value = 1;
-    } else {
-      const i = Math.floor(n);
-      if (i !== n) qtyInput.value = i;
-    }
-    updateRowTotal();
+  let n = Number(qtyInput.value);
+
+  if (qtyInput.value === "" || Number.isNaN(n)) {
     validateSubmit();
-  });
+    return;
+  }
+
+  if (n < 1) {
+    qtyInput.value = 1;
+  } else {
+    const i = Math.floor(n);
+    if (i !== n) qtyInput.value = i;
+  }
+
+  validateSubmit(); 
+});
 
   qtyInput.addEventListener("blur", () => {
-    const n = Number(qtyInput.value);
-    if (!qtyInput.value || Number.isNaN(n) || n < 1) {
-      qtyInput.value = 1;
-      updateRowTotal();
-      validateSubmit();
-    }
-  });
+  const n = Number(qtyInput.value);
 
-  discountInput.addEventListener("input", () => {
-    let v = Number(discountInput.value || 0);
-    if (v < 0) {
-      v = 0;
-      showToast("Discount cannot be negative", "error");
-    } else if (v > 90) {
-      v = 90;
-      showToast("Discount limited to 90%", "error");
-    }
-    discountInput.value = v;
-    updateRowTotal();
-    validateSubmit();
-  });
+  if (!qtyInput.value || Number.isNaN(n) || n < 1) {
+    qtyInput.value = 1;
+    validateSubmit(); 
+  }
+});
+
+
 
   itemsBody.appendChild(tr);
   renumber();
@@ -982,37 +943,41 @@ function calcRowTotal(qty, rate, tax, discount) {
     soRefSel.value = v;
   }
 
-  async function loadSORefs() {
-    if (!soRefSel) return;
+ async function loadSORefs() {
+  if (!soRefSel) return;
 
-    try {
-      const res = await fetch("/api/delivery-notes", { cache: "no-store" });
-      const json = await res.json();
-      const notes = Array.isArray(json) ? json : json.data || [];
+  try {
+    const res = await fetch("/api/sales-orders");
+    const json = await res.json();
 
-      const refs = new Set();
-      (notes || []).forEach((n) => {
-        if (!isPartiallyDeliveredNote(n)) return;
-        const id = (n.so_ref || n.sales_order_ref || n.so_id || "").trim();
-        if (id) refs.add(id);
-      });
+    console.log("SO list:", json); // ✅ debug
 
-      const sorted = [...refs].sort();
+    const list = json.orders || [];
 
-      soRefSel.innerHTML = `<option value="">Select Order Reference</option>`;
-      sorted.forEach((id) => {
-        const opt = document.createElement("option");
-        opt.value = id;
-        opt.textContent = id;
-        soRefSel.appendChild(opt);
-      });
-    } catch (e) {
-      console.error("Failed to load SO refs:", e);
-    }
+    const refs = new Set();
+    list.forEach((so) => {
+      const id = (so.so_id || "").trim();
+      if (id) refs.add(id);
+    });
+
+    const sorted = [...refs].sort();
+
+    soRefSel.innerHTML = `<option value="">Select Order Reference</option>`;
+
+    sorted.forEach((id) => {
+      const opt = document.createElement("option");
+      opt.value = id;
+      opt.textContent = id;
+      soRefSel.appendChild(opt);
+    });
+
+  } catch (e) {
+    console.error("Failed to load SO refs:", e);
   }
-
+}
   async function onSORefChange() {
   const soId = soRefSel?.value;
+  console.log("Selected SO:", soId);
 
   if (!soId) {
     if (custNameEl) custNameEl.value = "";
@@ -1024,9 +989,7 @@ function calcRowTotal(qty, rate, tax, discount) {
   }
 
   try {
-    const res = await fetch(`/api/sales-orders/${encodeURIComponent(soId)}`, {
-      cache: "no-store"
-    });
+    const res = await fetch(`/api/sales-orders/${encodeURIComponent(soId)}`);
 
     if (!res.ok) {
       showToast("Failed to fetch Sales Order details", "error");
@@ -1034,12 +997,27 @@ function calcRowTotal(qty, rate, tax, discount) {
     }
 
     const json = await res.json();
-    const so = json.order || json.data || json;
+
+    if (!json.success) {
+      showToast("Sales Order not found", "error");
+      return;
+    }
+
+    const so = json.order;
 
     console.log("Selected SO full data:", so);
 
-    if (custNameEl) custNameEl.value = so.customer_name || "";
-    if (destAddrEl) destAddrEl.value = so.shipping_address || "";
+    // ✅ Customer Name
+    if (custNameEl) {
+      custNameEl.value = so.customer_name || "";
+    }
+
+    // ✅ Destination Address (IMPORTANT FIX)
+    if (destAddrEl) {
+      destAddrEl.value = so.shipping_address || so.billing_address || "";
+    }
+
+    // ✅ Tracking
     if (trackingIdEl) {
       trackingIdEl.value =
         so.tracking_number ||
@@ -1057,15 +1035,14 @@ function calcRowTotal(qty, rate, tax, discount) {
     }
 
     items.forEach((it) => {
-  addRow({
-    product_id: it.product_id || "",
-    product_name: it.product_name || "",
-    qty: it.qty ?? it.quantity ?? 1,
-    uom: it.uom || "",
-    rate: it.rate ?? it.unit_price ?? it.price ?? 0,
-    tax: it.tax ?? it.tax_percent ?? it.tax_pct ?? it.taxPercent ?? 0,
-    discount: it.discount ?? it.disc_pct ?? it.discount_pct ?? 0,
-  });
+    addRow({
+      product_id: it.product_id || "",
+      product_name: it.product_name || "",
+      qty: it.qty ?? it.quantity ?? 1,
+      uom: it.uom || "",
+      serial_no: it.serial_no || ""
+      
+    });
 });
 
     validateSubmit();
@@ -1082,18 +1059,14 @@ function calcRowTotal(qty, rate, tax, discount) {
   ========================================================== */
   function collectItems() {
   const rows = [...itemsBody.querySelectorAll("tr")];
-  return rows
-    .map((tr) => ({
-      product_id: tr.querySelector(".prodIdCell")?.textContent?.trim() || "",
-      product_name: tr.querySelector(".productNameCell")?.textContent?.trim() || "",
-      uom: tr.querySelector(".uomCell")?.textContent?.trim() || "",
-      rate: Number(tr.querySelector(".rateCell")?.textContent || 0),
-      qty: Number(tr.querySelector(".qtyInput")?.value || 0),
-      tax: Number((tr.querySelector(".taxCell")?.textContent || "").replace("%", "")) || 0,
-      discount: Number(tr.querySelector(".discountInput")?.value || 0),
-      total: Number(tr.querySelector(".rowTotal")?.textContent || 0),
-    }))
-    .filter((x) => x.product_id);
+  return rows.map((tr) => ({
+  product_id: tr.querySelector(".prodIdCell")?.textContent?.trim() || "",
+  product_name: tr.querySelector(".productNameCell")?.textContent?.trim() || "",
+  uom: tr.querySelector(".uomCell")?.textContent?.trim() || "",
+  qty: Number(tr.querySelector(".qtyInput")?.value || 0),
+  serial_no: tr.querySelector(".serialInput")?.value || ""
+}))
+.filter((x) => x.product_id);
 }
 
   async function saveDN(status) {
@@ -1162,7 +1135,20 @@ function calcRowTotal(qty, rate, tax, discount) {
   const dn = json.data;
 
   setDnIdValue(dn.dn_id || "");
-  if (dnDate) dnDate.value = dn.delivery_date || "";
+  if (dnDate) {
+  const rawDate = dn.delivery_date || "";
+
+  if (rawDate) {
+    const d = new Date(rawDate);
+    if (!isNaN(d)) {
+      dnDate.value = d.toISOString().split("T")[0];
+    } else {
+      dnDate.value = "";
+    }
+  } else {
+    dnDate.value = "";
+  }
+}
 
   const soRefValue =
     dn.so_ref ||
@@ -1190,17 +1176,17 @@ function calcRowTotal(qty, rate, tax, discount) {
   if (deliveryNotesEl) deliveryNotesEl.value = dn.delivery_notes || "";
 
   itemsBody.innerHTML = "";
-  (dn.items || []).forEach((it) => {
+
+(dn.items || []).forEach((it) => {
   addRow({
     product_id: it.product_id || "",
     product_name: it.product_name || "",
     qty: it.qty ?? it.quantity ?? 1,
     uom: it.uom || "",
-    rate: it.rate ?? it.unit_price ?? it.price ?? 0,
-    tax: it.tax ?? it.tax_percent ?? it.tax_pct ?? it.taxPercent ?? 0,
-    discount: it.discount ?? it.disc_pct ?? it.discount_pct ?? 0,
+    serial_no: it.serial_no || ""   
   });
 });
+
   if (!itemsBody.querySelector("tr")) addRow();
 
   const stKey = normalizeKey(deliveryStatusEl?.value || dn.delivery_status || dn.status || "draft");
@@ -1222,6 +1208,7 @@ function calcRowTotal(qty, rate, tax, discount) {
       .forEach((el) => {
         if (el === cancelBtn) return;
         if (el === cancelDnBtn) return;
+        if (el === returnBtn) return;
         if (el.closest("#cancelDnBackdrop")) return;
         el.disabled = true;
       });
@@ -1314,6 +1301,48 @@ function calcRowTotal(qty, rate, tax, discount) {
 
   saveDraftBtn?.addEventListener("click", () => saveDN("Draft"));
   submitBtn?.addEventListener("click", () => saveDN("Submitted"));
+  cancelDnBtn?.addEventListener("click", async () => {
+    const id = dnId?.value || dnIdView?.value || "";
+
+    if (!id) {
+      showToast("Delivery Note ID missing", "error");
+      return;
+    }
+
+    // 🔹 modal open
+    const reason = await openCancelDnModal();
+
+    if (reason === null) return;
+
+    if (!reason.trim()) {
+      showToast("Please enter cancellation reason", "error");
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/delivery-notes/${encodeURIComponent(id)}/cancel`, {
+        method: "PUT", // 👈 IMPORTANT (your backend uses PUT)
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ reason }),
+      });
+
+      const data = await res.json();
+
+      if (data.success) {
+        showToast("Delivery Note cancelled successfully", "success");
+
+        // First page redirect
+        window.location.href = "/delivery_note";
+      } else {
+        showToast(data.message || "Cancel failed", "error");
+      }
+    } catch (err) {
+      console.error(err);
+      showToast("Network error", "error");
+    }
+  });
 
   returnBtn?.addEventListener("click", () => {
     const id = dnId?.value || dnIdView?.value || "";
@@ -1433,9 +1462,7 @@ async function prefillFromSalesOrder() {
           product_name: item.product_name || "",
           qty: item.qty ?? item.quantity ?? 1,
           uom: item.uom || "",
-          rate: item.rate ?? item.unit_price ?? item.price ?? 0,
-          tax: item.tax ?? item.tax_pct ?? item.tax_percent ?? item.taxPercent ?? 0,
-          discount: item.discount ?? item.disc_pct ?? item.discount_pct ?? 0,
+          serial_no: item.serial_no || ""
         });
       });
     }

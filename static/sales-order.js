@@ -1,4 +1,6 @@
 
+
+
 document.addEventListener("DOMContentLoaded", () => {
   /* =========================================================
      DOM ELEMENTS
@@ -32,10 +34,7 @@ const pageTotal = document.getElementById("pageTotal");
 
   let currentPage = 1;
   let allOrders = [];
-  let totalItems = 0;
-  let totalPagesVal = 1;
-  let salesOrdersFetchController = null;
-  let searchDebounceTimer = null;
+  let filteredOrders = [];
 
   let flyEl = null;
   let hideTimer = null;
@@ -78,9 +77,13 @@ const pageTotal = document.getElementById("pageTotal");
   // Show cross-page success toast if set by form page
   try {
     const flag = localStorage.getItem("salesOrderSuccess");
+    console.log("FLAG TOP:", flag);
+
     if (flag === "1") {
-      showToast("Sales order added successfully.", "success");
-      localStorage.removeItem("salesOrderSuccess");
+      setTimeout(() => {
+        showToast("Sales order added successfully.", "success");
+        localStorage.removeItem("salesOrderSuccess");
+      }, 300);
     }
 
     const draftFlag = localStorage.getItem("salesOrderDraftSuccess");
@@ -124,7 +127,7 @@ const pageTotal = document.getElementById("pageTotal");
   }
 
   function totalPages() {
-    return Math.max(1, totalPagesVal || 1);
+    return Math.max(1, Math.ceil(filteredOrders.length / ROWS_PER_PAGE));
   }
 
   function parseDateAny(value) {
@@ -166,14 +169,14 @@ const pageTotal = document.getElementById("pageTotal");
   function updateShowing() {
     if (!showingText) return;
 
-    if (!allOrders.length) {
+    if (!filteredOrders.length) {
       showingText.textContent = "Showing 0 Entries";
       return;
     }
 
     const start = (currentPage - 1) * ROWS_PER_PAGE + 1;
-    const end = Math.min(currentPage * ROWS_PER_PAGE, totalItems);
-    const total = totalItems;
+    const end = Math.min(currentPage * ROWS_PER_PAGE, filteredOrders.length);
+    const total = filteredOrders.length;
 
     showingText.textContent = `Showing ${start}-${end} of ${total} Entries`;
   }
@@ -182,20 +185,20 @@ const pageTotal = document.getElementById("pageTotal");
      SORTING
   ========================================================== */
   function applyStatusSort(mode) {
-    if (!allOrders.length) return;
+    if (!filteredOrders.length) return;
 
     if (mode === "newest") {
-      allOrders.sort(
+      filteredOrders.sort(
         (a, b) => parseDateAny(b.order_date) - parseDateAny(a.order_date)
       );
     } else if (mode === "oldest") {
-      allOrders.sort(
+      filteredOrders.sort(
         (a, b) => parseDateAny(a.order_date) - parseDateAny(b.order_date)
       );
     } else if (mode === "progress") {
-      allOrders.sort((a, b) => statusRank(a.status) - statusRank(b.status));
+      filteredOrders.sort((a, b) => statusRank(a.status) - statusRank(b.status));
     } else if (mode === "reverse") {
-      allOrders.sort((a, b) => statusRank(b.status) - statusRank(a.status));
+      filteredOrders.sort((a, b) => statusRank(b.status) - statusRank(a.status));
     }
 
     currentPage = 1;
@@ -206,19 +209,19 @@ const pageTotal = document.getElementById("pageTotal");
      ROUTING ACTIONS
   ========================================================== */
   function goSalesOrderForm(soId, mode) {
-    const id = String(soId || "").trim();
+  const id = String(soId || "").trim();
 
-    if (!id || id === "—") {
-      alert("SO ID missing. Cannot open View/Edit.");
-      return;
-    }
-
-    if (mode === "edit") {
-      window.location.href = `/sales-order/edit/${encodeURIComponent(id)}`;
-    } else {
-      window.location.href = `/sales-order/edit/${encodeURIComponent(id)}?mode=view`;
-    }
+  if (!id || id === "—") {
+    alert("SO ID missing. Cannot open View/Edit.");
+    return;
   }
+
+  if (mode === "edit") {
+    window.location.href = `/sales-order/new?so_id=${encodeURIComponent(id)}&mode=edit`;
+  } else {
+    window.location.href = `/sales-order/new?so_id=${encodeURIComponent(id)}&mode=view`;
+  }
+}
 
   function generatePurchaseOrder(soId) {
     console.log("Generate Purchase Order:", soId);
@@ -232,54 +235,89 @@ const pageTotal = document.getElementById("pageTotal");
     console.log("Generate Invoice:", soId);
   }
 
+  function openPdfSO(soId) {
+    if (!soId) {
+      showToast("SO ID missing", "error");
+      return;
+    }
+    window.open(`/api/sales-orders/${encodeURIComponent(soId)}/pdf`, "_blank");
+  }
+
+  function sendEmailSO(soId) {
+    if (!soId) {
+      showToast("SO ID missing", "error");
+      return;
+    }
+    // This would typically open a modal to compose email
+    showToast("Email functionality coming soon", "success");
+  }
+
+  function openSoCancelModal(soId) {
+    // This would open the cancel modal with the SO ID
+    console.log("Open cancel modal for:", soId);
+    showToast("Cancel functionality - modal to be implemented", "success");
+  }
+
   /* =========================================================
-     ACTION STATE
+     ACTION STATE - STATUS BASED RULES
   ========================================================== */
-  function getSOActionState(status, stockStatus) {
-    const s = norm(status);
-    const st = norm(stockStatus);
-    const stock = st === "" ? "-" : st;
+  function getSOActionState(status) {
+  const s = norm(status);
 
-    const state = {
-      firstLabel: "View details",
-      firstMode: "view",
-      canPO: false,
-      canDN: false,
-      canInvoice: false
-    };
+  const state = {
+    firstLabel: "View Details",
+    firstMode: "view",
+    canGeneratePO: false,
+    canGenerateDN: false,
+    canGenerateInvoice: false
+  };
 
-    if (s === "draft") {
-      state.firstLabel = "Edit details";
-      state.firstMode = "edit";
-
-      if (stock === "waiting for stock" || stock === "insufficient stock") {
-        state.canPO = true;
-      }
-
-      return state;
-    }
-
-    if (s === "submitted(pa)" || s === "submitted (pa)") {
-      state.firstLabel = "View details";
-      state.firstMode = "view";
-      state.canPO = true;
-      state.canDN = true;
-      state.canInvoice = false;
-      return state;
-    }
-
-    if (s === "submitted") {
-      state.firstLabel = "View details";
-      state.firstMode = "view";
-      state.canPO = true;
-      state.canDN = true;
-      state.canInvoice = true;
-      return state;
-    }
-
+  // Draft
+  if (s === "draft") {
+    state.firstLabel = "Edit Details";
+    state.firstMode = "edit";
+    state.canGeneratePO = true;
     return state;
   }
 
+  // Submitted
+  if (s === "submitted") {
+    state.canGeneratePO = true;
+    state.canGenerateDN = true;
+    state.canGenerateInvoice = true;
+    return state;
+  }
+
+  // Submitted(PD)
+  if (s === "submitted(pd)") {
+    state.canGenerateDN = true;
+    return state;
+  }
+
+  // Purchased
+  if (s === "purchased") {
+    state.canGenerateDN = true;
+    return state;
+  }
+
+  // Partially Delivered
+  if (s === "partially delivered") {
+    state.canGenerateDN = true;
+    return state;
+  }
+
+  // Delivered
+  if (s === "delivered") {
+    return state;
+  }
+
+  // Cancelled
+  if (s === "cancelled") {
+    return state;
+  }
+
+  return state;
+}
   /* =========================================================
      HOVER ACTION MENU
   ========================================================== */
@@ -303,8 +341,14 @@ const pageTotal = document.getElementById("pageTotal");
     const soId = String(row.so_id || "").trim();
     if (!soId) return;
 
-    const { firstLabel, firstMode, canPO, canDN, canInvoice } =
-      getSOActionState(row.status, row.stock_status);
+    const state = getSOActionState(row.status, row.stock_status);
+    const {
+      firstLabel,
+      firstMode,
+      canGeneratePO,
+      canGenerateDN,
+      canGenerateInvoice
+    } = state;
 
     flyEl = document.createElement("div");
     flyEl.className = "so-act-fly";
@@ -324,20 +368,34 @@ const pageTotal = document.getElementById("pageTotal");
     };
 
     flyEl.appendChild(
-      mkItem(firstLabel, () => goSalesOrderForm(soId, firstMode), false)
-    );
+  mkItem(firstLabel, () => goSalesOrderForm(soId, firstMode), false)
+);
 
-    flyEl.appendChild(
-      mkItem("Generate Purchase order", () => generatePurchaseOrder(soId), !canPO)
-    );
+// Generate Purchase Order
+flyEl.appendChild(
+  mkItem(
+    "Generate Purchase Order",
+    () => generatePurchaseOrder(soId),
+    !canGeneratePO
+  )
+);
 
-    flyEl.appendChild(
-      mkItem("Generate Delivery Note", () => generateDeliveryNote(soId), !canDN)
-    );
+flyEl.appendChild(
+  mkItem(
+    "Generate Delivery Note",
+    () => generateDeliveryNote(soId),
+    !canGenerateDN
+  )
+);
 
-    flyEl.appendChild(
-      mkItem("Generate Invoice", () => generateInvoice(soId), !canInvoice)
-    );
+flyEl.appendChild(
+  mkItem(
+    "Generate Invoice",
+    () => generateInvoice(soId),
+    !canGenerateInvoice
+  )
+
+);
 
     flyEl.addEventListener("mouseenter", keepOpen);
     flyEl.addEventListener("mouseleave", scheduleHide);
@@ -390,7 +448,7 @@ const pageTotal = document.getElementById("pageTotal");
 
     tbody.innerHTML = "";
 
-    if (!allOrders.length) {
+    if (!filteredOrders.length) {
       if (noDataRow) tbody.appendChild(noDataRow);
       currentPage = 1;
       updateShowing();
@@ -401,11 +459,15 @@ const pageTotal = document.getElementById("pageTotal");
     const tp = totalPages();
     currentPage = Math.min(Math.max(1, currentPage), tp);
 
+    const start = (currentPage - 1) * ROWS_PER_PAGE;
+    const end = start + ROWS_PER_PAGE;
+    const pageRows = filteredOrders.slice(start, end);
+
     if (noDataRow?.parentNode) {
       noDataRow.remove();
     }
 
-    allOrders.forEach((order) => {
+    pageRows.forEach((order) => {
       const soIdRaw = String(order.so_id || "").trim();
       const soIdTxt = safeText(soIdRaw);
 
@@ -420,7 +482,8 @@ const pageTotal = document.getElementById("pageTotal");
         <td>${safeText(order.order_type)}</td>
         <td>${safeText(order.customer_name)}</td>
         <td>${safeText(order.sales_rep)}</td>
-        <td>${safeText(order.order_date)}</td>
+
+        <td>${order.order_date ? new Date(order.order_date).toLocaleDateString("en-GB") : "—"}</td>
         <td>
   <span class="${getSalesStatusClass(order.status)}">
     ${safeText(order.status)}
@@ -457,18 +520,38 @@ const pageTotal = document.getElementById("pageTotal");
      FILTERS
   ========================================================== */
   function applyFilters() {
+    const q = (searchInput?.value || "").trim().toLowerCase();
+    const status = statusFilter?.value || "";
+    const orderType = orderTypeFilter?.value || "";
+    const salesRep = salesRepFilter?.value || "";
+
+    filteredOrders = allOrders.filter((order) => {
+      const idMatch = safeText(order.so_id).toLowerCase().includes(q);
+      const statusMatch = !status || safeText(order.status) === status;
+      const typeMatch = !orderType || safeText(order.order_type) === orderType;
+      const repMatch = !salesRep || safeText(order.sales_rep) === salesRep;
+
+      return idMatch && statusMatch && typeMatch && repMatch;
+    });
+
     currentPage = 1;
-    loadSalesOrders();
+    renderTable();
   }
 
-  function fillSalesRepsDropdown(reps = []) {
+  function fillSalesRepsDropdown() {
     if (!salesRepFilter) return;
 
-    const unique = [...new Set((reps || []).filter(Boolean))].sort();
+    const reps = [
+      ...new Set(
+        allOrders
+          .map((order) => safeText(order.sales_rep))
+          .filter((value) => value !== "—")
+      )
+    ].sort();
 
     salesRepFilter.innerHTML =
       `<option value="">All</option>` +
-      unique.map((rep) => `<option value="${rep}">${rep}</option>`).join("");
+      reps.map((rep) => `<option value="${rep}">${rep}</option>`).join("");
   }
 
   /* =========================================================
@@ -476,26 +559,7 @@ const pageTotal = document.getElementById("pageTotal");
   ========================================================== */
   async function loadSalesOrders() {
     try {
-      const params = new URLSearchParams({
-        page: String(currentPage),
-        page_size: String(ROWS_PER_PAGE),
-      });
-      const q = (searchInput?.value || "").trim();
-      const status = (statusFilter?.value || "").trim();
-      const orderType = (orderTypeFilter?.value || "").trim();
-      const rep = (salesRepFilter?.value || "").trim();
-      if (q) params.set("q", q);
-      if (status) params.set("status", status);
-      if (orderType) params.set("order_type", orderType);
-      if (rep) params.set("sales_rep", rep);
-
-      if (salesOrdersFetchController) salesOrdersFetchController.abort();
-      salesOrdersFetchController = new AbortController();
-
-      const res = await fetch(`/api/sales-orders/all?${params.toString()}`, {
-        cache: "no-store",
-        signal: salesOrdersFetchController.signal,
-      });
+      const res = await fetch("/api/sales-orders", { cache: "no-store" });
       if (!res.ok) throw new Error("API failed");
 
       const data = await res.json();
@@ -514,18 +578,13 @@ const pageTotal = document.getElementById("pageTotal");
         grand_total: order.grand_total ?? order.grandTotal ?? 0
       }));
 
-      totalItems = Number(data.total || allOrders.length || 0);
-      totalPagesVal = Number(data.total_pages || 1);
-      currentPage = Number(data.page || currentPage);
-
-      fillSalesRepsDropdown(data?.meta?.sales_reps || []);
+      filteredOrders = [...allOrders];
+      fillSalesRepsDropdown();
       renderTable();
     } catch (error) {
-      if (error && error.name === "AbortError") return;
       console.error(error);
       allOrders = [];
-      totalItems = 0;
-      totalPagesVal = 1;
+      filteredOrders = [];
       renderTable();
     }
   }
@@ -533,12 +592,7 @@ const pageTotal = document.getElementById("pageTotal");
   /* =========================================================
      EVENTS
   ========================================================== */
-  searchInput?.addEventListener("input", () => {
-    if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
-    searchDebounceTimer = setTimeout(() => {
-      applyFilters();
-    }, 250);
-  });
+  searchInput?.addEventListener("input", applyFilters);
   statusFilter?.addEventListener("change", applyFilters);
   orderTypeFilter?.addEventListener("change", applyFilters);
   salesRepFilter?.addEventListener("change", applyFilters);
@@ -554,14 +608,16 @@ const pageTotal = document.getElementById("pageTotal");
   prevBtn?.addEventListener("click", () => {
     if (currentPage > 1) {
       currentPage -= 1;
-      loadSalesOrders();
+      renderTable();
     }
   });
 
   nextBtn?.addEventListener("click", () => {
-    if (currentPage < totalPages()) {
+    const tp = totalPages();
+
+    if (currentPage < tp) {
       currentPage += 1;
-      loadSalesOrders();
+      renderTable();
     }
   });
 

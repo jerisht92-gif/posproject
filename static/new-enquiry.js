@@ -106,49 +106,11 @@ function closeModal(id) {
   const emailField = document.querySelector('[name="email"]');
 
   const requiredNames = [
-    "phone_number",
-    "first_name",
-    "last_name",
-    "email",
-    "street",
-    "city",
-    "state",
-    "country",
-    "zip",
-    "enquiry_description",
-    "enquiry_type",
-    "enquiry_channel",
-    "source",
-    "heard_about",
-    "urgency",
-    "staus",
-    "priority",
+    "phone_number", "first_name", "last_name", "email",
+    "street","city","state","country","zip",
+    "enquiry_description","enquiry_type","enquiry_channel","source",
+    "urgency","priority"
   ];
-
-  /** Dropdown `name` attributes (HTML uses `staus` for Status — keep in sync with template). */
-  const ENQUIRY_SELECT_NAMES = [
-    "enquiry_type",
-    "enquiry_channel",
-    "source",
-    "heard_about",
-    "urgency",
-    "staus",
-    "priority",
-  ];
-
-  const ENQUIRY_SELECT_MESSAGES = {
-    enquiry_type: "Please select an enquiry type.",
-    enquiry_channel: "Please select an enquiry channel.",
-    source: "Please select a source.",
-    heard_about: "Please select how you heard about us.",
-    urgency: "Please select urgency / timeline.",
-    staus: "Please select a status.",
-    priority: "Please select a priority.",
-  };
-
-  const TEXT_REQUIRED_NAMES = requiredNames.filter(
-    (n) => !ENQUIRY_SELECT_NAMES.includes(n)
-  );
 
   /* =====================================================
      ERROR HELPERS
@@ -175,7 +137,7 @@ function closeModal(id) {
   // =========================
   const resetBtn = document.getElementById("resetEnquiryBtn");   // Reset button on Enquiry page
   const cancelBtn = document.getElementById("cancelEnquiryBtn"); // Cancel button on Enquiry page
-  const enquiryForm = document.getElementById("form-enquiry");
+  const enquiryForm = document.getElementById("enquiryForm");    // Your main enquiry form
   const addItemModal = document.getElementById("productModal");  // Add Item modal
 
   let addProductModalPreviousFocus = null;
@@ -184,7 +146,7 @@ function closeModal(id) {
   function getFocusable(container) {
     if (!container) return [];
     return [...container.querySelectorAll(
-      'button, [href], input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])'
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
     )].filter(el => !el.disabled && el.offsetParent !== null);
   }
 
@@ -192,7 +154,7 @@ function closeModal(id) {
     if (!addItemModal) return;
     const form = document.getElementById("addProductForm");
     if (form) {
-        form.reset();
+      form.reset();
       addItemModal.querySelectorAll(".field-error").forEach(el => { el.textContent = ""; });
     }
     addItemModal.style.display = "flex";
@@ -202,28 +164,21 @@ function closeModal(id) {
     addProductModalTrapKeydown = function (e) {
       if (!addItemModal || addItemModal.style.display !== "flex") return;
       if (e.key === "Escape") {
-        e.preventDefault();
+    e.preventDefault();
         closeAddProductModal();
         return;
       }
       if (e.key !== "Tab") return;
-      const focusables = getFocusable(addItemModal);
-      if (focusables.length === 0) return;
-      const current = document.activeElement;
-      const inside = addItemModal.contains(current);
-      if (!inside) {
+      const list = getFocusable(addItemModal);
+      if (list.length === 0) return;
+      const first = list[0];
+      const last = list[list.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
         e.preventDefault();
-        focusables[e.shiftKey ? focusables.length - 1 : 0].focus();
-        return;
-      }
-    e.preventDefault();
-      const idx = focusables.indexOf(current);
-      if (e.shiftKey) {
-        const nextIdx = idx <= 0 ? focusables.length - 1 : idx - 1;
-        focusables[nextIdx].focus();
-      } else {
-        const nextIdx = idx < 0 || idx >= focusables.length - 1 ? 0 : idx + 1;
-        focusables[nextIdx].focus();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
       }
     };
     document.addEventListener("keydown", addProductModalTrapKeydown);
@@ -288,82 +243,7 @@ fillOkBtn.addEventListener("click", () => {
   /* =====================================================
      FIELD VALIDATION
   ===================================================== */
-  /** Content checks only (no DOM), for gating dropdown live errors — mirrors validateField rules. */
-  function isFieldContentValid(field) {
-    if (!field || field.tagName === "SELECT") return true;
-    const value = field.value.trim();
-    if (!value) return false;
-    switch (field.name) {
-      case "phone_number":
-        return /^\d{10}$/.test(value);
-      case "first_name":
-        return value.length >= 3;
-      case "last_name":
-        return /^[A-Za-z]+$/.test(value) && value.length <= 25;
-      case "email":
-        return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
-      case "street":
-      case "unit":
-      case "enquiry_description":
-      case "city":
-      case "state":
-      case "country":
-        return value.length >= 3;
-      case "zip":
-        return value.length >= 5 && value.length <= 10;
-      default:
-        return true;
-    }
-  }
-
-  function allMandatoryTextFieldsComplete() {
-    return TEXT_REQUIRED_NAMES.every((name) => {
-      const field = document.querySelector(`[name="${name}"]`);
-      return field && isFieldContentValid(field);
-    });
-  }
-
-  /** Like Create New Customer: show select errors only after all mandatory text fields pass. */
-  function validateSelectLive(field) {
-    if (!field || field.tagName !== "SELECT") return true;
-    const msg = ENQUIRY_SELECT_MESSAGES[field.name];
-    if (!msg) return true;
-
-    if (!allMandatoryTextFieldsComplete()) {
-      clearError(field);
-      return true;
-    }
-
-    if (!field.value.trim()) {
-      showError(field, msg);
-      return false;
-    }
-    clearError(field);
-    return true;
-  }
-
-  function validateAllSelectsLive() {
-    ENQUIRY_SELECT_NAMES.forEach((name) => {
-      const el = document.querySelector(`[name="${name}"]`);
-      if (el) validateSelectLive(el);
-    });
-  }
-
-  function clearAllSelectFieldErrors() {
-    ENQUIRY_SELECT_NAMES.forEach((name) => {
-      const el = document.querySelector(`[name="${name}"]`);
-      if (el) clearError(el);
-    });
-  }
-
   function validateField(field) {
-    if (field.tagName === "SELECT") {
-      const value = field.value.trim();
-      if (!value) return false;
-      clearError(field);
-      return true;
-    }
-
     const value = field.value.trim();
     if (!value) {
       clearError(field);
@@ -384,11 +264,10 @@ fillOkBtn.addEventListener("click", () => {
         }
         break;
       case "last_name":
-        if (!/^[A-Za-z]+$/.test(value)) {
-          showError(field, "Last name must contain letters only");
-          return false;
-        }
-        if (value.length > 25) {
+        if (!/^[A-Za-z]+$/.test(value)) { 
+      return false;
+}
+  if (value.length > 25) {
           showError(field, "Maximum 25 characters allowed");
           return false;
         }
@@ -425,26 +304,20 @@ fillOkBtn.addEventListener("click", () => {
      FORM CHECKS
   ===================================================== */
   function isFormFilled() {
-    return requiredNames.every((name) => {
+    return requiredNames.every(name => {
       const field = document.querySelector(`[name="${name}"]`);
       return field && field.value.trim() !== "";
     });
   }
 
   function isFormValid() {
-    return requiredNames.every((name) => {
+    return requiredNames.every(name => {
       const field = document.querySelector(`[name="${name}"]`);
       return field && validateField(field);
     });
   }
 
   function updateSubmitButton() {
-    if (allMandatoryTextFieldsComplete()) {
-      validateAllSelectsLive();
-    } else {
-      clearAllSelectFieldErrors();
-    }
-
     const formReady = isFormFilled() && isFormValid() && enquiryId;
     submitBtn.disabled = !(formReady && productAdded);
     if (addItemBtn) addItemBtn.disabled = !formReady;
@@ -584,7 +457,9 @@ document.getElementById("emailCancelBtn").addEventListener("click", () => {
     // Reset the form
     if (enquiryForm) {
         enquiryForm.reset(); // Reset all input/select fields
-    }
+      }
+        window.location.href = '/new-enquiry';
+
   // ❌ Do NOT open product modal
 });
 
@@ -653,7 +528,7 @@ enquiry_id: enquiryId,
       enquiry_details: {
         first_name: firstNameField.value.trim(),
         last_name: lastNameField.value.trim(),
-        phone: phoneField.value.trim(),
+        phone_number: phoneField.value.trim(),
         email: emailField.value.trim(),
         street: document.querySelector('[name="street"]').value.trim(),
         unit: document.querySelector('[name="unit"]').value.trim(),
@@ -665,10 +540,10 @@ enquiry_id: enquiryId,
         enquiry_type: document.querySelector('[name="enquiry_type"]').value,
         enquiry_channel: document.querySelector('[name="enquiry_channel"]').value,
         source: document.querySelector('[name="source"]').value,
-        heard_about: document.querySelector('[name="heard_about"]')?.value || "",
         urgency: document.querySelector('[name="urgency"]').value,
-        status: document.querySelector('[name="staus"]')?.value || "",
-        priority: document.querySelector('[name="priority"]').value
+        priority: document.querySelector('[name="priority"]').value,
+        status: document.querySelector('[name="status"]').value   // <-- add this line
+
       },
       items: enquiryItems
     };

@@ -1,0 +1,367 @@
+
+
+
+{% extends "menu.html" %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='new-invoice.css') }}">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+{% endblock %}
+
+{% block content %}
+<div class="modal">
+  <!-- Header with Title, Status Badge, and Invoice Return Button -->
+  <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; flex-wrap: wrap; gap: 15px;">
+    <div style="display: flex; align-items: center; gap: 20px;">
+      <h2 class="quotation-title" style="margin-bottom: 0;">New Invoice</h2>
+      <div class="invoice-status-header" >
+        <!-- <span class="status-label">Status: -->
+        <h2 id="invoiceStatusBadge"  ></h2>
+        <!-- <span> -->
+      </div>
+    </div>
+    
+    <!-- Invoice Return Button - ADDED ON RIGHT SIDE -->
+    <button type="button" id="invoiceReturnBtn" class="btn-save" disabled>
+       Invoice Return
+    </button>
+  </div>
+
+  <!-- ========== FORM STARTS HERE ========== -->
+  <form id="invoiceForm" method="POST" action="/save-invoice">
+
+    <!-- Hidden status field (set by JavaScript) -->
+    <input type="hidden" id="invoiceStatus" name="status" value="">
+
+    <!-- Hidden JSON field for line items (to be populated by JavaScript) -->
+    <input type="hidden" id="itemsData" name="itemsData" value="">
+    
+    <div class="quotation-full">
+      <!-- ========== TOP FORM GRID (Invoice fields) ========== -->
+      <div class="form-grid">
+        <!-- Invoice ID (readonly) -->
+        <div class="form-group">
+          <label>Invoice ID <span>(Auto Generate)</span></label>
+          <input type="text" id="invoiceId" name="invoice_id" value="{{ invoice_id }}" readonly>
+        </div>
+
+        <!-- Sale Order Reference (custom dropdown with search) -->
+        <div class="form-group">
+          <label>Sale Order Reference</label>
+          <div class="custom-dropdown">
+            <div class="dropdown-selected" id="saleOrderSelected" onclick="toggleSaleOrderDropdown()">
+              Select Sales Order
+            </div>
+            <div class="dropdown-menu" id="saleOrderDropdown">
+              <input type="text" id="saleOrderSearch" placeholder="Search Sales Order..." onkeyup="filterSaleOrders()">
+              <div class="dropdown-list" id="saleOrderList">
+                {% if sales_orders %}
+                  {% for so in sales_orders %}
+                    <div class="dropdown-item" data-value="{{ so['so_id'] }}" onclick="selectSaleOrder(this)">
+                      {{ so['so_id'] }}
+                    </div>
+                  {% endfor %}
+                {% else %}
+                  <div class="dropdown-item">No Sales Orders Found</div>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+          <input type="hidden" id="saleOrderRef" name="sale_order_reference" value="">
+        </div>
+
+        <!-- Invoice Date -->
+        <div class="form-group">
+          <label>Invoice Date</label>
+          <input type="date" id="invoiceDate" name="invoice_date" placeholder="dd-mm-yyyy" readonly >
+        </div>
+        
+        <!-- Due Date -->
+        <div class="form-group">
+          <label>Due Date</label>
+          <input type="date" id="dueDate" name="due_date" placeholder="dd-mm-yyyy" readonly >
+        </div>
+
+        <!-- Invoice status -->     
+        <div class="form-group">
+          <label>Invoice Status</label>
+          <input type="text" id="invoiceStatusDisplay" name="invoice_status" placeholder="Draft,Send,Paid,OverDue,Cancelled" readonly>
+        </div>
+
+        <!-- Payment Terms (custom dropdown with search) -->
+        <div class="form-group">
+          <label>Payment Terms</label>
+          <div class="custom-dropdown">
+            <div class="dropdown-selected" id="paymentTermSelected" onclick="togglePaymentTermDropdown()">
+              Select Terms
+            </div>
+            <div class="dropdown-menu" id="paymentTermDropdown">
+              <input type="text" id="paymentTermSearch" placeholder="Search Terms..." onkeyup="filterPaymentTerms()">
+              <div class="dropdown-list" id="paymentTermList">
+                <div class="dropdown-item">Loading...</div>
+              </div>
+            </div>
+          </div>
+          <input type="hidden" id="paymentTerms" name="payment_terms" value="">
+        </div>
+
+        <!-- Customer Ref.No -->
+        <div class="form-group">
+          <label>Customer Ref.No</label>
+          <input type="text" id="customerRefNo" name="customer_ref_no" placeholder="Enter Customer Ref.No">
+        </div>
+
+        <!-- Invoice Tags -->
+        <div class="form-group">
+          <label>Invoice Tags</label>
+          <select id="invoiceTags" name="invoice_tags">
+            <option value="">Select Tags</option>
+            <option value="All">All</option>
+            <option value="Monthly">Monthly</option>
+            <option value="Recurring">Recurring</option>
+            <option value="Urgent">Urgent</option>
+          </select>
+        </div>
+
+        <!-- Terms & Conditions -->
+        <div class="form-group">
+          <label>Terms & Conditions</label>
+          <input type="text" id="termsConditions" name="terms_conditions" placeholder="Enter payment terms or policies">
+        </div>
+      </div>
+
+      <!-- ========== CONTACT INFORMATION ========== -->
+      <h3 class="section-title" style="margin-top: 20px;">Contact Information</h3>
+      <div class="form-grid">
+        <!-- Customer Name -->
+        <div class="form-group">
+          <label>Customer Name</label>
+          <input type="text" id="customerName" name="customer_name" readonly>
+        </div>
+
+        <!-- Customer ID (readonly) -->
+        <div class="form-group">
+          <label>Customer Id <span>(Auto Generate)</span></label>
+          <input type="text" id="customerId" name="customer_id" value="Auto Generate" readonly>
+        </div>
+
+        <!-- Billing Address -->
+        <div class="form-group">
+          <label>Billing Address</label>
+          <input type="text" id="billingAddress" name="billing_address" placeholder="Enter Billing Address" readonly>
+        </div>
+
+        <!-- Shipping Address -->
+        <div class="form-group">
+          <label>Shipping Address</label>
+          <input type="text" id="shippingAddress" name="shipping_address" placeholder="Enter Shipping Address" readonly>
+        </div>
+
+        <!-- Email -->
+        <div class="form-group">
+          <label>Email ID</label>
+          <input type="email" id="email" name="email" placeholder="Enter Email ID" readonly>
+        </div>
+
+        <!-- Phone -->
+        <div class="form-group">
+          <label>Phone Number</label>
+          <input type="text" id="phone" name="phone" placeholder="Enter Phone Number" readonly>
+        </div>
+
+        <!-- Contact Person -->
+        <div class="form-group">
+          <label>Contact Person</label>
+          <input type="text" id="contactPerson" name="contact_person" readonly>
+        </div>
+      </div>
+
+      <!-- ========== PAYMENT DETAILS ========== -->
+      <h3 class="section-title">Payment Details</h3>
+      <div class="form-grid">
+        <!-- Payment Method -->
+        <div class="form-group">
+          <label>Payment Method</label>
+          <select id="paymentMethod" name="payment_method">
+            <option value="">- Select Payment -</option>
+            <option value="Bank Transfer">Bank Transfer</option>
+            <option value="Credit Card">Card</option>
+            <option value="UPI">UPI</option>
+            <option value="Cash">Cash</option>
+          </select>
+        </div>
+
+        <!-- Currency -->
+        <div class="form-group">
+          <label>Currency</label>
+          <select id="currency" name="currency">
+            <option value="">- Select Currency -</option>
+            <option value="USD">USD</option>
+            <option value="EUR">EUR</option>
+            <option value="GBP">GBP</option>
+            <option value="INR">INR</option>
+          </select>
+        </div>
+
+        <!-- Payment Ref.No -->
+        <div class="form-group">
+          <label>Payment Ref.No</label>
+          <input type="text" id="paymentRefNo" name="payment_ref_no" placeholder="Enter Ref No">
+        </div>
+
+        <!-- Transaction Date (readonly) -->
+        <div class="form-group">
+          <label>Transaction Date</label>
+          <input type="text" id="transactionDate" name="transaction_date" placeholder="dd-mm-yyyy" readonly>
+        </div>
+
+        <!-- Payment Status (readonly) -->
+        <div class="form-group">
+          <label>Payment Status</label>
+          <input type="text" id="paymentStatus" name="payment_status" readonly>
+        </div>
+      </div>
+
+      <!-- ========== INVOICE ITEMS (table) ========== -->
+      <h3 class="section-title">Line Items</h3>
+      <div class="quotation-items-box">
+        <table class="items-table" id="itemsTable">
+          <thead>
+            <tr>
+              <th>S.No</th>
+              <th>Product Name</th>
+              <th>Product ID</th>
+              <th>Quantity</th>
+              <th>UOM</th>
+              <th>Unit Price</th>
+              <th>Tax (%)</th>
+              <th>Discount (%)</th>
+              <th>Total</th>
+            </tr>
+          </thead>
+          <tbody id="itemsTableBody"></tbody>
+        </table>
+      </div>
+
+      <!-- ========== ORDER SUMMARY ========== -->
+      <h3 class="section-title">Order Summary</h3>
+      <div class="totals" id="tax_total">
+        <div><span>Sub Total</span><span>0.00</span></div>
+        <div><span>Global Discount (%)</span><span>0.00</span></div>
+        <div><span>Tax Summary</span><span>0.00</span></div>
+        <div><span>Shipping Charges</span><span>0.00</span></div>
+        <div><span>Rounding Adjustment</span><span>0.00</span></div>
+        <div><span>Amount Paid</span><span>
+          <input type="number"
+               id="amountPaid"
+               name="amount_paid"          
+               class="amount_paid"
+               value="0"
+               min="0"
+               step="1"
+               maxlength="5"
+               style="width: 80px; padding: 5px; border-radius: 4px; text-align: right;background-color: #d18a84;">
+        </span></div>
+        <div class="grand-total"><span>Grand Total</span><span>0.00</span></div>
+        <div class="grand-total" style="border-top: 2px solid #a12828;"><span>Balance Due</span><span>0.00</span></div>
+      </div>
+
+      <!-- ========== COMMENTS / HISTORY / ATTACHMENTS ========== -->
+      <div class="comment-box">
+        <div class="comment-tabs">
+          <button class="tab active" data-tab="comments" type="button">💬 Comments</button>
+          <button class="tab" data-tab="history" type="button">🕘 History</button>
+          <button class="tab" data-tab="attachments" type="button">📎 Attachments</button>
+        </div>
+
+        <!-- Comments tab -->
+        <div class="comment-body tab-content" id="comments">
+          <label>Add Comment:</label>
+          <textarea id="commentText" placeholder="Enter Your Comment" maxlength="100"></textarea>
+          <button class="add-btn" id="addCommentBtn" type="button">Add New</button>
+        </div>
+
+        <!-- History tab -->
+        <div class="comment-history tab-content" id="history" style="display:none;">
+          <div class="no-history-message">No history available.</div>
+        </div>
+
+        <!-- Attachments tab -->
+        <div class="tab-content" id="attachments" style="display:none;">
+          <div class="upload-section">
+            <input type="file" id="fileInput" hidden>
+            <div class="upload-card" id="uploadCard">
+              <i class="fa-solid fa-cloud-upload-alt"></i>
+              <h4>Upload Attachment</h4>
+              <p>Click to select or drag & drop</p>
+              <small>PDF, DOC, XLS, JPG, PNG (Max 10MB)</small>
+            </div>
+            <button class="btn-upload" id="uploadBtn" type="button"><i class="fa-solid fa-upload"></i> Choose File</button>
+          </div>
+          <div class="files-section">
+            <div class="files-header">
+              <h4><i class="fa-solid fa-paperclip"></i> Attached Files</h4>
+              <span class="file-count" id="fileCount">0 files</span>
+            </div>
+            <div class="files-list" id="filesList">
+              <div class="no-files"><i class="fa-regular fa-folder-open"></i><p>No files attached yet</p></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Hidden fields -->
+      <input type="hidden" id="subTotalInput" name="sub_total" value="0">
+      <input type="hidden" id="taxTotalInput" name="tax_total" value="0">
+      <input type="hidden" id="grandTotalInput" name="grand_total" value="0">
+      <input type="hidden" id="balanceDueInput" name="balance_due" value="0">
+      <input type="hidden" id="shippingCharges" name="shipping_charges" value="0">
+      <input type="hidden" id="roundingAdjustment" name="rounding_adjustment" value="0">
+      <input type="hidden" id="amtPaid" name="amt_paid" value="0">
+      <input type="hidden" id="globalDiscount" name="global_discount" value="0">
+
+      <!-- ========== FOOTER BUTTONS ========== -->
+      <div class="modal-footer">
+        <div class="footer-icon-bar">
+          <div class="footer-item pdf" id="pdfAction">
+            <a id="pdfLink" class="btn-pdf" target="_blank" style="text-decoration:none; font-size: 11px; color: #666; cursor: pointer;">
+              <i class="fa-solid fa-file-pdf"></i> PDF
+            </a>
+          </div>
+          <div class="footer-item email" id="emailAction">
+            <i class="fa-regular fa-envelope"></i>
+            <span>Email</span>
+          </div>
+        </div>
+        <div class="modal-footer-button">
+          <button class="btn-discard" id="cancelBtn" type="button">Cancel</button>
+          <button class="btn-draft" id="saveDraftBtn" type="button">Save Draft</button>
+          <button class="btn-save" id="submitInvoiceBtn" type="button">Submit</button>
+          <button class="btn-discard" id="markAsPaid" type="button">Mark as paid</button>
+          <button class="btn-discard" id="cancelInvoiceBtn" type="button">Cancel Invoice</button>
+        </div>
+      </div>
+    </div> <!-- /.quotation-full -->
+  </form>
+  <!-- ========== FORM ENDS HERE ========== -->
+</div> <!-- /.modal -->
+
+<!-- Email Modal -->
+<div id="emailModal" class="email-modal" style="display: none;">
+  <div class="email-modal-content">
+    <h3>Send Invoice via Email</h3>
+    <div class="email-modal-body">
+      <label for="recipientEmail">Email *</label>
+      <input type="email" id="recipientEmail" placeholder="customer@example.com" required>
+      <div class="email-modal-actions">
+        <button id="sendEmailBtn" class="btn-save">Send Email</button>
+        <button id="cancelEmailBtn" class="btn-discard">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', filename='new-invoice.js') }}"></script>
+{% endblock %}

@@ -1,7 +1,7 @@
 # =============
 # ✅ IMPORTS 
 # ============
-from flask import Flask, render_template, request, jsonify, session, url_for, redirect, flash, send_from_directory, send_file, make_response
+from flask import Flask, render_template, request, jsonify, session, url_for, redirect, flash, send_from_directory, send_file, make_response, render_template_string
 from flask_cors import CORS
 import smtplib
 import random
@@ -15,6 +15,7 @@ import ssl
 import csv
 import io
 import math
+import base64
 from collections import defaultdict
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -52,6 +53,7 @@ from collections import defaultdict
 
 import psycopg2
 from psycopg2 import pool as psycopg2_pool
+from psycopg2.extras import RealDictCursor
 import atexit
 import traceback
 import socket
@@ -342,6 +344,40 @@ def get_db_connection():
             print(traceback.format_exc())
             raise
 
+
+def fetch_all(query, params=None):
+    conn = get_db_connection()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(query, params)
+            return cur.fetchall()
+    finally:
+        conn.close()
+
+
+def fetch_one(query, params=None):
+    conn = get_db_connection()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(query, params)
+            return cur.fetchone()
+    finally:
+        conn.close()
+
+
+def execute_query(query, params=None, commit=True, return_id=False):
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(query, params)
+            if commit:
+                conn.commit()
+            if return_id:
+                return cur.fetchone()[0] if cur.description else None
+    finally:
+        conn.close()
+
+
 # Base directory for building absolute paths
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -550,8 +586,6 @@ SIZE_FILE = os.path.join(app.root_path, "product_sizes.json")
 COLOR_FILE = os.path.join(app.root_path, "product_colors.json")
 SUPPLIER_FILE = os.path.join(app.root_path, "product_suppliers.json")
 CUSTOMER_FILE = os.path.join(app.root_path, "customer.json")
-ENQUIRY_FILE = os.path.join(app.root_path, "new-enquiry.json")
-ENQUIRY_PRODUCT_FILE = "data/enquiry_products.json"
 QUOTATION_FILE = os.path.join(app.root_path, "quotation.json")
 COMMENTS_FILE = os.path.join(app.root_path, "comments.json")
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -8242,80 +8276,16 @@ def delete_user(user_id):
 # 7. CRM — Enquiry List
 # =========================================
 
-def _load_enquiry_file():
-    """Load new-enquiry.json as a dict keyed by enquiry_id."""
-    if not os.path.exists(ENQUIRY_FILE):
-        return {}
-    try:
-        with open(ENQUIRY_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        return data if isinstance(data, dict) else {}
-    except (json.JSONDecodeError, OSError, TypeError):
-        return {}
-
-
-def _save_enquiry_file(data):
-    """Persist enquiry dict to new-enquiry.json."""
-    if not isinstance(data, dict):
-        data = {}
-    with open(ENQUIRY_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=4, ensure_ascii=False)
-
-
 def generate_enquiry_id():
-    """Next ENQ-#### id from existing keys in ENQUIRY_FILE (dict format)."""
-    data = _load_enquiry_file()
-    if not data:
+    row = fetch_one("SELECT enquiry_id FROM enquiry ORDER BY id DESC LIMIT 1")
+    if not row:
         return "ENQ-0001"
-    max_n = 0
-    for key in data.keys():
-        if not isinstance(key, str):
-            continue
-        k = key.strip().upper()
-        if not k.startswith("ENQ"):
-            continue
-        try:
-            tail = k.split("-")[-1] if "-" in k else k[3:]
-            tail = tail.lstrip("0") or "0"
-            n = int(tail)
-            max_n = max(max_n, n)
-        except ValueError:
-            continue
-    return f"ENQ-{max_n + 1:04d}"
-
-
-def _normalize_incoming_enquiry_details(details: dict) -> dict:
-    """Accept phone_number from API clients; store as phone."""
-    if not isinstance(details, dict):
-        return {}
-    out = dict(details)
-    if out.get("phone_number") and not out.get("phone"):
-        out["phone"] = str(out.pop("phone_number", "")).strip()
-    elif "phone_number" in out:
-        out.pop("phone_number", None)
-    return out
-
-
-def _enquiry_to_api_dict(enquiry_id: str, enq_data: dict, include_items: bool = True) -> dict:
-    """Single enquiry payload for JSON APIs."""
-    if not isinstance(enq_data, dict):
-        enq_data = {}
-    details = _normalize_incoming_enquiry_details(enq_data.get("enquiry_details") or {})
-    row = {
-        "enquiry_id": enquiry_id,
-        "enquiry_details": details,
-        "first_name": details.get("first_name", ""),
-        "last_name": details.get("last_name", ""),
-        "email": details.get("email", ""),
-        "phone": details.get("phone", ""),
-        "phone_number": details.get("phone", ""),
-        "status": details.get("status", "New"),
-    }
-    if include_items:
-        row["items"] = enq_data.get("items") if isinstance(enq_data.get("items"), dict) else {}
-    return row
-
-
+    last_id = row["enquiry_id"]
+    try:
+        num = int(str(last_id).split("-")[1])
+    except (IndexError, ValueError):
+        return "ENQ-0001"
+    return f"ENQ-{num + 1:04d}"
 
 
 def _get_current_user_role():
@@ -8355,42 +8325,54 @@ def enquiry_list():
     if not user_email:
         return redirect(url_for("login", message="session_expired"))
 
-    prof = get_current_user_profile() or {}
-    user_name = prof.get("name") or "User"
-    user_role = prof.get("role") or "User"
+    users = load_users()
+    user_name = "User"
+    user_role = "User"
+    for u in users:
+        if isinstance(u, dict) and (u.get("email") or "").lower() == user_email.lower():
+            user_name = u.get("name") or "User"
+            user_role = (u.get("role") or "User").strip()
+            break
 
-    # Load enquiries from JSON file (new-enquiry.json)
+    rows = fetch_all(
+        """
+        SELECT enquiry_id, first_name, last_name, email, phone_number, status,
+               (SELECT COUNT(*) FROM enquiry_product ep WHERE ep.enquiry_id = e.enquiry_id) AS items_count
+        FROM enquiry e
+        ORDER BY created_at DESC
+        """
+    )
     enquiries = []
-    data = _load_enquiry_file()
-    if data:
-        # Convert dict to list
-        for enq_id, enq_data in data.items():
-            details = enq_data.get("enquiry_details", {})
-            enquiries.append({
-                "enquiry_id": enq_id,
-                "first_name": details.get("first_name", ""),
-                "last_name": details.get("last_name", ""),
-                "email": details.get("email", ""),
-                "phone_number": details.get("phone", ""),
-                "status": details.get("status", "New"),
-                "items": enq_data.get("items", {})
-            })
-
-    # JSON API variant for Fetch/XHR (same pattern as manage users)
-    if wants_json():
-        return jsonify(
+    for row in rows:
+        enquiries.append(
             {
-                "success": True,
-                "data": enquiries,
-                "total": len(enquiries),
-                "current_user": {
-                    "email": user_email,
-                    "name": user_name,
-                    "role": user_role,
-                },
-                "permissions": get_effective_permissions_for_session(),
+                "enquiry_id": row["enquiry_id"],
+                "first_name": row["first_name"] or "",
+                "last_name": row["last_name"] or "",
+                "email": row["email"] or "",
+                "phone_number": row["phone_number"] or "",
+                "status": row["status"] or "New",
+                "items": {},
             }
-        ), 200
+        )
+
+    if wants_json():
+        return (
+            jsonify(
+                {
+                    "success": True,
+                    "data": enquiries,
+                    "total": len(enquiries),
+                    "current_user": {
+                        "email": user_email,
+                        "name": user_name,
+                        "role": user_role,
+                    },
+                    "permissions": get_effective_permissions_for_session(),
+                }
+            ),
+            200,
+        )
 
     return render_template(
         "enquiry-list.html",
@@ -8409,24 +8391,26 @@ def enquiry_list():
 
 @app.route("/api/enquiry/<enquiry_id>")
 def get_enquiry(enquiry_id):
-    if not os.path.exists(ENQUIRY_FILE):
-        return jsonify(success=False, message="Enquiry file missing")
+    row = fetch_one(
+        """
+        SELECT enquiry_id, first_name, last_name, phone_number, email
+        FROM enquiry WHERE enquiry_id = %s
+        """,
+        (enquiry_id,),
+    )
+    if not row:
+        return jsonify(success=False, message="Enquiry not found"), 404
 
-    with open(ENQUIRY_FILE, "r", encoding="utf-8") as f:
-        data = json.load(f)
-
-    enquiry = data.get(enquiry_id)
-    if not enquiry:
-        return jsonify(success=False, message="Enquiry not found")
-
-    details = enquiry.get("enquiry_details", {})
-    return jsonify(success=True, data={
-        "enquiry_id": enquiry_id,
-        "first_name": details.get("first_name", ""),
-        "last_name": details.get("last_name", ""),
-        "phone": details.get("phone", ""),
-        "email": details.get("email", "")
-    })
+    return jsonify(
+        success=True,
+        data={
+            "enquiry_id": row["enquiry_id"],
+            "first_name": row["first_name"] or "",
+            "last_name": row["last_name"] or "",
+            "phone": row["phone_number"] or "",
+            "email": row["email"] or "",
+        },
+    )
 
 
 
@@ -8439,33 +8423,29 @@ def update_enquiry(enquiry_id):
     if role not in ("admin", "superadmin"):
         return jsonify(success=False, message="Only Admin or Super Admin can edit enquiries."), 403
 
-    if not os.path.exists(ENQUIRY_FILE):
-        return jsonify(success=False, message="Enquiry file missing"), 400
-
-    with open(ENQUIRY_FILE, "r", encoding="utf-8") as f:
-        data = json.load(f)
-
-    if enquiry_id not in data:
-        return jsonify(success=False, message="Enquiry not found"), 404
-
     req_data = request.get_json()
     if not req_data:
         return jsonify(success=False, message="Invalid request"), 400
 
-    # Get existing enquiry details
-    details = data[enquiry_id].get("enquiry_details", {})
+    updates = {}
+    if "first_name" in req_data:
+        updates["first_name"] = req_data["first_name"]
+    if "last_name" in req_data:
+        updates["last_name"] = req_data["last_name"]
+    if "phone_number" in req_data:
+        updates["phone_number"] = req_data["phone_number"]
+    if "email" in req_data:
+        updates["email"] = req_data["email"]
 
-    # Update only the fields from the request
-    details["first_name"] = req_data.get("first_name", details.get("first_name", ""))
-    details["last_name"] = req_data.get("last_name", details.get("last_name", ""))
-    details["phone"] = req_data.get("phone_number", details.get("phone", ""))
-    details["email"] = req_data.get("email", details.get("email", ""))
+    if not updates:
+        return jsonify(success=False, message="No fields to update"), 400
 
-    # Save updated details back
-    data[enquiry_id]["enquiry_details"] = details
-
-    with open(ENQUIRY_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=4, ensure_ascii=False)
+    set_clause = ", ".join([f"{k} = %s" for k in updates.keys()])
+    values = list(updates.values()) + [enquiry_id]
+    execute_query(
+        f"UPDATE enquiry SET {set_clause}, updated_at = NOW() WHERE enquiry_id = %s",
+        values,
+    )
 
     return jsonify(success=True, message="Enquiry updated successfully")
 
@@ -8479,40 +8459,85 @@ def delete_enquiry(enquiry_id):
     if role != "superadmin":
         return jsonify(success=False, message="Only Super Admin can delete enquiries."), 403
 
-    if not os.path.exists(ENQUIRY_FILE):
-        return jsonify(success=False, message="Enquiry file missing")
-
-    with open(ENQUIRY_FILE, "r", encoding="utf-8") as f:
-        data = json.load(f)
-
-    if enquiry_id not in data:
-        return jsonify(success=False, message="Enquiry not found")
-
-    # Remove enquiry
-    del data[enquiry_id]
-
-    with open(ENQUIRY_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=4)
-
+    execute_query("DELETE FROM enquiry WHERE enquiry_id = %s", (enquiry_id,))
     return jsonify(success=True, message="Enquiry deleted successfully")
 
 
-# =========================================
-# 7b. CRM — Enquiries REST API (Postman / JSON clients)
-#   GET    /api/enquiries              — list (optional ?search=&status=)
-#   GET    /api/enquiries/<id>         — one enquiry (details + items)
-#   POST   /api/enquiries              — create (optional enquiry_id; auto if omitted)
-#   PUT    /api/enquiries/<id>         — update details (merge) + optional items (merge)
-#   DELETE /api/enquiries/<id>         — delete (Super Admin only)
-# =========================================
+def _enquiry_items_dict_for_api(enquiry_id):
+    """Items keyed by product_id, shape expected by enquiry-list.js."""
+    rows = fetch_all(
+        """
+        SELECT product_id, product_name, description,
+               unit_price, selling_price, quantity, total
+        FROM enquiry_product
+        WHERE enquiry_id = %s
+        """,
+        (enquiry_id,),
+    )
+    result = {}
+    for item in rows:
+        pid = item["product_id"]
+        result[pid] = {
+            "item_code": pid,
+            "item_name": item["product_name"],
+            "description": item["description"],
+            "unit_price": str(item["unit_price"]),
+            "selling_price": str(item["selling_price"]),
+            "quantity": item["quantity"],
+            "total": str(item["total"]),
+        }
+    return result
+
+
+def _enquiry_row_to_api(enquiry_id: str, row: dict) -> dict:
+    if not row:
+        return {}
+    fn = row.get("first_name") or ""
+    ln = row.get("last_name") or ""
+    em = row.get("email") or ""
+    ph = row.get("phone_number") or ""
+    st = row.get("status") or "New"
+    items = _enquiry_items_dict_for_api(enquiry_id)
+    details = {
+        "first_name": fn,
+        "last_name": ln,
+        "email": em,
+        "phone": ph,
+        "phone_number": ph,
+        "status": st,
+        "street": row.get("street"),
+        "unit": row.get("unit"),
+        "city": row.get("city"),
+        "state": row.get("state"),
+        "zip": row.get("zip"),
+        "country": row.get("country"),
+        "enquiry_type": row.get("enquiry_type"),
+        "enquiry_description": row.get("enquiry_description"),
+        "enquiry_channel": row.get("enquiry_channel"),
+        "source": row.get("source"),
+        "heard_about": row.get("heard_about"),
+        "urgency": row.get("urgency"),
+        "priority": row.get("priority"),
+    }
+    return {
+        "enquiry_id": enquiry_id,
+        "enquiry_details": details,
+        "first_name": fn,
+        "last_name": ln,
+        "email": em,
+        "phone_number": ph,
+        "phone": ph,
+        "status": st,
+        "items": items,
+    }
+
+
 @app.route("/api/enquiries", methods=["GET"])
 def api_enquiries_list():
-    """List all enquiries. Requires login. Use Accept: application/json from Postman."""
     user_email = session.get("user")
     if not user_email:
         return jsonify({"success": False, "message": "Session expired. Please login first."}), 401
 
-    data = _load_enquiry_file()
     q = (request.args.get("search") or request.args.get("q") or "").strip().lower()
     status_filter = (request.args.get("status") or "").strip()
     raw_page = request.args.get("page")
@@ -8537,26 +8562,42 @@ def api_enquiries_list():
             user_role = (u.get("role") or "User").strip()
             break
 
+    rows = fetch_all(
+        """
+        SELECT enquiry_id, first_name, last_name, email, phone_number, status
+        FROM enquiry
+        ORDER BY created_at DESC
+        """
+    )
     enquiries = []
-    for enq_id, enq_data in data.items():
-        row = _enquiry_to_api_dict(enq_id, enq_data, include_items=True)
+    for row in rows:
+        eid = row["enquiry_id"]
         st = row.get("status") or "New"
         if status_filter and st != status_filter:
             continue
+        r = {
+            "enquiry_id": eid,
+            "first_name": row.get("first_name") or "",
+            "last_name": row.get("last_name") or "",
+            "email": row.get("email") or "",
+            "phone_number": row.get("phone_number") or "",
+            "phone": row.get("phone_number") or "",
+            "status": st,
+        }
         if q:
             blob = " ".join(
                 [
-                    str(enq_id),
-                    row.get("first_name") or "",
-                    row.get("last_name") or "",
-                    row.get("email") or "",
-                    row.get("phone") or "",
+                    str(eid),
+                    r.get("first_name") or "",
+                    r.get("last_name") or "",
+                    r.get("email") or "",
+                    r.get("phone_number") or "",
                     st,
                 ]
             ).lower()
             if q not in blob:
                 continue
-        enquiries.append(row)
+        enquiries.append(r)
 
     total = len(enquiries)
     if use_pagination:
@@ -8583,22 +8624,19 @@ def api_enquiries_list():
 
 @app.route("/api/enquiries/<enquiry_id>", methods=["GET"])
 def api_enquiries_get_one(enquiry_id):
-    """Get one enquiry by id (full details + items)."""
     user_email = session.get("user")
     if not user_email:
         return jsonify({"success": False, "message": "Session expired. Please login first."}), 401
 
-    data = _load_enquiry_file()
-    enq_data = data.get(enquiry_id)
-    if not enq_data:
+    row = fetch_one("SELECT * FROM enquiry WHERE enquiry_id = %s", (enquiry_id,))
+    if not row:
         return jsonify({"success": False, "message": "Enquiry not found"}), 404
 
-    return jsonify({"success": True, "enquiry": _enquiry_to_api_dict(enquiry_id, enq_data, include_items=True)}), 200
+    return jsonify({"success": True, "enquiry": _enquiry_row_to_api(enquiry_id, dict(row))}), 200
 
 
 @app.route("/api/enquiries", methods=["POST"])
 def api_enquiries_create():
-    """Create enquiry. Admin / Super Admin only. Body: { enquiry_details, items?, enquiry_id? }."""
     user_email = session.get("user")
     if not user_email:
         return jsonify({"success": False, "message": "Session expired. Please login first."}), 401
@@ -8612,31 +8650,81 @@ def api_enquiries_create():
         return jsonify({"success": False, "message": "JSON body required"}), 400
 
     enquiry_id = (body.get("enquiry_id") or "").strip() or generate_enquiry_id()
-    details = _normalize_incoming_enquiry_details(body.get("enquiry_details") or {})
+    details_in = body.get("enquiry_details") if isinstance(body.get("enquiry_details"), dict) else {}
     items = body.get("items") if isinstance(body.get("items"), dict) else {}
 
-    data = _load_enquiry_file()
-    if enquiry_id in data:
+    exists = fetch_one("SELECT 1 FROM enquiry WHERE enquiry_id = %s", (enquiry_id,))
+    if exists:
         return jsonify({"success": False, "message": "Enquiry ID already exists. Omit enquiry_id to auto-generate."}), 409
 
-    if not details.get("status"):
-        details["status"] = "New"
+    execute_query(
+        """
+        INSERT INTO enquiry (
+            id, enquiry_id, phone_number, first_name, last_name, email,
+            street, unit, city, state, zip, country,
+            enquiry_type, enquiry_description, enquiry_channel,
+            source, heard_about, urgency, status, priority
+        ) VALUES (
+            (SELECT COALESCE(MAX(ep.id), 0) + 1 FROM enquiry ep),
+            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+        )
+        """,
+        (
+            enquiry_id,
+            details_in.get("phone_number") or details_in.get("phone"),
+            details_in.get("first_name"),
+            details_in.get("last_name"),
+            details_in.get("email"),
+            details_in.get("street"),
+            details_in.get("unit"),
+            details_in.get("city"),
+            details_in.get("state"),
+            details_in.get("zip"),
+            details_in.get("country"),
+            details_in.get("enquiry_type"),
+            details_in.get("enquiry_description"),
+            details_in.get("enquiry_channel"),
+            details_in.get("source"),
+            details_in.get("heard_about"),
+            details_in.get("urgency"),
+            details_in.get("status", "New"),
+            details_in.get("priority"),
+        ),
+    )
 
-    data[enquiry_id] = {"enquiry_details": details, "items": items}
-    _save_enquiry_file(data)
+    for product_id, item in items.items():
+        execute_query(
+            """
+            INSERT INTO enquiry_product
+                (id, enquiry_id, product_id, product_name, description, unit_price, selling_price, quantity)
+            VALUES (
+                (SELECT COALESCE(MAX(ep.id), 0) + 1 FROM enquiry_product ep),
+                %s, %s, %s, %s, %s, %s, %s
+            )
+            """,
+            (
+                enquiry_id,
+                product_id,
+                item.get("item_name", ""),
+                item.get("description", ""),
+                item.get("unit_price", 0),
+                item.get("selling_price", 0),
+                item.get("quantity", 1),
+            ),
+        )
 
+    row = fetch_one("SELECT * FROM enquiry WHERE enquiry_id = %s", (enquiry_id,))
     return jsonify(
         {
             "success": True,
             "message": "Enquiry created",
-            "enquiry": _enquiry_to_api_dict(enquiry_id, data[enquiry_id], include_items=True),
+            "enquiry": _enquiry_row_to_api(enquiry_id, dict(row)),
         }
     ), 201
 
 
 @app.route("/api/enquiries/<enquiry_id>", methods=["PUT"])
 def api_enquiries_update(enquiry_id):
-    """Update enquiry: merge enquiry_details; merge items if provided."""
     user_email = session.get("user")
     if not user_email:
         return jsonify({"success": False, "message": "Session expired. Please login first."}), 401
@@ -8649,38 +8737,100 @@ def api_enquiries_update(enquiry_id):
     if not body:
         return jsonify({"success": False, "message": "JSON body required"}), 400
 
-    data = _load_enquiry_file()
-    if enquiry_id not in data:
+    row = fetch_one("SELECT * FROM enquiry WHERE enquiry_id = %s", (enquiry_id,))
+    if not row:
         return jsonify({"success": False, "message": "Enquiry not found"}), 404
 
     if "enquiry_details" in body and isinstance(body["enquiry_details"], dict):
-        existing = data[enquiry_id].setdefault("enquiry_details", {})
-        merged = _normalize_incoming_enquiry_details(body["enquiry_details"])
-        for k, v in merged.items():
-            existing[k] = v
-        data[enquiry_id]["enquiry_details"] = existing
+        merged = dict(body["enquiry_details"])
+        if merged.get("phone_number") is None and merged.get("phone") is not None:
+            merged["phone_number"] = merged.get("phone")
+        execute_query(
+            """
+            UPDATE enquiry SET
+                phone_number = COALESCE(%s, phone_number),
+                first_name = COALESCE(%s, first_name),
+                last_name = COALESCE(%s, last_name),
+                email = COALESCE(%s, email),
+                street = COALESCE(%s, street),
+                unit = COALESCE(%s, unit),
+                city = COALESCE(%s, city),
+                state = COALESCE(%s, state),
+                zip = COALESCE(%s, zip),
+                country = COALESCE(%s, country),
+                enquiry_type = COALESCE(%s, enquiry_type),
+                enquiry_description = COALESCE(%s, enquiry_description),
+                enquiry_channel = COALESCE(%s, enquiry_channel),
+                source = COALESCE(%s, source),
+                heard_about = COALESCE(%s, heard_about),
+                urgency = COALESCE(%s, urgency),
+                status = COALESCE(%s, status),
+                priority = COALESCE(%s, priority),
+                updated_at = NOW()
+            WHERE enquiry_id = %s
+            """,
+            (
+                merged.get("phone_number"),
+                merged.get("first_name"),
+                merged.get("last_name"),
+                merged.get("email"),
+                merged.get("street"),
+                merged.get("unit"),
+                merged.get("city"),
+                merged.get("state"),
+                merged.get("zip"),
+                merged.get("country"),
+                merged.get("enquiry_type"),
+                merged.get("enquiry_description"),
+                merged.get("enquiry_channel"),
+                merged.get("source"),
+                merged.get("heard_about"),
+                merged.get("urgency"),
+                merged.get("status"),
+                merged.get("priority"),
+                enquiry_id,
+            ),
+        )
 
     if "items" in body:
         if not isinstance(body["items"], dict):
             return jsonify({"success": False, "message": "items must be an object"}), 400
-        old_items = data[enquiry_id].setdefault("items", {})
+        old_items = _enquiry_items_dict_for_api(enquiry_id)
         old_items.update(body["items"])
-        data[enquiry_id]["items"] = old_items
+        execute_query("DELETE FROM enquiry_product WHERE enquiry_id = %s", (enquiry_id,))
+        for product_id, item in old_items.items():
+            execute_query(
+                """
+                INSERT INTO enquiry_product
+                    (id, enquiry_id, product_id, product_name, description, unit_price, selling_price, quantity)
+                VALUES (
+                    (SELECT COALESCE(MAX(ep.id), 0) + 1 FROM enquiry_product ep),
+                    %s, %s, %s, %s, %s, %s, %s
+                )
+                """,
+                (
+                    enquiry_id,
+                    product_id,
+                    item.get("item_name", ""),
+                    item.get("description", ""),
+                    item.get("unit_price", 0),
+                    item.get("selling_price", 0),
+                    item.get("quantity", 1),
+                ),
+            )
 
-    _save_enquiry_file(data)
-
+    row = fetch_one("SELECT * FROM enquiry WHERE enquiry_id = %s", (enquiry_id,))
     return jsonify(
         {
             "success": True,
             "message": "Enquiry updated",
-            "enquiry": _enquiry_to_api_dict(enquiry_id, data[enquiry_id], include_items=True),
+            "enquiry": _enquiry_row_to_api(enquiry_id, dict(row)),
         }
     ), 200
 
 
 @app.route("/api/enquiries/<enquiry_id>", methods=["DELETE"])
 def api_enquiries_delete(enquiry_id):
-    """Delete enquiry. Super Admin only (same as /delete-enquiry)."""
     user_email = session.get("user")
     if not user_email:
         return jsonify({"success": False, "message": "Session expired. Please login first."}), 401
@@ -8689,76 +8839,73 @@ def api_enquiries_delete(enquiry_id):
     if role != "superadmin":
         return jsonify({"success": False, "message": "Only Super Admin can delete enquiries."}), 403
 
-    data = _load_enquiry_file()
-    if enquiry_id not in data:
+    exists = fetch_one("SELECT 1 FROM enquiry WHERE enquiry_id = %s", (enquiry_id,))
+    if not exists:
         return jsonify({"success": False, "message": "Enquiry not found"}), 404
 
-    del data[enquiry_id]
-    _save_enquiry_file(data)
-
+    execute_query("DELETE FROM enquiry WHERE enquiry_id = %s", (enquiry_id,))
     return jsonify({"success": True, "message": "Enquiry deleted", "deleted_id": enquiry_id}), 200
-
 
 
 @app.route("/api/enquiry-items/<enquiry_id>")
 def get_enquiry_items(enquiry_id):
-    if not os.path.exists(ENQUIRY_FILE):
-        return jsonify(success=False, message="Enquiry file missing")
-
-    with open(ENQUIRY_FILE, "r", encoding="utf-8") as f:
-        data = json.load(f)
-
-    enquiry = data.get(enquiry_id)
-    if not enquiry:
-        return jsonify(success=False, message="Enquiry not found")
-
-    items = enquiry.get("items", {})  # get items dict
-
-    return jsonify(success=True, data=items)
-
-
-
-
-def read_products():
-    """
-    Read enquiry-related products from ENQUIRY_PRODUCT_FILE (D:\\POS_Project_Latest\\Pos project\\enquiry_product.json).
-    """
-    if not os.path.exists(ENQUIRY_PRODUCT_FILE):
-        return []
-    with open(ENQUIRY_PRODUCT_FILE, "r") as f:
-        return json.load(f)
+    items = fetch_all(
+        """
+        SELECT product_id, product_name, description,
+               unit_price, selling_price, quantity, total
+        FROM enquiry_product
+        WHERE enquiry_id = %s
+        """,
+        (enquiry_id,),
+    )
+    result = {}
+    for item in items:
+        result[item["product_id"]] = {
+            "item_code": item["product_id"],
+            "item_name": item["product_name"],
+            "description": item["description"],
+            "unit_price": str(item["unit_price"]),
+            "selling_price": str(item["selling_price"]),
+            "quantity": item["quantity"],
+            "total": str(item["total"]),
+        }
+    return jsonify(success=True, data=result)
 
 
-def write_products(data):
-    with open(ENQUIRY_PRODUCT_FILE, "w") as f:
-        json.dump(data, f, indent=4)                                                                             
 @app.route("/update-enquiry-items/<enquiry_id>", methods=["POST"])
 def update_enquiry_items(enquiry_id):
     role = _get_current_user_role()
     if role not in ("admin", "superadmin"):
         return jsonify(success=False, message="Only Admin or Super Admin can edit enquiry items."), 403
-    if not os.path.exists(ENQUIRY_FILE):
-        return jsonify(success=False, message="Enquiry file missing"), 400
-
-    with open(ENQUIRY_FILE, "r", encoding="utf-8") as f:
-        data = json.load(f)
-
-    if enquiry_id not in data:
-        return jsonify(success=False, message="Enquiry not found"), 404
 
     req_data = request.get_json()
     if not req_data or "items" not in req_data:
         return jsonify(success=False, message="Invalid request"), 400
 
-    # Update the items for this enquiry
-    for item_code, item_details in req_data["items"].items():
-        if "items" not in data[enquiry_id]:
-            data[enquiry_id]["items"] = {}
-        data[enquiry_id]["items"][item_code] = item_details
-
-    # Save back to JSON file
-    with open(ENQUIRY_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=4, ensure_ascii=False)
+    for product_id, item in req_data["items"].items():
+        execute_query(
+            "DELETE FROM enquiry_product WHERE enquiry_id = %s AND product_id = %s",
+            (enquiry_id, product_id),
+        )
+        execute_query(
+            """
+            INSERT INTO enquiry_product
+                (id, enquiry_id, product_id, product_name, description, unit_price, selling_price, quantity)
+            VALUES (
+                (SELECT COALESCE(MAX(ep.id), 0) + 1 FROM enquiry_product ep),
+                %s, %s, %s, %s, %s, %s, %s
+            )
+            """,
+            (
+                enquiry_id,
+                product_id,
+                item.get("item_name", ""),
+                item.get("description", ""),
+                item.get("unit_price", 0),
+                item.get("selling_price", 0),
+                item.get("quantity", 1),
+            ),
+        )
 
     return jsonify(success=True, message="Enquiry items updated successfully")
 
@@ -8794,16 +8941,6 @@ def new_enquiry():
 
 
 
-def load_data():
-    """Backward-compatible alias for enquiry JSON dict (used by /add-item, /save-enquiry)."""
-    return _load_enquiry_file()
-
-
-def save_data(data):
-    """Backward-compatible save for enquiry JSON dict."""
-    _save_enquiry_file(data)
-
-
 @app.route("/generate-enquiry-id")
 def generate_id():
     return jsonify(enquiry_id=generate_enquiry_id())
@@ -8824,104 +8961,206 @@ def save_enquiry():
     enquiry_id = payload.get("enquiry_id")
     if not enquiry_id:
         return jsonify(success=False, message="Enquiry ID required"), 400
-    enquiry_details = payload.get("enquiry_details") or {}
-    new_items = payload.get("items") or {}
 
-    data = _load_enquiry_file()
+    details = payload.get("enquiry_details") or {}
+    items = payload.get("items") or {}
 
-    if enquiry_id in data:
-        # update details
-        # data[enquiry_id]["enquiry_details"] = enquiry_details
-
-        # merge items
-        old_items = data[enquiry_id].get("items", {})
-        old_items.update(new_items)
-        data[enquiry_id]["items"] = old_items
-
+    existing = fetch_one("SELECT 1 FROM enquiry WHERE enquiry_id = %s", (enquiry_id,))
+    if existing:
+        execute_query(
+            """
+            UPDATE enquiry SET
+                phone_number = %s,
+                first_name = %s,
+                last_name = %s,
+                email = %s,
+                street = %s,
+                unit = %s,
+                city = %s,
+                state = %s,
+                zip = %s,
+                country = %s,
+                enquiry_type = %s,
+                enquiry_description = %s,
+                enquiry_channel = %s,
+                source = %s,
+                heard_about = %s,
+                urgency = %s,
+                status = %s,
+                priority = %s,
+                updated_at = NOW()
+            WHERE enquiry_id = %s
+            """,
+            (
+                details.get("phone_number"),
+                details.get("first_name"),
+                details.get("last_name"),
+                details.get("email"),
+                details.get("street"),
+                details.get("unit"),
+                details.get("city"),
+                details.get("state"),
+                details.get("zip"),
+                details.get("country"),
+                details.get("enquiry_type"),
+                details.get("enquiry_description"),
+                details.get("enquiry_channel"),
+                details.get("source"),
+                details.get("heard_about"),
+                details.get("urgency"),
+                details.get("status", "New"),
+                details.get("priority"),
+                enquiry_id,
+            ),
+        )
     else:
-        data[enquiry_id] = {
-            "enquiry_details": enquiry_details,
-            "items": new_items
-        }
+        execute_query(
+            """
+            INSERT INTO enquiry (
+                id, enquiry_id, phone_number, first_name, last_name, email,
+                street, unit, city, state, zip, country,
+                enquiry_type, enquiry_description, enquiry_channel,
+                source, heard_about, urgency, status, priority
+            ) VALUES (
+                (SELECT COALESCE(MAX(ep.id), 0) + 1 FROM enquiry ep),
+                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+            )
+            """,
+            (
+                enquiry_id,
+                details.get("phone_number"),
+                details.get("first_name"),
+                details.get("last_name"),
+                details.get("email"),
+                details.get("street"),
+                details.get("unit"),
+                details.get("city"),
+                details.get("state"),
+                details.get("zip"),
+                details.get("country"),
+                details.get("enquiry_type"),
+                details.get("enquiry_description"),
+                details.get("enquiry_channel"),
+                details.get("source"),
+                details.get("heard_about"),
+                details.get("urgency"),
+                details.get("status", "New"),
+                details.get("priority"),
+            ),
+        )
 
-    _save_enquiry_file(data)
+    execute_query("DELETE FROM enquiry_product WHERE enquiry_id = %s", (enquiry_id,))
+    for product_id, item in items.items():
+        execute_query(
+            """
+            INSERT INTO enquiry_product
+                (id, enquiry_id, product_id, product_name, description, unit_price, selling_price, quantity)
+            VALUES (
+                (SELECT COALESCE(MAX(ep.id), 0) + 1 FROM enquiry_product ep),
+                %s, %s, %s, %s, %s, %s, %s
+            )
+            """,
+            (
+                enquiry_id,
+                product_id,
+                item.get("item_name", ""),
+                item.get("description", ""),
+                item.get("unit_price", 0),
+                item.get("selling_price", 0),
+                item.get("quantity", 1),
+            ),
+        )
 
-    return jsonify({"success": True})
-
-
-
+    return jsonify(success=True)
 
 
 @app.route("/get-enquiry-add-items/<enquiry_id>")
 def get_enquiry_add_items_(enquiry_id):
     try:
-        if not os.path.exists(ENQUIRY_FILE):
-            return jsonify({"success": False, "items": {}})
-
-        with open(ENQUIRY_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-
-        enquiry = data.get(enquiry_id)
-        if not enquiry:
-            return jsonify({"success": False, "items": {}})
-
-        # ✅ Return ALL items - NO FILTERING NEEDED since items are physically removed
-        all_items = enquiry.get("items", {})
-        
-        print(f"Enquiry {enquiry_id} has {len(all_items)} items: {list(all_items.keys())}")
-        
-        return jsonify({
-            "success": True,
-            "items": all_items  # Return everything - deleted items are GONE from file
-        })
-        
+        items = fetch_all(
+            """
+            SELECT product_id, product_name, description,
+                   unit_price, selling_price, quantity, total
+            FROM enquiry_product
+            WHERE enquiry_id = %s
+            """,
+            (enquiry_id,),
+        )
+        result = {}
+        for item in items:
+            result[item["product_id"]] = {
+                "item_code": item["product_id"],
+                "item_name": item["product_name"],
+                "description": item["description"],
+                "unit_price": str(item["unit_price"]),
+                "selling_price": str(item["selling_price"]),
+                "quantity": item["quantity"],
+                "total": str(item["total"]),
+            }
+        return jsonify({"success": True, "items": result})
     except Exception as e:
         print(f"Error in get_enquiry_add_items_: {e}")
         return jsonify({"success": False, "items": {}})
 
+
 @app.route("/add-item", methods=["POST"])
 def add_item():
-    payload = request.get_json(force=True)
+    data = request.get_json()
+    if not data or "enquiry_id" not in data or "item" not in data:
+        return jsonify(error="Invalid request"), 400
+    visible_id = data["enquiry_id"]
+    item = data["item"]
 
-    enquiry_id = payload["enquiry_id"]
-    item = payload["item"]
+    exists = fetch_one("SELECT 1 FROM enquiry WHERE enquiry_id = %s", (visible_id,))
+    if not exists:
+        return jsonify(error="Enquiry not found"), 400
 
-    data = load_data()
-
-    if enquiry_id not in data:
-        return jsonify(error="Invalid enquiry id"), 400
-
-    item_code = item["item_code"]
-
-    data[enquiry_id]["items"][item_code] = item
-
-    save_data(data)
-
+    execute_query(
+        """
+        INSERT INTO enquiry_product (id, enquiry_id, product_id, product_name, description, unit_price, selling_price, quantity)
+        VALUES (
+            (SELECT COALESCE(MAX(ep.id), 0) + 1 FROM enquiry_product ep),
+            %s, %s, %s, %s, %s, %s, %s
+        )
+        """,
+        (
+            visible_id,
+            item["item_code"],
+            item.get("item_name", ""),
+            item.get("description", ""),
+            item.get("unit_price", 0),
+            item.get("selling_price", 0),
+            item.get("quantity", 1),
+        ),
+    )
     return jsonify(status="item added")
+
 
 @app.route("/check-email-enquiry")
 def check_email_enquiry():
     try:
         email = request.args.get("email", "").lower()
-
-        if not os.path.exists(ENQUIRY_FILE):
-            return jsonify({"exists": False})
-
-        with open(ENQUIRY_FILE, "r") as f:
-            enquiries = json.load(f)   # THIS IS A DICT
-
-        # Loop through dict values
-        for enquiry_id, enquiry in enquiries.items():
-            details = enquiry.get("enquiry_details", {})
-            if details.get("email", "").lower() == email:
-                return jsonify({
+        row = fetch_one(
+            """
+            SELECT enquiry_id, first_name, last_name, phone_number, email
+            FROM enquiry WHERE LOWER(email) = %s
+            """,
+            (email,),
+        )
+        if row:
+            return jsonify(
+                {
                     "exists": True,
-                    "enquiry_id": enquiry_id,
-                    "customer": details
-                })
-
+                    "enquiry_id": row["enquiry_id"],
+                    "customer": {
+                        "first_name": row["first_name"] or "",
+                        "last_name": row["last_name"] or "",
+                        "phone": row["phone_number"] or "",
+                        "email": row["email"] or "",
+                    },
+                }
+            )
         return jsonify({"exists": False})
-
     except Exception as e:
         print("❌ CHECK EMAIL ERROR:", e)
         return jsonify({"exists": False, "error": str(e)}), 500
@@ -8929,10 +9168,18 @@ def check_email_enquiry():
 
 @app.route("/get-product/<product_id>")
 def get_product(product_id):
-    products = load_products()
-    for p in products:
-        if p["product_id"] == product_id:
-            return jsonify({"success": True, "product": p})
+    product = fetch_one(
+        """
+        SELECT product_id, product_name, description, unit_price
+        FROM products
+        WHERE product_id = %s
+        """,
+        (product_id,),
+    )
+    if product:
+        product = dict(product)
+        product["unit_price"] = float(product["unit_price"])
+        return jsonify({"success": True, "product": product})
     return jsonify({"success": False, "message": "Product not found"}), 404
 
 
@@ -8942,71 +9189,30 @@ def delete_enquiry_item(enquiry_id, item_code):
     if role != "superadmin":
         return jsonify(success=False, message="Only Super Admin can delete enquiry items."), 403
     try:
-        print(f"\n=== HARD DELETE REQUEST ===")
-        print(f"Enquiry ID: {enquiry_id}")
-        print(f"Item Code: {item_code}")
-        
-        if not os.path.exists(ENQUIRY_FILE):
-            return jsonify(success=False, message="Enquiry file missing"), 404
-
-        # Read the file
-        with open(ENQUIRY_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-
-        # Check if enquiry exists
-        if enquiry_id not in data:
-            return jsonify(success=False, message="Enquiry not found"), 404
-
-        # Check if items exist
-        if "items" not in data[enquiry_id]:
-            return jsonify(success=False, message="No items found"), 404
-
-        items = data[enquiry_id]["items"]
-
-        # Check if item exists
-        if item_code not in items:
-            return jsonify(success=False, message="Item not found"), 404
-
-        # 🔴 HARD DELETE - Completely remove the item from dictionary
-        del items[item_code]
-        print(f"✓ Item {item_code} completely removed from JSON")
-        print(f"Remaining items: {list(items.keys())}")
-
-        # Save back to file
-        with open(ENQUIRY_FILE, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=4, ensure_ascii=False)
-        
-        print(f"✓ File saved successfully")
-        print(f"=== DELETE COMPLETED ===\n")
-        
+        execute_query(
+            """
+            DELETE FROM enquiry_product
+            WHERE enquiry_id = %s AND product_id = %s
+            """,
+            (enquiry_id, item_code),
+        )
         return jsonify(success=True, message="Item permanently deleted")
-
     except Exception as e:
         print(f"Error deleting item: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify(success=False, message=f"Error: {str(e)}"), 500                                                                                                                                                                                                                    
+        return jsonify(success=False, message=f"Error: {str(e)}"), 500
+
+
 @app.route("/get-product-config")
 def get_product_config():
-    if not os.path.exists(PRODUCT_FILE):
-        return jsonify(success=False, message="Product file missing")
-
-    with open(PRODUCT_FILE, "r", encoding="utf-8") as f:
-        data = json.load(f)
-
-    if not isinstance(data, list):
-        return jsonify(success=False, message="Invalid product data")
-
-    # Get all product IDs
-    product_ids = [p.get("product_id", "") for p in data if "product_id" in p]
-
-    # Calculate max length
+    rows = fetch_all("SELECT product_id FROM products ORDER BY product_id")
+    if not rows:
+        return jsonify(success=False, message="No products found"), 404
+    product_ids = [row["product_id"] for row in rows]
     max_id_length = max(len(pid) for pid in product_ids) if product_ids else 4
-
     return jsonify(
         success=True,
         max_id_length=max_id_length,
-        product_ids=product_ids
+        product_ids=product_ids,
     )
 
 
@@ -11744,21 +11950,19 @@ def delete_quotation(quotation_id):
 
 
 
-# EMAIL CHECK (uses Pos project/new-enquiry.json)
+# EMAIL CHECK (enquiry table)
 @app.route("/check-email", methods=["POST"])
 def check_emails():
-    data = request.get_json()
-    email = data.get("email")
+    data = request.get_json() or {}
+    email = (data.get("email") or "").strip()
+    if not email:
+        return jsonify({"exists": False})
 
-    try:
-        with open(ENQUIRY_FILE, "r", encoding="utf-8") as f:
-            enquiries = json.load(f)
-    except FileNotFoundError:
-        enquiries = []
-
-    exists = any(e.get("email") == email for e in enquiries)
-
-    return jsonify({"exists": exists})
+    row = fetch_one(
+        "SELECT 1 FROM enquiry WHERE LOWER(TRIM(email)) = LOWER(TRIM(%s)) LIMIT 1",
+        (email,),
+    )
+    return jsonify({"exists": bool(row)})
 
 @app.route("/quick-billing")
 def quick_billing():
@@ -12211,31 +12415,27 @@ def find_sales_order_by_id(so_id: str):
     )
 
 def generate_sales_order_id():
-    """
-    Generate the next Sales Order ID in SO-0001 format.
-    Supports older formats like SO0001 or SO_0001.
-    """
-    orders = load_sales_orders()
-    last_num = 0
+    conn = get_db_connection()
+    cur = conn.cursor()
 
-    for order in orders:
-        so = str(
-            order.get("so_id") or
-            order.get("order_id") or
-            order.get("id") or
-            ""
-        ).strip()
+    cur.execute("""
+        SELECT so_id FROM sales_orders
+        ORDER BY so_id DESC
+        LIMIT 1
+    """)
 
-        cleaned = so.replace("SO-", "").replace("SO_", "").replace("SO", "")
-        match = re.search(r"(\d+)$", cleaned)
+    last = cur.fetchone()
 
-        if match:
-            try:
-                last_num = max(last_num, int(match.group(1)))
-            except Exception:
-                pass
+    if last:
+        last_id = int(last[0].split('-')[1])
+        new_id = last_id + 1
+    else:
+        new_id = 1
 
-    return f"SO-{last_num + 1:04d}"
+    cur.close()
+    conn.close()
+
+    return f"SO-{str(new_id).zfill(3)}"
 
 def upsert_sales_order(payload: dict, status_value: str):
     """
@@ -12361,12 +12561,23 @@ def sales_order():
     if not user_email:
         return redirect(url_for("login", message="session_expired"))
 
-    users = load_users()
     user_name = "User"
-    for u in users:
-        if isinstance(u, dict) and (u.get("email") or "").lower() == user_email.lower():
-            user_name = u.get("name") or "User"
-            break
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+    SELECT name FROM users
+    WHERE LOWER(email) = LOWER(%s)
+    """, (user_email,))
+
+    row = cur.fetchone()
+
+    if row:
+        user_name = row[0] or "User"
+
+    cur.close()
+    conn.close()
 
     return render_template(
         "sales-order.html",
@@ -12388,47 +12599,72 @@ def sales_order_new():
     if not user_email:
         return redirect(url_for("login", message="session_expired"))
 
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    cur.execute("SELECT name FROM users WHERE email=%s", (user_email,))
+    row = cur.fetchone()
+    user_name = row[0] if row else "User"
+
     so_id = generate_sales_order_id()
 
-    users = load_users()
-    customers = get_customers_from_db()
-    # Sales Rep dropdown: distinct names from customer.json (sales_rep), same source as CRM
-    sales_reps = sorted(
-        {
-            str(c.get("sales_rep", "")).strip()
-            for c in customers
-            if isinstance(c, dict) and str(c.get("sales_rep", "")).strip()
-        }
-    )
+    cur.execute("""
+        SELECT customer_id, name, sales_rep,
+               email, phone, billing_address, shipping_address
+        FROM customers
+    """)
+    rows = cur.fetchall()
 
-    # Resolve logged-in user's display name for profile dropdown
-    user_name = "User"
-    for u in users:
-        if isinstance(u, dict) and (u.get("email") or "").lower() == user_email.lower():
-            user_name = u.get("name") or "User"
-            break
+    customers = []
+    sales_reps_set = set()
+    for r in rows:
+        customers.append({
+            "customer_id": r[0],
+            "name": r[1],
+            "sales_rep": r[2],
+            "email": r[3],
+            "phone": r[4],
+            "billing_address": r[5],
+            "shipping_address": r[6]
+        })
+        if r[2]:
+            sales_reps_set.add(r[2])
 
-    response = make_response(render_template(
+    sales_reps = sorted(list(sales_reps_set))
+
+    cur.close()
+    conn.close()
+
+    return render_template(
         "sales-new.html",
-        mode="new",
         so_id=so_id,
-        sales_reps=sales_reps,
         customers=customers,
-        page="sales_order",
-        user_email=user_email,
-        user_name=user_name,
-    ))
-
-    # Prevent browser cache from reusing an old SO page
-    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
-    response.headers["Pragma"] = "no-cache"
-    response.headers["Expires"] = "0"
-    return response
+        sales_reps=sales_reps,
+        user_name=user_name
+    )
 
 
 @app.get("/sales-order/edit/<so_id>")
 def sales_order_edit(so_id):
-    customers = get_customers_from_db()
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT customer_id, name
+        FROM customers
+    """)
+    rows = cur.fetchall()
+
+    customers = []
+    for r in rows:
+        customers.append({
+            "customer_id": r[0],
+            "name": r[1]
+        })
+
+    cur.close()
+    conn.close()
+
     sales_reps = sorted(
         {
             str(c.get("sales_rep", "")).strip()
@@ -12458,14 +12694,163 @@ def api_sales_orders_next_id():
     })
 
 
+@app.post("/api/sales-orders/<so_id>/comments")
+def add_sales_order_comment(so_id):
+    data = request.get_json()
+    comment = (data.get("comment") or "").strip()
+    user = (data.get("user") or "User").strip()
+
+    if not comment:
+        return jsonify({"success": False, "message": "Empty comment"}), 400
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT 1
+        FROM sales_orders
+        WHERE so_id = %s
+    """, (so_id,))
+    exists = cur.fetchone()
+
+    if not exists:
+        cur.close()
+        conn.close()
+        return jsonify({"success": False, "message": "Save draft first before adding comments."}), 400
+
+    cur.execute("""
+        INSERT INTO sales_order_comments (
+            so_id,
+            comment,
+            created_by
+        )
+        VALUES (%s, %s, %s)
+    """, (so_id, comment, user))
+
+    conn.commit()
+    cur.close()
+    conn.close()
+
+    return jsonify({"success": True})
+
+
+
+@app.get("/api/sales-orders/<so_id>/comments")
+def get_sales_order_comments(so_id):
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT comment, created_by, created_at
+        FROM sales_order_comments
+        WHERE so_id=%s
+        ORDER BY created_at DESC
+    """, (so_id,))
+
+    rows = cur.fetchall()
+
+    comments = []
+    for r in rows:
+        comments.append({
+            "comment": r[0],
+            "user": r[1],
+            "time": r[2].strftime("%d/%m/%Y, %I:%M %p")
+        })
+
+    cur.close()
+    conn.close()
+
+    return jsonify({"success": True, "comments": comments})
+
+
 @app.get("/api/sales-orders")
 def api_sales_orders_list():
-    """
-    Return all sales orders from sales_orders.json.
-    Used by Delivery Note 'Sales Order Reference' dropdown.
-    """
-    orders = load_sales_orders()
-    return jsonify(orders)
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    try:
+        cur.execute("""
+    SELECT 
+        so.so_id,
+        so.order_type,
+        c.name,
+        so.sales_rep,
+        so.order_date,
+        so.status,
+        so.stock_status,
+        so.grand_total
+    FROM sales_orders so
+    LEFT JOIN customers c
+    ON so.customer_id = c.customer_id
+    ORDER BY so.created_at DESC
+""")
+
+        rows = cur.fetchall()
+
+        orders = []
+        for r in rows:
+            orders.append({
+                "so_id": r[0],
+                "order_type": r[1],
+                "customer_name": r[2],
+                "sales_rep": r[3],
+                "order_date": str(r[4]),
+                "status": r[5],
+                "stock_status": r[6],
+                "grand_total": float(r[7] or 0)
+            })
+
+        return jsonify({"orders": orders})
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.post("/api/sales-orders")
+def create_sales_order():
+    data = request.get_json()
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        INSERT INTO sales_orders (
+            so_id, order_date, sales_rep, order_type, status,
+            customer_id, customer_name, billing_address, shipping_address,
+            email, phone,
+            payment_method, currency, due_date, terms,
+            shipping_method, delivery_date, tracking_number,internal_notes, customer_notes,
+            subtotal, tax_total, global_discount, shipping_charges, grand_total
+        ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+    """, (
+        data["so_id"], data["order_date"], data["sales_rep"], data["order_type"], data["status"],
+        data["customer_id"], data["customer_name"], data["billing_address"], data["shipping_address"],
+        data["email"], data["phone"], data["payment_method"], data["currency"], data["due_date"],
+        data["terms"], data["shipping_method"], data["delivery_date"], data["tracking_number"],
+        data["internal_notes"], data["customer_notes"], data["subtotal"], data["tax_total"],
+        data["global_discount"], data["shipping_charges"], data["grand_total"]
+    ))
+
+    for item in data["items"]:
+        cur.execute("""
+            INSERT INTO sales_order_items (
+                so_id, product_id, product_name,
+                qty, uom, price, tax_pct, disc_pct, line_total
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        """, (
+            data["so_id"], item["product_id"], item["product_name"], item["qty"],
+            item["uom"], item["price"], item["tax_pct"], item["disc_pct"], item["line_total"]
+        ))
+
+    conn.commit()
+    cur.close()
+    conn.close()
+
+    return jsonify({"success": True})
 
 
 @app.get("/api/sales-orders/all")
@@ -12534,51 +12919,316 @@ def api_sales_orders_all():
 
 @app.get("/api/sales-orders/<so_id>")
 def get_one_sales_order(so_id):
-    so = find_sales_order_by_id(so_id)
+    conn = get_db_connection()
+    cur = conn.cursor()
 
-    if not so:
-        return jsonify({
-            "success": False,
-            "message": "Not found"
-        }), 404
+    cur.execute("SELECT * FROM sales_orders WHERE so_id=%s", (so_id,))
+    row = cur.fetchone()
+    if not row:
+        cur.close()
+        conn.close()
+        return jsonify({"success": False}), 404
 
-    return jsonify({
-        "success": True,
-        "order": so
-    })
+    columns = [desc[0] for desc in cur.description]
+    data = dict(zip(columns, row))
+
+    data["order_date"] = str(data.get("order_date") or "")
+    data["due_date"] = str(data.get("due_date") or "")
+    data["delivery_date"] = str(data.get("delivery_date") or "")
+    data["internal_notes"] = data.get("internal_notes") or ""
+    data["customer_notes"] = data.get("customer_notes") or ""
+
+    cur.execute("SELECT name FROM customers WHERE customer_id=%s", (data["customer_id"],))
+    cust = cur.fetchone()
+    data["customer_name"] = cust[0] if cust else ""
+
+    cur.execute("SELECT * FROM sales_order_items WHERE so_id=%s", (so_id,))
+    items_rows = cur.fetchall()
+    items = []
+    for i in items_rows:
+        items.append({
+            "product_id": i[2],
+            "product_name": i[3],
+            "qty": i[4],
+            "uom": i[5],
+            "price": i[6],
+            "tax_pct": i[7],
+            "disc_pct": i[8],
+            "line_total": i[9]
+        })
+    data["items"] = items
+
+    cur.execute("""
+        SELECT comment, created_by, created_at
+        FROM sales_order_comments
+        WHERE so_id=%s
+        ORDER BY created_at ASC
+    """, (so_id,))
+    rows = cur.fetchall()
+    comments = []
+    for r in rows:
+        comments.append({
+            "text": r[0],
+            "user": r[1],
+            "created_at": str(r[2])
+        })
+    data["comments"] = comments
+
+    cur.close()
+    conn.close()
+
+    return jsonify({"success": True, "order": data})
 
 
 @app.post("/api/sales-orders/save-draft")
 def api_sales_orders_save_draft():
-    payload = request.get_json(force=True) or {}
-    so_id = upsert_sales_order(payload, "Draft")
+    data = request.get_json()
 
-    return jsonify({
-        "success": True,
-        "so_id": so_id,
-        "status": "Draft"
-    })
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    cur.execute(
+        "SELECT so_id FROM sales_orders WHERE so_id=%s",
+        (data["so_id"],)
+    )
+    existing = cur.fetchone()
+
+    if existing:
+        cur.execute("""
+            UPDATE sales_orders SET
+                order_date=%s,
+                sales_rep=%s,
+                order_type=%s,
+                status=%s,
+                customer_id=%s,
+                customer_name=%s,
+                billing_address=%s,
+                shipping_address=%s,
+                email=%s,
+                phone=%s,
+                payment_method=%s,
+                currency=%s,
+                due_date=%s,
+                terms=%s,
+                shipping_method=%s,
+                delivery_date=%s,
+                tracking_number=%s,
+                internal_notes=%s,
+                customer_notes=%s,
+                subtotal=%s,
+                tax_total=%s,
+                global_discount=%s,
+                shipping_charges=%s,
+                grand_total=%s
+            WHERE so_id=%s
+        """, (
+            data["order_date"], data["sales_rep"], data["order_type"], "Draft",
+            data["customer_id"], data["customer_name"],
+            data["billing_address"], data["shipping_address"],
+            data["email"], data["phone"],
+            data["payment_method"], data["currency"], data["due_date"], data["terms"],
+            data["shipping_method"], data["delivery_date"], data["tracking_number"],
+            data.get("internal_notes", ""), data.get("customer_notes", ""),
+            data["subtotal"], data["tax_total"], data["global_discount"],
+            data["shipping_charges"], data["grand_total"], data["so_id"]
+        ))
+    else:
+        cur.execute("""
+            INSERT INTO sales_orders (
+                so_id, order_date, sales_rep, order_type, status,
+                customer_id, customer_name, billing_address, shipping_address,
+                email, phone,
+                payment_method, currency, due_date, terms,
+                shipping_method, delivery_date, tracking_number,
+                internal_notes, customer_notes,
+                subtotal, tax_total, global_discount, shipping_charges, grand_total
+            ) VALUES (
+                %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+                %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+                %s,%s,%s,%s,%s
+            )
+        """, (
+            data["so_id"], data["order_date"], data["sales_rep"], data["order_type"], "Draft",
+            data["customer_id"], data["customer_name"],
+            data["billing_address"], data["shipping_address"],
+            data["email"], data["phone"],
+            data["payment_method"], data["currency"], data["due_date"], data["terms"],
+            data["shipping_method"], data["delivery_date"], data["tracking_number"],
+            data.get("internal_notes", ""), data.get("customer_notes", ""),
+            data["subtotal"], data["tax_total"], data["global_discount"],
+            data["shipping_charges"], data["grand_total"]
+        ))
+
+    cur.execute("DELETE FROM sales_order_items WHERE so_id=%s", (data["so_id"],))
+    for item in data["items"]:
+        cur.execute("""
+            INSERT INTO sales_order_items (
+                so_id, product_id, product_name, qty, uom, price, tax_pct, disc_pct, line_total
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        """, (
+            data["so_id"], item["product_id"], item["product_name"],
+            item["qty"], item["uom"], item["price"], item["tax_pct"],
+            item["disc_pct"], item["line_total"]
+        ))
+
+    conn.commit()
+    cur.close()
+    conn.close()
+
+    return jsonify({"success": True})
 
 
 @app.post("/api/sales-orders/submit")
 def api_sales_orders_submit():
-    payload = request.get_json(force=True) or {}
-    so_id = upsert_sales_order(payload, "Submitted")
+    conn = None
+    try:
+        data = request.get_json()
 
-    return jsonify({
-        "success": True,
-        "so_id": so_id,
-        "status": "Submitted"
-    })
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT so_id FROM sales_orders WHERE so_id=%s", (data.get("so_id"),))
+        existing = cur.fetchone()
+
+        if existing:
+            cur.execute("""
+                UPDATE sales_orders SET
+                    order_date=%s, sales_rep=%s, order_type=%s, status=%s,
+                    customer_id=%s, customer_name=%s, billing_address=%s, shipping_address=%s,
+                    email=%s, phone=%s, payment_method=%s, currency=%s, due_date=%s, terms=%s,
+                    shipping_method=%s, delivery_date=%s, tracking_number=%s,
+                    internal_notes=%s, customer_notes=%s, subtotal=%s, tax_total=%s,
+                    global_discount=%s, shipping_charges=%s, grand_total=%s
+                WHERE so_id=%s
+            """, (
+                data["order_date"], data["sales_rep"], data["order_type"], "Submitted",
+                data["customer_id"], data["customer_name"],
+                data["billing_address"], data["shipping_address"],
+                data["email"], data["phone"], data["payment_method"], data["currency"],
+                data["due_date"], data["terms"], data["shipping_method"], data["delivery_date"],
+                data["tracking_number"], data["internal_notes"], data["customer_notes"],
+                data["subtotal"], data["tax_total"], data["global_discount"],
+                data["shipping_charges"], data["grand_total"], data["so_id"]
+            ))
+            cur.execute("DELETE FROM sales_order_items WHERE so_id=%s", (data["so_id"],))
+        else:
+            cur.execute("""
+                INSERT INTO sales_orders (
+                    so_id, order_date, sales_rep, order_type, status, customer_id, customer_name,
+                    billing_address, shipping_address, email, phone, payment_method, currency,
+                    due_date, terms, shipping_method, delivery_date, tracking_number,
+                    internal_notes, customer_notes, subtotal, tax_total, global_discount,
+                    shipping_charges, grand_total
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """, (
+                data["so_id"], data["order_date"], data["sales_rep"], data["order_type"], "Submitted",
+                data["customer_id"], data["customer_name"], data["billing_address"], data["shipping_address"],
+                data["email"], data["phone"], data["payment_method"], data["currency"], data["due_date"],
+                data["terms"], data["shipping_method"], data["delivery_date"], data["tracking_number"],
+                data["internal_notes"], data["customer_notes"], data["subtotal"], data["tax_total"],
+                data["global_discount"], data["shipping_charges"], data["grand_total"]
+            ))
+
+        for item in data.get("items", []):
+            cur.execute("""
+                INSERT INTO sales_order_items (
+                    so_id, product_id, product_name, qty, uom, price, tax_pct, disc_pct, line_total
+                ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            """, (
+                data["so_id"], item["product_id"], item["product_name"],
+                item["qty"], item["uom"], item["price"], item["tax_pct"], item["disc_pct"], item["line_total"]
+            ))
+
+        conn.commit()
+        return jsonify({"success": True})
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        return jsonify({"error": str(e)}), 500
 
 
-@app.get("/api/sales-products")
-def api_sales_products():
-    products = load_products()
-    return jsonify({
-        "success": True,
-        "products": products
-    })
+@app.route("/api/sales-products", methods=["GET"])
+def get_sales_products():
+    conn = None
+    cur = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = 'public' AND table_name = 'products'
+        """)
+        available_cols = {r[0] for r in (cur.fetchall() or [])}
+
+        name_col = "product_name" if "product_name" in available_cols else ("name" if "name" in available_cols else None)
+        price_col = (
+            "price" if "price" in available_cols else
+            ("unit_price" if "unit_price" in available_cols else
+             ("selling_price" if "selling_price" in available_cols else None))
+        )
+        uom_col = "uom" if "uom" in available_cols else ("uom_name" if "uom_name" in available_cols else None)
+        stock_col = (
+            "stock_level" if "stock_level" in available_cols else
+            ("available_stock" if "available_stock" in available_cols else
+             ("quantity" if "quantity" in available_cols else
+              ("stock" if "stock" in available_cols else
+               ("qty" if "qty" in available_cols else
+                ("opening_stock" if "opening_stock" in available_cols else None)))))
+        )
+
+        if "product_id" not in available_cols:
+            return jsonify({"success": True, "products": []})
+
+        name_expr = name_col if name_col else "''"
+        price_expr = price_col if price_col else "0"
+        uom_expr = uom_col if uom_col else "''"
+        stock_expr = stock_col if stock_col else "0"
+
+        cur.execute(f"""
+            SELECT product_id, {name_expr} AS product_name, {price_expr} AS price, {uom_expr} AS uom, {stock_expr} AS stock_level
+            FROM products
+            ORDER BY product_id
+        """)
+        rows = cur.fetchall()
+
+        products = []
+        for r in rows:
+            pid = str(r[0] or "").strip()
+            if not pid:
+                continue
+            products.append({
+                "product_id": pid,
+                "product_name": (r[1] or "").strip() if isinstance(r[1], str) else (str(r[1] or "").strip()),
+                "price": float(r[2] or 0),
+                "uom": (r[3] or "").strip() if isinstance(r[3], str) else (str(r[3] or "").strip()),
+                "stock_level": float(r[4] or 0),
+            })
+
+        cur.close()
+        conn.close()
+
+        return jsonify({
+            "success": True,
+            "products": products
+        })
+
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        if cur:
+            try:
+                cur.close()
+            except Exception:
+                pass
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+        return jsonify({
+            "success": False,
+            "message": str(e)
+        }), 500
 
 
 # =========================================
@@ -12586,28 +13236,49 @@ def api_sales_products():
 # =========================================
 @app.get("/api/sales-orders/<so_id>/pdf")
 def sales_order_pdf(so_id):
-    so = find_sales_order_by_id(so_id)
+    conn = get_db_connection()
+    cur = conn.cursor()
 
-    if not so:
-        return jsonify({
-            "success": False,
-            "message": "Sales Order not found"
-        }), 404
+    cur.execute("SELECT * FROM sales_orders WHERE so_id=%s", (so_id,))
+    order = cur.fetchone()
+    order_cols = [desc[0] for desc in cur.description]
+
+    if not order:
+        cur.close()
+        conn.close()
+        return jsonify({"success": False, "message": "Sales Order not found"}), 404
+
+    cur.execute("SELECT * FROM sales_order_items WHERE so_id=%s", (so_id,))
+    items = cur.fetchall()
+    item_cols = [desc[0] for desc in cur.description]
+
+    cur.close()
+    conn.close()
+
+    so = dict(zip(order_cols, order))
+    so["items"] = []
+    for i in items:
+        item = dict(zip(item_cols, i))
+        so["items"].append({
+            "product_id": item.get("product_id", ""),
+            "product_name": item.get("product_name", ""),
+            "qty": float(item.get("qty") or 0),
+            "uom": item.get("uom", ""),
+            "price": float(item.get("price") or 0),
+            "tax_pct": float(item.get("tax_pct") or 0),
+            "disc_pct": float(item.get("disc_pct") or 0),
+            "line_total": float(item.get("line_total") or 0)
+        })
 
     try:
         pdf_bytes = generate_sales_order_pdf_bytes(so)
-
         response = make_response(pdf_bytes)
         response.headers["Content-Type"] = "application/pdf"
         response.headers["Content-Disposition"] = f'inline; filename="{so_id}.pdf"'
         return response
-
     except Exception as e:
         print("Sales Order PDF error:", e)
-        return jsonify({
-            "success": False,
-            "message": str(e)
-        }), 500
+        return jsonify({"success": False, "message": str(e)}), 500
 
 
 def generate_sales_order_pdf_bytes(so):
@@ -12799,9 +13470,24 @@ def generate_sales_order_pdf_bytes(so):
     elements.append(Paragraph("SALES ORDER ITEMS", heading_style))
 
     items = so.get("items", [])
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT product_id, product_name, unit_price
+        FROM products
+    """)
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+
     product_map = {
-        str(p.get("product_id", "")).strip(): p
-        for p in load_products()
+        str(r[0]).strip(): {
+            "product_id": r[0],
+            "product_name": r[1],
+            "unit_price": r[2]
+        }
+        for r in rows
     }
 
     table_data = [[
@@ -12956,24 +13642,45 @@ def generate_sales_order_pdf_bytes(so):
 # =========================================
 @app.post("/api/sales-orders/<so_id>/email")
 def sales_order_email(so_id):
-    so = find_sales_order_by_id(so_id)
+    conn = get_db_connection()
+    cur = conn.cursor()
 
-    if not so:
-        return jsonify({
-            "success": False,
-            "message": "Sales Order not found"
-        }), 404
+    cur.execute("SELECT * FROM sales_orders WHERE so_id=%s", (so_id,))
+    order = cur.fetchone()
+    order_cols = [desc[0] for desc in cur.description]
+
+    if not order:
+        cur.close()
+        conn.close()
+        return jsonify({"success": False, "message": "Sales Order not found"}), 404
+
+    cur.execute("SELECT * FROM sales_order_items WHERE so_id=%s", (so_id,))
+    items = cur.fetchall()
+    item_cols = [desc[0] for desc in cur.description]
+    cur.close()
+    conn.close()
+
+    so = dict(zip(order_cols, order))
+    so["items"] = []
+    for i in items:
+        item = dict(zip(item_cols, i))
+        so["items"].append({
+            "product_id": item.get("product_id", ""),
+            "product_name": item.get("product_name", ""),
+            "qty": float(item.get("qty") or 0),
+            "uom": item.get("uom", ""),
+            "price": float(item.get("price") or 0),
+            "tax_pct": float(item.get("tax_pct") or 0),
+            "disc_pct": float(item.get("disc_pct") or 0),
+            "line_total": float(item.get("line_total") or 0)
+        })
 
     customer_email = (so.get("email") or "").strip()
     if not customer_email:
-        return jsonify({
-            "success": False,
-            "message": "Customer email not found"
-        }), 400
+        return jsonify({"success": False, "message": "Customer email not found"}), 400
 
     try:
         pdf_bytes = generate_sales_order_pdf_bytes(so)
-
         customer_name = so.get("customer_name", "Customer")
         so_no = so.get("so_id", "")
         order_date = so.get("order_date", "")
@@ -12981,24 +13688,19 @@ def sales_order_email(so_id):
         currency = so.get("currency", "INR")
 
         subject = f"Sales Order {so_no} from Stackly"
-
         body = f"""
 Dear {customer_name},
 
 Greetings from Stackly.
 
-Please find attached the Sales Order document for your reference.
+Please find attached the Sales Order document.
 
-Sales Order Details:
-- Sales Order No : {so_no}
-- Order Date     : {order_date}
-- Grand Total    : {currency} {grand_total}
-
-Kindly review the attached document and let us know if any clarification is required.
+Sales Order No : {so_no}
+Order Date     : {order_date}
+Grand Total    : {currency} {grand_total}
 
 Thanks & Regards,
 Stackly Team
-Email: {SENDER_EMAIL}
 """.strip()
 
         msg = EmailMessage()
@@ -13006,13 +13708,7 @@ Email: {SENDER_EMAIL}
         msg["From"] = SENDER_EMAIL
         msg["To"] = customer_email
         msg.set_content(body)
-
-        msg.add_attachment(
-            pdf_bytes,
-            maintype="application",
-            subtype="pdf",
-            filename=f"{so_no}.pdf"
-        )
+        msg.add_attachment(pdf_bytes, maintype="application", subtype="pdf", filename=f"{so_no}.pdf")
 
         context = ssl.create_default_context()
         with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
@@ -13020,17 +13716,10 @@ Email: {SENDER_EMAIL}
             server.login(SENDER_EMAIL, SENDER_PASSWORD)
             server.send_message(msg)
 
-        return jsonify({
-            "success": True,
-            "message": "Email sent successfully"
-        })
-
+        return jsonify({"success": True})
     except Exception as e:
-        print("Sales Order email error:", e)
-        return jsonify({
-            "success": False,
-            "message": str(e)
-        }), 500
+        print("Email error:", e)
+        return jsonify({"success": False, "message": str(e)}), 500
 
 
 # =========================================
@@ -13038,98 +13727,98 @@ Email: {SENDER_EMAIL}
 # =========================================
 @app.post("/api/sales-orders/<so_id>/cancel")
 def cancel_sales_order(so_id):
-    data = request.get_json(silent=True) or {}
-    reason = (data.get("reason") or "").strip()
-    cancelled_by = (data.get("cancelled_by") or "Admin").strip()
+    data = request.get_json()
+    reason = data.get("reason")
+    cancelled_by = data.get("cancelled_by")
 
-    if not reason:
-        return jsonify({
-            "success": False,
-            "message": "Cancellation reason is required"
-        }), 400
+    conn = get_db_connection()
+    cursor = conn.cursor()
 
-    orders = load_sales_orders()
-    so = next((x for x in orders if str(x.get("so_id")) == str(so_id)), None)
+    try:
+        cursor.execute("""
+            UPDATE sales_orders
+            SET status = 'Cancelled'
+            WHERE so_id = %s
+        """, (so_id,))
 
-    if not so:
-        return jsonify({
-            "success": False,
-            "message": "Sales Order not found"
-        }), 404
+        cursor.execute("""
+            INSERT INTO sales_order_cancellation (
+                so_id,
+                reason,
+                cancelled_by
+            )
+            VALUES (%s, %s, %s)
+        """, (so_id, reason, cancelled_by))
 
-    now = datetime.now().isoformat(timespec="seconds")
-
-    so["status"] = "Cancelled"
-    so["cancel_reason"] = reason
-    so["cancelled_by"] = cancelled_by
-    so["cancelled_at"] = now
-    so["updated_at"] = now
-
-    history = so.get("status_history", [])
-    if not isinstance(history, list):
-        history = []
-
-    history.append({
-        "status": "Cancelled",
-        "date": now,
-        "user": cancelled_by,
-        "notes": f"Order cancelled. Reason: {reason}"
-    })
-    so["status_history"] = history
-
-    save_sales_orders(orders)
-
-    return jsonify({
-        "success": True,
-        "message": "Sales Order cancelled successfully",
-        "so_id": so_id
-    })
+        conn.commit()
+        return jsonify({"success": True})
+    except Exception as e:
+        print("ERROR:", e)
+        conn.rollback()
+        return jsonify({"success": False, "message": str(e)})
+    finally:
+        cursor.close()
+        conn.close()
 
 
 # =========================================
 # DELIVERY NOTE - UTILITIES / HELPERS
 # =========================================
 
-# -----------------------------------------
-# Find customer by name (customer.json)
-# -----------------------------------------
+# ==================
+# DELIVERY NOTE -
+# =================
+
+
 def find_customer_by_name(name: str):
-    """
-    Find a customer by name from customer.json.
-    Returns the full customer object if found, else None.
-    """
     if not name:
         return None
 
-    target_name = str(name).strip().lower()
-    customers = get_customers_from_db()
+    conn = get_db_connection()
+    cur = conn.cursor()
 
-    for customer in customers:
-        customer_name = str(customer.get("name", "")).strip().lower()
-        if customer_name == target_name:
-            return customer
+    cur.execute("""
+        SELECT customer_id, name, email, phone, billing_address, shipping_address
+        FROM customers
+        WHERE LOWER(name) = LOWER(%s)
+        LIMIT 1
+    """, (name,))
+
+    row = cur.fetchone()
+
+    cur.close()
+    conn.close()
+
+    if row:
+        return {
+            "customer_id": row[0],
+            "name": row[1],
+            "email": row[2],
+            "phone": row[3],
+            "billing_address": row[4],
+            "shipping_address": row[5]
+        }
+
     return None
-
-
 # -----------------------------------------
 # Delivery Notes JSON Storage
 # -----------------------------------------
-def load_delivery_notes():
-    if not os.path.exists(DELIVERY_NOTE_FILE):
-        with open(DELIVERY_NOTE_FILE, "w", encoding="utf-8") as f:
-            json.dump([], f)
-        return []
-
-    with open(DELIVERY_NOTE_FILE, "r", encoding="utf-8") as f:
-        try:
-            return json.load(f)
-        except json.JSONDecodeError:
-            return []
-
-
-def save_delivery_notes(data):
-    with open(DELIVERY_NOTE_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2)
+# def load_delivery_notes():
+#     if not os.path.exists(DELIVERY_NOTE_FILE):
+#         with open(DELIVERY_NOTE_FILE, "w", encoding="utf-8") as f:
+#             json.dump([], f)
+#         return []
+#
+#     with open(DELIVERY_NOTE_FILE, "r", encoding="utf-8") as f:
+#         try:
+#             return json.load(f)
+#         except json.JSONDecodeError:
+#             return []
+#
+#
+# def save_delivery_notes(data):
+#     with open(DELIVERY_NOTE_FILE, "w", encoding="utf-8") as f:
+#         json.dump(data, f, indent=2)
 
 
 # -----------------------------------------
@@ -13152,8 +13841,45 @@ def next_dn_id(notes):
 # Get DN by ID
 # -----------------------------------------
 def get_dn_by_id(dn_id: str):
-    dns = load_delivery_notes()
-    return next((x for x in dns if x.get("dn_id") == dn_id), None)
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    cur.execute("SELECT * FROM delivery_notes WHERE dn_id=%s", (dn_id,))
+    row = cur.fetchone()
+
+    if not row:
+        cur.close()
+        conn.close()
+        return None
+
+    columns = [desc[0] for desc in cur.description]
+    dn = dict(zip(columns, row))
+
+    # fetch items
+    cur.execute("""
+    SELECT product_id, product_name, qty, uom, serial_no
+    FROM delivery_note_items
+    WHERE dn_id=%s
+    """, (dn_id,))
+
+    items_rows = cur.fetchall()
+
+    items = []
+    for i in items_rows:
+        items.append({
+            "product_id": i[0],
+            "product_name": i[1],
+            "qty": float(i[2]),
+            "uom": i[3],
+            "serial_no": i[4]
+        })
+
+    dn["items"] = items
+
+    cur.close()
+    conn.close()
+
+    return dn
 
 
 # -----------------------------------------
@@ -13202,11 +13928,21 @@ def delivery_note():
     user_name = "User"
 
     if user_email:
-        users = load_users()
-        for u in users:
-            if isinstance(u, dict) and (u.get("email") or "").lower() == user_email.lower():
-                user_name = u.get("name") or "User"
-                break
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        cur.execute("""
+        SELECT name FROM users
+        WHERE LOWER(email) = LOWER(%s)
+        """, (user_email,))
+
+        row = cur.fetchone()
+
+        if row:
+            user_name = row[0] or "User"
+
+        cur.close()
+        conn.close()
 
     return render_template(
         "delivery-note.html",
@@ -13215,7 +13951,6 @@ def delivery_note():
         user_name=user_name,
     )
 
-
 # =========================================
 # DELIVERY NOTE - SECOND PAGE (New/Edit/View)
 # deliverynote-new.html + deliverynote-new.js
@@ -13223,10 +13958,40 @@ def delivery_note():
 
 @app.route("/delivery_note/new")
 def delivery_note_new():
-    # Preload data needed for the New Delivery Note page
-    sales_orders = load_sales_orders()
-    notes = load_delivery_notes()
-    next_id = next_dn_id(notes)
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    # FIXED SALES ORDERS
+    cur.execute("""
+        SELECT so_id, customer_name
+        FROM sales_orders
+        ORDER BY created_at DESC
+    """)
+    rows = cur.fetchall()
+
+    sales_orders = []
+    for r in rows:
+        sales_orders.append({
+            "so_id": r[0],
+            "customer_name": r[1]
+        })
+
+    # NEXT ID FIX (important)
+    cur.execute("""
+        SELECT dn_id FROM delivery_notes
+        ORDER BY dn_id DESC
+        LIMIT 1
+    """)
+    last = cur.fetchone()
+
+    if last:
+        last_num = int(last[0].split("-")[1])
+        next_id = f"DN-{last_num + 1:03d}"
+    else:
+        next_id = "DN-001"
+
+    cur.close()
+    conn.close()
 
     return render_template(
         "deliverynote-new.html",
@@ -13242,8 +14007,29 @@ def delivery_note_new():
 @app.route("/delivery_note/form")
 def delivery_note_form():
     dn_id = request.args.get("id", "")
-    mode  = request.args.get("mode", "edit")
-    sales_orders = load_sales_orders()
+    mode = request.args.get("mode", "edit")
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    # FIXED SALES ORDERS
+    cur.execute("""
+        SELECT so_id, customer_name
+        FROM sales_orders
+        ORDER BY created_at DESC
+    """)
+    rows = cur.fetchall()
+
+    sales_orders = []
+    for r in rows:
+        sales_orders.append({
+            "so_id": r[0],
+            "customer_name": r[1]
+        })
+
+    cur.close()
+    conn.close()
+
     return render_template(
         "deliverynote-new.html",
         page="delivery_note",
@@ -13253,8 +14039,6 @@ def delivery_note_form():
         user_email=session.get("user"),
         user_name=_get_logged_in_user_name(),
     )
-
-
 # =========================================
 # DELIVERY NOTE - API (List + Create)
 # =========================================
@@ -13264,12 +14048,46 @@ def api_delivery_notes():
 
     # GET: list all delivery notes (for first page table)
     if request.method == "GET":
-        notes = load_delivery_notes()
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        cur.execute("""
+        SELECT dn_id, delivery_date, so_id, customer_name,
+        delivery_type, destination_address,
+        delivery_status, status
+        FROM delivery_notes
+        ORDER BY created_at DESC
+        """)
+
+        rows = cur.fetchall()
+
+        notes = []
+        for r in rows:
+            notes.append({
+                "dn_id": r[0],
+                "delivery_date": str(r[1]),
+                "so_ref": r[2],  # keep same key
+                "customer_name": r[3],
+                "delivery_type": r[4],
+                "destination_address": r[5],
+                "delivery_status": r[6],
+                "status": r[7],
+            })
+
+        cur.close()
+        conn.close()
+
         return jsonify({"success": True, "data": notes})
 
     # POST: create new delivery note (from second page submit/save draft)
     data = request.get_json(force=True) or {}
-    notes = load_delivery_notes()
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT dn_id FROM delivery_notes")
+    rows = cur.fetchall()
+
+    notes = [{"dn_id": r[0]} for r in rows]
 
     new_id = (data.get("dn_id") or "").strip()
     if not new_id:
@@ -13299,8 +14117,8 @@ def api_delivery_notes():
         record["customer_id"] = customer.get("customer_id", "")
         record["email"] = customer.get("email", "")
         record["phone"] = customer.get("phone", "")
-        record["billing_address"] = customer.get("billingAddress", "")
-        record["shipping_address"] = customer.get("shippingAddress", "")
+        record["billing_address"] = customer.get("billing_address", "")
+        record["shipping_address"] = customer.get("shipping_address", "")
     else:
         record["customer_id"] = ""
         record["email"] = ""
@@ -13308,8 +14126,47 @@ def api_delivery_notes():
         record["billing_address"] = ""
         record["shipping_address"] = ""
 
-    notes.append(record)
-    save_delivery_notes(notes)
+    # INSERT header
+    cur.execute("""
+    INSERT INTO delivery_notes (
+        dn_id, so_id, customer_name, destination_address,
+        delivery_date, delivery_type,
+        status, delivery_status,
+        delivery_by, vehicle_number, tracking_id, delivery_notes
+    ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+    """, (
+        record["dn_id"],
+        record["so_ref"],   # IMPORTANT mapping
+        record["customer_name"],
+        record["destination_address"],
+        record["delivery_date"],
+        record["delivery_type"],
+        record["status"],
+        record["delivery_status"],
+        record["delivery_by"],
+        record["vehicle_no"],
+        record["tracking_id"],
+        record["delivery_notes"]
+    ))
+
+    # INSERT items
+    for it in record["items"]:
+        cur.execute("""
+        INSERT INTO delivery_note_items (
+            dn_id, product_id, product_name, qty, uom, serial_no
+        ) VALUES (%s,%s,%s,%s,%s,%s)
+        """, (
+            record["dn_id"],
+            it.get("product_id"),
+            it.get("product_name"),
+            it.get("qty"),
+            it.get("uom"),
+            it.get("serial_no", "")
+        ))
+
+    conn.commit()
+    cur.close()
+    conn.close()
 
     return jsonify({"success": True, "message": "Delivery Note Saved", "dn_id": new_id})
 
@@ -13320,45 +14177,120 @@ def api_delivery_notes():
 
 @app.route("/api/delivery-notes/<dn_id>", methods=["GET", "PUT"])
 def api_delivery_note_one(dn_id):
-    notes = load_delivery_notes()
-    dn = next((x for x in notes if x.get("dn_id") == dn_id), None)
+    conn = get_db_connection()
+    cur = conn.cursor()
 
-    # GET: fetch one DN (for edit/view)
+    # =========================
+    # FETCH HEADER
+    # =========================
+    cur.execute("SELECT * FROM delivery_notes WHERE dn_id=%s", (dn_id,))
+    row = cur.fetchone()
+
+    if not row:
+        cur.close()
+        conn.close()
+        return jsonify({"success": False, "message": "Delivery Note not found"}), 404
+
+    columns = [desc[0] for desc in cur.description]
+    dn = dict(zip(columns, row))
+
+    # =========================
+    # FETCH ITEMS
+    # =========================
+    cur.execute("""
+    SELECT product_id, product_name, qty, uom, serial_no
+    FROM delivery_note_items
+    WHERE dn_id=%s
+    """, (dn_id,))
+
+    items_rows = cur.fetchall()
+
+    items = []
+    for i in items_rows:
+        items.append({
+            "product_id": i[0],
+            "product_name": i[1],
+            "qty": float(i[2]),
+            "uom": i[3],
+            "serial_no": i[4]
+        })
+
+    dn["items"] = items  # correct place
+
+    # =========================
+    # GET
+    # =========================
     if request.method == "GET":
-        if not dn:
-            return jsonify({"success": False, "message": "Delivery Note not found"}), 404
-
-        # Ensure missing keys exist (old records safety)
         dn.setdefault("delivery_type", "")
         dn.setdefault("destination_address", "")
-        dn.setdefault("vehicle_no", "")
+        dn.setdefault("vehicle_no", dn.get("vehicle_number", ""))
         dn.setdefault("tracking_id", "")
         dn.setdefault("delivery_by", "")
         dn.setdefault("delivery_notes", "")
         dn.setdefault("delivery_status", "draft")
 
+        cur.close()
+        conn.close()
         return jsonify({"success": True, "data": dn})
 
-    # PUT: update DN
-    if not dn:
-        return jsonify({"success": False, "message": "Delivery Note not found"}), 404
-
+    # =========================
+    # PUT
+    # =========================
     payload = request.get_json(force=True) or {}
 
-    dn["delivery_date"] = payload.get("delivery_date", "")
-    dn["so_ref"] = payload.get("so_ref", "")
-    dn["customer_name"] = payload.get("customer_name", "")
-    dn["delivery_type"] = payload.get("delivery_type", "")
-    dn["destination_address"] = payload.get("destination_address", "")
-    dn["delivery_by"] = payload.get("delivery_by", "")
-    dn["delivery_status"] = payload.get("delivery_status", "")
-    dn["vehicle_no"] = payload.get("vehicle_no", "")
-    dn["tracking_id"] = payload.get("tracking_id", "")
-    dn["delivery_notes"] = payload.get("delivery_notes", "")
-    dn["status"] = payload.get("status", dn.get("status", ""))
-    dn["items"] = payload.get("items", [])
+    # UPDATE HEADER
+    cur.execute("""
+    UPDATE delivery_notes SET
+    delivery_date=%s,
+    so_id=%s,
+    customer_name=%s,
+    delivery_type=%s,
+    destination_address=%s,
+    delivery_by=%s,
+    delivery_status=%s,
+    vehicle_number=%s,
+    tracking_id=%s,
+    delivery_notes=%s,
+    status=%s,
+    updated_at=NOW()
+    WHERE dn_id=%s
+    """, (
+        payload.get("delivery_date"),
+        payload.get("so_ref"),
+        payload.get("customer_name"),
+        payload.get("delivery_type"),
+        payload.get("destination_address"),
+        payload.get("delivery_by"),
+        payload.get("delivery_status"),
+        payload.get("vehicle_no"),
+        payload.get("tracking_id"),
+        payload.get("delivery_notes"),
+        payload.get("status"),
+        dn_id
+    ))
 
-    save_delivery_notes(notes)
+    # DELETE old items
+    cur.execute("DELETE FROM delivery_note_items WHERE dn_id=%s", (dn_id,))
+
+    # INSERT new items
+    for it in payload.get("items", []):
+        cur.execute("""
+        INSERT INTO delivery_note_items (
+            dn_id, product_id, product_name, qty, uom, serial_no
+        ) VALUES (%s,%s,%s,%s,%s,%s)
+        """, (
+            dn_id,
+            it.get("product_id"),
+            it.get("product_name"),
+            it.get("qty"),
+            it.get("uom"),
+            it.get("serial_no", "")
+        ))
+
+    conn.commit()
+    cur.close()
+    conn.close()
+
     return jsonify({"success": True, "message": "Delivery Note Updated"})
 
 
@@ -13368,25 +14300,42 @@ def api_delivery_note_one(dn_id):
 
 @app.put("/api/delivery-notes/<dn_id>/cancel")
 def cancel_delivery_note(dn_id):
-    notes = load_delivery_notes()
+    conn = get_db_connection()
+    cur = conn.cursor()
 
-    idx = next((i for i, x in enumerate(notes) if x.get("dn_id") == dn_id), None)
-    if idx is None:
+    # check exists
+    cur.execute("SELECT delivery_status, status FROM delivery_notes WHERE dn_id=%s", (dn_id,))
+    row = cur.fetchone()
+
+    if not row:
+        cur.close()
+        conn.close()
         return jsonify(success=False, message="Delivery Note not found"), 404
 
-    dn = notes[idx]
+    current_status = (row[0] or row[1] or "").strip().lower().replace(" ", "_")
 
-    current_status = (dn.get("delivery_status") or dn.get("status") or "").strip().lower().replace(" ", "_")
     if current_status == "cancelled":
+        cur.close()
+        conn.close()
         return jsonify(success=True, message="Already cancelled")
 
-    dn["delivery_status"] = "cancelled"
-    dn["status"] = "Cancelled"
-    dn["cancel_reason"] = (request.json or {}).get("reason", "").strip()
-    dn["cancelled_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    payload = request.get_json(silent=True) or {}
 
-    notes[idx] = dn
-    save_delivery_notes(notes)
+    cur.execute("""
+    UPDATE delivery_notes SET
+        delivery_status=%s,
+        status=%s,
+        updated_at=NOW()
+    WHERE dn_id=%s
+    """, (
+        "Cancelled",
+        "Cancelled",
+        dn_id
+    ))
+
+    conn.commit()
+    cur.close()
+    conn.close()
 
     return jsonify(success=True, message="Delivery Note cancelled successfully")
 
@@ -13414,8 +14363,44 @@ def delivery_note_pdf(dn_id):
 # =========================================
 @app.post("/api/delivery-notes/<dn_id>/email")
 def email_delivery_note(dn_id):
-    dns = load_delivery_notes()
-    dn = next((x for x in dns if x.get("dn_id") == dn_id), None)
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    # FETCH HEADER
+    cur.execute("SELECT * FROM delivery_notes WHERE dn_id=%s", (dn_id,))
+    row = cur.fetchone()
+
+    if not row:
+        cur.close()
+        conn.close()
+        return jsonify({"success": False, "message": "DN not found"}), 404
+
+    columns = [desc[0] for desc in cur.description]
+    dn = dict(zip(columns, row))
+
+    # FETCH ITEMS
+    cur.execute("""
+    SELECT product_id, product_name, qty, uom, serial_no
+    FROM delivery_note_items
+    WHERE dn_id=%s
+    """, (dn_id,))
+
+    items_rows = cur.fetchall()
+
+    items = []
+    for i in items_rows:
+        items.append({
+            "product_id": i[0],
+            "product_name": i[1],
+            "qty": float(i[2]),
+            "uom": i[3],
+            "serial_no": i[4]
+        })
+
+    dn["items"] = items
+
+    cur.close()
+    conn.close()
 
     if not dn:
         return jsonify({"success": False, "message": "DN not found"}), 404
@@ -13431,12 +14416,24 @@ def email_delivery_note(dn_id):
 
     # 3) fallback sales order
     if not customer_email:
-        so_ref = dn.get("so_ref")
+        so_ref = dn.get("so_ref") or dn.get("so_id")
         if so_ref:
-            orders = load_sales_orders()
-            so = next((o for o in orders if o.get("so_id") == so_ref), None)
-            if so:
-                customer_email = (so.get("email") or "").strip()
+            conn = get_db_connection()
+            cur = conn.cursor()
+
+            cur.execute("""
+                SELECT email
+                FROM sales_orders
+                WHERE so_id = %s
+            """, (so_ref,))
+
+            row = cur.fetchone()
+
+            cur.close()
+            conn.close()
+
+            if row:
+                customer_email = (row[0] or "").strip()
 
     if not customer_email:
         return jsonify({"success": False, "message": "Customer email not available"}), 400
@@ -13650,7 +14647,7 @@ def generate_delivery_note_pdf_bytes(dn):
             Paragraph("<b>Customer:</b>", label_style),
             Paragraph(safe_str(dn.get("customer_name")), value_style),
             Paragraph("<b>Sales Order Ref:</b>", label_style),
-            Paragraph(safe_str(dn.get("so_ref")), value_style),
+            Paragraph(safe_str(dn.get("so_ref") or dn.get("so_id")), value_style),
         ],
         [
             Paragraph("<b>Delivery Type:</b>", label_style),
@@ -13660,7 +14657,7 @@ def generate_delivery_note_pdf_bytes(dn):
         ],
         [
             Paragraph("<b>Vehicle Number:</b>", label_style),
-            Paragraph(safe_str(dn.get("vehicle_no")), value_style),
+            Paragraph(safe_str(dn.get("vehicle_no") or dn.get("vehicle_number")), value_style),
             Paragraph("<b>Tracking ID:</b>", label_style),
             Paragraph(safe_str(dn.get("tracking_id")), value_style),
         ],
@@ -13700,39 +14697,20 @@ def generate_delivery_note_pdf_bytes(dn):
         Paragraph("Product ID", header_small_style),
         Paragraph("Qty", header_small_style),
         Paragraph("UOM", header_small_style),
-        Paragraph("Rate", header_small_style),
-        Paragraph("Tax %", header_small_style),
-        Paragraph("Disc %", header_small_style),
-        Paragraph("Total", header_small_style),
+        Paragraph("Serial No(s)", header_small_style),
     ]]
-
-    grand_total = 0.0
-    subtotal_sum = 0.0
-    total_tax_sum = 0.0
-    total_discount_sum = 0.0
 
     for idx, item in enumerate(items, start=1):
         product_name = safe_str(item.get("product_name"))
         product_id = safe_str(item.get("product_id"))
         qty = safe_float(item.get("qty"), 0.0)
         uom = safe_str(item.get("uom"))
-        rate = safe_float(item.get("rate"), 0.0)
-        tax = safe_float(item.get("tax"), 0.0)
-        discount = safe_float(item.get("discount"), 0.0)
-
-        line_subtotal = rate * qty
-        line_tax = (line_subtotal * tax) / 100
-        line_discount = (line_subtotal * discount) / 100
-
-        total = item.get("total", None)
-        if total in (None, ""):
-            total = line_subtotal + line_tax - line_discount
-        total = safe_float(total, 0.0)
-
-        subtotal_sum += line_subtotal
-        total_tax_sum += line_tax
-        total_discount_sum += line_discount
-        grand_total += total
+        serial_no = safe_str(
+            item.get("serial_no")
+            or item.get("serial_nos")
+            or item.get("serial_numbers"),
+            ""
+        )
 
         item_data.append([
             Paragraph(str(idx), value_style),
@@ -13740,18 +14718,15 @@ def generate_delivery_note_pdf_bytes(dn):
             Paragraph(product_id, value_style),
             Paragraph(f"{qty:.2f}".rstrip("0").rstrip("."), value_style),
             Paragraph(uom, value_style),
-            Paragraph(f"₹{rate:.2f}", value_style),
-            Paragraph(f"{tax:.1f}%", value_style),
-            Paragraph(f"{discount:.1f}%", value_style),
-            Paragraph(f"₹{total:.2f}", value_style),
+            Paragraph(serial_no, value_style),
         ])
 
     if len(item_data) == 1:
-        item_data.append(["-", "No line items available", "-", "-", "-", "-", "-", "-", "-"])
+        item_data.append(["-", "No line items available", "-", "-", "-", "-"])
 
     items_table = Table(
         item_data,
-        colWidths=[35, 135, 72, 42, 45, 58, 45, 45, 60],
+        colWidths=[35, 170, 72, 42, 50, 124],
         repeatRows=1
     )
     items_table.setStyle(TableStyle([
@@ -13772,41 +14747,6 @@ def generate_delivery_note_pdf_bytes(dn):
     ]))
     elements.append(items_table)
     elements.append(Spacer(1, 16))
-
-    # ---------------------------------------------------
-    # TAX AND TOTAL SUMMARY
-    # ---------------------------------------------------
-    elements.append(Paragraph("TAX AND TOTALS SUMMARY", section_style))
-    elements.append(Spacer(1, 3))
-
-    shipping_charge = safe_float(dn.get("shipping_charge"), 0.0)
-    global_discount = safe_float(dn.get("global_discount"), 0.0)
-    final_total = grand_total + shipping_charge - global_discount
-
-    summary_data = [
-        [Paragraph("Subtotal:", value_style), Paragraph(f"₹{subtotal_sum:.2f}", value_style)],
-        [Paragraph("Total Discount (Item Level):", value_style), Paragraph(f"₹{total_discount_sum:.2f}", value_style)],
-        [Paragraph("Total Tax:", value_style), Paragraph(f"₹{total_tax_sum:.2f}", value_style)],
-        [Paragraph("Shipping Charge:", value_style), Paragraph(f"₹{shipping_charge:.2f}", value_style)],
-        [Paragraph("Global Discount:", value_style), Paragraph(f"₹{global_discount:.2f}", value_style)],
-        [Paragraph("GRAND TOTAL:", summary_white_style), Paragraph(f"₹{final_total:.2f}", summary_white_style)],
-    ]
-
-    summary_table = Table(summary_data, colWidths=[380, 120])
-    summary_table.setStyle(TableStyle([
-        ("ALIGN", (1, 0), (1, -1), "RIGHT"),
-        ("FONTNAME", (0, 0), (-1, -2), "DejaVuSans"),
-        ("FONTNAME", (0, -1), (-1, -1), "DejaVuSans-Bold"),
-        ("FONTSIZE", (0, 0), (-1, -1), 8.5),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
-        ("TOPPADDING", (0, 0), (-1, -1), 7),
-        ("LEFTPADDING", (0, 0), (-1, -1), 8),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 8),
-        ("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#a12828")),
-        ("TEXTCOLOR", (0, -1), (-1, -1), colors.white),
-    ]))
-    elements.append(summary_table)
-    elements.append(Spacer(1, 18))
 
     # ---------------------------------------------------
     # DELIVERY NOTES
@@ -13850,9 +14790,1974 @@ def generate_delivery_note_pdf_bytes(dn):
     buffer.close()
     return pdf_bytes
 
+# ============================================
+# INVOICE-LIST
+# ============================================
+@app.get("/invoice-list")
+def invoice_list():
+    user_email = session.get("user")
+    if not user_email:
+        return redirect(url_for("login", message="session_expired"))
+
+    users = load_users()
+    user_name = "User"
+    for u in users:
+        if isinstance(u, dict) and (u.get("email") or "").lower() == user_email.lower():
+            user_name = u.get("name") or "User"
+            break
+
+    return render_template(
+        "invoice-list.html",
+        page="invoice",
+        title="Invoice  List - Stackly",
+        user_email=user_email,
+        user_name=user_name,
+    )
+
+
+def _invoices_table_columns():
+    """Return set of column names on public.invoices (for schema drift)."""
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = 'invoices'
+            """)
+            return {r[0] for r in cur.fetchall()}
+    finally:
+        conn.close()
+
+
+def _invoice_so_ref_column_name(cols=None):
+    """Physical column on `invoices` for sales order reference (schema varies)."""
+    c = cols if cols is not None else _invoices_table_columns()
+    if "sale_order_ref" in c:
+        return "sale_order_ref"
+    if "so_ref" in c:
+        return "so_ref"
+    return None
+
+
+def _invoice_so_ref_select_expr(cols=None):
+    """SELECT fragment that always exposes the value as sale_order_ref for row mapping."""
+    c = cols if cols is not None else _invoices_table_columns()
+    if "sale_order_ref" in c:
+        return "sale_order_ref"
+    if "so_ref" in c:
+        return "so_ref AS sale_order_ref"
+    return "CAST(NULL AS varchar) AS sale_order_ref"
+
+
+def _invoice_form_column_pairs(cols, ref_col, form, date_or_none):
+    """(column, value) for INSERT/UPDATE from form; only columns that exist on `invoices`."""
+    pairs = []
+    if ref_col:
+        pairs.append((ref_col, form.get("sale_order_reference")))
+    candidates = [
+        ("invoice_date", date_or_none(form.get("invoice_date"))),
+        ("due_date", date_or_none(form.get("due_date"))),
+        ("invoice_status", form.get("invoice_status")),
+        ("payment_terms", form.get("payment_terms")),
+        ("customer_ref_no", form.get("customer_ref_no")),
+        ("customer_name", form.get("customer_name")),
+        ("customer_id", form.get("customer_id")),
+        ("billing_address", form.get("billing_address")),
+        ("shipping_address", form.get("shipping_address")),
+        ("email", form.get("email")),
+        ("phone", form.get("phone")),
+        ("contact_person", form.get("contact_person")),
+        ("payment_method", form.get("payment_method")),
+        ("currency", form.get("currency")),
+        ("payment_ref_no", form.get("payment_ref_no")),
+        ("transaction_date", date_or_none(form.get("transaction_date"))),
+        ("payment_status", form.get("payment_status")),
+        ("amount_paid", form.get("amount_paid", 0)),
+        ("status", form.get("status")),
+        ("invoice_tags", form.get("invoice_tags")),
+        ("terms_conditions", form.get("terms_conditions")),
+    ]
+    for col, val in candidates:
+        if col in cols:
+            pairs.append((col, val))
+    return pairs
+
+
+def _invoice_col_or_null(cols, name, pg_type):
+    if name in cols:
+        return name
+    return f"CAST(NULL AS {pg_type}) AS {name}"
+
+
+def _invoice_detail_select_sql(cols, layout="api"):
+    """SELECT column list for one invoice row. `layout` must match row[] indexing in the caller."""
+    so = _invoice_so_ref_select_expr(cols)
+    c = lambda n, t: _invoice_col_or_null(cols, n, t)
+    if layout == "api":
+        return ", ".join(
+            [
+                "invoice_id",
+                so,
+                c("invoice_date", "date"),
+                c("due_date", "date"),
+                c("invoice_status", "varchar"),
+                c("payment_terms", "text"),
+                c("customer_ref_no", "varchar"),
+                c("customer_name", "text"),
+                c("customer_id", "varchar"),
+                c("billing_address", "text"),
+                c("shipping_address", "text"),
+                c("email", "varchar"),
+                c("phone", "varchar"),
+                c("contact_person", "varchar"),
+                c("payment_method", "varchar"),
+                c("currency", "varchar"),
+                c("payment_ref_no", "varchar"),
+                c("transaction_date", "date"),
+                c("payment_status", "varchar"),
+                c("amount_paid", "numeric"),
+                c("status", "varchar"),
+                c("invoice_tags", "text"),
+                c("terms_conditions", "text"),
+            ]
+        )
+    # pdf / email: same column order as invoice dict in invoice_pdf / send_invoice_email_api
+    return ", ".join(
+        [
+            "invoice_id",
+            so,
+            c("invoice_date", "date"),
+            c("due_date", "date"),
+            c("customer_name", "text"),
+            c("customer_id", "varchar"),
+            c("email", "varchar"),
+            c("phone", "varchar"),
+            c("contact_person", "varchar"),
+            c("payment_method", "varchar"),
+            c("currency", "varchar"),
+            c("payment_ref_no", "varchar"),
+            c("transaction_date", "date"),
+            c("payment_status", "varchar"),
+            c("amount_paid", "numeric"),
+            c("status", "varchar"),
+            c("invoice_tags", "text"),
+            c("billing_address", "text"),
+            c("shipping_address", "text"),
+            c("customer_ref_no", "varchar"),
+            c("payment_terms", "text"),
+            c("terms_conditions", "text"),
+        ]
+    )
+
+
+def _invoice_items_table_columns():
+    """Column names on public.invoice_items (schema may use qty/price vs quantity/unit_price)."""
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = 'invoice_items'
+            """)
+            return {r[0] for r in cur.fetchall()}
+    finally:
+        conn.close()
+
+
+def _invoice_items_qty_price_columns(cols):
+    q = "quantity" if "quantity" in cols else ("qty" if "qty" in cols else None)
+    p = "unit_price" if "unit_price" in cols else ("price" if "price" in cols else None)
+    return q, p
+
+
+def _invoice_items_select_columns_sql(cols):
+    """SELECT list yielding logical order: product_name, product_id, quantity, uom, unit_price, tax_pct, disc_pct."""
+
+    def cn(name, typ):
+        if name in cols:
+            return name
+        return f"CAST(NULL AS {typ}) AS {name}"
+
+    parts = [cn("product_name", "text"), cn("product_id", "varchar")]
+    if "quantity" in cols:
+        parts.append("quantity")
+    elif "qty" in cols:
+        parts.append("qty AS quantity")
+    else:
+        parts.append("CAST(NULL AS numeric) AS quantity")
+    parts.append(cn("uom", "varchar"))
+    if "unit_price" in cols:
+        parts.append("unit_price")
+    elif "price" in cols:
+        parts.append("price AS unit_price")
+    else:
+        parts.append("CAST(NULL AS numeric) AS unit_price")
+    parts.append(cn("tax_pct", "numeric"))
+    parts.append(cn("disc_pct", "numeric"))
+    return ", ".join(parts)
+
+
+def _invoice_items_exec_insert_line(cur, cols, invoice_id, item):
+    qcol, pcol = _invoice_items_qty_price_columns(cols)
+    pairs = []
+    if "invoice_id" in cols:
+        pairs.append(("invoice_id", invoice_id))
+    if "product_name" in cols:
+        pairs.append(("product_name", item.get("product_name")))
+    if "product_id" in cols:
+        pairs.append(("product_id", item.get("product_id")))
+    if qcol:
+        pairs.append((qcol, int(float(item.get("quantity", 0)))))
+    if "uom" in cols:
+        pairs.append(("uom", item.get("uom")))
+    if pcol:
+        pairs.append((pcol, float(item.get("unit_price", 0))))
+    if "tax_pct" in cols:
+        pairs.append(("tax_pct", float(item.get("tax_pct", 0))))
+    if "disc_pct" in cols:
+        pairs.append(("disc_pct", float(item.get("disc_pct", 0))))
+    if not pairs:
+        return
+    cnames = ", ".join(p[0] for p in pairs)
+    ph = ", ".join(["%s"] * len(pairs))
+    cur.execute(
+        f"INSERT INTO invoice_items ({cnames}) VALUES ({ph})",
+        [p[1] for p in pairs],
+    )
+
+
+def _invoice_items_sync_id_sequence(cur):
+    """Advance SERIAL sequence so next DEFAULT id is MAX(id)+1 (fixes dup key after CSV import)."""
+    try:
+        cur.execute(
+            """
+            SELECT pg_get_serial_sequence('public.invoice_items', 'id')
+            """
+        )
+        row = cur.fetchone()
+        if not row or not row[0]:
+            return
+        seq = row[0]
+        cur.execute("SELECT COALESCE(MAX(id), 0) FROM invoice_items")
+        mx = cur.fetchone()[0]
+        cur.execute("SELECT setval(%s, %s, true)", (seq, mx))
+    except Exception:
+        pass
+
+
+def _invoice_summary_exec_insert(cur, invoice_id, form):
+    """Insert one invoice_summary row; uuid id or explicit integer MAX(id)+1 (syncs SERIAL when present)."""
+    cur.execute("""
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'invoice_summary'
+    """)
+    cols = {r[0] for r in cur.fetchall()}
+    if not cols:
+        return
+
+    def fnum(key, default=0.0):
+        v = form.get(key)
+        if v is None or v == "":
+            return default
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return default
+
+    sub_total = fnum("sub_total")
+    tax_total = fnum("tax_total")
+    grand_total = fnum("grand_total")
+    amount_paid = fnum("amount_paid")
+    if form.get("amount_paid") in (None, "") and form.get("amt_paid") not in (None, ""):
+        amount_paid = fnum("amt_paid")
+    balance_due = fnum("balance_due")
+    if form.get("balance_due") in (None, ""):
+        balance_due = grand_total - amount_paid
+    gd = fnum("global_discount")
+    ship = fnum("shipping_charges")
+    rnd = fnum("rounding_adjustment")
+
+    pairs = []
+    if "id" in cols:
+        cur.execute(
+            """
+            SELECT data_type, udt_name FROM information_schema.columns
+            WHERE table_schema = 'public' AND table_name = 'invoice_summary'
+              AND column_name = 'id'
+            """
+        )
+        idrow = cur.fetchone() or (None, None)
+        dt, udt = idrow[0], idrow[1]
+        is_uuid = (dt and "uuid" in str(dt).lower()) or (udt and str(udt).lower() == "uuid")
+        if is_uuid:
+            pairs.append(("id", str(uuid.uuid4())))
+        else:
+            # Always insert an explicit integer id (NOT NULL) and align SERIAL if one exists.
+            cur.execute(
+                "SELECT COALESCE(MAX(id), 0) + 1 FROM invoice_summary"
+            )
+            next_id = int(cur.fetchone()[0])
+            pairs.append(("id", next_id))
+            try:
+                cur.execute(
+                    "SELECT pg_get_serial_sequence('public.invoice_summary', 'id')"
+                )
+                seq_row = cur.fetchone()
+                if seq_row and seq_row[0]:
+                    cur.execute("SELECT setval(%s, %s, true)", (seq_row[0], next_id))
+            except Exception:
+                pass
+    if "invoice_id" in cols:
+        pairs.append(("invoice_id", invoice_id))
+    if "sub_total" in cols:
+        pairs.append(("sub_total", sub_total))
+    if "global_discount_pct" in cols:
+        pairs.append(("global_discount_pct", gd))
+    elif "global_discount" in cols:
+        pairs.append(("global_discount", gd))
+    if "tax_total" in cols:
+        pairs.append(("tax_total", tax_total))
+    if "shipping_charges" in cols:
+        pairs.append(("shipping_charges", ship))
+    if "rounding_adjustment" in cols:
+        pairs.append(("rounding_adjustment", rnd))
+    if "grand_total" in cols:
+        pairs.append(("grand_total", grand_total))
+    if "amount_paid" in cols:
+        pairs.append(("amount_paid", amount_paid))
+    if "balance_due" in cols:
+        pairs.append(("balance_due", balance_due))
+    if "created_at" in cols:
+        pairs.append(("created_at", datetime.now()))
+
+    if not pairs:
+        return
+    cnames = ", ".join(p[0] for p in pairs)
+    ph = ", ".join(["%s"] * len(pairs))
+    cur.execute(f"INSERT INTO invoice_summary ({cnames}) VALUES ({ph})", [p[1] for p in pairs])
+
+
+def update_overdue_invoices():
+    """Automatically update overdue invoices in database (only if required columns exist)."""
+    cols = _invoices_table_columns()
+    if not cols:
+        return 0
+    if "due_date" not in cols or "payment_status" not in cols:
+        return 0
+    updated_count = 0
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            UPDATE invoices
+            SET status = 'Overdue'
+            WHERE due_date < CURRENT_DATE
+            AND payment_status != 'Paid'
+            AND status NOT IN ('Paid', 'Cancelled', 'Overdue')
+        """)
+        updated_count = cur.rowcount
+        conn.commit()
+    except Exception as e:
+        print(f"Error updating overdue invoices: {e}")
+        conn.rollback()
+    finally:
+        cur.close()
+        conn.close()
+    return updated_count
+
+
+@app.route("/get-invoice")
+def get_invoice():
+    update_overdue_invoices()
+
+    cols = _invoices_table_columns()
+    if not cols or "invoice_id" not in cols:
+        return jsonify([])
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    select_parts = []
+    if "id" in cols:
+        select_parts.append("id")
+    select_parts.append("invoice_id")
+    if "sale_order_ref" in cols:
+        select_parts.append("sale_order_ref")
+    elif "so_ref" in cols:
+        select_parts.append("so_ref AS sale_order_ref")
+    else:
+        select_parts.append("CAST(NULL AS varchar) AS sale_order_ref")
+    if "customer_name" in cols:
+        select_parts.append("customer_name")
+    else:
+        select_parts.append("CAST(NULL AS text) AS customer_name")
+    if "invoice_date" in cols:
+        select_parts.append("invoice_date")
+    else:
+        select_parts.append("CAST(NULL AS date) AS invoice_date")
+    if "due_date" in cols:
+        select_parts.append("due_date")
+    else:
+        select_parts.append("CAST(NULL AS date) AS due_date")
+    if "payment_status" in cols:
+        select_parts.append("payment_status")
+    else:
+        select_parts.append("CAST(NULL AS varchar) AS payment_status")
+    if "status" in cols:
+        select_parts.append("status")
+    else:
+        select_parts.append("CAST(NULL AS varchar) AS status")
+
+    order_parts = []
+    if "created_at" in cols:
+        order_parts.append("created_at DESC NULLS LAST")
+    if "id" in cols:
+        order_parts.append("id DESC")
+    order_parts.append("invoice_id DESC")
+    order_sql = ", ".join(order_parts)
+
+    cursor.execute(f"""
+        SELECT {", ".join(select_parts)}
+        FROM invoices
+        ORDER BY {order_sql}
+    """)
+    rows = cursor.fetchall()
+    desc = [d[0] for d in (cursor.description or [])]
+
+    data = []
+    for tup in rows:
+        row = dict(zip(desc, tup))
+        if "id" not in row:
+            row["id"] = row.get("invoice_id")
+        row["invoice_date"] = str(row["invoice_date"]) if row.get("invoice_date") else ""
+        row["due_date"] = str(row["due_date"]) if row.get("due_date") else ""
+        row["payment_status"] = row.get("payment_status") or ""
+        if row["payment_status"] == "" and row.get("status"):
+            st = str(row["status"])
+            if st == "Paid":
+                row["payment_status"] = "Paid"
+        data.append(row)
+
+    cursor.close()
+    conn.close()
+    return jsonify(data)
+
+
+@app.route("/api/invoice/<invoice_id>", methods=["GET"])
+def get_invoice_api(invoice_id):
+    conn = None
+    cur = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cols = _invoices_table_columns()
+        cur.execute(f"""
+            SELECT {_invoice_detail_select_sql(cols, "api")}
+            FROM invoices
+            WHERE invoice_id = %s
+        """, (invoice_id,))
+        row = cur.fetchone()
+        if not row:
+            return jsonify({"error": "Invoice not found"}), 404
+
+        def safe_date(value):
+            if value is None:
+                return ""
+            if isinstance(value, datetime):
+                return value.strftime("%Y-%m-%d")
+            return str(value)
+
+        invoice = {
+            "invoice_id": row[0],
+            "sale_order_ref": row[1] or "",
+            "invoice_date": safe_date(row[2]),
+            "due_date": safe_date(row[3]),
+            "invoice_status": row[4] or "",
+            "payment_terms": row[5] or "",
+            "customer_ref_no": row[6] or "",
+            "customer_name": row[7] or "",
+            "customer_id": row[8] or "",
+            "billing_address": row[9] or "",
+            "shipping_address": row[10] or "",
+            "email": row[11] or "",
+            "phone": row[12] or "",
+            "contact_person": row[13] or "",
+            "payment_method": row[14] or "",
+            "currency": row[15] or "",
+            "payment_ref_no": row[16] or "",
+            "transaction_date": safe_date(row[17]),
+            "payment_status": row[18] or "",
+            "amount_paid": float(row[19]) if row[19] else 0,
+            "status": row[20] or "",
+            "invoice_tags": row[21] or "",
+            "terms_conditions": row[22] or "",
+        }
+
+        items = []
+        item_cols = _invoice_items_table_columns()
+        cur.execute(f"""
+            SELECT {_invoice_items_select_columns_sql(item_cols)}
+            FROM invoice_items
+            WHERE invoice_id = %s
+        """, (invoice_id,))
+        for item in cur.fetchall():
+            qty = float(item[2]) if item[2] else 0
+            price = float(item[4]) if item[4] else 0
+            tax = float(item[5]) if item[5] else 0
+            disc = float(item[6]) if item[6] else 0
+            total = qty * price * (1 - disc / 100) * (1 + tax / 100)
+            items.append({
+                "product_name": item[0] or "",
+                "product_id": item[1] or "",
+                "quantity": qty,
+                "uom": item[3] or "",
+                "unit_price": price,
+                "tax_pct": tax,
+                "disc_pct": disc,
+                "total": total,
+            })
+
+        summary = {}
+        cur.execute("""
+            SELECT
+                sub_total,
+                tax_total,
+                grand_total,
+                amount_paid,
+                balance_due
+            FROM invoice_summary
+            WHERE invoice_id = %s
+        """, (invoice_id,))
+        summary_row = cur.fetchone()
+        if summary_row:
+            summary = {
+                "sub_total": float(summary_row[0]) if summary_row[0] else 0,
+                "tax_total": float(summary_row[1]) if summary_row[1] else 0,
+                "grand_total": float(summary_row[2]) if summary_row[2] else 0,
+                "amount_paid": float(summary_row[3]) if summary_row[3] else 0,
+                "balance_due": float(summary_row[4]) if summary_row[4] else 0,
+                "shipping_charges": 0,
+                "rounding_adjustment": 0,
+                "global_discount": 0,
+            }
+
+        comments = []
+        cur.execute("""
+            SELECT text, created_at
+            FROM invoice_comments
+            WHERE invoice_id = %s
+            ORDER BY created_at
+        """, (invoice_id,))
+        for comment in cur.fetchall():
+            comments.append({
+                "text": comment[0] or "",
+                "date": comment[1].strftime("%Y-%m-%d %H:%M") if comment[1] else "",
+            })
+
+        attachments = []
+        cur.execute("""
+            SELECT id, filename, file_path, uploaded_at
+            FROM invoice_attachments
+            WHERE invoice_id = %s
+        """, (invoice_id,))
+        for att in cur.fetchall():
+            attachments.append({
+                "id": att[0],
+                "name": att[1] or "",
+                "path": att[2] or "",
+                "date": att[3].strftime("%Y-%m-%d %H:%M") if att[3] else "",
+            })
+
+        return jsonify({
+            "invoice": invoice,
+            "items": items,
+            "summary": summary,
+            "comments": comments,
+            "attachments": attachments,
+        })
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
+
+
+@app.route("/api/invoice/<invoice_id>/status", methods=["PUT"])
+def update_invoice_status(invoice_id):
+    data = request.json or {}
+    new_status = data.get("status")
+
+    if not new_status or new_status not in ["Draft", "Sent", "Paid", "Cancelled", "Overdue"]:
+        return jsonify({"success": False, "error": "Invalid status"}), 400
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("UPDATE invoices SET status = %s WHERE invoice_id = %s", (new_status, invoice_id))
+        if new_status == "Paid":
+            cur.execute("UPDATE invoices SET payment_status = 'Paid' WHERE invoice_id = %s", (invoice_id,))
+            cur.execute("UPDATE invoices SET status = 'Paid' WHERE invoice_id = %s AND status = 'Overdue'", (invoice_id,))
+        conn.commit()
+        return jsonify({"success": True, "message": f"Invoice status: {new_status} successfully"})
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"success": False, "error": str(e)}), 500
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.route("/update-invoice/<invoice_id>", methods=["PUT"])
+def update_invoice(invoice_id):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        def date_or_none(val):
+            return val if val else None
+
+        cur.execute("SELECT 1 FROM invoices WHERE invoice_id = %s", (invoice_id,))
+        if not cur.fetchone():
+            return jsonify({"success": False, "error": "Invoice not found"}), 404
+
+        cols = _invoices_table_columns()
+        ref_col = _invoice_so_ref_column_name(cols)
+        pairs = _invoice_form_column_pairs(cols, ref_col, request.form, date_or_none)
+        if pairs:
+            set_sql = ", ".join(f"{p[0]} = %s" for p in pairs)
+            vals = [p[1] for p in pairs] + [invoice_id]
+            cur.execute(f"UPDATE invoices SET {set_sql} WHERE invoice_id = %s", vals)
+
+        cur.execute("DELETE FROM invoice_items WHERE invoice_id = %s", (invoice_id,))
+        items_json = request.form.get("itemsData")
+        if items_json:
+            item_cols = _invoice_items_table_columns()
+            _invoice_items_sync_id_sequence(cur)
+            items = json.loads(items_json)
+            for item in items:
+                _invoice_items_exec_insert_line(cur, item_cols, invoice_id, item)
+
+        cur.execute("DELETE FROM invoice_summary WHERE invoice_id = %s", (invoice_id,))
+        _invoice_summary_exec_insert(cur, invoice_id, request.form)
+
+        cur.execute("""
+            INSERT INTO invoice_history (id, invoice_id, action, details, user_name, timestamp)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        """, (
+            str(uuid.uuid4()),
+            invoice_id,
+            "Invoice Updated",
+            f"Invoice {invoice_id} updated",
+            "Admin",
+            datetime.now(),
+        ))
+
+        conn.commit()
+        return jsonify({"success": True, "message": "Invoice updated successfully"})
+    except Exception as e:
+        conn.rollback()
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500
+    finally:
+        cur.close()
+        conn.close()
+
+
+def generate_invoice_pdf_bytes(invoice, items, summary):
+    """Generate PDF bytes for an invoice with all fields displayed."""
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        rightMargin=72,
+        leftMargin=72,
+        topMargin=72,
+        bottomMargin=72,
+    )
+    elements = []
+    styles = getSampleStyleSheet()
+
+    currency_code = invoice.get("currency", "USD")
+    currency_map = {
+        "USD": "$", "EUR": "€", "GBP": "£", "JPY": "¥", "IND": "₹", "INR": "₹",
+        "SGD": "S$", "CAD": "C$", "AUD": "A$", "CHF": "Fr", "CNY": "¥",
+    }
+    currency_symbol = currency_map.get(currency_code, currency_code)
+
+    title_style = ParagraphStyle("CustomTitle", parent=styles["Heading1"], fontSize=24, textColor=colors.HexColor("#2C3E50"), alignment=1, spaceAfter=20)
+    company_style = ParagraphStyle("Company", parent=styles["Normal"], fontSize=9, leading=12, textColor=colors.black, alignment=1, spaceAfter=2, fontName="DejaVuSans")
+    status_style = ParagraphStyle("Status", parent=styles["Heading2"], fontSize=14, leading=18, alignment=1, spaceAfter=14, fontName="DejaVuSans-Bold")
+    heading_style = ParagraphStyle("Heading2", parent=styles["Heading2"], fontSize=11, leading=14, textColor=colors.HexColor("#2C3E50"), spaceBefore=8, spaceAfter=8, fontName="DejaVuSans-Bold")
+    terms_heading_style = ParagraphStyle("TermsHeading", parent=styles["Heading2"], fontSize=10, leading=13, textColor=colors.HexColor("#2C3E50"), spaceAfter=6, fontName="DejaVuSans-Bold")
+    terms_style = ParagraphStyle("Terms", parent=styles["Normal"], fontSize=7.4, leading=10, fontName="DejaVuSans")
+    footer_style = ParagraphStyle("Footer", parent=styles["Normal"], fontSize=7.5, textColor=colors.HexColor("#555555"), alignment=0)
+
+    elements.append(Paragraph("STACKLY", title_style))
+    elements.append(Paragraph("MMR Complex, Chinna Thirupathi, near Chinna Muniyappan Kovil, Salem, Tamil Nadu - 636008", company_style))
+    elements.append(Paragraph("Phone: +91 7010792745", company_style))
+    elements.append(Paragraph("Email: info@stackly.com", company_style))
+    elements.append(Spacer(1, 10))
+
+    status_text = invoice.get("status", "DRAFT").upper()
+    elements.append(Paragraph(f"INVOICE - {status_text}", status_style))
+
+    elements.append(Paragraph("INVOICE INFORMATION", heading_style))
+    info_data = [
+        ["Invoice Number:", invoice.get("invoice_id", "-"), "Invoice Date:", invoice.get("invoice_date", "-")],
+        ["Sale Order Reference:", invoice.get("sale_order_ref", "-"), "Due Date:", invoice.get("due_date", "-")],
+        ["Invoice Status:", invoice.get("status", "-"), "Payment Terms:", invoice.get("payment_terms", "-")],
+        ["Customer Ref No:", invoice.get("customer_ref_no", "-"), "Invoice Tags:", invoice.get("invoice_tags", "-")],
+    ]
+    info_table = Table(info_data, colWidths=[120, 160, 100, 130])
+    info_table.setStyle(TableStyle([
+        ("FONTNAME", (0, 0), (-1, -1), "DejaVuSans"),
+        ("FONTSIZE", (0, 0), (-1, -1), 9),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+        ("BACKGROUND", (0, 0), (0, -1), colors.lightgrey),
+        ("BACKGROUND", (2, 0), (2, -1), colors.lightgrey),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("PADDING", (0, 0), (-1, -1), 6),
+    ]))
+    elements.append(info_table)
+    elements.append(Spacer(1, 15))
+
+    elements.append(Paragraph("CUSTOMER INFORMATION", heading_style))
+    customer_data = [
+        ["Customer Name:", invoice.get("customer_name", "-"), "Customer ID:", invoice.get("customer_id", "-")],
+        ["Email:", invoice.get("email", "-"), "Phone:", invoice.get("phone", "-")],
+        ["Contact Person:", invoice.get("contact_person", "-"), "Currency:", f"{currency_code} ({currency_symbol})"],
+    ]
+    customer_table = Table(customer_data, colWidths=[120, 180, 100, 110])
+    customer_table.setStyle(TableStyle([
+        ("FONTNAME", (0, 0), (-1, -1), "DejaVuSans"),
+        ("FONTSIZE", (0, 0), (-1, -1), 9),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+        ("BACKGROUND", (0, 0), (0, -1), colors.lightgrey),
+        ("BACKGROUND", (2, 0), (2, -1), colors.lightgrey),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("PADDING", (0, 0), (-1, -1), 6),
+    ]))
+    elements.append(customer_table)
+    elements.append(Spacer(1, 15))
+
+    if invoice.get("billing_address") or invoice.get("shipping_address"):
+        elements.append(Paragraph("ADDRESS INFORMATION", heading_style))
+        address_data = [[
+            "Billing Address:", invoice.get("billing_address", "-"),
+            "Shipping Address:", invoice.get("shipping_address", "-"),
+        ]]
+        address_table = Table(address_data, colWidths=[120, 200, 100, 110])
+        address_table.setStyle(TableStyle([
+            ("FONTNAME", (0, 0), (-1, -1), "DejaVuSans"),
+            ("FONTSIZE", (0, 0), (-1, -1), 9),
+            ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+            ("BACKGROUND", (0, 0), (0, 0), colors.lightgrey),
+            ("BACKGROUND", (2, 0), (2, 0), colors.lightgrey),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("PADDING", (0, 0), (-1, -1), 6),
+        ]))
+        elements.append(address_table)
+        elements.append(Spacer(1, 15))
+
+    elements.append(Paragraph("PAYMENT INFORMATION", heading_style))
+    payment_data = [
+        ["Payment Method:", invoice.get("payment_method", "-"), "Payment Status:", invoice.get("payment_status", "-")],
+        ["Payment Ref No:", invoice.get("payment_ref_no", "-"), "Transaction Date:", invoice.get("transaction_date", "-")],
+        ["Amount Paid:", f"{currency_symbol}{invoice.get('amount_paid', 0):.2f}", "Balance Due:", f"{currency_symbol}{summary.get('balance_due', 0):.2f}"],
+    ]
+    payment_table = Table(payment_data, colWidths=[120, 180, 100, 110])
+    payment_table.setStyle(TableStyle([
+        ("FONTNAME", (0, 0), (-1, -1), "DejaVuSans"),
+        ("FONTSIZE", (0, 0), (-1, -1), 9),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+        ("BACKGROUND", (0, 0), (0, -1), colors.lightgrey),
+        ("BACKGROUND", (2, 0), (2, -1), colors.lightgrey),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("PADDING", (0, 0), (-1, -1), 6),
+    ]))
+    elements.append(payment_table)
+    elements.append(Spacer(1, 20))
+
+    if items:
+        elements.append(Paragraph("INVOICE ITEMS", heading_style))
+        table_data = [["S.No", "Product Name", "Product ID", "Qty", "UOM", "Unit Price", "Tax %", "Disc %", "Total"]]
+        for idx, it in enumerate(items, 1):
+            table_data.append([
+                str(idx), it.get("product_name", "-"), it.get("product_id", "-"), f"{it.get('quantity', 0):.2f}",
+                it.get("uom", "-"), f"{currency_symbol}{it.get('unit_price', 0):.2f}",
+                f"{it.get('tax_pct', 0):.1f}%" if it.get("tax_pct", 0) > 0 else "-",
+                f"{it.get('disc_pct', 0):.1f}%" if it.get("disc_pct", 0) > 0 else "-",
+                f"{currency_symbol}{it.get('total', 0):.2f}",
+            ])
+        items_table = Table(table_data, colWidths=[30, 100, 80, 35, 35, 60, 40, 40, 60])
+        items_table.setStyle(TableStyle([
+            ("FONTNAME", (0, 0), (-1, -1), "DejaVuSans"),
+            ("FONTSIZE", (0, 0), (-1, -1), 7),
+            ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#2C3E50")),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+            ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+            ("ALIGN", (5, 1), (8, -1), "RIGHT"),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("PADDING", (0, 0), (-1, -1), 4),
+        ]))
+        elements.append(items_table)
+        elements.append(Spacer(1, 20))
+
+    elements.append(Paragraph("TAX AND TOTALS SUMMARY", heading_style))
+    total_discount = 0.0
+    for it in items:
+        line_sub = it.get("quantity", 0) * it.get("unit_price", 0)
+        total_discount += line_sub * (it.get("disc_pct", 0) / 100)
+
+    sub_total = summary.get("sub_total", 0)
+    tax_total = summary.get("tax_total", 0)
+    shipping = summary.get("shipping_charges", 0)
+    rounding = summary.get("rounding_adjustment", 0)
+    grand_total = summary.get("grand_total", 0)
+    amount_paid = summary.get("amount_paid", 0)
+    balance_due = summary.get("balance_due", 0)
+    global_discount_pct = summary.get("global_discount_pct", 0)
+    global_discount_amt = sub_total * (global_discount_pct / 100) if global_discount_pct > 0 else 0
+
+    summary_data = [
+        ["Subtotal:", f"{currency_symbol}{sub_total:.2f}"],
+        ["Item Level Discount:", f"-{currency_symbol}{total_discount:.2f}"],
+        ["Total Tax:", f"{currency_symbol}{tax_total:.2f}"],
+        ["Shipping Charge:", f"{currency_symbol}{shipping:.2f}"],
+    ]
+    if global_discount_pct > 0:
+        summary_data.append([f"Global Discount ({global_discount_pct:.1f}%):", f"-{currency_symbol}{global_discount_amt:.2f}"])
+    if rounding != 0:
+        sign = "+" if rounding > 0 else ""
+        summary_data.append(["Rounding Adjustment:", f"{sign}{currency_symbol}{abs(rounding):.2f}"])
+    summary_data.extend([
+        ["─" * 25, "─" * 15],
+        ["GRAND TOTAL:", f"{currency_symbol}{grand_total:.2f}"],
+        ["Amount Paid:", f"{currency_symbol}{amount_paid:.2f}"],
+        ["BALANCE DUE:", f"{currency_symbol}{balance_due:.2f}"],
+    ])
+    summary_table = Table(summary_data, colWidths=[200, 150])
+    summary_table.setStyle(TableStyle([
+        ("FONTNAME", (0, 0), (-1, -5), "DejaVuSans"),
+        ("FONTSIZE", (0, 0), (-1, -5), 9),
+        ("FONTNAME", (0, -3), (-1, -3), "DejaVuSans-Bold"),
+        ("FONTSIZE", (0, -3), (-1, -3), 11),
+        ("FONTNAME", (0, -1), (-1, -1), "DejaVuSans-Bold"),
+        ("FONTSIZE", (0, -1), (-1, -1), 11),
+        ("ALIGN", (0, 0), (0, -1), "LEFT"),
+        ("ALIGN", (1, 0), (1, -1), "RIGHT"),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 6),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("BACKGROUND", (0, -3), (1, -3), colors.lightgrey),
+        ("BACKGROUND", (0, -1), (1, -1), colors.HexColor("#2C3E50")),
+        ("TEXTCOLOR", (0, -1), (1, -1), colors.whitesmoke),
+        ("LINEABOVE", (0, -3), (1, -3), 1, colors.black),
+        ("LINEBELOW", (0, -3), (1, -3), 1, colors.black),
+    ]))
+    elements.append(summary_table)
+    elements.append(Spacer(1, 20))
+
+    elements.append(Paragraph("Terms and Conditions", terms_heading_style))
+    terms_text = invoice.get("terms_conditions", "")
+    if terms_text:
+        for line in terms_text.split("\n"):
+            if line.strip():
+                elements.append(Paragraph(f"• {line.strip()}", terms_style))
+    else:
+        default_terms = [
+            "1. This invoice is valid until the due date mentioned above.",
+            "2. Payment terms as agreed upon.",
+            "3. Goods once sold will not be taken back.",
+            "4. All taxes and duties as applicable.",
+            "5. Please quote invoice number when making payment.",
+            "6. Late payment may incur additional charges.",
+        ]
+        for line in default_terms:
+            elements.append(Paragraph(line, terms_style))
+    elements.append(Spacer(1, 18))
+
+    generated_on = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    elements.append(Paragraph(f"Generated on: {generated_on}", footer_style))
+    elements.append(Paragraph("This is a system generated invoice - valid without signature", footer_style))
+
+    doc.build(elements)
+    pdf_bytes = buffer.getvalue()
+    buffer.close()
+    return pdf_bytes
+
+
+@app.route("/invoice/<invoice_id>/pdf")
+def invoice_pdf(invoice_id):
+    conn = None
+    cur = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cols = _invoices_table_columns()
+        cur.execute(f"""
+            SELECT {_invoice_detail_select_sql(cols, "pdf")}
+            FROM invoices
+            WHERE invoice_id = %s
+        """, (invoice_id,))
+        row = cur.fetchone()
+        if not row:
+            return jsonify({"error": f"Invoice {invoice_id} not found."}), 404
+
+        invoice = {
+            "invoice_id": row[0] or "",
+            "sale_order_ref": row[1] or "",
+            "invoice_date": row[2].strftime("%Y-%m-%d") if row[2] else "",
+            "due_date": row[3].strftime("%Y-%m-%d") if row[3] else "",
+            "customer_name": row[4] or "",
+            "customer_id": row[5] or "",
+            "email": row[6] or "",
+            "phone": row[7] or "",
+            "contact_person": row[8] or "",
+            "payment_method": row[9] or "",
+            "currency": row[10] or "USD",
+            "payment_ref_no": row[11] or "",
+            "transaction_date": row[12].strftime("%Y-%m-%d") if row[12] else "",
+            "payment_status": row[13] or "",
+            "amount_paid": float(row[14] or 0),
+            "status": row[15] or "",
+            "invoice_tags": row[16] or "",
+            "billing_address": row[17] or "",
+            "shipping_address": row[18] or "",
+            "customer_ref_no": row[19] or "",
+            "payment_terms": row[20] or "",
+            "terms_conditions": row[21] or "",
+        }
+
+        item_cols = _invoice_items_table_columns()
+        cur.execute(f"""
+            SELECT {_invoice_items_select_columns_sql(item_cols)}
+            FROM invoice_items WHERE invoice_id = %s
+        """, (invoice_id,))
+        items = []
+        for r in cur.fetchall():
+            qty = float(r[2] or 0)
+            price = float(r[4] or 0)
+            tax = float(r[5] or 0)
+            disc = float(r[6] or 0)
+            total = qty * price * (1 - disc / 100) * (1 + tax / 100)
+            items.append({
+                "product_name": r[0] or "",
+                "product_id": r[1] or "",
+                "quantity": qty,
+                "uom": r[3] or "",
+                "unit_price": price,
+                "tax_pct": tax,
+                "disc_pct": disc,
+                "total": total,
+            })
+
+        cur.execute("""
+            SELECT sub_total, tax_total, grand_total, amount_paid, balance_due,
+                   COALESCE(shipping_charges,0), COALESCE(rounding_adjustment,0), COALESCE(global_discount_pct,0)
+            FROM invoice_summary WHERE invoice_id = %s
+        """, (invoice_id,))
+        summary_row = cur.fetchone()
+        if summary_row:
+            summary = {
+                "sub_total": float(summary_row[0] or 0),
+                "tax_total": float(summary_row[1] or 0),
+                "grand_total": float(summary_row[2] or 0),
+                "amount_paid": float(summary_row[3] or 0),
+                "balance_due": float(summary_row[4] or 0),
+                "shipping_charges": float(summary_row[5] or 0),
+                "rounding_adjustment": float(summary_row[6] or 0),
+                "global_discount_pct": float(summary_row[7] or 0),
+            }
+        else:
+            summary = {
+                "sub_total": 0, "tax_total": 0, "grand_total": 0, "amount_paid": 0,
+                "balance_due": 0, "shipping_charges": 0, "rounding_adjustment": 0, "global_discount_pct": 0,
+            }
+
+        pdf_bytes = generate_invoice_pdf_bytes(invoice, items, summary)
+        response = make_response(pdf_bytes)
+        response.headers["Content-Type"] = "application/pdf"
+        if invoice["status"].lower() == "draft":
+            response.headers["Content-Disposition"] = 'inline; filename="invoice_preview.pdf"'
+        else:
+            response.headers["Content-Disposition"] = f'attachment; filename="invoice_{invoice_id}.pdf"'
+        return response
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
+
+
+def send_invoice_email(recipient_email, invoice_data, items, summary, custom_message=""):
+    """Send invoice email with HTML body and PDF attachment."""
+    pdf_bytes = generate_invoice_pdf_bytes(invoice_data, items, summary)
+
+    currency_code = invoice_data.get("currency", "USD")
+    currency_map = {
+        "USD": "$", "EUR": "€", "GBP": "£", "JPY": "¥", "IND": "₹", "INR": "₹",
+        "SGD": "S$", "CAD": "C$", "AUD": "A$", "CHF": "Fr", "CNY": "¥",
+    }
+    currency_symbol = currency_map.get(currency_code, currency_code)
+
+    html_template = """
+    <html><body>
+      <h2>STACKLY</h2>
+      <p>Hi {{ invoice.customer_name }},</p>
+      <p>Your invoice has been created. Please find the attached PDF for complete details.</p>
+      <p><b>Invoice Number:</b> {{ invoice.invoice_id }}</p>
+      <p><b>Invoice Date:</b> {{ invoice.invoice_date }}</p>
+      <p><b>Due Date:</b> {{ invoice.due_date }}</p>
+      <p><b>Status:</b> {{ invoice.status }}</p>
+      <p><b>Grand Total:</b> {{ currency_symbol }}{{ summary.grand_total|round(2) }}</p>
+      <p><b>Balance Due:</b> {{ currency_symbol }}{{ summary.balance_due|round(2) }}</p>
+      {% if custom_message %}<p><b>Message:</b> {{ custom_message }}</p>{% endif %}
+      <p>Thanks,<br>Stackly Team</p>
+    </body></html>
+    """
+    html_body = render_template_string(
+        html_template,
+        invoice=invoice_data,
+        items=items,
+        summary=summary,
+        currency_symbol=currency_symbol,
+        custom_message=custom_message,
+    )
+    text_body = f"""
+Hi {invoice_data.get('customer_name', 'Customer')},
+
+Your invoice {invoice_data.get('invoice_id', '')} has been generated.
+Grand Total: {currency_symbol}{summary.get('grand_total', 0):.2f}
+Balance Due: {currency_symbol}{summary.get('balance_due', 0):.2f}
+"""
+
+    msg = MIMEMultipart("mixed")
+    msg["Subject"] = f"Invoice {invoice_data.get('invoice_id', '')} from Stackly"
+    msg["From"] = os.getenv("EMAIL_ADDRESS")
+    msg["To"] = recipient_email
+
+    msg_alternative = MIMEMultipart("alternative")
+    msg_alternative.attach(MIMEText(text_body, "plain"))
+    msg_alternative.attach(MIMEText(html_body, "html"))
+    msg.attach(msg_alternative)
+
+    pdf_attachment = MIMEApplication(pdf_bytes, _subtype="pdf")
+    pdf_attachment.add_header("Content-Disposition", "attachment", filename=f"Invoice_{invoice_data.get('invoice_id', '')}.pdf")
+    msg.attach(pdf_attachment)
+
+    try:
+        smtp_server = os.getenv("SMTP_SERVER", "smtp.gmail.com")
+        smtp_port = int(os.getenv("SMTP_PORT", "587"))
+        with smtplib.SMTP(smtp_server, smtp_port) as server:
+            server.starttls()
+            server.login(os.getenv("EMAIL_ADDRESS"), os.getenv("EMAIL_PASSWORD"))
+            server.send_message(msg)
+        return True
+    except Exception as e:
+        print("Email send error:", e)
+        return False
+
+
+@app.route("/api/invoice/<invoice_id>/send-email", methods=["POST"])
+def send_invoice_email_api(invoice_id):
+    data = request.get_json() or {}
+    recipient = data.get("email")
+    custom_message = data.get("message", "")
+    if not recipient:
+        return jsonify({"success": False, "error": "Recipient email required"}), 400
+
+    conn = None
+    cur = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cols = _invoices_table_columns()
+        cur.execute(f"""
+            SELECT {_invoice_detail_select_sql(cols, "pdf")}
+            FROM invoices
+            WHERE invoice_id = %s
+        """, (invoice_id,))
+        row = cur.fetchone()
+        if not row:
+            return jsonify({"success": False, "error": "Invoice not found"}), 404
+
+        invoice = {
+            "invoice_id": row[0] or "",
+            "sale_order_ref": row[1] or "",
+            "invoice_date": row[2].strftime("%Y-%m-%d") if row[2] else "",
+            "due_date": row[3].strftime("%Y-%m-%d") if row[3] else "",
+            "customer_name": row[4] or "",
+            "customer_id": row[5] or "",
+            "email": row[6] or "",
+            "phone": row[7] or "",
+            "contact_person": row[8] or "",
+            "payment_method": row[9] or "",
+            "currency": row[10] or "USD",
+            "payment_ref_no": row[11] or "",
+            "transaction_date": row[12].strftime("%Y-%m-%d") if row[12] else "",
+            "payment_status": row[13] or "",
+            "amount_paid": float(row[14] or 0),
+            "status": row[15] or "",
+            "invoice_tags": row[16] or "",
+            "billing_address": row[17] or "",
+            "shipping_address": row[18] or "",
+            "customer_ref_no": row[19] or "",
+            "payment_terms": row[20] or "",
+            "terms_conditions": row[21] or "",
+        }
+
+        item_cols = _invoice_items_table_columns()
+        cur.execute(f"""
+            SELECT {_invoice_items_select_columns_sql(item_cols)}
+            FROM invoice_items
+            WHERE invoice_id = %s
+        """, (invoice_id,))
+        items = []
+        for r in cur.fetchall():
+            qty = float(r[2] or 0)
+            price = float(r[4] or 0)
+            tax = float(r[5] or 0)
+            disc = float(r[6] or 0)
+            total = qty * price * (1 - disc / 100) * (1 + tax / 100)
+            items.append({
+                "product_name": r[0] or "",
+                "product_id": r[1] or "",
+                "quantity": qty,
+                "uom": r[3] or "",
+                "unit_price": price,
+                "tax_pct": tax,
+                "disc_pct": disc,
+                "total": total,
+            })
+
+        cur.execute("""
+            SELECT sub_total, tax_total, grand_total, amount_paid, balance_due,
+                   COALESCE(shipping_charges,0), COALESCE(rounding_adjustment,0), COALESCE(global_discount_pct,0)
+            FROM invoice_summary
+            WHERE invoice_id = %s
+        """, (invoice_id,))
+        summary_row = cur.fetchone()
+        if summary_row:
+            summary = {
+                "sub_total": float(summary_row[0] or 0),
+                "tax_total": float(summary_row[1] or 0),
+                "grand_total": float(summary_row[2] or 0),
+                "amount_paid": float(summary_row[3] or 0),
+                "balance_due": float(summary_row[4] or 0),
+                "shipping_charges": float(summary_row[5] or 0),
+                "rounding_adjustment": float(summary_row[6] or 0),
+                "global_discount_pct": float(summary_row[7] or 0),
+            }
+        else:
+            summary = {
+                "sub_total": 0, "tax_total": 0, "grand_total": 0, "amount_paid": 0,
+                "balance_due": 0, "shipping_charges": 0, "rounding_adjustment": 0, "global_discount_pct": 0,
+            }
+
+        success = send_invoice_email(recipient, invoice, items, summary, custom_message)
+        if success:
+            return jsonify({"success": True, "message": "Email sent successfully"})
+        return jsonify({"success": False, "error": "Failed to send email. Check SMTP credentials."}), 500
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500
+    finally:
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
+
+
+UPLOAD_FOLDER = "uploads"
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+
+def generate_invoice_id():
+    cols = _invoices_table_columns()
+    conn = get_db_connection()
+    cur = conn.cursor()
+    if "id" in cols:
+        cur.execute("SELECT invoice_id FROM invoices ORDER BY id DESC LIMIT 1")
+    elif "created_at" in cols:
+        cur.execute(
+            "SELECT invoice_id FROM invoices ORDER BY created_at DESC NULLS LAST, invoice_id DESC LIMIT 1"
+        )
+    else:
+        cur.execute("""
+            SELECT invoice_id FROM invoices
+            ORDER BY CAST(NULLIF(SPLIT_PART(invoice_id, '-', 2), '') AS INTEGER) DESC NULLS LAST
+            LIMIT 1
+        """)
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    if not row:
+        return "INV-0001"
+    num = int(row[0].split("-")[1]) + 1
+    return f"INV-{num:04d}"
+
+
+@app.route("/new-invoice")
+def new_invoice():
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT so_id, customer_name
+        FROM sales_orders
+        ORDER BY so_id DESC
+    """)
+    sales_orders = [{"so_id": r[0], "customer_name": r[1]} for r in cur.fetchall()]
+    cur.close()
+    conn.close()
+
+    invoice_id = generate_invoice_id()
+    user_email = session.get("user")
+    if not user_email:
+        return redirect(url_for("login", message="session_expired"))
+    users = load_users()
+    user_name = "User"
+    for u in users:
+        if isinstance(u, dict) and (u.get("email") or "").lower() == user_email.lower():
+            user_name = u.get("name") or "User"
+            break
+
+    return render_template(
+        "new-invoice.html",
+        page="invoice",
+        title="New-Invoice-Stackly",
+        user_email=user_email,
+        user_name=user_name,
+        invoice_id=invoice_id,
+        sales_orders=sales_orders,
+    )
+
+
+@app.route("/get-sales-order/<so_id>")
+def get_sales_order(so_id):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            SELECT customer_name, customer_id, billing_address, shipping_address, email, phone,
+                   payment_method, currency, due_date,
+                   subtotal, tax_total, grand_total, global_discount, shipping_charges
+            FROM sales_orders
+            WHERE so_id = %s
+        """, (so_id,))
+        sale = cur.fetchone()
+        if not sale:
+            return jsonify({})
+
+        cur.execute("""
+            SELECT product_name, product_id, qty, uom, price, tax_pct, disc_pct
+            FROM sales_order_items
+            WHERE so_id = %s
+        """, (so_id,))
+        items = cur.fetchall()
+
+        return jsonify({
+            "customer_name": sale[0],
+            "customer_id": sale[1],
+            "billing_address": sale[2],
+            "shipping_address": sale[3],
+            "email": sale[4],
+            "phone": sale[5],
+            "payment_method": sale[6],
+            "currency": sale[7],
+            "due_date": str(sale[8]) if sale[8] else None,
+            "items": [{
+                "product_name": i[0], "product_id": i[1], "quantity": i[2], "uom": i[3],
+                "unit_price": float(i[4] or 0), "tax_pct": float(i[5] or 0), "disc_pct": float(i[6] or 0),
+            } for i in items],
+            "subtotal": float(sale[9] or 0),
+            "tax_total": float(sale[10] or 0),
+            "grand_total": float(sale[11] or 0),
+            "global_discount": float(sale[12] or 0),
+            "shipping_charges": float(sale[13] or 0),
+            "rounding": 0,
+        })
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.route("/save-invoice", methods=["POST"])
+def save_invoice():
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        invoice_id = request.form.get("invoice_id") or generate_invoice_id()
+        cols = _invoices_table_columns()
+        ref_col = _invoice_so_ref_column_name(cols)
+
+        def date_or_none_save(val):
+            return val if val else None
+
+        pairs = _invoice_form_column_pairs(cols, ref_col, request.form, date_or_none_save)
+        insert_cols = ["invoice_id"] + [p[0] for p in pairs]
+        insert_vals = [invoice_id] + [p[1] for p in pairs]
+        ph = ", ".join(["%s"] * len(insert_cols))
+        cur.execute(
+            f"INSERT INTO invoices ({', '.join(insert_cols)}) VALUES ({ph})",
+            insert_vals,
+        )
+
+        items_json = request.form.get("itemsData")
+        if items_json:
+            item_cols = _invoice_items_table_columns()
+            _invoice_items_sync_id_sequence(cur)
+            items = json.loads(items_json)
+            for item in items:
+                _invoice_items_exec_insert_line(cur, item_cols, invoice_id, item)
+
+        _invoice_summary_exec_insert(cur, invoice_id, request.form)
+
+        cur.execute("""
+            INSERT INTO invoice_history (id, invoice_id, action, details, user_name, timestamp)
+            VALUES (%s,%s,%s,%s,%s,%s)
+        """, (
+            str(uuid.uuid4()),
+            invoice_id,
+            "Invoice Created",
+            f"Invoice {invoice_id} created",
+            "Admin",
+            datetime.now(),
+        ))
+
+        conn.commit()
+        status = request.form.get("status", "Draft")
+        return jsonify({"success": True, "message": f"Invoice saved in status : {status}"})
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"success": False, "error": str(e)})
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.route("/api/invoice/<invoice_id>/comments", methods=["GET"])
+def get_comments_invoice(invoice_id):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT id, text, author, created_at
+        FROM invoice_comments
+        WHERE invoice_id=%s
+        ORDER BY created_at DESC
+    """, (invoice_id,))
+    comments = [{
+        "id": r[0],
+        "text": r[1],
+        "author": r[2],
+        "created_at": r[3],
+    } for r in cur.fetchall()]
+    cur.close()
+    conn.close()
+    return jsonify({"comments": comments})
+
+
+@app.route("/api/invoice/<invoice_id>/comments", methods=["POST"])
+def add_comment_invoice(invoice_id):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    data = request.get_json() or {}
+    cur.execute("""
+        INSERT INTO invoice_comments (id, invoice_id, text, author, created_at)
+        VALUES (%s,%s,%s,%s,%s)
+    """, (
+        str(uuid.uuid4()),
+        invoice_id,
+        data.get("comment_text"),
+        "Admin",
+        datetime.now(),
+    ))
+    conn.commit()
+    cur.close()
+    conn.close()
+    return jsonify({"success": True})
+
+
+@app.route("/api/invoice/<invoice_id>/attachments", methods=["GET"])
+def get_attachments_invoice(invoice_id):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT id, filename, file_path, size, uploaded_at
+        FROM invoice_attachments
+        WHERE invoice_id=%s
+        ORDER BY uploaded_at DESC
+    """, (invoice_id,))
+    data = [{
+        "id": r[0],
+        "filename": r[1],
+        "file_path": r[2],
+        "size": r[3],
+        "uploaded_at": r[4],
+    } for r in cur.fetchall()]
+    cur.close()
+    conn.close()
+    return jsonify({"success": True, "attachments": data})
+
+
+@app.route("/api/invoice/<invoice_id>/attachments", methods=["POST"])
+def upload_attachment_invoice(invoice_id):
+    file = request.files["file"]
+    filename = file.filename
+    ext = filename.split(".")[-1]
+    stored = f"{uuid.uuid4()}.{ext}"
+    path = os.path.join(UPLOAD_FOLDER, stored)
+    file.save(path)
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO invoice_attachments
+        (id, invoice_id, filename, stored_name, file_path, size, uploaded_by, uploaded_at)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+    """, (
+        str(uuid.uuid4()),
+        invoice_id,
+        filename,
+        stored,
+        path,
+        os.path.getsize(path),
+        "Admin",
+        datetime.now(),
+    ))
+    conn.commit()
+    cur.close()
+    conn.close()
+    return jsonify({"success": True})
+
+
+@app.route("/api/invoice/<invoice_id>/attachments/<id>/download")
+def download_attachment_invoice(invoice_id, id):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT file_path, filename
+        FROM invoice_attachments
+        WHERE id=%s
+    """, (id,))
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    if not row:
+        return "Not found"
+    return send_file(row[0], as_attachment=True, download_name=row[1])
+
+
+@app.route("/api/invoice/<invoice_id>/attachments/<attachment_id>", methods=["DELETE"])
+def delete_invoice_attachment(invoice_id, attachment_id):
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT file_path, filename
+            FROM invoice_attachments
+            WHERE id = %s AND invoice_id = %s
+        """, (attachment_id, invoice_id))
+        row = cur.fetchone()
+        if not row:
+            cur.close()
+            conn.close()
+            return jsonify({"success": False, "error": "Attachment not found"}), 404
+
+        file_path = row[0]
+        filename = row[1]
+        cur.execute("""
+            DELETE FROM invoice_attachments
+            WHERE id = %s AND invoice_id = %s
+        """, (attachment_id, invoice_id))
+        conn.commit()
+        cur.close()
+        conn.close()
+
+        if os.path.exists(file_path):
+            os.remove(file_path)
+        return jsonify({"success": True, "message": f"Attachment {filename} deleted successfully"})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/payment-terms")
+def get_payment_terms():
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            SELECT DISTINCT payment_terms
+            FROM customers
+            WHERE payment_terms IS NOT NULL AND payment_terms != ''
+            ORDER BY payment_terms
+        """)
+        terms = [r[0] for r in cur.fetchall()]
+        return jsonify({"success": True, "terms": terms})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.route("/api/customer-by-name/<name>")
+def get_customer_by_name(name):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            SELECT id, name, email, phone, billing_address, shipping_address, payment_terms
+            FROM customers
+            WHERE LOWER(name) = LOWER(%s)
+            LIMIT 1
+        """, (name,))
+        row = cur.fetchone()
+        if not row:
+            return jsonify({"success": True, "customer": None})
+        customer = {
+            "id": row[0],
+            "name": row[1],
+            "email": row[2],
+            "phone": row[3],
+            "billing_address": row[4],
+            "shipping_address": row[5],
+            "paymentTerms": row[6],
+        }
+        return jsonify({"success": True, "customer": customer})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.route("/api/invoices", methods=["GET"])
+def get_invoices():
+    try:
+        cols = _invoices_table_columns()
+        if not cols or not {"invoice_id", "customer_name", "invoice_date", "status"}.issubset(cols):
+            return jsonify({"success": False, "error": "invoices table schema mismatch"}), 500
+        order_by = "created_at DESC NULLS LAST" if "created_at" in cols else "invoice_id DESC"
+        amt_expr = "total_amount" if "total_amount" in cols else "CAST(0 AS numeric)"
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute(f"""
+            SELECT invoice_id, customer_name, invoice_date, {amt_expr}, status
+            FROM invoices
+            ORDER BY {order_by}
+        """)
+        rows = cur.fetchall()
+        invoices = []
+        for row in rows:
+            invoices.append({
+                "invoice_id": row[0],
+                "customer_name": row[1],
+                "invoice_date": str(row[2]),
+                "total_amount": float(row[3] or 0),
+                "status": row[4],
+            })
+        cur.close()
+        conn.close()
+        return jsonify({"success": True, "invoices": invoices})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
+
 # =======================================
 # Stock Reciept
 # =========================================
+
+# ------------------------
+# Purchase order page
+# ------------------------
+PURCHASE_FILE = os.path.join(BASE_DIR, "purchase.json")
+SALES_FILE = os.path.join(BASE_DIR, "sales_orders.json")
+CURRENCY = "₹"
+
+
+# ------------------------
+# JSON helpers
+# ------------------------
+def read_json(file_path):
+    if not os.path.exists(file_path):
+        return []
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return []
+
+
+def write_json(file_path, data):
+    with open(file_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=4)
+
+
+def generate_po_id(data):
+    if not data:
+        return "PO-0001"
+    last_id = data[-1]["po_number"]
+    num = int(last_id.split("-")[1]) + 1
+    return f"PO-{num:04d}"
+
+
+# =========================
+# PURCHASE PAGE
+# =========================
+@app.route("/purchase", endpoint="purchase")
+def purchase_page():
+    purchase_orders = read_json(PURCHASE_FILE)
+    return render_template("purchase.html", orders=purchase_orders)
+
+
+# =========================
+# PURCHASE ORDER PAGE (GET + POST)
+# =========================
+@app.route("/purchase-order", methods=["GET", "POST"])
+def purchase_order():
+    if request.method == "POST":
+        po_number = request.form.get("po_number")
+        supplier = request.form.get("supplier")
+        so_id = request.form.get("so_id")
+        customer = request.form.get("customer", "")
+        status = request.form.get("status", "Draft")  # comes from button
+        items = json.loads(request.form.get("items", "[]"))
+        today = datetime.now().date().isoformat()
+        pdate = request.form.get("pdate") or today
+        ddate = request.form.get("ddate") or today
+        payment = request.form.get("payment")
+
+        new_entry = {
+            "po_number": po_number,
+            "supplier": supplier,
+            "so_id": so_id,
+            "customer": customer,
+            "status": status,
+            "pdate": pdate,
+            "ddate": ddate,
+            "payment": payment,
+            "items": items,
+        }
+
+        data = read_json(PURCHASE_FILE)
+        data.append(new_entry)
+        write_json(PURCHASE_FILE, data)
+        return redirect("/purchase")
+
+    # GET -> generate new PO number and today's date
+    data = read_json(PURCHASE_FILE)
+    po_number = generate_po_id(data)
+    sales_orders = read_json(SALES_FILE)
+    today = datetime.now().date().isoformat()  # YYYY-MM-DD
+
+    return render_template(
+        "purchase-order.html",
+        po_number=po_number,
+        sales_orders=sales_orders,
+        today=today,
+    )
+
+
+# =========================
+# SAVE PURCHASE ORDER (API)
+# =========================
+@app.route("/api/save-po", methods=["POST"])
+def save_po():
+    data = request.json
+
+    purchase_list = read_json(PURCHASE_FILE)
+    total_value = 0
+
+    for i in data.get("items", []):
+        qty = float(i.get("qty", 0))
+        price = float(i.get("price", 0))
+        tax = float(i.get("tax", 0))
+        disc = float(i.get("discount", 0))
+
+        base = qty * price
+        discount_amt = base * (disc / 100)
+        net = base - discount_amt
+        tax_amt = net * (tax / 100)
+
+        total_value += net + tax_amt
+
+    data["value"] = round(total_value, 2)
+
+    existing = next((po for po in purchase_list if po["po_number"] == data["po_number"]), None)
+
+    if existing:
+        current_status = existing.get("status", "Draft")
+
+        if current_status == "Approved":
+            return jsonify({"error": "Already approved. Cannot modify"}), 400
+
+        if current_status == "Draft" and data["status"] in ["Approved", "Rejected"]:
+            return jsonify({"error": "Submit before approval"}), 400
+
+        existing.update(data)
+    else:
+        purchase_list.append(data)
+
+    write_json(PURCHASE_FILE, purchase_list)
+    return jsonify({"message": "Saved successfully"})
+
+
+# =========================
+# GET ALL PURCHASE ORDERS (API)
+# =========================
+@app.route("/api/purchase-list", methods=["GET"])
+def purchase_list_api():
+    return jsonify(read_json(PURCHASE_FILE))
+
+
+# =========================
+# DELETE PURCHASE ORDER (API)
+# =========================
+@app.route("/delete_po/<po_number>", methods=["DELETE"])
+def delete_po(po_number):
+    data = read_json(PURCHASE_FILE)
+
+    # Find the PO
+    po_to_delete = next((po for po in data if po["po_number"] == po_number), None)
+
+    if not po_to_delete:
+        return jsonify({"success": False, "message": "PO not found"}), 404
+
+    if po_to_delete["status"] != "Draft":
+        return jsonify({"success": False, "message": "Only Draft POs can be deleted"}), 400
+
+    # Delete the PO
+    data = [po for po in data if po["po_number"] != po_number]
+    write_json(PURCHASE_FILE, data)
+
+    return jsonify({"success": True, "message": f"PO {po_number} deleted successfully!"})
+
+
+# =========================
+# SALES ORDER PAGE
+# =========================
+@app.route("/sales-order")
+def sales_order_page():
+    data = read_json(SALES_FILE)
+    if data:
+        last_so = data[-1]["so_id"]
+        last_number = int(last_so.split("-")[1]) + 1
+    else:
+        last_number = 1
+    so_id = f"SO-{last_number:04d}"
+    return render_template("sales-order.html", so_id=so_id)
+
+
+# =========================
+# SAVE SALES ORDER
+# =========================
+@app.route("/save-sales-order", methods=["POST"])
+def save_sales_order():
+    so_id = request.form.get("so_id")
+    customer = request.form.get("customer")
+    status = request.form.get("status")
+
+    new_entry = {"so_id": so_id, "customer": customer, "status": status}
+
+    data = read_json(SALES_FILE)
+    data.append(new_entry)
+    write_json(SALES_FILE, data)
+    return redirect("/sales-order")
+
+
+# =========================
+# GET PRODUCTS FOR PURCHASE (API)
+# =========================
+@app.route("/api/purchase-products", methods=["GET"])
+def get_purchase_products_api():
+    products = read_json(PRODUCT_FILE)
+    return jsonify({"products": products})
+
+
+# =========================
+# GENERATE PURCHASE PDF
+# =========================
+@app.route("/generate-purchase-pdf", methods=["POST"])
+def generate_purchase_pdf():
+    data = request.get_json()
+    po_id = data.get("po_id", "")
+    supplier = data.get("supplier", "")
+    items = data.get("items", [])
+
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4)
+    elements = []
+
+    styles = getSampleStyleSheet()
+    heading_style = styles["Heading1"]
+    normal_style = styles["Normal"]
+
+    elements.append(Paragraph("PURCHASE ORDER", heading_style))
+    elements.append(Spacer(1, 12))
+    elements.append(Paragraph(f"<b>PO ID:</b> {po_id}", normal_style))
+    elements.append(Paragraph(f"<b>Supplier:</b> {supplier}", normal_style))
+    elements.append(Spacer(1, 12))
+
+    # Table header
+    table_data = [["S.No", "Product Name", "Product ID", "Qty", "UOM", "Unit Price", "Tax %", "Disc %", "Line Total"]]
+    subtotal = total_discount = total_tax = 0
+
+    for idx, item in enumerate(items, start=1):
+        qty = float(item.get("qty", 0))
+        unit_price = float(item.get("price", 0))
+        discount_pct = float(item.get("discount", 0))
+        tax_pct = float(item.get("tax", 0))
+
+        base = qty * unit_price
+        discount_amt = base * (discount_pct / 100)
+        net = base - discount_amt
+        tax_amt = net * (tax_pct / 100)
+        line_total = net + tax_amt
+
+        subtotal += net
+        total_discount += discount_amt
+        total_tax += tax_amt
+
+        table_data.append(
+            [
+                idx,
+                item.get("name", ""),
+                item.get("product_id", ""),
+                qty,
+                item.get("uom", "-"),
+                f"{CURRENCY} {unit_price:.2f}",
+                f"{tax_pct:.2f}",
+                f"{discount_pct:.2f}",
+                f"{CURRENCY} {line_total:.2f}",
+            ]
+        )
+
+    table = Table(table_data, repeatRows=1)
+    table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.black),
+                ("ALIGN", (3, 1), (-1, -1), "CENTER"),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ]
+        )
+    )
+    elements.append(table)
+    elements.append(Spacer(1, 12))
+
+    # Totals
+    grand_total = subtotal + total_tax
+    totals_data = [
+        ["Subtotal", f"{CURRENCY} {subtotal:.2f}"],
+        ["Total Discount", f"{CURRENCY} {total_discount:.2f}"],
+        ["Total Tax", f"{CURRENCY} {total_tax:.2f}"],
+        ["Grand Total", f"{CURRENCY} {grand_total:.2f}"],
+    ]
+    totals_table = Table(totals_data, colWidths=[400, 100])
+    totals_table.setStyle(
+        TableStyle(
+            [
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.black),
+                ("BACKGROUND", (0, -1), (-1, -1), colors.lightgrey),
+                ("ALIGN", (1, 0), (-1, -1), "RIGHT"),
+                ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
+            ]
+        )
+    )
+    elements.append(totals_table)
+    elements.append(Spacer(1, 12))
+    elements.append(Paragraph("Notes:", styles["Heading3"]))
+    elements.append(Paragraph("Thank you for your business!", normal_style))
+
+    doc.build(elements)
+    buffer.seek(0)
+    return send_file(
+        buffer,
+        as_attachment=True,
+        download_name="purchase_order.pdf",
+        mimetype="application/pdf",
+    )
+
+
+# =========================
+# SEND EMAIL WITH PURCHASE PDF
+# =========================
+@app.route("/purchase/send-email", methods=["POST"])
+def purchase_send_email():
+    data = request.json
+    email_to = data.get("email")
+    po_id = data.get("po_id", "PO-001")
+    pdf_bytes = data.get("pdf_bytes", "")
+
+    if not email_to:
+        return jsonify({"success": False, "message": "Email is required"}), 400
+
+    try:
+        pdf_data = base64.b64decode(pdf_bytes)
+        msg = EmailMessage()
+        msg["Subject"] = f"Purchase Order {po_id}"
+        msg["From"] = "your_email@example.com"
+        msg["To"] = email_to
+        msg.set_content(f"Please find attached Purchase Order {po_id}.")
+        msg.add_attachment(
+            pdf_data,
+            maintype="application",
+            subtype="pdf",
+            filename=f"{po_id}.pdf",
+        )
+
+        smtp_server = "smtp.gmail.com"
+        smtp_port = 587
+        smtp_user = "your_email@gmail.com"
+        smtp_pass = "your_app_password"
+
+        with smtplib.SMTP(smtp_server, smtp_port) as server:
+            server.starttls()
+            server.login(smtp_user, smtp_pass)
+            server.send_message(msg)
+
+        return jsonify({"success": True, "message": "Email sent successfully!"})
+    except Exception as e:
+        print(e)
+        return jsonify({"success": False, "message": "Failed to send email"}), 500
+
+
+@app.route("/purchase/view/<path:po_number>")
+def view_po(po_number):
+    data = read_json(PURCHASE_FILE)
+    po = next((x for x in data if x["po_number"] == po_number), None)
+
+    if not po:
+        return f"PO Not Found: {po_number}", 404
+
+    sales_orders = read_json(SALES_FILE)
+    return render_template("purchase-order.html", po_data=po, sales_orders=sales_orders, mode="view")
+
+
+@app.route("/purchase/edit/<path:po_number>")
+def edit_po(po_number):
+    data = read_json(PURCHASE_FILE)
+    po = next((x for x in data if x["po_number"] == po_number), None)
+
+    if not po:
+        return "PO Not Found", 404
+
+    sales_orders = read_json(SALES_FILE)
+    return render_template("purchase-order.html", po_data=po, sales_orders=sales_orders, mode="edit")
  
 @app.route('/stock-receipt')
 def stock_receipt():

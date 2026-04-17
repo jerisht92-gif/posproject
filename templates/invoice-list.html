@@ -3,24 +3,24 @@
 
 {% extends "menu.html" %}
 
+{% block title %}Invoice{% endblock %}
+
 {% block extra_css %}
-<!-- Delivery Note page stylesheet -->
-<link rel="stylesheet" href="{{ url_for('static', filename='delivery-note.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='invoice-list.css') }}">
 {% endblock %}
 
 {% block content %}
+
 <div class="delivery-note-page" id="deliveryNotePage">
 
   <!-- =====================================================
        HEADER
   ====================================================== -->
   <div class="dn-header">
-    <h2 class="dn-heading">Delivery Notes</h2>
+    <h2 class="dn-heading">Invoice List</h2>
 
-    <!-- New Delivery Note button -->
-    <button type="button" class="dn-btn-primary" id="newDeliveryNoteBtn">
-      + New Delivery Note
-    </button>
+    <!-- New Invoice button (original ID kept) -->
+    <a class="dn-btn-primary" id="newInvoicePage">+ New Invoice</a>
   </div>
 
   <!-- =====================================================
@@ -35,17 +35,15 @@
       <div class="dn-search-wrap">
         <input
           type="text"
-          id="dnSearchInput"
+          id="searchInput"
           class="dn-search-input"
           placeholder="Search by ID number 🔍︎"
           autocomplete="off"
         >
       </div>
 
-      <!-- Clear filter button -->
-      <button type="button" class="dn-clear-link" id="dnClearBtn">
-        Clear Filter
-      </button>
+      <!-- Clear filter button (original ID kept) -->
+      <button type="button" class="dn-clear-link" id="clear-filter">Clear Filter</button>
     </div>
 
     <!-- =====================================================
@@ -53,47 +51,46 @@
     ====================================================== -->
     <div class="dn-filters">
 
-      <!-- Delivery Status -->
+      <!-- Invoice Status -->
       <div class="dn-filter">
-        <label class="dn-label">Delivery Status</label>
-        <select id="dnStatusFilter" class="dn-select">
-          <option value="all">All</option>
+        <label class="dn-label">Invoice Status</label>
+        <select id="invoiceStatus" class="dn-select">
+          <option value="">All</option>
           <option value="draft">Draft</option>
-          <option value="delivered">Delivered</option>
-          <option value="partially_delivered">Partially Delivered</option>
-          <option value="returned">Returned</option>
+          <option value="send">Send</option>
+          <option value="paid">Paid</option>
+          <option value="overdue">Overdue</option>
           <option value="cancelled">Cancelled</option>
         </select>
       </div>
 
-      <!-- Delivery Type -->
+      <!-- Payment Status -->
       <div class="dn-filter">
-        <label class="dn-label">Delivery Type</label>
-        <select id="dnTypeFilter" class="dn-select">
-          <option value="all">All Types</option>
-          <option value="regular">Regular</option>
-          <option value="urgent">Urgent</option>
-          <option value="return">Return</option>
+        <label class="dn-label">Payment Status</label>
+        <select id="paymentStatus" class="dn-select">
+          <option value="">All Types</option>
+          <option value="paid">Paid</option>
+          <option value="unpaid">Unpaid</option>
+          <option value="partial">Partial</option>
         </select>
       </div>
 
-      <!-- Delivery Date Range -->
+      <!-- Invoice Date Range -->
       <div class="dn-filter dn-date-filter">
-        <label class="dn-label">Delivery Date</label>
+        <label class="dn-label">Invoice Date</label>
 
         <div class="dn-date-wrap">
           <!-- From -->
           <div class="dn-date-field">
             <span class="dn-date-text">From</span>
-            <input type="date" id="dnFromDate" class="dn-date-input">
+            <input type="date" id="fromDate" class="dn-date-input">
             <span class="dn-cal">|</span>
           </div>
 
           <!-- To -->
           <div class="dn-date-field">
             <span class="dn-date-text">To</span>
-            <input type="date" id="dnToDate" class="dn-date-input">
-            
+            <input type="date" id="toDate" class="dn-date-input">
           </div>
         </div>
       </div>
@@ -101,27 +98,33 @@
     </div>
 
     <!-- =====================================================
+         GENERATE ACTION BUTTONS (optional, kept for structure)
+    ====================================================== -->
+    <div class="dn-gen-actions">
+      <button type="button" class="dn-gen-btn" id="genDeliveryReturnBtn" disabled style="display: none;">Generate Delivery Return</button>
+      <button type="button" class="dn-gen-btn" id="genInvoiceBtn" disabled style="display: none;">Generate Invoice</button>
+    </div>
+
+    <!-- =====================================================
          TABLE
     ====================================================== -->
     <div class="dn-table-wrap">
-      <table class="dn-table">
+      <table class="dn-table invoice-table">
         <thead>
           <tr>
-            <!-- Mark column -->
+            <!-- S.No (first column, using class similar to dn-th-check) -->
+  <!-- Mark column -->
             <th class="dn-th-check">
               <span class="dn-mark-text">Mark</span>
-            </th>
-
-            
-            <th>Delivery Note ID</th>
+            </th>            <th>Invoice Id</th>
             <th>Sales Order Ref.</th>
             <th>Customer Name</th>
-            <th>Delivery Type</th>
-            <th>Delivery Date</th>
-
-            <!-- Status (click to open sort menu) -->
+            <th>Invoice Date</th>
+            <th>Due Date</th>
+            <th>Payment Status</th>
+ <!-- Status (click to open sort menu) -->
             <th class="dn-sort-th" id="statusSortTh">
-              Delivery Status <span class="dn-sort-caret">▾</span>
+              Status <span class="dn-sort-caret">▾</span>
 
               <div class="dn-sort-menu" id="statusSortMenu">
                 <button type="button" data-sort="newest">Newest First</button>
@@ -129,17 +132,15 @@
                 <button type="button" data-sort="progress">Progressing (Draft → Cancelled)</button>
                 <button type="button" data-sort="reverse">Reverse Progressing (Cancelled → Draft)</button>
               </div>
-            </th>
-
-            <!-- Action column -->
+            </th>            <!-- Action column (with sort placeholder, but no sort needed) -->
             <th class="dn-th-action">Action</th>
           </tr>
         </thead>
 
-        <tbody id="dnTbody">
+        <tbody id="invoiceTableBody">
           <!-- No data row -->
           <tr id="dnNoDataRow">
-            <td colspan="8" class="dn-empty">No Delivery Notes found</td>
+            <td colspan="9" class="dn-empty">No Invoices found</td>
           </tr>
         </tbody>
       </table>
@@ -149,18 +150,18 @@
          FOOTER / PAGER
     ====================================================== -->
     <div class="dn-footer">
-      <div class="dn-showing" id="dnShowingText">Showing 0 of 0 Entries</div>
+      <div class="dn-showing" id="totalEntries">Showing 0 of 0 Entries</div>
 
       <div class="dn-pager">
-        <button type="button" class="dn-btn-page" id="dnPrevBtn">
+        <button type="button" class="dn-btn-page" id="prev-btn" >
           <span class="dn-arrow">‹</span> Prev
         </button>
 
-        <div class="dn-page-text" id="dnPageText">
+        <div class="dn-page-text" id="pageInfo">
           Page <strong>1</strong> of <strong>1</strong>
         </div>
 
-        <button type="button" class="dn-btn-page" id="dnNextBtn">
+        <button type="button" class="dn-btn-page" id="next-btn" >
           Next <span class="dn-arrow">›</span>
         </button>
       </div>
@@ -168,11 +169,7 @@
 
   </div>
 </div>
-{% endblock %}
 
-{% block extra_js %}
+<script src="{{ url_for('static', filename='invoice-list.js') }}"></script>
 
-
-<!-- Delivery Note page logic -->
-<script src="{{ url_for('static', filename='delivery-note.js') }}"></script>
 {% endblock %}

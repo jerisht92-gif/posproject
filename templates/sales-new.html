@@ -10,7 +10,12 @@
 {% endblock %}
 
 {% block content %}
+<script>
+  window.CURRENT_USER = "{{ user_name }}";
+  
+</script>
 <div class="sales-wrapper">
+
 
   <!-- =========================================
        PAGE HEADER
@@ -26,7 +31,7 @@
     <button class="btn-secondary" type="button"  id="genDNBtn"  data-dn-url="{{ url_for('delivery_note_new') }}"
       onclick="generateDeliveryNote()">  Generate Delivery Note</button>
 
-    <button class="btn-secondary" type="button" id="genInvBtn">Generate Invoice</button>
+    <button id="genInvBtn" class="btn-secondary" onclick="generateInvoice()">  Generate Invoice</button>
   </div>
 </div>
   <div class="so-page-body">
@@ -46,7 +51,6 @@
         <div class="form-group">
           <label>Order Date</label>
           <input type="date" id="orderDate">
-          <small class="field-error" id="orderDateErr"></small>
         </div>
 
         <div class="form-group">
@@ -56,7 +60,7 @@
             <div class="dropdown-selected" id="salesRepSelected" onclick="toggleSalesRepDropdown()">
               Select Sales Rep
             </div>
-
+            
             <div class="dropdown-menu" id="salesRepDropdown">
               <input
                 type="text"
@@ -84,7 +88,6 @@
           </div>
 
           <input type="hidden" id="salesRep" name="sales_rep">
-          <small class="field-error" id="salesRepErr"></small>
         </div>
 
         <div class="form-group">
@@ -95,7 +98,6 @@
             <option value="Rush">Rush</option>
             <option value="Backorder">Backorder</option>
           </select>
-          <small class="field-error" id="orderTypeErr"></small>
         </div>
       </div>
     </div>
@@ -114,7 +116,7 @@
             <div class="dropdown-selected" id="customerSelected" onclick="toggleCustomerDropdown()">
               Select Customer
             </div>
-
+              
             <div class="dropdown-menu" id="customerDropdown">
               <input
                 type="text"
@@ -122,7 +124,7 @@
                 placeholder="Search Customer..."
                 onkeyup="filterCustomers()"
               >
-
+               
               <div class="dropdown-list" id="customerList">
                 {% if customers %}
                   {% for customer in customers %}
@@ -134,11 +136,11 @@
                     <div
                       class="dropdown-item"
                       data-id="{{ customer['customer_id'] }}"
-                      data-email="{{ customer.get('email','') }}"
-                      data-phone="{{ customer.get('phone','') }}"
-                      data-billing="{{ customer.get('billingAddress','') }}"
-                      data-shipping="{{ customer.get('shippingAddress','') }}"
-                      data-sales-rep="{{ customer.get('sales_rep','') }}"
+                      data-email="{{ customer.email if customer.email else '' }}"
+                      data-phone="{{ customer.phone if customer.phone else '' }}"
+                      data-billing="{{ customer.billing_address if customer.billing_address else '' }}"
+                      data-shipping="{{ customer.shipping_address if customer.shipping_address else '' }}"
+                      data-sales-rep="{{ customer.sales_rep if customer.sales_rep else '' }}"
                       onclick="selectCustomer(this)"
                     >
                       {{ customer['name'] }}
@@ -156,7 +158,7 @@
               </div>
             </div>
           </div>
-          <small class="field-error" id="customerErr"></small>
+          <input type="hidden" id="customer_name" name="customer_name">
         </div>
 
         <div class="form-group">
@@ -167,25 +169,21 @@
         <div class="form-group">
           <label>Billing Address</label>
           <input type="text" id="billingAddress" placeholder="Enter Address">
-          <small class="field-error" id="billingAddressErr"></small>
         </div>
 
         <div class="form-group">
           <label>Shipping Address</label>
           <input type="text" id="shippingAddress" placeholder="Enter Address">
-          <small class="field-error" id="shippingAddressErr"></small>
         </div>
 
         <div class="form-group">
           <label>Email ID</label>
-          <input type="email" id="email">
-          <small class="field-error" id="emailErr"></small>
+          <input type="email" id="email" placeholder="abc@gmail.com">
         </div>
 
         <div class="form-group">
           <label>Phone Number</label>
-          <input type="text" id="phone">
-          <small class="field-error" id="phoneErr"></small>
+          <input type="text" id="phone" placeholder="9876541230">
         </div>
       </div>
     </div>
@@ -206,7 +204,6 @@
             <option value="UPI">UPI</option>
             <option value="Bank Transfer">Bank Transfer</option>
           </select>
-          <small class="field-error" id="paymentMethodErr"></small>
         </div>
 
         <div class="form-group">
@@ -243,7 +240,6 @@
             <option value="DHL">DHL</option>
             <option value="UPS">UPS</option>
           </select>
-          <small class="field-error" id="shippingMethodErr"></small>
         </div>
 
         <div class="form-group">
@@ -302,20 +298,20 @@
               <td>
                 <div class="so-product-select-wrap">
                   <select class="productSelect" onchange="onProductChange(this)">
-                    <option value="">Loading products...</option>
+                    <option value="">Select Product</option>
                   </select>
-                  <span class="field-error so-product-select-error" aria-live="polite"></span>
+                  <small class="so-product-select-error">Please select product</small>
                 </div>
               </td>
               <td class="prodIdCell">-</td>
 <td>
-  <input type="text" class="qtyInput" value="1" inputmode="numeric" pattern="[0-9]*" autocomplete="off">
+  <input type="number" class="qtyInput" value="1" min="1" oninput="calculateRow(this)">
 </td>
 <td class="uomCell">-</td>
 <td class="priceCell">₹ 0.00</td>
 <td class="taxCell">0</td>
               <td>
-                <input type="text" class="discInput" value="0" inputmode="numeric" pattern="[0-9]*" autocomplete="off">
+                <input type="number" class="discInput" value="0" min="0" oninput="calculateRow(this)">
               </td>
               <td class="rowTotal">₹ 0.00</td>
               <td class="so-action-col">
@@ -347,7 +343,7 @@
       <div class="summary-row has-input">
         <span>Global Discount</span>
         <div class="amt-right stacked">
-          <input type="number" id="globalDiscount" value="0" min="0" max="90" step="1">
+          <input type="number" id="globalDiscount" value="0" min="0">
         </div>
       </div>
 
@@ -422,8 +418,8 @@
       <div class="right-actions">
         <button class="btn cancel" type="button" onclick="goBack()">Cancel</button>
         <button class="btn btn-outline" type="button" onclick="saveDraft()">Save Draft</button>
-        <button id="submitBtn" type="button" onclick="submitOrder()" disabled>Submit</button>
-        <button class="btn primary" type="button" onclick="generatePO()">Generate (PO)</button>
+        <button id="submitBtn" type="button" disabled>Submit</button>
+        <button id="generatePOBtn" class="btn primary" type="button" onclick="generatePO()">Generate (PO)</button>
 
         <button type="button" class="btn-icon" id="pdfBtn" title="Download PDF" onclick="openSoPdf()">
           📄
@@ -467,5 +463,6 @@
 {% endblock %}
 
 {% block extra_js %}
+
 <script src="{{ url_for('static', filename='sales-new.js') }}"></script>
 {% endblock %}

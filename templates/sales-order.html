@@ -1,4 +1,3 @@
-
 {% extends "menu.html" %}
 {% block extra_css %}
 <link rel="stylesheet" href="{{ url_for('static', filename='sales-order.css') }}">
@@ -75,24 +74,7 @@
       </div>
     </div>
 
-    <!-- Bulk Actions -->
-    <div class="so-bulkbar" id="soBulkBar">
-      <div class="so-bulktext">Select orders to enable actions</div>
-
-      <div class="so-bulkbtns">
-        <button type="button" class="so-bulkbtn" id="genPurchaseBtn" disabled>
-          Generate Purchase order
-        </button>
-
-        <button type="button" class="so-bulkbtn" id="genDnBtn" disabled>
-          Generate Delivery Note
-        </button>
-
-        <button type="button" class="so-bulkbtn" id="genInvBtn" disabled>
-          Generate Invoice
-        </button>
-      </div>
-    </div>
+   
 
     <!-- Table -->
     <div class="table-wrap">

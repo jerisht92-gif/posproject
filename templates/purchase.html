@@ -1,0 +1,385 @@
+{% extends "menu.html" %}
+
+{% block title %}Purchase-Order{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='purchase-order.css') }}">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+{% endblock %}
+
+{% block content %}
+<div id="poDataContainer" data-po='{{ po_data | tojson | safe if po_data else "{}" }}' data-mode="{{ mode if mode else 'new' }}">
+     </div>
+
+
+
+<div class="page">
+    <form id="poForm" method="POST">
+        <!-- HEADER -->
+        <div class="top-bar">
+            <h1>New Purchase Order</h1>
+            <div class="top-actions">
+                <button type="button" class="btn-light">Stock Receipt</button>
+            </div>
+        </div>
+
+        <!-- PURCHASE DETAILS -->
+        <div class="section">
+            <div class="row">
+                <div class="field">
+                    <label>Purchase Order ID (Auto Generate)</label>
+                    <input type="text" name="po_number" value="{{ po_number }}" readonly>
+                </div>
+
+                <div class="field">
+                    <label>Purchase Order Date</label>
+                    <input type="date" id="pdate" name="pdate" 
+                        value="{{ po_data.pdate if po_data else today }}" readonly required>
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="field">
+
+                    <label>Delivery Date</label>
+                <input type="date" id="ddate" name="ddate" 
+                    value="{{ po_data.ddate if po_data else '' }}" required>
+                </div>
+
+                <div class="field">
+                    <label>Status</label>
+                        <input type="hidden" name="status" id="status" value="Draft">
+                        <input type="text" id="status_display" value="Draft" readonly>
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="field full">
+                    <label>Sales Order</label>
+                    <select name="so_id">
+                        <option value="">Select SO</option>
+                        {% for so in sales_orders %}
+                            <option value="{{ so['so_id'] }}">{{ so['so_id'] }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <!-- SUPPLIER -->
+        <h2 class="title">Supplier Information</h2>
+        <div class="section">
+            <div class="row">
+                <div class="field">
+                    <label>Supplier ID</label>
+                    <select name="supplier_id">
+                        <option value="">-- Select Supplier ID --</option>
+                    </select>
+                </div>
+
+                <div class="field">
+                    <label>Supplier Name</label>
+                    <input type="text" name="supplier" placeholder="Enter Supplier Name">
+                </div>
+            </div>
+        </div>
+
+        <!-- COMMERCIAL TERMS -->
+        <h2 class="title">Commercial Terms</h2>
+        <div class="section">
+            <div class="row">
+                <div class="field">
+                    <label>Payment Terms</label>
+                    <select name="payment_terms">
+                        <option value="">-- Select Payment Terms --</option>
+                    </select>
+                </div>
+
+                <div class="field">
+                    <label>Inco Terms</label>
+                    <select name="inco_terms">
+                        <option value="">-- Select Inco Terms --</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="field">
+                    <label>Currency</label>
+                    <select name="currency">
+                        <option value="">-- Select Currency --</option>
+                    </select>
+                </div>
+
+                <div class="field">
+                    <label>Notes / Comments</label>
+                    <input type="text" name="notes" placeholder="Enter Notes / Comments">
+                </div>
+            </div>
+        </div>
+
+        <!-- LINE ITEMS -->
+        <div class="card">
+            <h3>Purchase Order Items</h3>
+            <div class="so-items-box">
+                <table class="so-items-table" id="orderTable">
+                    <thead>
+                        <tr>
+                            <th class="so-small-col">S.No</th>
+                            <th>Product Name</th>
+                            <th>Product ID</th>
+                            <th>In Stock</th>
+                            <th>Quantity</th>
+                            <th>UOM</th>
+                            <th>Tax (%)</th>
+                            <th>Discount (%)</th>
+                            <th>Total</th>
+                            <th class="so-action-col">Action</th>
+                        </tr>
+                    </thead>
+
+                    <tbody id="orderItemsBody">
+                        <tr>
+                            <td class="sno">1</td>
+                            <td>
+                                <select class="productSelect" name="product_id[]" onchange="onProductChange(this)">
+                                    <option value="">Select product</option>
+                                </select>
+                            </td>
+                            <td class="prodIdCell">-</td>
+                            <td class="stockCell">0</td>
+                            <td>
+                                <input type="number" class="qtyInput" name="qty[]" value="1" min="1" oninput="calculateRow(this)">
+                            </td>
+                            <td class="uomCell">-</td>
+                            <td class="taxCell">0</td>
+                            <td>
+                                <input type="number" class="discInput" name="disc[]" value="0" min="0" oninput="calculateRow(this)">
+                            </td>
+                            <td class="rowTotal">₹ 0.00</td>
+                            <td class="so-action-col">
+                                <button class="so-delete-btn" type="button" onclick="deleteRow(this)" title="Delete">
+                                    <i class="fa-solid fa-trash"></i>
+                                </button>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <div class="so-add-item-wrap">
+                    <button class="so-add-item-btn" type="button" onclick="addItem()">+ Add Item</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ORDER SUMMARY -->
+        <div class="card">
+            <h3>Order Summary</h3>
+            <div class="summary-row">
+                <span>Subtotal</span>
+                <span class="money" id="subtotal">₹ 0.00</span>
+            </div>
+
+            <div class="summary-row has-input">
+                <span>Global Discount</span>
+                <div class="amt-right stacked">
+                    <input type="number" id="globalDiscount" name="global_discount" value="0" min="0">
+                </div>
+            </div>
+
+            <div class="summary-row">
+                <span>Tax Summary</span>
+                <span class="money" id="tax">₹ 0.00</span>
+            </div>
+
+            <div class="summary-row has-input">
+                <span>Shipping Charges</span>
+                <div class="amt-right stacked">
+                    <input type="number" id="shipping" name="shipping" value="0" min="0">
+                </div>
+            </div>
+
+            <div class="summary-row">
+                <span>Rounding Adjustment</span>
+                <span class="money" id="rounding">₹ 0.00</span>
+            </div>
+
+            <div class="summary-row total">
+                <strong>Grand Total</strong>
+                <strong class="money" id="grandTotal">₹ 0.00</strong>
+            </div>
+        </div>
+
+<!-- COMMENTS / HISTORY / ATTACHMENTS -->
+<div class="comment-box">
+    <!-- Tabs -->
+    <div class="comment-tabs">
+        <button type="button" class="tab active" data-tab="comments">💬 Comments</button>
+        <button type="button" class="tab" data-tab="history">🕘 History</button>
+        <button type="button" class="tab" data-tab="attachments">📎 Attachments</button>
+    </div>
+
+    <!-- Comments Tab -->
+    <div class="comment-body tab-content" id="comments">
+        <label>Add Comment:</label>
+        <textarea id="commentText" name="commentText" placeholder="Enter Your Comment" maxlength="200"></textarea>
+        <button class="add-btn" id="addCommentBtn" disabled>Add New</button>
+    </div>
+
+    <!-- History Tab -->
+    <div class="comment-history tab-content" id="history" style="display:none;">
+        <div class="no-history-message" id="noHistoryMsg">
+            No history available.
+        </div>
+    </div>
+
+    <!-- Attachments Tab -->
+    <div class="tab-content" id="attachments" style="display:none;">
+        <div class="upload-section">
+            <input type="file" id="fileInput" hidden multiple>
+            <div class="upload-card" id="uploadCard">
+                <i class="fa-solid fa-cloud-upload-alt"></i>
+                <h4>Upload Attachment</h4>
+                <p>Click to select or drag & drop</p>
+                <small>PDF, DOC, XLS, JPG, PNG (Max 10MB)</small>
+            </div>
+            <button class="btn-upload" id="uploadBtn">
+                <i class="fa-solid fa-upload"></i> Choose File
+            </button>
+        </div>
+        <div class="files-section">
+            <div class="files-header">
+                <h4><i class="fa-solid fa-paperclip"></i> Attached Files</h4>
+                <span class="file-count" id="fileCount">0 files</span>
+            </div>
+            <div class="files-list" id="filesList">
+                <div class="no-files">
+                    <i class="fa-regular fa-folder-open"></i>
+                    <p>No files attached yet</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+        <!-- FOOTER BUTTONS -->
+        <div class="modal-footer">
+            <div class="footer-icon-bar">
+                <div class="footer-item edit" style="display:none;">
+                    <i class="fa-solid fa-pen-to-square"></i>
+                    <span>Edit</span>
+                </div>
+                <div class="footer-item delete" style="display:none;">
+                    <i class="fa-solid fa-trash"></i>
+                    <span>Delete</span>
+                </div>
+                    <div class="footer-item approve">
+                        <i class="fa-solid fa-check"></i>
+                        <span>Approve</span>
+                    </div>
+
+                    <div class="footer-item reject">
+                        <i class="fa-solid fa-xmark"></i>
+                        <span>Reject</span>
+                    </div>
+                <div class="footer-item pdf">
+                    <i class="fa-solid fa-file-pdf"></i>
+                    <span>PDF</span>
+                </div>
+                <div class="footer-item email">
+                    <i class="fa-regular fa-envelope"></i>
+                    <span>Email</span>
+                </div>
+            </div>
+
+            <div class="modal-footer-button">
+                <button type="button" class="btn-discard" onclick="handleAction('Cancelled')">Cancel Order</button>
+                <button type="button" class="btn-discard" onclick="handleAction('GoBack')">Cancel</button>
+                <button type="button" class="btn-draft" onclick="handleAction('Draft')">Save Draft</button>
+                <button type="button" class="btn-save" onclick="handleAction('Submitted')">Submit</button>
+            </div>
+        </div>
+    </form>
+</div>
+
+
+<!-- OTP Modal/Popup -->
+<div id="otpModal" class="otp-modal" style="display: none;">
+    <div class="otp-modal-content">
+        <div class="otp-modal-header">
+            <h3>Email Verification</h3>
+            <span class="close-otp-modal">&times;</span>
+        </div>
+        <div class="otp-modal-body">
+            <p id="otpEmailDisplay">Enter the 6-digit OTP sent to <strong>user@example.com</strong></p>
+            
+            <div class="otp-input-container">
+                <input type="text" class="otp-digit" maxlength="1" pattern="[0-9]" inputmode="numeric" autofocus>
+                <input type="text" class="otp-digit" maxlength="1" pattern="[0-9]" inputmode="numeric">
+                <input type="text" class="otp-digit" maxlength="1" pattern="[0-9]" inputmode="numeric">
+                <input type="text" class="otp-digit" maxlength="1" pattern="[0-9]" inputmode="numeric">
+                <input type="text" class="otp-digit" maxlength="1" pattern="[0-9]" inputmode="numeric">
+                <input type="text" class="otp-digit" maxlength="1" pattern="[0-9]" inputmode="numeric">
+            </div>
+            
+            <div class="otp-timer">
+                <span id="otpTimer">05:00</span> remaining
+            </div>
+            
+            <div class="otp-error" id="otpError" style="display: none;">
+                Invalid OTP. Please try again.
+            </div>
+            
+            <div class="otp-actions">
+                <button class="otp-btn otp-btn-secondary" id="resendOtpBtn">Resend OTP</button>
+                <button class="otp-btn otp-btn-primary" id="verifyOtpBtn">Verify & Send</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+
+<!-- Customer Email Modal -->
+<div id="emailModal" class="reject-modal-overlay" style="display:none;">
+  <div class="reject-modal">
+    <h3 class="reject-title">Customer Email</h3>
+    <p class="reject-text">Enter customer email address:</p>
+    <input type="email" id="emailInputModal" class="reject-input" placeholder="abc@gmail.com" />
+    <div class="reject-actions">
+      <button type="button" id="emailCancelBtn" class="reject-btn cancel">Cancel</button>
+      <button type="button" id="emailOkBtn" class="reject-btn delete">OK</button>
+    </div>
+  </div>
+</div>
+
+<!-- Delete Item Modal (Quotation Items) -->
+<div id="deleteItemModal" class="reject-modal-overlay" style="display:none;">
+  <div class="reject-modal">
+    <h3 class="reject-title">Delete Item</h3>
+    <p class="reject-text" id="deleteItemText">Are you sure want to delete this item?</p>
+    <div class="reject-actions">
+      <button type="button" id="deleteItemCancelBtn" class="reject-btn cancel">Cancel</button>
+      <button type="button" id="deleteItemConfirmBtn" class="reject-btn delete">Delete</button>
+    </div>
+  </div>
+</div>
+
+<!-- Delete File Modal (Attachments) -->
+<div id="deleteFileModal" class="reject-modal-overlay" style="display:none;">
+  <div class="reject-modal">
+    <h3 class="reject-title">Delete File</h3>
+    <p class="reject-text">Are you sure want to delete this file ?</p>
+    <div class="reject-actions">
+      <button type="button" id="deleteFileCancelBtn" class="reject-btn cancel">Cancel</button>
+      <button type="button" id="deleteFileConfirmBtn" class="reject-btn delete">Delete</button>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+
+<script src="{{ url_for('static', filename='purchase-order.js') }}"></script>
+{% endblock %}

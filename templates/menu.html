@@ -131,7 +131,7 @@
               <span class="submenu-icon">📦</span>
               <span>Delivery Note</span>
             </a>
-            <a href="#"
+            <a href="{{ url_for('invoice_list') }}"
                class="submenu-item{% if page == 'invoice' %} active{% endif %}">
               <span class="submenu-icon">🧮</span>
               <span>Invoice</span>
@@ -146,6 +146,11 @@
               <span class="submenu-icon">↩</span>
               <span>Invoice Return</span>
             </a>
+            <a href="#"
+            class="submenu-item{% if page == '' %} active{% endif %}">
+           <span class="submenu-icon">↩</span>
+           <span>Purchase</span>
+         </a>
             <a href="{{ url_for('stock_receipt') }}"
                 class="submenu-item{% if page == 'stock_receipt' %} active{% endif %}">
                   <span class="submenu-icon">📦</span>
