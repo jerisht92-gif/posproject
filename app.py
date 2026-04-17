@@ -570,13 +570,31 @@ INACTIVITY_TIMEOUT = 900
 # =========================================
 # ✅ FILE PATH CONSTANTS (JSON FILES)
 # =========================================
+def _init_upload_paths():
+    """Use app/static paths locally; fall back to TMPDIR on read-only FS (e.g. Vercel serverless)."""
+    root_upload = os.path.join(app.root_path, "static", "uploads")
+    root_attach = os.path.join(app.root_path, "attachments")
+    try:
+        os.makedirs(root_upload, exist_ok=True)
+        os.makedirs(root_attach, exist_ok=True)
+        return root_upload, root_attach
+    except OSError as e:
+        if getattr(e, "errno", None) not in (30, 13, 1):  # EROFS, EACCES, EPERM
+            raise
+    base = os.path.join(os.environ.get("TMPDIR", "/tmp"), "pos_app_data")
+    up = os.path.join(base, "uploads")
+    att = os.path.join(base, "attachments")
+    os.makedirs(up, exist_ok=True)
+    os.makedirs(att, exist_ok=True)
+    return up, att
+
+
 USER_FILE = os.path.join(app.root_path, "users.json")
 ROLE_FILE = os.path.join(app.root_path, "roles.json")
 FAILED_ATTEMPTS_FILE = os.path.join(app.root_path, "failed_attempts.json")
 OTP_FILE = os.path.join(app.root_path, "email_otps.json")
 DEPARTMENT_FILE = os.path.join(app.root_path, "departments.json")
-UPLOAD_FOLDER = os.path.join(app.root_path, "static", "uploads")
-ATTACHMENTS_FOLDER = os.path.join(app.root_path, "attachments")
+UPLOAD_FOLDER, ATTACHMENTS_FOLDER = _init_upload_paths()
 PRODUCT_FILE = os.path.join(app.root_path, "product.json")
 CATEGORY_FILE = os.path.join(app.root_path, "product_categories.json")
 TAX_CODE_FILE = os.path.join(app.root_path, "product_tax_codes.json")
@@ -588,11 +606,7 @@ SUPPLIER_FILE = os.path.join(app.root_path, "product_suppliers.json")
 CUSTOMER_FILE = os.path.join(app.root_path, "customer.json")
 QUOTATION_FILE = os.path.join(app.root_path, "quotation.json")
 COMMENTS_FILE = os.path.join(app.root_path, "comments.json")
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-os.makedirs(ATTACHMENTS_FOLDER, exist_ok=True)
 BILLS_FILE = os.path.join(app.root_path, "bills.json")
-ATTACHMENTS_FOLDER = os.path.join(app.root_path, "attachments")
-os.makedirs(ATTACHMENTS_FOLDER, exist_ok=True)
 HOLD_FILE = os.path.join(app.root_path, "Hold-Billing.json")
 SALES_ORDERS_FILE = os.path.join(app.root_path, "sales_orders.json")
 DELIVERY_NOTE_FILE = os.path.join(app.root_path, "deliverynotes.json")
@@ -15978,10 +15992,6 @@ def send_invoice_email_api(invoice_id):
             cur.close()
         if conn:
             conn.close()
-
-
-UPLOAD_FOLDER = "uploads"
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 
 def generate_invoice_id():
