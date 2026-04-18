@@ -16,6 +16,7 @@ import csv
 import io
 import math
 import base64
+from decimal import Decimal
 from collections import defaultdict
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -29,7 +30,7 @@ from reportlab.lib import colors  # type: ignore[import]
 from reportlab.lib.pagesizes import A4  # type: ignore[import]
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer  # type: ignore[import]
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle  # type: ignore[import]
-from reportlab.lib.enums import TA_CENTER  # type: ignore[import]
+from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT  # type: ignore[import]
 from reportlab.lib.units import inch, mm  # type: ignore[import]
 from reportlab.pdfbase import pdfmetrics  # type: ignore[import]
 from reportlab.pdfbase.ttfonts import TTFont  # type: ignore[import]
@@ -595,6 +596,18 @@ FAILED_ATTEMPTS_FILE = os.path.join(app.root_path, "failed_attempts.json")
 OTP_FILE = os.path.join(app.root_path, "email_otps.json")
 DEPARTMENT_FILE = os.path.join(app.root_path, "departments.json")
 UPLOAD_FOLDER, ATTACHMENTS_FOLDER = _init_upload_paths()
+
+
+def _invoice_return_upload_dir():
+    base = os.path.join(UPLOAD_FOLDER, "invoice_return")
+    try:
+        os.makedirs(base, exist_ok=True)
+    except OSError:
+        pass
+    return base
+
+
+INVOICE_RETURN_UPLOAD_FOLDER = _invoice_return_upload_dir()
 PRODUCT_FILE = os.path.join(app.root_path, "product.json")
 CATEGORY_FILE = os.path.join(app.root_path, "product_categories.json")
 TAX_CODE_FILE = os.path.join(app.root_path, "product_tax_codes.json")
@@ -16799,6 +16812,1685 @@ def stock_receipt():
         data=data,
         page='stock_receipt'
     )
+
+# =========================================
+# INVOICE RETURN MODULE
+# =========================================
+
+
+def generate_invoice_return_id():
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            SELECT invoice_return_id FROM invoice_return
+            ORDER BY created_at DESC NULLS LAST
+            LIMIT 1
+        """)
+        row = cur.fetchone()
+    except Exception:
+        cur.execute("""
+            SELECT invoice_return_id FROM invoice_return
+            ORDER BY
+              COALESCE(
+                NULLIF(regexp_replace(invoice_return_id, '^IR-', ''), '')::integer,
+                0
+              ) DESC,
+              invoice_return_id DESC
+            LIMIT 1
+        """)
+        row = cur.fetchone()
+    finally:
+        cur.close()
+        conn.close()
+    if row and row[0]:
+        last_id = row[0]
+        try:
+            num = int(str(last_id).split("-")[1]) + 1
+            return f"IR-{num:04d}"
+        except (IndexError, ValueError):
+            return "IR-0001"
+    return "IR-0001"
+
+
+def get_all_invoices():
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT invoice_id, customer_name
+        FROM invoices
+        ORDER BY created_at DESC NULLS LAST
+    """)
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return [{"invoice_id": r[0], "customer_name": r[1] if len(r) > 1 else ""} for r in rows]
+
+
+@app.route("/new-invoice-return")
+def new_invoice_return():
+    user_email = session.get("user")
+    if not user_email:
+        return redirect(url_for("login", message="session_expired"))
+
+    users = load_users()
+    user_name = "User"
+    for u in users:
+        if isinstance(u, dict) and (u.get("email") or "").lower() == user_email.lower():
+            user_name = u.get("name") or "User"
+            break
+
+    edit_id = request.args.get("edit_id")
+    view_id = request.args.get("view_id")
+    existing_id = edit_id or view_id
+    invoice_return_id = existing_id if existing_id else generate_invoice_return_id()
+    invoices = get_all_invoices()
+
+    return render_template(
+        "new-invoice-return.html",
+        page="inv_return",
+        title="Invoice Return",
+        user_email=user_email,
+        user_name=user_name,
+        invoices=invoices,
+        invoice_id=invoice_return_id,
+    )
+
+
+@app.route("/get-invoice-details/<invoice_id>")
+def get_invoice_details(invoice_id):
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    cur.execute(
+        """
+        SELECT * FROM invoices
+        WHERE invoice_id = %s
+        ORDER BY created_at DESC NULLS LAST
+        LIMIT 1
+        """,
+        (invoice_id,),
+    )
+    row = cur.fetchone()
+    if not row:
+        cur.close()
+        conn.close()
+        return jsonify({"error": "Invoice not found"}), 404
+
+    columns = [desc[0] for desc in cur.description]
+    invoice = dict(zip(columns, row))
+
+    item_cols = _invoice_items_table_columns()
+    cur.execute(
+        f"""
+        SELECT {_invoice_items_select_columns_sql(item_cols)}
+        FROM invoice_items
+        WHERE invoice_id = %s
+        ORDER BY id
+        """,
+        (invoice_id,),
+    )
+    items_rows = cur.fetchall()
+    items = []
+    for item_row in items_rows:
+        qty = Decimal(item_row[2] or 0)
+        price = Decimal(item_row[4] or 0)
+        tax = Decimal(item_row[5] or 0)
+        disc = Decimal(item_row[6] or 0)
+        total = qty * price
+        if disc > 0:
+            total = total - (total * (disc / Decimal(100)))
+        if tax > 0:
+            total = total + (total * (tax / Decimal(100)))
+        items.append(
+            {
+                "product_id": item_row[1],
+                "product_name": item_row[0],
+                "quantity": float(qty),
+                "uom": item_row[3],
+                "unit_price": float(price),
+                "tax_pct": float(tax),
+                "disc_pct": float(disc),
+                "total": float(total),
+            }
+        )
+
+    cur.execute(
+        """
+        SELECT grand_total, global_discount_pct
+        FROM invoice_summary
+        WHERE invoice_id = %s
+        ORDER BY created_at DESC NULLS LAST
+        LIMIT 1
+        """,
+        (invoice_id,),
+    )
+    summary_row = cur.fetchone()
+    if summary_row:
+        grand_total = float(summary_row[0] or 0)
+        global_discount_pct = float(summary_row[1] or 0)
+        summary = {
+            "original_total": grand_total,
+            "global_discount_pct": global_discount_pct,
+            "subtotal": grand_total,
+            "discount_amount": 0,
+            "rounding": 0,
+            "refund_amount": 0,
+        }
+    else:
+        summary = {
+            "original_total": 0,
+            "global_discount_pct": 0,
+            "subtotal": 0,
+            "discount_amount": 0,
+            "rounding": 0,
+            "refund_amount": 0,
+        }
+
+    cur.execute(
+        """
+        SELECT text, created_at
+        FROM invoice_comments
+        WHERE invoice_id=%s
+        ORDER BY created_at DESC
+        """,
+        (invoice_id,),
+    )
+    comments = []
+    for c in cur.fetchall():
+        comments.append(
+            {
+                "text": c[0],
+                "created_at": c[1].strftime("%Y-%m-%d %H:%M") if c[1] else "",
+            }
+        )
+
+    cur.close()
+    conn.close()
+
+    return jsonify(
+        {
+            "invoice_id": invoice.get("invoice_id"),
+            "customer_name": invoice.get("customer_name"),
+            "customer_id": invoice.get("customer_id"),
+            "email": invoice.get("email"),
+            "phone": invoice.get("phone"),
+            "contact_person": invoice.get("contact_person"),
+            "customer_ref_no": invoice.get("customer_ref_no"),
+            "items": items,
+            "summary": summary,
+            "comments": comments,
+        }
+    )
+
+
+def _normalize_ir_status_for_db(status):
+    """Accept Draft/Submitted/Cancelled (UI) or draft/submitted/cancelled (API)."""
+    if not status:
+        return "Draft"
+    s = str(status).strip().lower()
+    if s == "draft":
+        return "Draft"
+    if s == "submitted":
+        return "Submitted"
+    if s == "cancelled":
+        return "Cancelled"
+    return str(status).strip()
+
+
+@app.route("/save-invoice-return", methods=["POST"])
+def save_invoice_return():
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        data = request.json
+        invoice_return_id = data.get("invoice_return_id")
+        if not invoice_return_id:
+            invoice_return_id = generate_invoice_return_id()
+            is_update = False
+        else:
+            cur.execute(
+                "SELECT 1 FROM invoice_return WHERE invoice_return_id = %s",
+                (invoice_return_id,),
+            )
+            is_update = cur.fetchone() is not None
+
+        st = _normalize_ir_status_for_db(data.get("status"))
+
+        if is_update:
+            cur.execute(
+                """
+                UPDATE invoice_return
+                SET invoice_id = %s,
+                    customer_name = %s,
+                    customer_id = %s,
+                    email = %s,
+                    phone = %s,
+                    contact_person = %s,
+                    customer_ref_no = %s,
+                    return_date = %s,
+                    refund_amount = %s,
+                    status = %s
+                WHERE invoice_return_id = %s
+                """,
+                (
+                    data.get("invoice_id"),
+                    data.get("customer_name"),
+                    data.get("customer_id"),
+                    data.get("email"),
+                    data.get("phone"),
+                    data.get("contact_person"),
+                    data.get("customer_ref_no"),
+                    data.get("return_date"),
+                    float(data.get("refund_amount", 0)),
+                    st,
+                    invoice_return_id,
+                ),
+            )
+            cur.execute(
+                "DELETE FROM invoice_return_items WHERE invoice_return_id = %s",
+                (invoice_return_id,),
+            )
+            cur.execute(
+                "DELETE FROM invoice_return_summary WHERE invoice_return_id = %s",
+                (invoice_return_id,),
+            )
+        else:
+            cur.execute(
+                """
+                INSERT INTO invoice_return (
+                    invoice_return_id,
+                    invoice_id,
+                    customer_name,
+                    customer_id,
+                    email,
+                    phone,
+                    contact_person,
+                    customer_ref_no,
+                    return_date,
+                    refund_amount,
+                    status
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    invoice_return_id,
+                    data.get("invoice_id"),
+                    data.get("customer_name"),
+                    data.get("customer_id"),
+                    data.get("email"),
+                    data.get("phone"),
+                    data.get("contact_person"),
+                    data.get("customer_ref_no"),
+                    data.get("return_date"),
+                    float(data.get("refund_amount", 0)),
+                    st,
+                ),
+            )
+
+        items = data.get("items", [])
+        if not items:
+            conn.rollback()
+            return jsonify({"error": "No items found"}), 400
+
+        for item in items:
+            rq = item.get("quantity", 0)
+            try:
+                rq_int = int(float(rq))
+            except (TypeError, ValueError):
+                rq_int = 0
+            cur.execute(
+                """
+                INSERT INTO invoice_return_items (
+                    id,
+                    invoice_return_id,
+                    product_id,
+                    product_name,
+                    invoice_quantity,
+                    return_quantity,
+                    serial_number,
+                    return_reason,
+                    uom,
+                    unit_price,
+                    tax_pct,
+                    disc_pct,
+                    total
+                )
+                VALUES (
+                    (SELECT COALESCE(MAX(id), 0) + 1 FROM invoice_return_items),
+                    %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s
+                )
+                """,
+                (
+                    invoice_return_id,
+                    item.get("product_id"),
+                    item.get("product_name"),
+                    float(item.get("invoice_quantity", 0)),
+                    rq_int,
+                    item.get("serial_number", ""),
+                    item.get("return_reason", ""),
+                    item.get("uom"),
+                    float(item.get("unit_price", 0)),
+                    float(item.get("tax_pct", 0)),
+                    float(item.get("disc_pct", 0)),
+                    float(item.get("total", 0)),
+                ),
+            )
+
+        summary = data.get("summary", {})
+        cur.execute(
+            """
+            INSERT INTO invoice_return_summary (
+                id,
+                invoice_return_id,
+                original_total,
+                discount_pct,
+                subtotal,
+                discount_amount,
+                rounding,
+                refund_amount
+            )
+            VALUES (
+                (SELECT COALESCE(MAX(id), 0) + 1 FROM invoice_return_summary),
+                %s,%s,%s,%s,%s,%s,%s
+            )
+            """,
+            (
+                invoice_return_id,
+                float(summary.get("original_total", 0)),
+                float(summary.get("discount_pct", 0)),
+                float(summary.get("subtotal", 0)),
+                float(summary.get("discount_amount", 0)),
+                float(summary.get("rounding", 0)),
+                float(data.get("refund_amount", 0)),
+            ),
+        )
+
+        conn.commit()
+        return jsonify({"success": True, "invoice_return_id": invoice_return_id})
+    except Exception as e:
+        conn.rollback()
+        traceback.print_exc()
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "message": "Failed to save invoice return",
+                    "error": str(e),
+                }
+            ),
+            500,
+        )
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.route("/api/invoice-return/<invoice_return_id>/comments", methods=["GET"])
+def get_comments_invoice_return(invoice_return_id):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT id, comment, created_at
+        FROM invoice_return_comments
+        WHERE invoice_return_id=%s
+        ORDER BY created_at DESC
+        """,
+        (invoice_return_id,),
+    )
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    comments = []
+    for r in rows:
+        comments.append(
+            {
+                "id": r[0],
+                "text": r[1],
+                "created_at": r[2].strftime("%Y-%m-%d %H:%M") if r[2] else "",
+            }
+        )
+    return jsonify({"comments": comments})
+
+
+@app.route("/api/invoice-return/<invoice_return_id>/comments", methods=["POST"])
+def add_comment_invoice_return(invoice_return_id):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        data = request.get_json() or {}
+        text = (data.get("comment_text") or "").strip()
+        if not text:
+            return jsonify({"success": False, "error": "Comment is empty"}), 400
+        # id is NOT NULL and may have no SERIAL default (e.g. after CSV import)
+        cur.execute(
+            """
+            INSERT INTO invoice_return_comments (id, invoice_return_id, comment, created_at)
+            VALUES (
+                (SELECT COALESCE(MAX(id), 0) + 1 FROM invoice_return_comments),
+                %s, %s, %s
+            )
+            """,
+            (invoice_return_id, text, datetime.now()),
+        )
+        conn.commit()
+        return jsonify({"success": True})
+    except Exception as e:
+        conn.rollback()
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.route("/api/invoice-return/<invoice_return_id>/attachments", methods=["GET"])
+def get_attachments_invoice_return(invoice_return_id):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT id, file_name, file_path, file_size, created_at
+        FROM invoice_return_attachments
+        WHERE invoice_return_id=%s
+        ORDER BY created_at DESC
+        """,
+        (invoice_return_id,),
+    )
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    data = []
+    for r in rows:
+        sz = r[3] if len(r) > 3 and r[3] is not None else 0
+        created = r[4] if len(r) > 4 else None
+        data.append(
+            {
+                "id": r[0],
+                "filename": r[1],
+                "file_path": r[2],
+                "size": int(sz) if sz is not None else 0,
+                "uploaded_at": created.strftime("%Y-%m-%d %H:%M")
+                if created
+                else "",
+            }
+        )
+    return jsonify({"success": True, "attachments": data})
+
+
+@app.route("/api/invoice-return/<invoice_return_id>/attachments", methods=["POST"])
+def upload_attachment_invoice_return(invoice_return_id):
+    try:
+        if "file" not in request.files:
+            return jsonify({"success": False, "message": "No file uploaded"}), 400
+        file = request.files["file"]
+        if file.filename == "":
+            return jsonify({"success": False, "message": "Empty filename"}), 400
+        original_name = file.filename
+        ext = original_name.rsplit(".", 1)[-1] if "." in original_name else "bin"
+        stored_name = f"{uuid.uuid4()}.{ext}"
+        file_path = os.path.join(INVOICE_RETURN_UPLOAD_FOLDER, stored_name)
+        file.save(file_path)
+        file_size = os.path.getsize(file_path) if os.path.exists(file_path) else 0
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO invoice_return_attachments (
+                id, invoice_return_id, file_name, file_path, created_at, file_size
+            ) VALUES (
+                (SELECT COALESCE(MAX(id), 0) + 1 FROM invoice_return_attachments),
+                %s, %s, %s, %s, %s
+            )
+            """,
+            (
+                invoice_return_id,
+                original_name,
+                file_path,
+                datetime.now(),
+                file_size,
+            ),
+        )
+        conn.commit()
+        cur.close()
+        conn.close()
+        return jsonify({"success": True, "message": "File uploaded successfully"})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route(
+    "/api/invoice-return/<invoice_return_id>/attachments/<attachment_id>",
+    methods=["DELETE"],
+)
+def delete_attachment_invoice_return(invoice_return_id, attachment_id):
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT file_path
+            FROM invoice_return_attachments
+            WHERE id=%s AND invoice_return_id=%s
+            """,
+            (attachment_id, invoice_return_id),
+        )
+        row = cur.fetchone()
+        if not row:
+            cur.close()
+            conn.close()
+            return jsonify({"success": False, "message": "Attachment not found"}), 404
+        file_path = row[0]
+        if file_path and os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+            except OSError:
+                pass
+        cur.execute(
+            """
+            DELETE FROM invoice_return_attachments
+            WHERE id=%s AND invoice_return_id=%s
+            """,
+            (attachment_id, invoice_return_id),
+        )
+        conn.commit()
+        cur.close()
+        conn.close()
+        return jsonify({"success": True, "message": "Attachment deleted successfully"})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route(
+    "/api/invoice-return/<invoice_return_id>/attachments/<attachment_id>/download"
+)
+def download_invoice_return_attachment(invoice_return_id, attachment_id):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            SELECT file_path, file_name
+            FROM invoice_return_attachments
+            WHERE id = %s AND invoice_return_id = %s
+            """,
+            (attachment_id, invoice_return_id),
+        )
+        row = cur.fetchone()
+        if not row:
+            return jsonify({"error": "Attachment not found"}), 404
+        file_path = row[0]
+        original_name = row[1]
+        if not file_path or not os.path.exists(file_path):
+            return jsonify({"error": "File not found on server"}), 404
+        return send_file(file_path, as_attachment=True, download_name=original_name)
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.route("/api/invoice-return/<invoice_return_id>", methods=["GET"])
+def get_invoice_return_data(invoice_return_id):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            SELECT
+                invoice_return_id,
+                invoice_id,
+                customer_name,
+                customer_id,
+                email,
+                phone,
+                contact_person,
+                customer_ref_no,
+                return_date,
+                refund_amount,
+                status
+            FROM invoice_return
+            WHERE invoice_return_id = %s
+            """,
+            (invoice_return_id,),
+        )
+        row = cur.fetchone()
+        if not row:
+            return jsonify({"success": False, "error": "Invoice return not found"}), 404
+
+        invoice_return = {
+            "invoice_return_id": row[0],
+            "invoice_id": row[1],
+            "customer_name": row[2],
+            "customer_id": row[3],
+            "email": row[4],
+            "phone": row[5],
+            "contact_person": row[6],
+            "customer_ref_no": row[7],
+            "return_date": row[8].strftime("%Y-%m-%d") if row[8] else "",
+            "refund_amount": float(row[9]) if row[9] else 0,
+            "status": row[10] or "Draft",
+        }
+
+        cur.execute(
+            """
+            SELECT
+                product_id,
+                product_name,
+                invoice_quantity,
+                return_quantity,
+                serial_number,
+                return_reason,
+                uom,
+                unit_price,
+                tax_pct,
+                disc_pct,
+                total
+            FROM invoice_return_items
+            WHERE invoice_return_id = %s
+            ORDER BY id
+            """,
+            (invoice_return_id,),
+        )
+        items = []
+        for ir in cur.fetchall():
+            items.append(
+                {
+                    "product_id": ir[0],
+                    "product_name": ir[1],
+                    "invoice_quantity": float(ir[2] or 0),
+                    "return_quantity": float(ir[3] or 0),
+                    "serial_number": ir[4] or "",
+                    "return_reason": ir[5] or "",
+                    "uom": ir[6] or "",
+                    "unit_price": float(ir[7] or 0),
+                    "tax_pct": float(ir[8] or 0),
+                    "disc_pct": float(ir[9] or 0),
+                    "total": float(ir[10] or 0),
+                }
+            )
+
+        cur.execute(
+            """
+            SELECT id, comment, created_at
+            FROM invoice_return_comments
+            WHERE invoice_return_id = %s
+            ORDER BY created_at DESC
+            """,
+            (invoice_return_id,),
+        )
+        comments = []
+        for c in cur.fetchall():
+            comments.append(
+                {
+                    "id": c[0],
+                    "text": c[1],
+                    "created_at": c[2].strftime("%Y-%m-%d %H:%M:%S") if c[2] else "",
+                    "author": "System",
+                }
+            )
+
+        cur.execute(
+            """
+            SELECT id, file_name, file_path, created_at
+            FROM invoice_return_attachments
+            WHERE invoice_return_id = %s
+            ORDER BY created_at DESC
+            """,
+            (invoice_return_id,),
+        )
+        attachments = []
+        for a in cur.fetchall():
+            attachments.append(
+                {
+                    "id": a[0],
+                    "filename": a[1],
+                    "file_path": a[2],
+                    "uploaded_at": a[3].strftime("%Y-%m-%d %H:%M:%S") if a[3] else "",
+                }
+            )
+
+        cur.execute(
+            """
+            SELECT original_total, discount_pct, subtotal, discount_amount, rounding, refund_amount
+            FROM invoice_return_summary
+            WHERE invoice_return_id = %s
+            """,
+            (invoice_return_id,),
+        )
+        summary_row = cur.fetchone()
+        if summary_row:
+            summary = {
+                "original_total": float(summary_row[0] or 0),
+                "discount_pct": float(summary_row[1] or 0),
+                "subtotal": float(summary_row[2] or 0),
+                "discount_amount": float(summary_row[3] or 0),
+                "rounding": float(summary_row[4] or 0),
+                "refund_amount": float(summary_row[5] or 0),
+            }
+        else:
+            summary = {
+                "original_total": 0,
+                "discount_pct": 0,
+                "subtotal": 0,
+                "discount_amount": 0,
+                "rounding": 0,
+                "refund_amount": 0,
+            }
+
+        return jsonify(
+            {
+                "success": True,
+                "invoice_return": invoice_return,
+                "items": items,
+                "comments": comments,
+                "attachments": attachments,
+                "summary": summary,
+            }
+        )
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.route("/api/invoice-return/<return_id>/status", methods=["PUT"])
+def update_invoice_return_status(return_id):
+    data = request.json or {}
+    raw = (data.get("status") or "").strip().lower()
+    allowed = {"draft", "submitted", "cancelled"}
+    if raw not in allowed:
+        return jsonify({"success": False, "error": "Invalid status"}), 400
+    db_status = _normalize_ir_status_for_db(raw)
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            "UPDATE invoice_return SET status = %s WHERE invoice_return_id = %s",
+            (db_status, return_id),
+        )
+        if cur.rowcount == 0:
+            return jsonify({"success": False, "error": "Invoice return not found"}), 404
+        conn.commit()
+        return jsonify(
+            {"success": True, "message": f"Status updated to {db_status}"}
+        )
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"success": False, "error": str(e)}), 500
+    finally:
+        cur.close()
+        conn.close()
+
+
+def generate_invoice_return_pdf_bytes(invoice_return, items, summary):
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        rightMargin=72,
+        leftMargin=72,
+        topMargin=72,
+        bottomMargin=72,
+    )
+    elements = []
+    styles = getSampleStyleSheet()
+    currency_symbol = "₹"
+
+    title_style = ParagraphStyle(
+        "CustomTitle",
+        parent=styles["Heading1"],
+        fontSize=24,
+        textColor=colors.HexColor("#2C3E50"),
+        alignment=TA_CENTER,
+        spaceAfter=20,
+    )
+    company_style = ParagraphStyle(
+        "Company",
+        parent=styles["Normal"],
+        fontSize=9,
+        leading=12,
+        textColor=colors.black,
+        alignment=TA_CENTER,
+        spaceAfter=2,
+        fontName="DejaVuSans",
+    )
+    status_style = ParagraphStyle(
+        "Status",
+        parent=styles["Heading2"],
+        fontSize=14,
+        leading=18,
+        alignment=TA_CENTER,
+        spaceAfter=14,
+        fontName="DejaVuSans-Bold",
+    )
+    heading_style = ParagraphStyle(
+        "IRHeading2",
+        parent=styles["Heading2"],
+        fontSize=11,
+        leading=14,
+        textColor=colors.HexColor("#2C3E50"),
+        spaceBefore=8,
+        spaceAfter=8,
+        fontName="DejaVuSans-Bold",
+    )
+    terms_heading_style = ParagraphStyle(
+        "TermsHeading",
+        parent=styles["Heading2"],
+        fontSize=10,
+        leading=13,
+        textColor=colors.HexColor("#2C3E50"),
+        spaceAfter=6,
+        fontName="DejaVuSans-Bold",
+    )
+    terms_style = ParagraphStyle(
+        "Terms",
+        parent=styles["Normal"],
+        fontSize=7.4,
+        leading=10,
+        fontName="DejaVuSans",
+    )
+    footer_style = ParagraphStyle(
+        "Footer",
+        parent=styles["Normal"],
+        fontSize=7.5,
+        textColor=colors.HexColor("#555555"),
+        alignment=TA_LEFT,
+    )
+
+    elements.append(Paragraph("STACKLY", title_style))
+    elements.append(
+        Paragraph(
+            "MMR Complex, Chinna Thirupathi, near Chinna Muniyappan Kovil, Salem, Tamil Nadu - 636008",
+            company_style,
+        )
+    )
+    elements.append(Paragraph("Phone: +91 7010792745", company_style))
+    elements.append(Paragraph("Email: info@stackly.com", company_style))
+    elements.append(Spacer(1, 10))
+
+    status_text = (invoice_return.get("status") or "DRAFT").upper()
+    status_color = {
+        "DRAFT": colors.orange,
+        "SUBMITTED": colors.blue,
+        "CANCELLED": colors.red,
+    }.get(status_text, colors.black)
+    elements.append(
+        Paragraph(
+            f"INVOICE RETURN - {status_text}",
+            ParagraphStyle(
+                "StatColored",
+                parent=status_style,
+                textColor=status_color,
+            ),
+        )
+    )
+
+    if status_text == "CANCELLED":
+        elements.append(
+            Paragraph(
+                "CANCELLED - FOR REFERENCE ONLY",
+                ParagraphStyle(
+                    "Watermark",
+                    parent=styles["Normal"],
+                    fontSize=16,
+                    textColor=colors.red,
+                    alignment=TA_CENTER,
+                    spaceAfter=20,
+                    spaceBefore=10,
+                    backColor=colors.lightgrey,
+                ),
+            )
+        )
+        elements.append(Spacer(1, 10))
+
+    elements.append(Paragraph("RETURN INFORMATION", heading_style))
+    info_data = [
+        [
+            "Return Number:",
+            str(invoice_return.get("invoice_return_id", "-")),
+            "Return Date:",
+            str(invoice_return.get("return_date", "-")),
+        ],
+        [
+            "Original Invoice:",
+            str(invoice_return.get("invoice_id", "-")),
+            "Status:",
+            str(invoice_return.get("status", "-")),
+        ],
+        [
+            "Customer Ref No:",
+            str(invoice_return.get("customer_ref_no", "-")),
+            "Refund Amount:",
+            f"{currency_symbol}{float(invoice_return.get('refund_amount', 0) or 0):.2f}",
+        ],
+    ]
+    info_table = Table(info_data, colWidths=[120, 160, 100, 130])
+    info_table.setStyle(
+        TableStyle(
+            [
+                ("FONTNAME", (0, 0), (-1, -1), "DejaVuSans"),
+                ("FONTSIZE", (0, 0), (-1, -1), 9),
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+                ("BACKGROUND", (0, 0), (0, -1), colors.lightgrey),
+                ("BACKGROUND", (2, 0), (2, -1), colors.lightgrey),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("PADDING", (0, 0), (-1, -1), 6),
+            ]
+        )
+    )
+    elements.append(info_table)
+    elements.append(Spacer(1, 15))
+
+    elements.append(Paragraph("CUSTOMER INFORMATION", heading_style))
+    customer_data = [
+        [
+            "Customer Name:",
+            str(invoice_return.get("customer_name", "-")),
+            "Customer ID:",
+            str(invoice_return.get("customer_id", "-")),
+        ],
+        [
+            "Email:",
+            str(invoice_return.get("email", "-")),
+            "Phone:",
+            str(invoice_return.get("phone", "-")),
+        ],
+        [
+            "Contact Person:",
+            str(invoice_return.get("contact_person", "-")),
+            "Currency:",
+            "INR (₹)",
+        ],
+    ]
+    customer_table = Table(customer_data, colWidths=[120, 180, 100, 110])
+    customer_table.setStyle(
+        TableStyle(
+            [
+                ("FONTNAME", (0, 0), (-1, -1), "DejaVuSans"),
+                ("FONTSIZE", (0, 0), (-1, -1), 9),
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+                ("BACKGROUND", (0, 0), (0, -1), colors.lightgrey),
+                ("BACKGROUND", (2, 0), (2, -1), colors.lightgrey),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("PADDING", (0, 0), (-1, -1), 1),
+            ]
+        )
+    )
+    elements.append(customer_table)
+    elements.append(Spacer(1, 15))
+
+    if items:
+        elements.append(Paragraph("RETURN ITEMS", heading_style))
+        col_widths = [20, 60, 45, 40, 40, 35, 50, 45, 55, 55]
+        table_data = [
+            [
+                "S.No",
+                "Product Name",
+                "Product ID",
+                "Invoice Qty",
+                "Return Qty",
+                "UOM",
+                "Unit Price",
+                "Total",
+                "Serial Number",
+                "Return Reason",
+            ]
+        ]
+        for idx, it in enumerate(items, 1):
+            table_data.append(
+                [
+                    str(idx),
+                    str(it.get("product_name", "-")),
+                    str(it.get("product_id", "-")),
+                    f"{float(it.get('invoice_quantity', 0) or 0):.2f}",
+                    f"{float(it.get('return_quantity', 0) or 0):.2f}",
+                    str(it.get("uom", "-")),
+                    f"{currency_symbol}{float(it.get('unit_price', 0) or 0):.2f}",
+                    f"{currency_symbol}{float(it.get('total', 0) or 0):.2f}",
+                    str(it.get("serial_number", "-")),
+                    str(it.get("return_reason", "-")),
+                ]
+            )
+        items_table = Table(table_data, colWidths=col_widths)
+        items_table.setStyle(
+            TableStyle(
+                [
+                    ("FONTNAME", (0, 0), (-1, -1), "DejaVuSans"),
+                    ("FONTSIZE", (0, 0), (-1, -1), 6.5),
+                    ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#2C3E50")),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+                    ("ALIGN", (0, 0), (-1, 0), "CENTER"),
+                    ("ALIGN", (6, 1), (7, -1), "RIGHT"),
+                    ("ALIGN", (0, 1), (0, -1), "CENTER"),
+                    ("ALIGN", (2, 1), (5, -1), "CENTER"),
+                    ("ALIGN", (1, 1), (1, -1), "LEFT"),
+                    ("ALIGN", (8, 1), (9, -1), "LEFT"),
+                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                    ("PADDING", (0, 0), (-1, -1), 2),
+                ]
+            )
+        )
+        elements.append(items_table)
+        elements.append(Spacer(1, 20))
+
+    elements.append(Paragraph("SUMMARY", heading_style))
+    summary_data = [
+        [
+            "Original Grand Total:",
+            f"{currency_symbol}{float(summary.get('original_total', 0) or 0):.2f}",
+        ],
+        [
+            "Return Subtotal:",
+            f"{currency_symbol}{float(summary.get('subtotal', 0) or 0):.2f}",
+        ],
+        [
+            "Global Discount (%) :",
+            f"{float(summary.get('discount_pct', 0) or 0):.2f}%",
+        ],
+        [
+            "Global Discount Amount:",
+            f"-{currency_symbol}{float(summary.get('discount_amount', 0) or 0):.2f}",
+        ],
+        [
+            "Rounding Adjustment:",
+            f"{currency_symbol}{float(summary.get('rounding', 0) or 0):.2f}",
+        ],
+        [
+            "Amount to Refund:",
+            f"{currency_symbol}{float(invoice_return.get('refund_amount', 0) or 0):.2f}",
+        ],
+    ]
+    summary_table = Table(summary_data, colWidths=[200, 150])
+    summary_table.setStyle(
+        TableStyle(
+            [
+                ("FONTNAME", (0, 0), (-1, -1), "DejaVuSans"),
+                ("FONTSIZE", (0, 0), (-1, -1), 9),
+                ("FONTNAME", (0, -1), (-1, -1), "DejaVuSans-Bold"),
+                ("FONTSIZE", (0, -1), (-1, -1), 11),
+                ("ALIGN", (0, 0), (0, -1), "LEFT"),
+                ("ALIGN", (1, 0), (1, -1), "RIGHT"),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("PADDING", (0, 0), (-1, -1), 5),
+                ("LINEABOVE", (0, -1), (1, -1), 1, colors.black),
+                ("BACKGROUND", (0, -1), (1, -1), colors.lightgrey),
+            ]
+        )
+    )
+    elements.append(summary_table)
+    elements.append(Spacer(1, 20))
+
+    elements.append(Paragraph("Terms and Conditions", terms_heading_style))
+    terms_text = invoice_return.get("terms_conditions", "")
+    if terms_text:
+        for line in str(terms_text).split("\n"):
+            if line.strip():
+                elements.append(Paragraph(f"• {line.strip()}", terms_style))
+    else:
+        default_terms = [
+            "1. Return must be processed within 30 days of invoice date.",
+            "2. All returned items must be in original condition with serial numbers intact.",
+            "3. Refund will be processed after quality check.",
+            "4. Please quote return number for any correspondence.",
+        ]
+        for line in default_terms:
+            elements.append(Paragraph(line, terms_style))
+    elements.append(Spacer(1, 18))
+
+    generated_on = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    elements.append(Paragraph(f"Generated on: {generated_on}", footer_style))
+    elements.append(
+        Paragraph(
+            "This is a system generated document - valid without signature",
+            footer_style,
+        )
+    )
+
+    doc.build(elements)
+    pdf_bytes = buffer.getvalue()
+    buffer.close()
+    return pdf_bytes
+
+
+def send_invoice_return_email(
+    recipient_email, invoice_return, items, summary, custom_message=""
+):
+    pdf_bytes = generate_invoice_return_pdf_bytes(invoice_return, items, summary)
+    currency_symbol = "₹"
+
+    html_template = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <style>
+            body { font-family: Arial, sans-serif; margin: 0; padding: 20px; color: #333; }
+            .container { max-width: 800px; margin: auto; background: #f9f9f9;
+                border-radius: 8px; padding: 20px; }
+            .header { text-align: center; border-bottom: 2px solid #a12828;
+                padding-bottom: 10px; margin-bottom: 20px; }
+            .logo { font-size: 28px; font-weight: bold; color: #a12828; }
+            .success { background: #d4edda; color: #155724; padding: 10px;
+                border-radius: 5px; margin: 15px 0; text-align: center; }
+            .info-section { margin: 20px 0; padding: 15px; background: white;
+                border-radius: 5px; border: 1px solid #ddd; }
+            .info-section h3 { margin-top: 0; color: #a12828;
+                border-bottom: 1px solid #eee; padding-bottom: 8px; }
+            .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+            .info-item { margin-bottom: 8px; }
+            .info-label { font-weight: bold; color: #555; }
+            .info-value { color: #333; }
+            .items-table { width: 100%; border-collapse: collapse; margin: 15px 0; }
+            .items-table th, .items-table td { border: 1px solid #ddd; padding: 8px; }
+            .items-table th { background: #f2f2f2; }
+            .summary { margin-top: 20px; text-align: right; }
+            .footer { margin-top: 30px; font-size: 12px; text-align: center;
+                color: #777; border-top: 1px solid #eee; padding-top: 15px; }
+            .note { background: #fff3cd; padding: 10px; border-radius: 5px;
+                margin: 15px 0; font-size: 13px; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <div class="logo">STACKLY</div>
+                <div>MMR Complex, Chinna Thirupathi, Salem, Tamil Nadu - 636008</div>
+            </div>
+            <div class="success">Invoice Return Generated</div>
+            <p>Hi {{ invoice_return.customer_name }},</p>
+            <p>Your return request has been processed. PDF is attached.</p>
+            <div class="info-section">
+                <h3>Return Information</h3>
+                <div class="info-grid">
+                    <div class="info-item"><span class="info-label">Return Number:</span>
+                      <span class="info-value">{{ invoice_return.invoice_return_id }}</span></div>
+                    <div class="info-item"><span class="info-label">Return Date:</span>
+                      <span class="info-value">{{ invoice_return.return_date }}</span></div>
+                    <div class="info-item"><span class="info-label">Original Invoice:</span>
+                      <span class="info-value">{{ invoice_return.invoice_id }}</span></div>
+                    <div class="info-item"><span class="info-label">Refund Amount:</span>
+                      <span class="info-value">{{ currency_symbol }}{{ invoice_return.refund_amount|round(2) }}</span></div>
+                </div>
+            </div>
+            <h3>Return Items</h3>
+            <table class="items-table">
+                <thead>
+                    <tr>
+                        <th>S.No</th>
+                        <th>Product</th>
+                        <th>Invoice Qty</th>
+                        <th>Return Qty</th>
+                        <th>Total</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for it in items %}
+                    <tr>
+                        <td>{{ loop.index }}</td>
+                        <td>{{ it.product_name }}</td>
+                        <td>{{ it.invoice_quantity|round(2) }}</td>
+                        <td>{{ it.return_quantity|round(2) }}</td>
+                        <td>{{ currency_symbol }}{{ it.total|round(2) }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            <div class="summary">
+                <p><strong>Original Grand Total:</strong>
+                  {{ currency_symbol }}{{ summary.original_total|round(2) }}</p>
+                <p><strong>Rounding:</strong>
+                  {{ currency_symbol }}{{ summary.rounding|round(2) }}</p>
+                <p><strong>Amount to Refund:</strong>
+                  {{ currency_symbol }}{{ invoice_return.refund_amount|round(2) }}</p>
+            </div>
+            {% if custom_message %}
+            <p>{{ custom_message }}</p>
+            {% endif %}
+            <div class="footer">Stackly — support@stackly.com</div>
+        </div>
+    </body>
+    </html>
+    """
+
+    class _Obj:
+        pass
+
+    ir = _Obj()
+    for k, v in (invoice_return or {}).items():
+        setattr(ir, k, v)
+    html_body = render_template_string(
+        html_template,
+        invoice_return=ir,
+        items=items,
+        summary=summary,
+        currency_symbol=currency_symbol,
+        custom_message=custom_message,
+    )
+
+    text_body = (
+        f"Hi {invoice_return.get('customer_name')},\n\n"
+        f"Return {invoice_return.get('invoice_return_id')} — see attached PDF.\n"
+    )
+
+    msg = MIMEMultipart("mixed")
+    msg["Subject"] = f"Invoice Return {invoice_return.get('invoice_return_id')} — Stackly"
+    msg["From"] = os.getenv("EMAIL_ADDRESS") or ""
+    msg["To"] = recipient_email
+    msg_alt = MIMEMultipart("alternative")
+    msg_alt.attach(MIMEText(text_body, "plain"))
+    msg_alt.attach(MIMEText(html_body, "html"))
+    msg.attach(msg_alt)
+    pdf_attachment = MIMEApplication(pdf_bytes, _subtype="pdf")
+    pdf_attachment.add_header(
+        "Content-Disposition",
+        "attachment",
+        filename=f"Invoice_Return_{invoice_return.get('invoice_return_id')}.pdf",
+    )
+    msg.attach(pdf_attachment)
+
+    try:
+        smtp_server = os.getenv("SMTP_SERVER", "smtp.gmail.com")
+        smtp_port = int(os.getenv("SMTP_PORT", "587"))
+        addr = os.getenv("EMAIL_ADDRESS")
+        pwd = os.getenv("EMAIL_PASSWORD")
+        if not addr or not pwd:
+            return False
+        with smtplib.SMTP(smtp_server, smtp_port) as server:
+            server.starttls()
+            server.login(addr, pwd)
+            server.send_message(msg)
+        return True
+    except Exception as e:
+        print("Email send error:", e)
+        return False
+
+
+@app.route("/invoice-return/<invoice_return_id>/pdf")
+def invoice_return_pdf(invoice_return_id):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            SELECT invoice_return_id, invoice_id, customer_name, customer_id,
+                   email, phone, contact_person, customer_ref_no,
+                   return_date, refund_amount, status
+            FROM invoice_return
+            WHERE invoice_return_id = %s
+            """,
+            (invoice_return_id,),
+        )
+        row = cur.fetchone()
+        if not row:
+            return jsonify({"error": f"Invoice return {invoice_return_id} not found."}), 404
+
+        invoice_return = {
+            "invoice_return_id": row[0] or "",
+            "invoice_id": row[1] or "",
+            "customer_name": row[2] or "",
+            "customer_id": row[3] or "",
+            "email": row[4] or "",
+            "phone": row[5] or "",
+            "contact_person": row[6] or "",
+            "customer_ref_no": row[7] or "",
+            "return_date": row[8].strftime("%Y-%m-%d") if row[8] else "",
+            "refund_amount": float(row[9] or 0),
+            "status": row[10] or "",
+        }
+
+        cur.execute(
+            """
+            SELECT product_id, product_name, invoice_quantity, return_quantity,
+                   serial_number, return_reason, uom, unit_price, total
+            FROM invoice_return_items
+            WHERE invoice_return_id = %s
+            ORDER BY id
+            """,
+            (invoice_return_id,),
+        )
+        items = []
+        for r in cur.fetchall():
+            items.append(
+                {
+                    "product_id": r[0] or "",
+                    "product_name": r[1] or "",
+                    "invoice_quantity": float(r[2] or 0),
+                    "return_quantity": float(r[3] or 0),
+                    "serial_number": r[4] or "",
+                    "return_reason": r[5] or "",
+                    "uom": r[6] or "",
+                    "unit_price": float(r[7] or 0),
+                    "total": float(r[8] or 0),
+                }
+            )
+
+        cur.execute(
+            """
+            SELECT original_total, discount_pct, subtotal, discount_amount,
+                   rounding, refund_amount
+            FROM invoice_return_summary
+            WHERE invoice_return_id = %s
+            """,
+            (invoice_return_id,),
+        )
+        summary_row = cur.fetchone()
+        if summary_row:
+            summary = {
+                "original_total": float(summary_row[0] or 0),
+                "discount_pct": float(summary_row[1] or 0),
+                "subtotal": float(summary_row[2] or 0),
+                "discount_amount": float(summary_row[3] or 0),
+                "rounding": float(summary_row[4] or 0),
+                "refund_amount": float(summary_row[5] or 0),
+            }
+        else:
+            summary = {
+                "original_total": 0,
+                "discount_pct": 0,
+                "subtotal": 0,
+                "discount_amount": 0,
+                "rounding": 0,
+                "refund_amount": 0,
+            }
+
+        pdf_bytes = generate_invoice_return_pdf_bytes(invoice_return, items, summary)
+        response = make_response(pdf_bytes)
+        response.headers["Content-Type"] = "application/pdf"
+        response.headers["Content-Disposition"] = (
+            f'attachment; filename="invoice_return_{invoice_return_id}.pdf"'
+        )
+        return response
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.route("/api/invoice-return/<invoice_return_id>/email", methods=["POST"])
+def send_invoice_return_email_api(invoice_return_id):
+    data = request.get_json() or {}
+    recipient = data.get("email")
+    custom_message = data.get("message", "")
+    if not recipient:
+        return jsonify({"success": False, "error": "Recipient email required"}), 400
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            SELECT invoice_return_id, invoice_id, customer_name, customer_id,
+                   email, phone, contact_person, customer_ref_no,
+                   return_date, refund_amount, status
+            FROM invoice_return
+            WHERE invoice_return_id = %s
+            """,
+            (invoice_return_id,),
+        )
+        row = cur.fetchone()
+        if not row:
+            return jsonify({"success": False, "error": "Return not found"}), 404
+
+        invoice_return = {
+            "invoice_return_id": row[0] or "",
+            "invoice_id": row[1] or "",
+            "customer_name": row[2] or "",
+            "customer_id": row[3] or "",
+            "email": row[4] or "",
+            "phone": row[5] or "",
+            "contact_person": row[6] or "",
+            "customer_ref_no": row[7] or "",
+            "return_date": row[8].strftime("%Y-%m-%d") if row[8] else "",
+            "refund_amount": float(row[9] or 0),
+            "status": row[10] or "",
+        }
+
+        cur.execute(
+            """
+            SELECT product_id, product_name, invoice_quantity, return_quantity,
+                   serial_number, return_reason, uom, unit_price, total
+            FROM invoice_return_items
+            WHERE invoice_return_id = %s
+            ORDER BY id
+            """,
+            (invoice_return_id,),
+        )
+        items = []
+        for r in cur.fetchall():
+            items.append(
+                {
+                    "product_id": r[0] or "",
+                    "product_name": r[1] or "",
+                    "invoice_quantity": float(r[2] or 0),
+                    "return_quantity": float(r[3] or 0),
+                    "serial_number": r[4] or "",
+                    "return_reason": r[5] or "",
+                    "uom": r[6] or "",
+                    "unit_price": float(r[7] or 0),
+                    "total": float(r[8] or 0),
+                }
+            )
+
+        cur.execute(
+            """
+            SELECT original_total, discount_pct, subtotal, discount_amount,
+                   rounding, refund_amount
+            FROM invoice_return_summary
+            WHERE invoice_return_id = %s
+            """,
+            (invoice_return_id,),
+        )
+        summary_row = cur.fetchone()
+        if summary_row:
+            summary = {
+                "original_total": float(summary_row[0] or 0),
+                "discount_pct": float(summary_row[1] or 0),
+                "subtotal": float(summary_row[2] or 0),
+                "discount_amount": float(summary_row[3] or 0),
+                "rounding": float(summary_row[4] or 0),
+                "refund_amount": float(summary_row[5] or 0),
+            }
+        else:
+            summary = {
+                "original_total": 0,
+                "discount_pct": 0,
+                "subtotal": 0,
+                "discount_amount": 0,
+                "rounding": 0,
+                "refund_amount": 0,
+            }
+
+        success = send_invoice_return_email(
+            recipient, invoice_return, items, summary, custom_message
+        )
+        if success:
+            return jsonify({"success": True, "message": "Email sent successfully"})
+        return jsonify({"success": False, "error": "Failed to send email"}), 500
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.route("/api/invoice-return/<return_id>/update-items-summary", methods=["PUT"])
+def update_invoice_return_items_summary(return_id):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            "SELECT status FROM invoice_return WHERE invoice_return_id = %s",
+            (return_id,),
+        )
+        row = cur.fetchone()
+        if not row:
+            return jsonify({"success": False, "error": "Invoice return not found"}), 404
+        if (row[0] or "").strip().lower() != "draft":
+            return (
+                jsonify({"success": False, "error": "Only draft returns can be updated"}),
+                403,
+            )
+
+        data = request.get_json() or {}
+        items = data.get("items", [])
+        summary = data.get("summary", {})
+        if not items:
+            return jsonify({"success": False, "error": "No items provided"}), 400
+
+        cur.execute(
+            "DELETE FROM invoice_return_items WHERE invoice_return_id = %s",
+            (return_id,),
+        )
+        for item in items:
+            rq = item.get("quantity", 0)
+            try:
+                rq_int = int(float(rq))
+            except (TypeError, ValueError):
+                rq_int = 0
+            cur.execute(
+                """
+                INSERT INTO invoice_return_items (
+                    id,
+                    invoice_return_id,
+                    product_id,
+                    product_name,
+                    invoice_quantity,
+                    return_quantity,
+                    serial_number,
+                    return_reason,
+                    uom,
+                    unit_price,
+                    tax_pct,
+                    disc_pct,
+                    total
+                ) VALUES (
+                    (SELECT COALESCE(MAX(id), 0) + 1 FROM invoice_return_items),
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                )
+                """,
+                (
+                    return_id,
+                    item.get("product_id"),
+                    item.get("product_name"),
+                    float(item.get("invoice_quantity", 0)),
+                    rq_int,
+                    item.get("serial_number", ""),
+                    item.get("return_reason", ""),
+                    item.get("uom"),
+                    float(item.get("unit_price", 0)),
+                    float(item.get("tax_pct", 0)),
+                    float(item.get("disc_pct", 0)),
+                    float(item.get("total", 0)),
+                ),
+            )
+
+        cur.execute(
+            "DELETE FROM invoice_return_summary WHERE invoice_return_id = %s",
+            (return_id,),
+        )
+        cur.execute(
+            """
+            INSERT INTO invoice_return_summary (
+                id,
+                invoice_return_id,
+                original_total,
+                discount_pct,
+                subtotal,
+                discount_amount,
+                rounding,
+                refund_amount
+            ) VALUES (
+                (SELECT COALESCE(MAX(id), 0) + 1 FROM invoice_return_summary),
+                %s, %s, %s, %s, %s, %s, %s
+            )
+            """,
+            (
+                return_id,
+                float(summary.get("original_total", 0)),
+                float(summary.get("discount_pct", 0)),
+                float(summary.get("subtotal", 0)),
+                float(summary.get("discount_amount", 0)),
+                float(summary.get("rounding", 0)),
+                float(summary.get("refund_amount", 0)),
+            ),
+        )
+
+        conn.commit()
+        return jsonify({"success": True, "message": "Items and summary updated successfully"})
+    except Exception as e:
+        conn.rollback()
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.route("/invoice-return-list")
+def invoice_return_list_page():
+    user_email = session.get("user")
+    if not user_email:
+        return redirect(url_for("login", message="session_expired"))
+    users = load_users()
+    user_name = "User"
+    for u in users:
+        if isinstance(u, dict) and (u.get("email") or "").lower() == user_email.lower():
+            user_name = u.get("name") or "User"
+            break
+    return render_template(
+        "invoice-return.html",
+        page="invoice_return",
+        title="Invoice Return List",
+        user_email=user_email,
+        user_name=user_name,
+    )
+
+
+@app.route("/api/invoice-returns")
+def api_invoice_returns_list():
+    if not session.get("user"):
+        return jsonify({"error": "Unauthorized"}), 401
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            SELECT invoice_return_id, invoice_id, customer_name, return_date, status
+            FROM invoice_return
+            ORDER BY return_date DESC NULLS LAST, invoice_return_id DESC
+            """
+        )
+        out = []
+        for r in cur.fetchall():
+            rd = r[3].strftime("%Y-%m-%d") if r[3] else ""
+            out.append(
+                {
+                    "return_id": r[0],
+                    "invoice_ref": r[1],
+                    "customer_name": r[2] or "",
+                    "return_date": rd,
+                    "status": r[4] or "Draft",
+                }
+            )
+        return jsonify(out)
+    finally:
+        cur.close()
+        conn.close()
+
 
 # =========================================
 # ✅ RUN APP

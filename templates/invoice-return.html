@@ -1,0 +1,168 @@
+{% extends "menu.html" %}
+
+{% block extra_css %}
+<!-- Invoice Return page stylesheet -->
+<link rel="stylesheet" href="{{ url_for('static', filename='invoice-return.css') }}">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+{% endblock %}
+
+{% block content %}
+<div class="delivery-note-page" id="deliveryNotePage">
+
+  <!-- =====================================================
+       HEADER
+  ====================================================== -->
+  <div class="dn-header">
+    <h2 class="dn-heading">Invoice Return List</h2>
+
+    <!-- New Invoice Return button -->
+    <button type="button" class="dn-btn-primary" id="newDeliveryNoteBtn">
+      + New Invoice Return
+    </button>
+  </div>
+
+  <!-- =====================================================
+       MAIN CARD
+  ====================================================== -->
+  <div class="dn-card">
+
+    <!-- =====================================================
+         SEARCH
+    ====================================================== -->
+    <div class="dn-search-row">
+      <div class="dn-search-wrap">
+        <input
+          type="text"
+          id="dnSearchInput"
+          class="dn-search-input"
+          placeholder="Search by ID number 🔍︎"
+          autocomplete="off"
+        >
+      </div>
+
+      <!-- Clear filter button -->
+      <button type="button" class="dn-clear-link" id="dnClearBtn">
+        Clear Filter
+      </button>
+    </div>
+
+    <!-- =====================================================
+         FILTERS
+    ====================================================== -->
+    <div class="dn-filters">
+
+      <!-- Invoice Status -->
+      <div class="dn-filter">
+        <label class="dn-label">Invoice Status</label>
+        <select id="dnStatusFilter" class="dn-select">
+          <option value="all">All</option>
+          <option value="draft">Draft</option>
+          <option value="submitted">Submitted</option>
+          <option value="cancelled">Cancelled</option>
+        </select>
+      </div>
+
+      <!-- Customer Name -->
+      <div class="dn-filter">
+        <label class="dn-label">Customer Name</label>
+        <select id="dnTypeFilter" class="dn-select">
+          <option value="all">All Customers</option>
+        </select>
+      </div>
+
+      <!-- Return Date Range -->
+      <div class="dn-filter dn-date-filter">
+        <label class="dn-label">Return Date</label>
+
+        <div class="dn-date-wrap">
+          <!-- From -->
+          <div class="dn-date-field">
+            <span class="dn-date-text">From</span>
+            <input type="date" id="dnFromDate" class="dn-date-input">
+            <span class="dn-cal">|</span>
+          </div>
+
+          <!-- To -->
+          <div class="dn-date-field">
+            <span class="dn-date-text">To</span>
+            <input type="date" id="dnToDate" class="dn-date-input">
+            
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- =====================================================
+         TABLE
+    ====================================================== -->
+    <div class="dn-table-wrap">
+      <table class="dn-table">
+        <thead>
+           <tr>
+            <!-- Mark column -->
+            <th class="dn-th-check">
+              <span class="dn-mark-text">Mark</span>
+            </th>
+            
+            <th>Invoice Return ID</th>
+            <th>Invoice Ref Id.</th>
+            <th>Customer Name</th>
+            <th>Return Date</th>
+            <!-- <th>Refund Amount</th> -->
+
+            <!-- Status (click to open sort menu) -->
+            <th class="dn-sort-th" id="statusSortTh">
+              Status <span class="dn-sort-caret">▾</span>
+
+              <div class="dn-sort-menu" id="statusSortMenu">
+                <button type="button" data-sort="newest">Newest First</button>
+                <button type="button" data-sort="oldest">Oldest First</button>
+                <button type="button" data-sort="progress">Progressing (Draft → Cancelled)</button>
+                <button type="button" data-sort="reverse">Reverse Progressing (Cancelled → Draft)</button>
+              </div>
+            </th>
+
+            <!-- Action column -->
+            <th class="dn-th-action">Action</th>
+           </tr>
+        </thead>
+
+        <tbody id="dnTbody">
+          <!-- No data row -->
+          <tr id="dnNoDataRow">
+            <td colspan="8" class="dn-empty">No Invoice Returns found</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- =====================================================
+         FOOTER / PAGER
+    ====================================================== -->
+    <div class="dn-footer">
+      <div class="dn-showing" id="dnShowingText">Showing 0 of 0 Entries</div>
+
+      <div class="dn-pager">
+        <button type="button" class="dn-btn-page" id="dnPrevBtn">
+          <span class="dn-arrow">‹</span> Prev
+        </button>
+
+        <div class="dn-page-text" id="dnPageText">
+          Page <strong>1</strong> of <strong>1</strong>
+        </div>
+
+        <button type="button" class="dn-btn-page" id="dnNextBtn">
+          Next <span class="dn-arrow">›</span>
+        </button>
+      </div>
+    </div>
+
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<!-- Invoice Return page logic -->
+<script src="{{ url_for('static', filename='invoice-return.js') }}"></script>
+{% endblock %}
