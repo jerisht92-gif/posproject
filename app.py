@@ -391,212 +391,212 @@ load_dotenv(".env")
 load_dotenv("env")  # also load "env" if you keep DB keys there instead of .env
 
 
-def _migrate_dnr_data_pos_to_public(cur):
-    """
-    Merge DNR rows from schema `pos` into `public` when both exist (search_path used to
-    create tables in `pos` while pgAdmin queries `public` by default).
+# def _migrate_dnr_data_pos_to_public(cur):
+#     """
+#     Merge DNR rows from schema `pos` into `public` when both exist (search_path used to
+#     create tables in `pos` while pgAdmin queries `public` by default).
 
-    Copies any `dnr_id` (and child rows) present in pos but missing in public — not only
-    when public is empty, so a partial public table does not block migration.
-    """
-    try:
-        cur.execute(
-            """
-            SELECT EXISTS (
-                SELECT 1 FROM information_schema.tables
-                WHERE table_schema = 'pos' AND table_name = 'deliverynote_returns'
-            )
-            """
-        )
-        if not cur.fetchone()[0]:
-            return
-        cur.execute("SELECT COUNT(*) FROM pos.deliverynote_returns")
-        if (cur.fetchone() or [0])[0] == 0:
-            return
-        cur.execute(
-            """
-            INSERT INTO public.deliverynote_returns
-            SELECT p.*
-            FROM pos.deliverynote_returns p
-            WHERE NOT EXISTS (
-                SELECT 1 FROM public.deliverynote_returns x WHERE x.dnr_id = p.dnr_id
-            )
-            """
-        )
-        # Child rows: omit SERIAL id so we never collide with ids already used in public.
-        cur.execute(
-            """
-            INSERT INTO public.deliverynote_return_items (
-                dnr_id, product_id, product_name, uom, invoiced_qty, returned_qty, serial_no, return_reason
-            )
-            SELECT pi.dnr_id, pi.product_id, pi.product_name, pi.uom, pi.invoiced_qty,
-                   pi.returned_qty, pi.serial_no, pi.return_reason
-            FROM pos.deliverynote_return_items pi
-            WHERE EXISTS (
-                SELECT 1 FROM public.deliverynote_returns h WHERE h.dnr_id = pi.dnr_id
-            )
-            AND NOT EXISTS (
-                SELECT 1 FROM public.deliverynote_return_items x
-                WHERE x.dnr_id = pi.dnr_id
-                  AND x.product_id IS NOT DISTINCT FROM pi.product_id
-                  AND COALESCE(x.serial_no, '') = COALESCE(pi.serial_no, '')
-            )
-            """
-        )
-        cur.execute(
-            """
-            INSERT INTO public.deliverynote_return_history (
-                dnr_id, action, description, created_by, created_at
-            )
-            SELECT h.dnr_id, h.action, h.description, h.created_by, h.created_at
-            FROM pos.deliverynote_return_history h
-            WHERE EXISTS (
-                SELECT 1 FROM public.deliverynote_returns d WHERE d.dnr_id = h.dnr_id
-            )
-            AND NOT EXISTS (
-                SELECT 1 FROM public.deliverynote_return_history x
-                WHERE x.dnr_id = h.dnr_id AND x.created_at = h.created_at
-            )
-            """
-        )
-        cur.execute(
-            """
-            INSERT INTO public.deliverynote_return_comments (
-                dnr_id, comment, created_by, created_at
-            )
-            SELECT c.dnr_id, c.comment, c.created_by, c.created_at
-            FROM pos.deliverynote_return_comments c
-            WHERE EXISTS (
-                SELECT 1 FROM public.deliverynote_returns d WHERE d.dnr_id = c.dnr_id
-            )
-            AND NOT EXISTS (
-                SELECT 1 FROM public.deliverynote_return_comments x
-                WHERE x.dnr_id = c.dnr_id AND x.created_at = c.created_at
-            )
-            """
-        )
-        cur.execute(
-            """
-            INSERT INTO public.deliverynote_return_attachments (dnr_id, file_name, file_path, uploaded_at)
-            SELECT a.dnr_id, a.file_name, a.file_path, a.uploaded_at
-            FROM pos.deliverynote_return_attachments a
-            WHERE EXISTS (
-                SELECT 1 FROM public.deliverynote_returns d WHERE d.dnr_id = a.dnr_id
-            )
-            AND NOT EXISTS (
-                SELECT 1 FROM public.deliverynote_return_attachments x
-                WHERE x.dnr_id = a.dnr_id
-                  AND COALESCE(x.file_name, '') = COALESCE(a.file_name, '')
-            )
-            """
-        )
-        for tbl in (
-            "public.deliverynote_return_items",
-            "public.deliverynote_return_history",
-            "public.deliverynote_return_comments",
-            "public.deliverynote_return_attachments",
-        ):
-            try:
-                cur.execute(
-                    f"""
-                    SELECT setval(
-                        pg_get_serial_sequence('{tbl}', 'id'),
-                        COALESCE((SELECT MAX(id) FROM {tbl}), 1),
-                        true
-                    )
-                    """
-                )
-            except Exception as se:
-                print(f"deliverynote_returns setval {tbl}: {se}")
-        print("deliverynote_returns: merged missing rows from pos → public (if any)")
-    except Exception as e:
-        print(f"deliverynote_returns pos→public migration skipped: {e}")
-
-
-def _disable_dnr_rls_if_possible(cur):
-    """Supabase: tables with RLS enabled and no policies block INSERT/SELECT for app roles."""
-    for tbl in (
-        "public.deliverynote_returns",
-        "public.deliverynote_return_items",
-        "public.deliverynote_return_history",
-        "public.deliverynote_return_comments",
-        "public.deliverynote_return_attachments",
-    ):
-        try:
-            cur.execute(f"ALTER TABLE {tbl} DISABLE ROW LEVEL SECURITY")
-        except Exception as e:
-            print(f"DNR RLS disable skipped for {tbl}: {e}")
+#     Copies any `dnr_id` (and child rows) present in pos but missing in public — not only
+#     when public is empty, so a partial public table does not block migration.
+#     """
+#     try:
+#         cur.execute(
+#             """
+#             SELECT EXISTS (
+#                 SELECT 1 FROM information_schema.tables
+#                 WHERE table_schema = 'pos' AND table_name = 'deliverynote_returns'
+#             )
+#             """
+#         )
+#         if not cur.fetchone()[0]:
+#             return
+#         cur.execute("SELECT COUNT(*) FROM pos.deliverynote_returns")
+#         if (cur.fetchone() or [0])[0] == 0:
+#             return
+#         cur.execute(
+#             """
+#             INSERT INTO public.deliverynote_returns
+#             SELECT p.*
+#             FROM pos.deliverynote_returns p
+#             WHERE NOT EXISTS (
+#                 SELECT 1 FROM public.deliverynote_returns x WHERE x.dnr_id = p.dnr_id
+#             )
+#             """
+#         )
+#         # Child rows: omit SERIAL id so we never collide with ids already used in public.
+#         cur.execute(
+#             """
+#             INSERT INTO public.deliverynote_return_items (
+#                 dnr_id, product_id, product_name, uom, invoiced_qty, returned_qty, serial_no, return_reason
+#             )
+#             SELECT pi.dnr_id, pi.product_id, pi.product_name, pi.uom, pi.invoiced_qty,
+#                    pi.returned_qty, pi.serial_no, pi.return_reason
+#             FROM pos.deliverynote_return_items pi
+#             WHERE EXISTS (
+#                 SELECT 1 FROM public.deliverynote_returns h WHERE h.dnr_id = pi.dnr_id
+#             )
+#             AND NOT EXISTS (
+#                 SELECT 1 FROM public.deliverynote_return_items x
+#                 WHERE x.dnr_id = pi.dnr_id
+#                   AND x.product_id IS NOT DISTINCT FROM pi.product_id
+#                   AND COALESCE(x.serial_no, '') = COALESCE(pi.serial_no, '')
+#             )
+#             """
+#         )
+#         cur.execute(
+#             """
+#             INSERT INTO public.deliverynote_return_history (
+#                 dnr_id, action, description, created_by, created_at
+#             )
+#             SELECT h.dnr_id, h.action, h.description, h.created_by, h.created_at
+#             FROM pos.deliverynote_return_history h
+#             WHERE EXISTS (
+#                 SELECT 1 FROM public.deliverynote_returns d WHERE d.dnr_id = h.dnr_id
+#             )
+#             AND NOT EXISTS (
+#                 SELECT 1 FROM public.deliverynote_return_history x
+#                 WHERE x.dnr_id = h.dnr_id AND x.created_at = h.created_at
+#             )
+#             """
+#         )
+#         cur.execute(
+#             """
+#             INSERT INTO public.deliverynote_return_comments (
+#                 dnr_id, comment, created_by, created_at
+#             )
+#             SELECT c.dnr_id, c.comment, c.created_by, c.created_at
+#             FROM pos.deliverynote_return_comments c
+#             WHERE EXISTS (
+#                 SELECT 1 FROM public.deliverynote_returns d WHERE d.dnr_id = c.dnr_id
+#             )
+#             AND NOT EXISTS (
+#                 SELECT 1 FROM public.deliverynote_return_comments x
+#                 WHERE x.dnr_id = c.dnr_id AND x.created_at = c.created_at
+#             )
+#             """
+#         )
+#         cur.execute(
+#             """
+#             INSERT INTO public.deliverynote_return_attachments (dnr_id, file_name, file_path, uploaded_at)
+#             SELECT a.dnr_id, a.file_name, a.file_path, a.uploaded_at
+#             FROM pos.deliverynote_return_attachments a
+#             WHERE EXISTS (
+#                 SELECT 1 FROM public.deliverynote_returns d WHERE d.dnr_id = a.dnr_id
+#             )
+#             AND NOT EXISTS (
+#                 SELECT 1 FROM public.deliverynote_return_attachments x
+#                 WHERE x.dnr_id = a.dnr_id
+#                   AND COALESCE(x.file_name, '') = COALESCE(a.file_name, '')
+#             )
+#             """
+#         )
+#         for tbl in (
+#             "public.deliverynote_return_items",
+#             "public.deliverynote_return_history",
+#             "public.deliverynote_return_comments",
+#             "public.deliverynote_return_attachments",
+#         ):
+#             try:
+#                 cur.execute(
+#                     f"""
+#                     SELECT setval(
+#                         pg_get_serial_sequence('{tbl}', 'id'),
+#                         COALESCE((SELECT MAX(id) FROM {tbl}), 1),
+#                         true
+#                     )
+#                     """
+#                 )
+#             except Exception as se:
+#                 print(f"deliverynote_returns setval {tbl}: {se}")
+#         print("deliverynote_returns: merged missing rows from pos → public (if any)")
+#     except Exception as e:
+#         print(f"deliverynote_returns pos→public migration skipped: {e}")
 
 
-def _ensure_deliverynote_returns_schema():
-    """Create DNR tables if missing (same DDL as sql/deliverynote_returns_schema.sql)."""
-    path = os.path.join(BASE_DIR, "sql", "deliverynote_returns_schema.sql")
-    if not os.path.isfile(path):
-        print("deliverynote_returns schema: sql file not found, skipped")
-        return
-    try:
-        with open(path, encoding="utf-8") as f:
-            raw = f.read()
-    except OSError as e:
-        print(f"deliverynote_returns schema: read failed: {e}")
-        return
-    lines = [ln for ln in raw.splitlines() if not ln.strip().startswith("--")]
-    cleaned = "\n".join(lines)
-    parts = [p.strip() for p in cleaned.split(";") if p.strip()]
-    if not parts:
-        return
-    conn = get_db_connection()
-    try:
-        with conn.cursor() as cur:
-            for stmt in parts:
-                cur.execute(stmt + ";")
-            _disable_dnr_rls_if_possible(cur)
-            _migrate_dnr_data_pos_to_public(cur)
-            cur.execute("SELECT COUNT(*) FROM public.deliverynote_returns")
-            _dnr_pub_n = cur.fetchone()[0]
-            cur.execute(
-                "SELECT current_database(), current_user, current_setting('search_path', true)"
-            )
-            _dbn, _usr, _sp = cur.fetchone()
-        conn.commit()
-        print(
-            f"deliverynote_returns schema: ensured "
-            f"(public.deliverynote_returns row count = {_dnr_pub_n})"
-        )
-        print(
-            f"deliverynote_returns connection: database={_dbn!r} role={_usr!r} search_path={_sp!r}"
-        )
-        print(
-            "If pgAdmin shows 0 rows but this count > 0, pgAdmin is connected to a "
-            "different server or database than Flask — match host + database name from .env."
-        )
-        _env_db = (os.getenv("dbname") or os.getenv("DBNAME") or "").strip()
-        _env_host = (os.getenv("host") or os.getenv("HOST") or "").strip()
-        if _env_db or _env_host:
-            print(f"deliverynote_returns .env hint: host={_env_host!r} dbname={_env_db!r}")
-    except Exception as e:
-        try:
-            conn.rollback()
-        except Exception:
-            pass
-        print(f"deliverynote_returns schema ensure failed: {e}")
-    finally:
-        try:
-            conn.close()
-        except Exception:
-            pass
+# def _disable_dnr_rls_if_possible(cur):
+#     """Supabase: tables with RLS enabled and no policies block INSERT/SELECT for app roles."""
+#     for tbl in (
+#         "public.deliverynote_returns",
+#         "public.deliverynote_return_items",
+#         "public.deliverynote_return_history",
+#         "public.deliverynote_return_comments",
+#         "public.deliverynote_return_attachments",
+#     ):
+#         try:
+#             cur.execute(f"ALTER TABLE {tbl} DISABLE ROW LEVEL SECURITY")
+#         except Exception as e:
+#             print(f"DNR RLS disable skipped for {tbl}: {e}")
 
 
-# Pre-warm DB pool on startup to reduce first-login latency.
-try:
-    _init_db_pool()
-except Exception as e:
-    print(f"DB pool warmup skipped: {e}")
+# def _ensure_deliverynote_returns_schema():
+#     """Create DNR tables if missing (same DDL as sql/deliverynote_returns_schema.sql)."""
+#     path = os.path.join(BASE_DIR, "sql", "deliverynote_returns_schema.sql")
+#     if not os.path.isfile(path):
+#         print("deliverynote_returns schema: sql file not found, skipped")
+#         return
+#     try:
+#         with open(path, encoding="utf-8") as f:
+#             raw = f.read()
+#     except OSError as e:
+#         print(f"deliverynote_returns schema: read failed: {e}")
+#         return
+#     lines = [ln for ln in raw.splitlines() if not ln.strip().startswith("--")]
+#     cleaned = "\n".join(lines)
+#     parts = [p.strip() for p in cleaned.split(";") if p.strip()]
+#     if not parts:
+#         return
+#     conn = get_db_connection()
+#     try:
+#         with conn.cursor() as cur:
+#             for stmt in parts:
+#                 cur.execute(stmt + ";")
+#             _disable_dnr_rls_if_possible(cur)
+#             _migrate_dnr_data_pos_to_public(cur)
+#             cur.execute("SELECT COUNT(*) FROM public.deliverynote_returns")
+#             _dnr_pub_n = cur.fetchone()[0]
+#             cur.execute(
+#                 "SELECT current_database(), current_user, current_setting('search_path', true)"
+#             )
+#             _dbn, _usr, _sp = cur.fetchone()
+#         conn.commit()
+#         print(
+#             f"deliverynote_returns schema: ensured "
+#             f"(public.deliverynote_returns row count = {_dnr_pub_n})"
+#         )
+#         print(
+#             f"deliverynote_returns connection: database={_dbn!r} role={_usr!r} search_path={_sp!r}"
+#         )
+#         print(
+#             "If pgAdmin shows 0 rows but this count > 0, pgAdmin is connected to a "
+#             "different server or database than Flask — match host + database name from .env."
+#         )
+#         _env_db = (os.getenv("dbname") or os.getenv("DBNAME") or "").strip()
+#         _env_host = (os.getenv("host") or os.getenv("HOST") or "").strip()
+#         if _env_db or _env_host:
+#             print(f"deliverynote_returns .env hint: host={_env_host!r} dbname={_env_db!r}")
+#     except Exception as e:
+#         try:
+#             conn.rollback()
+#         except Exception:
+#             pass
+#         print(f"deliverynote_returns schema ensure failed: {e}")
+#     finally:
+#         try:
+#             conn.close()
+#         except Exception:
+#             pass
 
-try:
-    _ensure_deliverynote_returns_schema()
-except Exception as e:
-    print(f"deliverynote_returns schema ensure skipped: {e}")
+
+# # Pre-warm DB pool on startup to reduce first-login latency.
+# try:
+#     _init_db_pool()
+# except Exception as e:
+#     print(f"DB pool warmup skipped: {e}")
+
+# try:
+#     _ensure_deliverynote_returns_schema()
+# except Exception as e:
+#     print(f"deliverynote_returns schema ensure skipped: {e}")
 
 # =========================================
 # ✅ SQLALCHEMY ENGINE (optional)
