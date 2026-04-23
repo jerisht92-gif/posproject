@@ -16,8 +16,9 @@ from sqlalchemy import create_engine
 # from sqlalchemy.pool import NullPool
 import os
 
-# Load environment variables from .env (same folder as this file)
-load_dotenv()
+# Load environment variables: standard name is .env; this project also supports "env".
+load_dotenv(".env")
+load_dotenv("env")
 
 # Fetch variables (lowercase keys match Supabase / .env examples)
 USER = os.getenv("user")

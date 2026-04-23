@@ -1,0 +1,286 @@
+{% extends "menu.html" %}
+{% block title %}New Delivery Note Return{% endblock %}
+
+{% block extra_css %}
+<!-- Same base as New Delivery Note: DN2 layout + form + table tokens -->
+<link rel="stylesheet" href="{{ url_for('static', filename='deliverynote-new.css') }}">
+<!-- Attachment upload/list (same as quotation); comment UI matches Sales Order (so-ch-*) -->
+<link rel="stylesheet" href="{{ url_for('static', filename='add-new-quotation.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='deliverynotereturn-new.css') }}?v=34">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+{% endblock %}
+
+{% block content %}
+<div class="dn2-page dnr-new-wrapper">
+
+  <div class="dn2-top">
+    <div class="dn2-title-wrap">
+      <h2 class="dn2-title">
+        <span>New Delivery Note Return</span>
+        <span id="dnrStatusBadge" class="dn2-status-pill dnr-status-badge dnr-status-hidden"></span>
+      </h2>
+    </div>
+  </div>
+
+  <div class="dn2-card">
+
+    <div class="dn2-form">
+      <div class="dn2-row">
+        <div class="dn2-field">
+          <label>DNR ID</label>
+          <input type="text" id="dnrId" class="dn2-input auto-field" value="{{ dnr_id or 'DNR-001' }}" readonly>
+        </div>
+        <div class="dn2-field">
+          <label>DNR Date</label>
+          <input type="date" id="dnrDate">
+        </div>
+      </div>
+      <div class="dn2-row">
+        <div class="dn2-field">
+          <label>Invoice Return Reference ID</label>
+          <input type="hidden" id="initialInvoiceReturnRef" value="{{ record.invoice_return_ref_id if record else '' }}">
+          <select id="invoiceReturnReferenceId">
+            <option value="">Select Invoice Return</option>
+          </select>
+        </div>
+        <div class="dn2-field">
+          <label>Customer Ref No</label>
+          <input type="text" id="customerRefNo" placeholder="Enter customer reference number">
+        </div>
+      </div>
+    </div>
+
+    <div class="dn2-section">
+      <h3>Customer Information</h3>
+      <div class="dn2-form">
+        <div class="dn2-row">
+          <div class="dn2-field">
+            <label>Customer Name</label>
+            <div class="custom-dropdown">
+              <div class="dropdown-selected" id="customerNameSelected" onclick="toggleCustomerDropdown()">
+                Select Customer
+              </div>
+              <div class="dropdown-menu" id="customerNameDropdown">
+                <input
+                  type="text"
+                  id="customerSearchInput"
+                  placeholder="Search Customer..."
+                  onkeyup="filterCustomerDropdown()"
+                >
+                <div class="dropdown-list" id="customerDropdownList">
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="dn2-field">
+            <label>Customer ID</label>
+            <input type="text" id="customerId" class="dn2-input auto-field" placeholder="Customer ID" readonly>
+          </div>
+        </div>
+        <div class="dn2-row">
+          <div class="dn2-field">
+            <label>Email ID</label>
+            <input type="email" id="customerEmail" placeholder="Enter Email ID">
+          </div>
+          <div class="dn2-field">
+            <label>Phone Number</label>
+            <input type="text" id="customerPhone" placeholder="Enter Phone number">
+          </div>
+        </div>
+        <div class="dn2-row">
+          <div class="dn2-field dn2-full">
+            <label>Contact Person</label>
+            <input type="text" id="contactPerson" placeholder="Enter contact person name">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="dn2-section">
+      <h3>Line Items</h3>
+      <div class="so-items-box dnr-so-items-scroll">
+        <table class="so-items-table dnr-line-items" id="lineItemsTable">
+          <thead>
+            <tr>
+              <th class="so-small-col">S.No</th>
+              <th>Product Name</th>
+              <th>Product ID</th>
+              <th>UOM</th>
+              <th>Invoiced Qty</th>
+              <th>Returned Qty(Cus)</th>
+              <th>Serial No(s)</th>
+              <th>Reason</th>
+            </tr>
+          </thead>
+          <tbody id="lineItemsTableBody">
+            
+
+
+        
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Comments (left) | History (center) | Attachments (right) — same red bar -->
+    <div class="so-ch-card" id="dnrCommentHistoryCard">
+      <div class="so-ch-topbar so-ch-topbar--three">
+        <button type="button" class="so-ch-pill active" id="dnrTabComments" data-tab="comments">
+          <i class="fa-solid fa-comment-dots"></i> Comments
+        </button>
+        <button type="button" class="so-ch-pill" id="dnrTabHistory" data-tab="history">
+          <i class="fa-solid fa-clock-rotate-left"></i> History
+        </button>
+        <button type="button" class="so-ch-pill" id="dnrTabAttachments" data-tab="attachments">
+          <i class="fa-solid fa-paperclip"></i> Attachments
+        </button>
+      </div>
+
+      <div class="so-ch-panel" id="comments">
+        <div class="so-ch-title">Add Comment</div>
+        <textarea id="commentInput" class="so-ch-textarea" placeholder="Enter your comment"></textarea>
+        <div class="so-ch-actions">
+          <button type="button" class="so-ch-addbtn" id="addCommentBtn" disabled onclick="addComment()">Add New</button>
+        </div>
+        <div class="so-ch-list" id="commentList"></div>
+        <div class="so-ch-empty" id="commentsEmpty">No comments yet</div>
+      </div>
+
+      <div class="so-ch-panel hidden" id="attachments">
+        <div class="upload-section">
+          <input type="file" id="fileInput" hidden multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png">
+          <div class="upload-card" id="uploadCard">
+            <i class="fa-solid fa-cloud-upload-alt"></i>
+            <h4>Upload Attachment</h4>
+            <p>Click to select or drag &amp; drop</p>
+            <small>PDF, DOC, XLS, JPG, PNG (Max 10MB)</small>
+          </div>
+          <button type="button" class="btn-upload" id="uploadBtn">
+            <i class="fa-solid fa-upload"></i> Choose File
+          </button>
+        </div>
+
+        <div class="files-section">
+          <div class="files-header">
+            <h4><i class="fa-solid fa-paperclip"></i> Attached Files</h4>
+            <span class="file-count" id="fileCount">0 / 5 files</span>
+          </div>
+          <div class="files-list" id="filesList">
+            <div class="no-files">
+              <i class="fa-regular fa-folder-open"></i>
+              <p>No files attached yet</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="so-ch-panel hidden" id="history">
+        <div class="so-ch-empty" id="historyEmpty">No history</div>
+        <div class="so-ch-history" id="historyList"></div>
+      </div>
+    </div>
+
+
+
+    <div class="dn2-footer">
+
+      <div class="dn2-left-actions">
+
+        <button type="button" class="btn-cancel-dn" id="cancelDnrBtn" onclick="openCancelDnrModal()">Cancel DNR</button>
+
+      </div>
+
+      <div class="dn2-right-actions">
+
+        <button type="button" class="btn-outline" id="dnrFooterCancelBtn" onclick="goBackToDnrList()">Cancel</button>
+
+        <button type="button" class="btn-save-draft" id="saveDraftBtn" onclick="saveDraftDnr()">Save Draft</button>
+
+        <button type="button" class="btn-submit" id="submitBtn" onclick="submitDnr()" disabled>Submit</button>
+
+        <button type="button" class="btn-icon" id="pdfBtn" title="Download PDF">📄</button>
+
+        <button type="button" class="btn-icon" id="emailBtn" title="Send Mail">✉</button>
+
+      </div>
+
+    </div>
+
+
+
+  </div>
+
+</div>
+
+
+
+<div class="pos-modal-backdrop" id="cancelDnrBackdrop" style="display:none;">
+
+  <div class="pos-modal" role="dialog" aria-modal="true" aria-labelledby="cancelDnrTitle">
+
+    <div class="pos-modal-head">
+
+      <h4 id="cancelDnrTitle">Cancel Delivery Note Return</h4>
+
+      <button type="button" class="pos-modal-x" onclick="closeCancelDnrModal()">×</button>
+
+    </div>
+
+    <div class="pos-modal-body">
+
+      <p class="pos-modal-msg">Are you sure you want to cancel this delivery note return?</p>
+
+      <label class="pos-modal-label" for="cancelDnrReason">Reason for cancellation</label>
+
+      <textarea
+
+        id="cancelDnrReason"
+
+        class="pos-modal-textarea"
+
+        placeholder="Enter cancellation reason"
+
+      ></textarea>
+
+    </div>
+
+    <div class="pos-modal-actions">
+
+      <button type="button" class="pos-btn pos-btn-outline" onclick="closeCancelDnrModal()">No</button>
+
+      <button type="button" class="pos-btn pos-btn-primary" onclick="confirmCancelDnr()">Yes, Cancel</button>
+
+    </div>
+
+  </div>
+
+</div>
+
+<div class="pos-modal-backdrop" id="dnrDeleteFileBackdrop" style="display:none;">
+  <div class="pos-modal" role="dialog" aria-modal="true" aria-labelledby="dnrDeleteFileTitle">
+    <div class="pos-modal-head">
+      <h4 id="dnrDeleteFileTitle">Delete File</h4>
+      <button type="button" class="pos-modal-x" onclick="closeDnrDeleteFileModal()">×</button>
+    </div>
+    <div class="pos-modal-body">
+      <p class="pos-modal-msg">Are you sure you want to delete this file?</p>
+    </div>
+    <div class="pos-modal-actions">
+      <button type="button" class="pos-btn pos-btn-outline" id="dnrDeleteFileCancelBtn">Cancel</button>
+      <button type="button" class="pos-btn pos-btn-primary" id="dnrDeleteFileConfirmBtn">Delete</button>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+
+
+{% block extra_js %}
+
+<script id="dnr-inline-config" type="application/json">{{ {"currentUserName": user_name, "pageMode": mode or "new", "dnrStatus": (record.status if record else none)}|tojson }}</script>
+
+<script src="{{ url_for('static', filename='deliverynotereturn-new.js') }}?v=42" defer></script>
+
+{% endblock %}
+

@@ -1,6 +1,3 @@
-
-
-
 {% extends "menu.html" %}
 
 {% block extra_css %}
@@ -11,19 +8,18 @@
 {% block content %}
 <div class="modal">
   <!-- Header with Title, Status Badge, and Invoice Return Button -->
-  <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; flex-wrap: wrap; gap: 15px;">
+  <div
+    style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; flex-wrap: wrap; gap: 15px;">
     <div style="display: flex; align-items: center; gap: 20px;">
       <h2 class="quotation-title" style="margin-bottom: 0;">New Invoice</h2>
-      <div class="invoice-status-header" >
-        <!-- <span class="status-label">Status: -->
-        <h2 id="invoiceStatusBadge"  ></h2>
-        <!-- <span> -->
+      <div class="invoice-status-header">
+        <h2 id="invoiceStatusBadge"></h2>
       </div>
     </div>
-    
+
     <!-- Invoice Return Button - ADDED ON RIGHT SIDE -->
     <button type="button" id="invoiceReturnBtn" class="btn-save" disabled>
-       Invoice Return
+      Invoice Return
     </button>
   </div>
 
@@ -35,7 +31,7 @@
 
     <!-- Hidden JSON field for line items (to be populated by JavaScript) -->
     <input type="hidden" id="itemsData" name="itemsData" value="">
-    
+
     <div class="quotation-full">
       <!-- ========== TOP FORM GRID (Invoice fields) ========== -->
       <div class="form-grid">
@@ -56,13 +52,13 @@
               <input type="text" id="saleOrderSearch" placeholder="Search Sales Order..." onkeyup="filterSaleOrders()">
               <div class="dropdown-list" id="saleOrderList">
                 {% if sales_orders %}
-                  {% for so in sales_orders %}
-                    <div class="dropdown-item" data-value="{{ so['so_id'] }}" onclick="selectSaleOrder(this)">
-                      {{ so['so_id'] }}
-                    </div>
-                  {% endfor %}
+                {% for so in sales_orders %}
+                <div class="dropdown-item" data-value="{{ so['so_id'] }}" onclick="selectSaleOrder(this)">
+                  {{ so['so_id'] }}
+                </div>
+                {% endfor %}
                 {% else %}
-                  <div class="dropdown-item">No Sales Orders Found</div>
+                <div class="dropdown-item">No Sales Orders Found</div>
                 {% endif %}
               </div>
             </div>
@@ -73,60 +69,66 @@
         <!-- Invoice Date -->
         <div class="form-group">
           <label>Invoice Date</label>
-          <input type="date" id="invoiceDate" name="invoice_date" placeholder="dd-mm-yyyy" readonly >
+          <input type="date" id="invoiceDate" name="invoice_date" placeholder="dd-mm-yyyy" readonly>
         </div>
-        
+
         <!-- Due Date -->
         <div class="form-group">
           <label>Due Date</label>
-          <input type="date" id="dueDate" name="due_date" placeholder="dd-mm-yyyy" readonly >
+          <input type="date" id="dueDate" name="due_date" placeholder="dd-mm-yyyy" readonly>
         </div>
 
-        <!-- Invoice status -->     
+        <!-- Invoice status -->
         <div class="form-group">
           <label>Invoice Status</label>
-          <input type="text" id="invoiceStatusDisplay" name="invoice_status" placeholder="Draft,Send,Paid,OverDue,Cancelled" readonly>
+          <input type="text" id="invoiceStatusDisplay" name="invoice_status"
+            placeholder="Draft,Send,Paid,OverDue,Cancelled" readonly>
         </div>
 
         <!-- Payment Terms (custom dropdown with search) -->
         <div class="form-group">
           <label>Payment Terms</label>
-          <div class="custom-dropdown">
-            <div class="dropdown-selected" id="paymentTermSelected" onclick="togglePaymentTermDropdown()">
-              Select Terms
-            </div>
-            <div class="dropdown-menu" id="paymentTermDropdown">
-              <input type="text" id="paymentTermSearch" placeholder="Search Terms..." onkeyup="filterPaymentTerms()">
-              <div class="dropdown-list" id="paymentTermList">
-                <div class="dropdown-item">Loading...</div>
-              </div>
-            </div>
-          </div>
+          <input type="text" id="paymentTermsInput" name="payment_terms" placeholder="paymentTerms" readonly>
           <input type="hidden" id="paymentTerms" name="payment_terms" value="">
         </div>
-
         <!-- Customer Ref.No -->
         <div class="form-group">
           <label>Customer Ref.No</label>
           <input type="text" id="customerRefNo" name="customer_ref_no" placeholder="Enter Customer Ref.No">
         </div>
 
-        <!-- Invoice Tags -->
+        <!-- Invoice Tags: custom dropdown with checkboxes -->
         <div class="form-group">
           <label>Invoice Tags</label>
-          <select id="invoiceTags" name="invoice_tags">
-            <option value="">Select Tags</option>
-            <option value="All">All</option>
-            <option value="Monthly">Monthly</option>
-            <option value="Recurring">Recurring</option>
-            <option value="Urgent">Urgent</option>
-          </select>
+          <div class="custom-dropdown">
+            <div class="dropdown-selected" id="invoiceTagsSelected" onclick="toggleInvoiceTagsDropdown()">
+              Select Tags
+            </div>
+            <div class="dropdown-menu" id="invoiceTagsDropdown">
+              <!-- <input type="text" id="invoiceTagsSearch" placeholder="Search Tags..." onkeyup="filterInvoiceTags()"> -->
+              <div class="dropdown-list" id="invoiceTagsList">
+                <label class="dropdown-item checkbox-item">
+                  <input type="checkbox" id="tagAllCheckbox"> All
+                </label>
+                <label class="dropdown-item checkbox-item">
+                  <input type="checkbox" class="tag-checkbox" value="Monthly"> Monthly
+                </label>
+                <label class="dropdown-item checkbox-item">
+                  <input type="checkbox" class="tag-checkbox" value="Recurring"> Recurring
+                </label>
+                <label class="dropdown-item checkbox-item">
+                  <input type="checkbox" class="tag-checkbox" value="Urgent"> Urgent
+                </label>
+              </div>
+            </div>
+          </div>
+          <input type="hidden" id="invoiceTags" name="invoice_tags" value="">
         </div>
 
         <!-- Terms & Conditions -->
         <div class="form-group">
           <label>Terms & Conditions</label>
-          <input type="text" id="termsConditions" name="terms_conditions" placeholder="Enter payment terms or policies">
+          <input type="text" id="termsConditions" name="terms_conditions" placeholder="payment terms & Conditions">
         </div>
       </div>
 
@@ -172,7 +174,7 @@
         <!-- Contact Person -->
         <div class="form-group">
           <label>Contact Person</label>
-          <input type="text" id="contactPerson" name="contact_person" readonly>
+          <input type="text" id="contactPerson" name="contact_person" disabled>
         </div>
       </div>
 
@@ -185,21 +187,18 @@
           <select id="paymentMethod" name="payment_method">
             <option value="">- Select Payment -</option>
             <option value="Bank Transfer">Bank Transfer</option>
-            <option value="Credit Card">Card</option>
+            <option value="Card">Card</option>
             <option value="UPI">UPI</option>
             <option value="Cash">Cash</option>
           </select>
         </div>
 
         <!-- Currency -->
+        <!-- Currency (only INR) -->
         <div class="form-group">
           <label>Currency</label>
           <select id="currency" name="currency">
-            <option value="">- Select Currency -</option>
-            <option value="USD">USD</option>
-            <option value="EUR">EUR</option>
-            <option value="GBP">GBP</option>
-            <option value="INR">INR</option>
+            <option value="INR" selected>INR (₹)</option>
           </select>
         </div>
 
@@ -252,16 +251,10 @@
         <div><span>Shipping Charges</span><span>0.00</span></div>
         <div><span>Rounding Adjustment</span><span>0.00</span></div>
         <div><span>Amount Paid</span><span>
-          <input type="number"
-               id="amountPaid"
-               name="amount_paid"          
-               class="amount_paid"
-               value="0"
-               min="0"
-               step="1"
-               maxlength="5"
-               style="width: 80px; padding: 5px; border-radius: 4px; text-align: right;background-color: #d18a84;">
-        </span></div>
+            <input type="number" id="amountPaid" name="amount_paid" class="amount_paid" value="0" min="0" step="1"
+              maxlength="5"
+              style="width: 80px; padding: 5px; border-radius: 4px; text-align: right;background-color: #d18a84;">
+          </span></div>
         <div class="grand-total"><span>Grand Total</span><span>0.00</span></div>
         <div class="grand-total" style="border-top: 2px solid #a12828;"><span>Balance Due</span><span>0.00</span></div>
       </div>
@@ -296,7 +289,8 @@
               <p>Click to select or drag & drop</p>
               <small>PDF, DOC, XLS, JPG, PNG (Max 10MB)</small>
             </div>
-            <button class="btn-upload" id="uploadBtn" type="button"><i class="fa-solid fa-upload"></i> Choose File</button>
+            <button class="btn-upload" id="uploadBtn" type="button"><i class="fa-solid fa-upload"></i> Choose
+              File</button>
           </div>
           <div class="files-section">
             <div class="files-header">
@@ -304,7 +298,9 @@
               <span class="file-count" id="fileCount">0 files</span>
             </div>
             <div class="files-list" id="filesList">
-              <div class="no-files"><i class="fa-regular fa-folder-open"></i><p>No files attached yet</p></div>
+              <div class="no-files"><i class="fa-regular fa-folder-open"></i>
+                <p>No files attached yet</p>
+              </div>
             </div>
           </div>
         </div>
@@ -324,7 +320,8 @@
       <div class="modal-footer">
         <div class="footer-icon-bar">
           <div class="footer-item pdf" id="pdfAction">
-            <a id="pdfLink" class="btn-pdf" target="_blank" style="text-decoration:none; font-size: 11px; color: #666; cursor: pointer;">
+            <a id="pdfLink" class="btn-pdf" target="_blank"
+              style="text-decoration:none; font-size: 11px; color: #666; cursor: pointer;">
               <i class="fa-solid fa-file-pdf"></i> PDF
             </a>
           </div>

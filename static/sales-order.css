@@ -179,6 +179,66 @@
 }
 
 
+
+/* Bulk Actions Row */
+.bulk-actions-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: 16px 0 10px;
+  padding: 10px 4px;
+}
+
+/* Left text */
+.bulk-left {
+  font-size: 14px;
+  color: #6b7280; /* subtle grey */
+  font-weight: 500;
+}
+
+/* Right buttons container */
+.bulk-right {
+  display: flex;
+  gap: 10px;
+}
+
+/* Strong visible grey buttons  */
+.btn-secondary {
+  padding: 8px 16px;
+  border-radius: 10px;
+  border: none;
+
+  background: #d1d5db;      
+  color: #374151;          
+
+  font-size: 13px;
+  font-weight: 500;
+
+  box-shadow: 0 3px 0 #9ca3af; 
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+/* Hover */
+.btn-secondary:hover:not(:disabled) {
+  background: #c4c7cc;
+}
+
+/* Click press effect */
+.btn-secondary:active:not(:disabled) {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 #9ca3af;
+}
+
+/* Disabled  */
+.btn-secondary:disabled {
+  background: #d1d5db;
+  color: #6b7280;
+  box-shadow: 0 3px 0 #bcbfc4;
+  cursor: not-allowed;
+
+  opacity: 1;  
+}
 /* =========================================================
    SUCCESS / ERROR TOASTS (match Quotation/Sales Order form)
 ========================================================= */

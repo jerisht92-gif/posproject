@@ -66,7 +66,7 @@
         <!-- customer Ref No -->     
         <div class="form-group">
           <label>Customer Ref No</label>
-          <input type="text" id="customerRefNo" name="customer_Ref_No" placeholder="Draft,Sent,Paid,OverDue,Cancelled" readonly>
+          <input type="text" id="customerRefNo" name="customer_Ref_No" placeholder="customerRefNo" readonly>
         </div>
       </div>
 
@@ -185,13 +185,13 @@
         </div>
       </div>
 
-    </div> <!-- /.quotation-full -->
+    <!-- </div> q -->
   </form>
   <!-- ========== FORM ENDS HERE — footer outside form so Save/Submit never trigger form submit ========== -->
 
   <!-- ========== FOOTER BUTTONS (outside #invoiceForm) ========== -->
   <div class="modal-footer">
-    <div class="footer-icon-bar">
+    <div class="footer-icon-bar ">
       <div class="footer-item pdf" id="pdfAction">
         <i class="fa-solid fa-file-pdf"></i>
         <span>PDF</span>
@@ -208,7 +208,7 @@
       <button class="btn-discard" id="cancelInvoiceBtn" type="button">Cancel INV Return</button>
     </div>
   </div>
-
+</div>
 </div> <!-- /.modal -->
 
 
@@ -228,7 +228,7 @@
     </div>
   </div>
 </div>
-{% endblock %}
+{% endblock %}  
 
 {% block extra_js %}
 <script src="{{ url_for('static', filename='new-invoice-return.js') }}"></script>

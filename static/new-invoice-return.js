@@ -1249,14 +1249,14 @@ function formatFileSize(bytes) {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
 }
 
-window.viewAttachment = function(id) {
-    const returnIdElem = document.getElementById('invoiceReturnId');
-    const returnId = returnIdElem ? returnIdElem.value : null;
-    if (returnId && !returnId.startsWith('TEMP_')) {
-        window.open(`/api/invoice-return/${returnId}/attachments/${id}/download`, '_blank');
-    } else {
-        showToast("Return ID not found", 'error');
+// View attachment (opens inline)
+window.viewAttachment = function(attachmentId) {
+    const invoiceReturnId = document.getElementById('invoiceReturnId').value;
+    if (!invoiceReturnId) {
+        showToast('Invoice Return ID not found', 'error');
+        return;
     }
+    window.open(`/api/invoice-return/${invoiceReturnId}/attachments/${attachmentId}/view`, '_blank');
 };
 
 window.downloadAttachment = function(id) {

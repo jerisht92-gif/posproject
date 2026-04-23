@@ -61,29 +61,28 @@
 
 /* Status pill colors */
 .dn2-status-pill.draft{
-  background: #7eaaf1;
+  background: #f75656;
   color: #000;
 }
 
 .dn2-status-pill.delivered{
-  background: #22C55E;
+  background: #59f663;
   color: #000;
 }
 
 .dn2-status-pill.partially_delivered{
-  background: #F59E0B;
+  background: #27e391;
   color: #000;
 }
 
 .dn2-status-pill.returned{
-  background: #9b72f9;
+  background: #e6a2f2;
   color: #000;
 }
 
 .dn2-status-pill.cancelled{
-  background: #EF4444;
-  color: #000;
-}
+  background: #d6d2d2;
+  color: #000;}
 
 /* .dn2-status-pill.pending{
   background: #e9b641;
@@ -421,12 +420,14 @@
    LINE ITEMS TABLE
    Quotation style applied to Delivery Note
 ========================================================= */
+/* Match Sales Order “Sales Order Items” box (.so-items-box) */
 .dn2-table-wrap {
+  margin-top: 20px;
+  padding: 15px 0;
   border: 1px solid #f2bcbc;
   border-radius: 6px;
-  padding: 15px 0 15px 0;
-  margin-top: 20px;
   overflow-x: auto;
+  background: #fff;
 }
 
 .dn2-table {
@@ -435,19 +436,18 @@
   border-spacing: 0;
   table-layout: fixed;   /* 🔥 VERY IMPORTANT */
 }
-/* Header row */
+/* Header row — light pink band + bottom rule (same idea as Sales Order items table) */
 .dn2-table thead tr {
-  background: linear-gradient(#f2bcbc, #f2bcbc) bottom / 100% 1px no-repeat;
+  
+  background-image: linear-gradient(#f2bcbc, #f2bcbc);
+  background-size: 100% 1px;
+  background-position: bottom;
+  background-repeat: no-repeat;
 }
 
 /* Body rows */
 .dn2-table tbody tr {
   background: linear-gradient(#f2bcbc, #f2bcbc) bottom / 100% 1px no-repeat;
-}
-
-/* Remove extra last separator line */
-.dn2-table tbody tr:last-child {
-  background: none;
 }
 
 /* Cells */
@@ -467,29 +467,47 @@
 .dn2-table td > * {
   margin: 0 auto;   /* 🔥 center fix */
 }
-/* Only editable controls inside line items */
-.dn2-table select,
-.dn2-table input {
-   width: auto !important;
+/* Line-item inputs: do NOT set width here — `width: auto !important` was overriding
+   .productNameInput / .qtyInput / .serialInput widths. Selects keep auto width. */
+.dn2-table select {
+  width: auto !important;
   display: inline-block;
   height: 30px !important;
   padding: 6px 12px !important;
   font-size: 13px !important;
   border-radius: 8px;
   border: 1px solid #e7b7b5;
-  background-color: #fff5f5;
+  background: #fff5f5;
   color: #000;
   outline: none;
+  box-shadow: none;
   box-sizing: border-box;
+  transform: none;
+  transition: 0.2s ease;
+}
+
+.dn2-table input {
+  display: inline-block;
+  height: 30px !important;
+  padding: 6px 12px !important;
+  font-size: 13px !important;
+  border-radius: 8px;
+  border: 1px solid #e7b7b5;
+  background: #fff5f5;
+  color: #000;
+  outline: none;
+  box-shadow: none;
+  box-sizing: border-box;
+  transform: none;
   transition: 0.2s ease;
 }
 
 .dn2-table select:hover,
 .dn2-table input:hover {
-  background: #f5d4d4;
-  border-color: #b9473e;
-  box-shadow: 0 4px 10px rgba(161, 40, 40, 0.12);
-  
+  transform: none;
+  background: #fff5f5;
+  border-color: #d9a4a1;
+  box-shadow: none;
 }
 
 .dn2-table select:focus,
@@ -507,7 +525,8 @@
 }
 
 .dn2-table .w-product {
-  width: 100px;
+  width: 220px;
+  min-width: 0;
 }
 
 .dn2-table .w-qty {
@@ -533,6 +552,43 @@
   font-weight: 500;
 }
 
+/* Product name — Sales Order style: select + helper text */
+.dn2-table .dn-product-select-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  max-width: 220px;
+  margin: 0 auto;
+}
+
+.dn2-table .dn-product-select-wrap .dn-product-select-error {
+  font-size: 11px;
+  color: #d10000;
+  text-align: center;
+  width: 100%;
+  line-height: 1.3;
+  min-height: 0;
+  display: none;
+}
+
+.dn2-table .dn-product-select-wrap.show-error .dn-product-select-error {
+  display: block;
+}
+
+.dn2-table select.productSelect.input-error {
+  border-color: #d10000 !important;
+  box-shadow: 0 0 0 2px rgba(209, 0, 0, 0.12) !important;
+}
+
+.dn2-table select.productSelect {
+  width: 190px !important;
+  min-width: 190px;
+  max-width: 190px;
+  text-align: left;
+  font-weight: 500;
+}
+
 .dn2-table input.qtyInput
  {
    width: 70px !important;   /* 🔥 reduce width */
@@ -554,6 +610,19 @@
   width: 140px !important;
   min-width: 140px;
   max-width: 140px;
+}
+
+.dn2-table input.qtyInput:hover,
+.dn2-table input.serialInput:hover {
+  background: #fff5f5;
+  border-color: #d9a4a1;
+  box-shadow: none;
+}
+
+.dn2-table input.qtyInput:focus,
+.dn2-table input.serialInput:focus {
+  border-color: #a12828;
+  box-shadow: 0 0 0 1px rgba(161, 40, 40, 0.25);
 }
 
 /* Line items Action column (match Sales Order items table) */
@@ -585,6 +654,28 @@
 .dn-delete-btn:hover i {
   transform: scale(1.05);
   color: #d10000 !important;
+}
+
+/* + Add Item — same as .so-add-item-wrap / .so-add-item-btn */
+.dn-add-item-wrap {
+  margin-top: 10px;
+  padding: 0;
+}
+
+.dn-add-item-btn {
+  margin-left: 30px;
+  padding: 6px 10px;
+  color: #fff;
+  cursor: pointer;
+  border: none;
+  border-radius: 4px;
+  background: #a22;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.dn-add-item-btn:hover {
+  background: #8c1f1f;
 }
 
 .dn-delete-btn:disabled,
@@ -658,6 +749,17 @@
   transform: translateY(-2px);
   color: #ffffff;
   background: #a12828;
+}
+
+.btn-cancel-dn:disabled{
+  opacity: 1 !important;
+  color: #666666 !important;
+  cursor: default !important;
+  border-color: #cccccc !important;
+  background: #cccccc !important;
+  box-shadow: 0 2px 0 #999999 !important;
+  transform: none !important;
+  pointer-events: none !important;
 }
 
 .btn-submit{

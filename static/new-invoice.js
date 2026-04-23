@@ -21,6 +21,30 @@ function showToast(message, type = 'info') {
     }, 3000);
 }
 
+// ===================================================
+// INVOICE TAGS DROPDOWN (GLOBAL FUNCTIONS)
+// ===================================================
+function toggleInvoiceTagsDropdown() {
+  if (!window.isEditable) return;
+  const dropdown = document.getElementById('invoiceTagsDropdown');
+  if (dropdown) {
+    dropdown.style.display = dropdown.style.display === 'block' ? 'none' : 'block';
+    if (dropdown.style.display === 'block') {
+      const searchInput = document.getElementById('invoiceTagsSearch');
+      if (searchInput) searchInput.focus();
+    }
+  }
+}
+
+function filterInvoiceTags() {
+  const searchTerm = document.getElementById('invoiceTagsSearch').value.toLowerCase();
+  const items = document.querySelectorAll('#invoiceTagsList .checkbox-item');
+  items.forEach(item => {
+    const text = item.textContent.toLowerCase();
+    item.style.display = text.includes(searchTerm) ? 'flex' : 'none';
+  });
+}
+
 // =========================================
 // STATUS BADGE COLOR FUNCTION
 // =========================================
@@ -105,38 +129,23 @@ function selectSaleOrder(element) {
 // =========================================
 // Payment Terms custom dropdown
 // =========================================
-function togglePaymentTermDropdown() {
-    if (!window.isEditable) return;  // 👈 add this line
-    const dropdown = document.getElementById('paymentTermDropdown');
-    const isVisible = dropdown.style.display === 'block';
-    dropdown.style.display = isVisible ? 'none' : 'block';
-    if (!isVisible) {
-        document.getElementById('paymentTermSearch').focus();
-    }
+
+// Fetch payment terms by customer ID (more reliable than by name)
+function fetchCustomerPaymentTermsById(customerId) {
+    if (!customerId) return;
+    fetch(`/api/customer/${customerId}/payment-term`)
+        .then(res => res.json())
+        .then(data => {
+            if (data.success && data.payment_term) {
+                const term = data.payment_term;
+                // Update both the visible input and the hidden field
+                document.getElementById('paymentTermsInput').value = term;
+                document.getElementById('paymentTerms').value = term;
+                recalculateDueDate();
+            }
+        })
+        .catch(err => console.error('Error fetching payment terms by ID:', err));
 }
-
-function filterPaymentTerms() {
-    const searchTerm = document.getElementById('paymentTermSearch').value.toLowerCase();
-    const items = document.querySelectorAll('#paymentTermList .dropdown-item');
-    items.forEach(item => {
-        const text = item.textContent.toLowerCase();
-        item.style.display = text.includes(searchTerm) ? 'block' : 'none';
-    });
-}
-
-function selectPaymentTerm(element) {
-    if (!window.isEditable) return;  // 👈 add this line
-    const selectedValue = element.getAttribute('data-value');
-    const selectedText = element.textContent.trim();
-
-    const hiddenInput = document.getElementById('paymentTerms');
-    hiddenInput.value = selectedValue;
-    document.getElementById('paymentTermSelected').textContent = selectedText;
-    document.getElementById('paymentTermDropdown').style.display = 'none';
-    hiddenInput.dispatchEvent(new Event('change', { bubbles: true }));
-    recalculateDueDate();
-}
-
 // ===================================================
 // SIMPLE OVERDUE CHECK FOR SINGLE INVOICE
 // ===================================================
@@ -669,7 +678,23 @@ function renderAttachments(files) {
         const iconClass = getFileIconClass(ext);
         const size = formatFileSize(file.size || 0);
         const uploadDate = file.uploaded_at ? new Date(file.uploaded_at).toLocaleString() : 'Unknown date';
-        html += `<div class="file-item" data-id="${file.id}"><div class="file-info"><div class="file-icon ${iconClass}"><i class="fa-solid ${icon}"></i></div><div class="file-details"><div class="file-name">${escapeHtml(file.filename || 'Unknown file')}</div><div class="file-meta"><span><i class="fa-regular fa-file"></i> ${size}</span><span><i class="fa-regular fa-calendar"></i> ${uploadDate}</span></div></div></div><div class="file-actions"><button class="btn-action btn-view" onclick="viewAttachment('${file.id}')" title="View"><i class="fa-regular fa-eye"></i></button><button class="btn-action btn-download" onclick="downloadAttachment('${file.id}')" title="Download"><i class="fa-solid fa-cloud-arrow-down"></i></button><button class="btn-action btn-delete" onclick="deleteAttachment('${file.id}')" title="Delete"><i class="fa-solid fa-trash-can"></i></button></div></div>`;
+        html += `<div class="file-item" data-id="${file.id}">
+            <div class="file-info">
+                <div class="file-icon ${iconClass}"><i class="fa-solid ${icon}"></i></div>
+                <div class="file-details">
+                    <div class="file-name">${escapeHtml(file.filename || 'Unknown file')}</div>
+                    <div class="file-meta">
+                        <span><i class="fa-regular fa-file"></i> ${size}</span>
+                        <span><i class="fa-regular fa-calendar"></i> ${uploadDate}</span>
+                    </div>
+                </div>
+            </div>
+            <div class="file-actions">
+                <button type="button" class="btn-action btn-view" onclick="viewAttachment('${file.id}')" title="View"><i class="fa-regular fa-eye"></i></button>
+                <button type="button" class="btn-action btn-download" onclick="downloadAttachment('${file.id}')" title="Download"><i class="fa-solid fa-cloud-arrow-down"></i></button>
+                <button type="button" class="btn-action btn-delete" onclick="deleteAttachment('${file.id}')" title="Delete"><i class="fa-solid fa-trash-can"></i></button>
+            </div>
+        </div>`;
     });
     filesList.innerHTML = html;
     updateAttachmentBadge(files.length);
@@ -709,7 +734,7 @@ function formatFileSize(bytes) {
 
 window.viewAttachment = function(id) {
     const invoiceId = document.getElementById('invoiceId').value;
-    window.open(`/api/invoice/${invoiceId}/attachments/${id}/download`, '_blank');
+    window.open(`/api/invoice/${invoiceId}/attachments/${id}/view`, '_blank');
 };
 
 window.downloadAttachment = function(id) {
@@ -746,6 +771,8 @@ window.deleteAttachment = async function(id) {
 // ===================================================
 // AUTO-FILL INVOICE FROM SALES ORDER
 // ===================================================
+
+
 function initializeSalesOrderAutoFill() {
     const salesOrderSelect = document.getElementById('saleOrderRef');
     const paymentMethodSelect = document.getElementById('paymentMethod');
@@ -797,7 +824,7 @@ function initializeSalesOrderAutoFill() {
                     }
                     if (paymentMethodSelect) paymentMethodSelect.disabled = false;
                     if (currencySelect) currencySelect.disabled = false;
-                    calculateTotals();
+                    // calculateTotals();
                     if (window.checkAllFields) window.checkAllFields();
                     showToast('Sales order loaded successfully', 'success');
                 } else {
@@ -812,11 +839,17 @@ function initializeSalesOrderAutoFill() {
 }
 
 function fillCustomerInfo(data) {
+        console.log("🔍 fillCustomerInfo data:", data);   // ← see what’s inside
+
     const customerName = document.getElementById('customerName');
     if (customerName && data.customer_name) {
         customerName.value = data.customer_name;
-        fetchCustomerPaymentTerms(data.customer_name);
-        console.log("✅ Customer Name:", data.customer_name);
+if (data.customer_id) {
+            console.log("✅ Calling fetchCustomerPaymentTermsById with ID:", data.customer_id);
+            fetchCustomerPaymentTermsById(data.customer_id);
+        } else {
+            console.warn("⚠️ No customer_id in sales order data!");
+        }
     }
     const customerId = document.getElementById('customerId');
     if (customerId && data.customer_id) customerId.value = data.customer_id;
@@ -828,8 +861,15 @@ function fillCustomerInfo(data) {
     if (email && data.email) email.value = data.email;
     const phone = document.getElementById('phone');
     if (phone && data.phone) phone.value = data.phone;
-    const contactPerson = document.getElementById('contactPerson');
-    if (contactPerson) contactPerson.value = data.contact_person || data.sales_rep || '';
+
+ // ========== FIX: Enable and fill Contact Person ==========
+const contactPerson = document.getElementById('contactPerson');
+if (contactPerson) {
+    contactPerson.value = data.contact_person || data.sales_rep || '';
+    contactPerson.disabled = false;   // always enable
+    contactPerson.readOnly = false;
+}
+
 }
 
 function fillCustomerRef(data) {
@@ -905,30 +945,56 @@ function fillInvoiceItems(data) {
         const taxAmount = subtotal * (taxPct / 100);
         const discountAmount = subtotal * (discPct / 100);
         const total = subtotal + taxAmount - discountAmount;
-        row.innerHTML = `<td class="item-sn">${index + 1}</td><td class="product-name">${escapeHtml(productName)}</td><td class="product-id">${escapeHtml(productId)}</td><td class="quantity">${quantity}</td><td class="uom">${escapeHtml(uom)}</td><td class="unit-price">${formatCurrency(unitPrice)}</td><td class="tax-pct">${taxPct}</td><td class="disc-pct">${discPct}</td><td class="total">${formatCurrency(total)}</td>`;
+        row.innerHTML = `<td class="item-sn">${index + 1}</td><td class="product-name">${escapeHtml(productName)}</td><td class="product-id">${escapeHtml(productId)}</td><td class="quantity">${quantity}</td><td class="uom">${escapeHtml(uom)}</td><td class="unit-price">${formatCurrency(unitPrice)}</td><td class="tax-pct">${taxPct}</td><td class="disc-pct">${discPct}</td><td class="total">${formatCurrency(total)}<\/td>`;
         itemsTableBody.appendChild(row);
         itemsForJSON.push({ product_name: productName, product_id: productId, quantity: quantity, uom: uom, unit_price: unitPrice, tax_pct: taxPct, disc_pct: discPct });
     });
     document.getElementById('itemsData').value = JSON.stringify(itemsForJSON);
     console.log(`✅ Added ${data.items.length} items to invoice`);
 }
-
 function fillOrderSummary(data) {
-    const summaryFields = { 'Sub Total': data.subtotal || 0, 'Global Discount (%)': data.global_discount || 0, 'Tax Summary': data.tax_total || 0, 'Shipping Charges': data.shipping_charges || 0, 'Rounding Adjustment': data.rounding || 0, 'Grand Total': data.grand_total || 0, 'Balance Due': data.grand_total || 0 };
+    const summaryFields = {
+        'Sub Total': data.subtotal || 0,
+        'Global Discount (%)': data.global_discount || 0,
+        'Tax Summary': data.tax_total || 0,
+        'Shipping Charges': data.shipping_charges || 0,
+        'Rounding Adjustment': data.rounding || 0,
+        'Grand Total': data.grand_total || 0,
+        'Balance Due': data.grand_total || 0
+    };
     const totalsDiv = document.getElementById('tax_total');
     if (!totalsDiv) return;
+
+    // Update displayed spans
     const summaryDivs = totalsDiv.querySelectorAll('div');
     summaryDivs.forEach(div => {
         const span = div.querySelector('span:first-child');
         if (!span) return;
         const label = span.textContent.trim();
         const valueSpan = div.querySelector('span:last-child');
-        if (!valueSpan) return;
-        if (summaryFields.hasOwnProperty(label)) valueSpan.textContent = formatCurrency(summaryFields[label]);
+        if (valueSpan && summaryFields.hasOwnProperty(label)) {
+            valueSpan.textContent = formatCurrency(summaryFields[label]);
+        }
     });
-    console.log("✅ Order summary updated");
-}
 
+    // Update hidden inputs – IMPORTANT!
+    const shippingInput = document.getElementById('shippingCharges');
+    if (shippingInput) shippingInput.value = data.shipping_charges || 0;
+    const roundingInput = document.getElementById('roundingAdjustment');
+    if (roundingInput) roundingInput.value = data.rounding || 0;
+    const globalDiscountInput = document.getElementById('globalDiscount');
+    if (globalDiscountInput) globalDiscountInput.value = data.global_discount || 0;
+
+    // 🔥 NEW: Update subtotal, tax, grand total hidden inputs
+    const subTotalHidden = document.getElementById('subTotalInput');
+    if (subTotalHidden) subTotalHidden.value = data.subtotal || 0;
+    const taxTotalHidden = document.getElementById('taxTotalInput');
+    if (taxTotalHidden) taxTotalHidden.value = data.tax_total || 0;
+    const grandTotalHidden = document.getElementById('grandTotalInput');
+    if (grandTotalHidden) grandTotalHidden.value = data.grand_total || 0;
+
+    console.log("✅ Order summary updated with hidden inputs");
+}
 function fillDates(data) {
     const invoiceDate = document.getElementById('invoiceDate');
     if (invoiceDate) {
@@ -992,6 +1058,7 @@ function refreshPaymentStatusWithOverdue() {
             transactionDateInput.value = '';
         }
     }
+    updatePaymentRefEnabledState(); // <-- update payment ref state when amount paid changes
 }
 
 function initializePaymentTracking() {
@@ -1005,27 +1072,45 @@ function initializePaymentTracking() {
         hiddenAmtPaid.value = amountPaidInput.value;
     }
     function validateAndUpdateOverdue() {
-        const grandTotalText = grandTotalElement.textContent || '0';
-        const grandTotal = parseFloat(grandTotalText.replace(/[^\d.-]/g, '')) || 0;
-        let amountPaid = parseFloat(amountPaidInput.value) || 0;
-        if (amountPaid > grandTotal) {
-            showToast(`Amount Paid cannot exceed Grand Total (${grandTotal})`, 'warning');
-            amountPaidInput.value = '';
-            amountPaid = 0;
-        }
-        refreshPaymentStatusWithOverdue();
-        calculateTotals();
-        if (dueDateInput && amountPaid > 0 && amountPaid >= grandTotal) {
-            const statusField = document.getElementById('invoiceStatus');
-            if (statusField && statusField.value === 'Overdue') {
-                statusField.value = 'Paid';
-                updateStatusBadge({ status: 'Paid', due_date: dueDateInput.value, payment_status: 'Paid' });
-                const warningDiv = document.querySelector('.overdue-warning');
-                if (warningDiv) warningDiv.remove();
-                showToast('Invoice marked as Paid and is no longer overdue!', 'success');
-            }
+    const grandTotalText = grandTotalElement.textContent || '0';
+    const grandTotal = parseFloat(grandTotalText.replace(/[^\d.-]/g, '')) || 0;
+    let amountPaid = parseFloat(amountPaidInput.value) || 0;
+    if (amountPaid > grandTotal) {
+        showToast(`Amount Paid cannot exceed Grand Total (${grandTotal})`, 'warning');
+        amountPaidInput.value = '';
+        amountPaid = 0;
+    }
+    refreshPaymentStatusWithOverdue();
+    
+    // 🔥 UPDATE BALANCE DUE DISPLAY
+    const balanceDueSpan = document.querySelector('.grand-total:last-child span:last-child');
+    if (balanceDueSpan) {
+        const balanceDue = grandTotal - amountPaid;
+        balanceDueSpan.textContent = formatCurrency(balanceDue);
+    }
+    // Also update hidden balanceDueInput if needed (for form submission)
+    const balanceDueHidden = document.getElementById('balanceDueInput');
+    if (balanceDueHidden) {
+        balanceDueHidden.value = (grandTotal - amountPaid).toFixed(2);
+    }
+    
+    // Clear Payment Reference Number if amount paid becomes 0 (and invoice is editable)
+    const paymentRefInput = document.getElementById('paymentRefNo');
+    if (amountPaid === 0 && paymentRefInput && window.isEditable) {
+        paymentRefInput.value = '';
+    }
+    
+    if (dueDateInput && amountPaid > 0 && amountPaid >= grandTotal) {
+        const statusField = document.getElementById('invoiceStatus');
+        if (statusField && statusField.value === 'Overdue') {
+            statusField.value = 'Paid';
+            updateStatusBadge({ status: 'Paid', due_date: dueDateInput.value, payment_status: 'Paid' });
+            const warningDiv = document.querySelector('.overdue-warning');
+            if (warningDiv) warningDiv.remove();
+            showToast('Invoice marked as Paid and is no longer overdue!', 'success');
         }
     }
+}
     amountPaidInput.addEventListener('input', validateAndUpdateOverdue);
     amountPaidInput.addEventListener('blur', validateAndUpdateOverdue);
     if (dueDateInput) dueDateInput.addEventListener('change', refreshPaymentStatusWithOverdue);
@@ -1064,12 +1149,38 @@ function updatePaymentStatus(grandTotal, paid) {
 }
 
 // ===================================================
-// PAYMENT REFERENCE LOGIC
+// PAYMENT REFERENCE LOGIC (ENABLED ONLY WHEN AMOUNT PAID > 0)
 // ===================================================
+
+// NEW FUNCTION: Update Payment Reference enabled state based on amount paid and payment method
+function updatePaymentRefEnabledState() {
+    const amountPaidInput = document.getElementById('amountPaid');
+    const paymentRefInput = document.getElementById('paymentRefNo');
+    const paymentMethodSelect = document.getElementById('paymentMethod');
+    if (!amountPaidInput || !paymentRefInput) return;
+
+    const amountPaid = parseFloat(amountPaidInput.value) || 0;
+    const method = paymentMethodSelect ? paymentMethodSelect.value : '';
+    const isEditable = window.isEditable === true;
+
+    // Enable only if:
+    // - invoice is editable (Draft/Send/Overdue)
+    // - amountPaid > 0
+    // - payment method is NOT 'Cash' and NOT empty
+    const shouldEnable = isEditable && amountPaid > 0 && method !== 'Cash' && method !== '';
+
+    paymentRefInput.disabled = !shouldEnable;
+
+    // NOTE: Do NOT clear the value here — it may be a loaded reference number.
+    // Clearing is handled separately when amount paid becomes 0 (see initializePaymentTracking).
+}
+
 function initializePaymentRefLogic() {
     const paymentMethodSelect = document.getElementById('paymentMethod');
     const paymentRefInput = document.getElementById('paymentRefNo');
+    const amountPaidInput = document.getElementById('amountPaid');
     if (!paymentMethodSelect || !paymentRefInput) return;
+    
     paymentRefInput.maxLength = 30;
     paymentRefInput.addEventListener('input', function(e) {
         const pattern = /^[A-Za-z0-9\-\/]*$/;
@@ -1080,19 +1191,24 @@ function initializePaymentRefLogic() {
         }
     });
     paymentRefInput.addEventListener('blur', function() { this.value = this.value.trim(); });
+
     function togglePaymentRef() {
-        const method = paymentMethodSelect.value;
-        if (method === 'Cash' || method === '') {
+        // For non-draft invoices (Send, Overdue, Paid, Cancelled), always disable the field
+        if (!window.isEditable) {
             paymentRefInput.disabled = true;
-            paymentRefInput.value = '';
             paymentRefInput.required = false;
         } else {
-            paymentRefInput.disabled = false;
-            paymentRefInput.required = true;
+            // For draft invoices: enable only if amountPaid > 0 and method not Cash/empty
+            updatePaymentRefEnabledState();
         }
         if (window.checkAllFields) window.checkAllFields();
     }
+
     paymentMethodSelect.addEventListener('change', togglePaymentRef);
+    if (amountPaidInput) {
+        amountPaidInput.addEventListener('input', togglePaymentRef);
+        amountPaidInput.addEventListener('blur', togglePaymentRef);
+    }
     togglePaymentRef();
     window.togglePaymentRef = togglePaymentRef;
 }
@@ -1100,31 +1216,7 @@ function initializePaymentRefLogic() {
 // ===================================================
 // PAYMENT TERMS FROM CUSTOMER MASTER
 // ===================================================
-function loadPaymentTerms() {
-    const paymentTermList = document.getElementById('paymentTermList');
-    if (!paymentTermList) return;
-    fetch('/api/payment-terms')
-        .then(res => res.json())
-        .then(data => {
-            if (data.success && data.terms.length > 0) {
-                paymentTermList.innerHTML = '';
-                data.terms.forEach(term => {
-                    const item = document.createElement('div');
-                    item.className = 'dropdown-item';
-                    item.setAttribute('data-value', term);
-                    item.textContent = term;
-                    item.onclick = function() { selectPaymentTerm(this); };
-                    paymentTermList.appendChild(item);
-                });
-            } else {
-                paymentTermList.innerHTML = '<div class="dropdown-item">No terms found</div>';
-            }
-        })
-        .catch(err => {
-            console.error('Error loading payment terms:', err);
-            paymentTermList.innerHTML = '<div class="dropdown-item">Error loading terms</div>';
-        });
-}
+
 
 function fetchCustomerPaymentTerms(customerName) {
     if (!customerName) return;
@@ -1219,6 +1311,7 @@ function setButtonStateByStatus(status) {
             break;
     }
 
+    updateAmountPaidEditable(status);
 
      // Enable Invoice Return button for allowed statuses
     if (invoiceReturnBtn) {
@@ -1228,9 +1321,6 @@ function setButtonStateByStatus(status) {
     }
 }
 
-
-
-
 // ===================================================
 // MAKE FORM READ-ONLY
 // ===================================================
@@ -1239,7 +1329,7 @@ function makeFormReadOnly() {
     if (!form) return;
     const elements = form.querySelectorAll('input:not([type="hidden"]), select, textarea');
     elements.forEach(el => {
-        el.disabled = true;
+if (el.id === 'contactPerson' || el.id === 'amountPaid') return;        el.disabled = true;
         el.readOnly = true;
     });
     const addItemBtn = document.querySelector('.add-item-btn');
@@ -1310,7 +1400,14 @@ function loadSaleOrders() {
         })
         .catch(err => { console.error("Error loading sales orders:", err); });
 }
-
+function updateAmountPaidEditable(status) {
+    const amountPaidInput = document.getElementById('amountPaid');
+    if (!amountPaidInput) return;
+    const statusLower = (status || '').toLowerCase();
+    // Enable for draft, send, overdue; disable for paid, cancelled
+    const editable = statusLower === 'draft' || statusLower === 'send' || statusLower === 'overdue';
+    amountPaidInput.disabled = !editable;
+}
 // ===================================================
 // INVOICE SUMMARY CALCULATIONS
 // ===================================================
@@ -1382,7 +1479,7 @@ function addItemRow(item) {
     const taxPct = item.tax_pct || 0;
     const discPct = item.disc_pct || 0;
     const total = item.total || (quantity * unitPrice * (1 - discPct/100) * (1 + taxPct/100));
-    row.innerHTML = `<td class="item-sn">${itemsTableBody.rows.length}</td><td class="product-name">${escapeHtml(productName)}</td><td class="product-id">${escapeHtml(productId)}</td><td class="quantity">${quantity}</td><td class="uom">${escapeHtml(uom)}</td><td class="unit-price">${formatCurrency(unitPrice)}</td><td class="tax-pct">${taxPct}</td><td class="disc-pct">${discPct}</td><td class="total">${formatCurrency(total)}</td>`;
+    row.innerHTML = `<td class="item-sn">${itemsTableBody.rows.length}</td><td class="product-name">${escapeHtml(productName)}</td><td class="product-id">${escapeHtml(productId)}</td><td class="quantity">${quantity}</td><td class="uom">${escapeHtml(uom)}</td><td class="unit-price">${formatCurrency(unitPrice)}<\/td><td class="tax-pct">${taxPct}<\/td><td class="disc-pct">${discPct}<\/td><td class="total">${formatCurrency(total)}<\/td>`;
     updateItemsDataFromTable();
     calculateTotals();
 }
@@ -1425,6 +1522,8 @@ async function updateInvoiceStatus(newStatus) {
         if (data.success) {
             if (newStatus === 'Paid') {
                 const paymentStatusField = document.getElementById('paymentStatus');
+                    updateAmountPaidEditable(newStatus);
+
                 if (paymentStatusField) {
                     if (paymentStatusField.tagName === 'INPUT') {
                         paymentStatusField.value = 'Paid';
@@ -1450,20 +1549,15 @@ async function updateInvoiceStatus(newStatus) {
 }
 
 // ===================================================
-// FORM SUBMISSION (UNIFIED)
+// FORM SUBMISSION (UNIFIED) – FIXED VERSION
 // ===================================================
-let _invoiceSaveInFlight = false;
-
-function submitFormViaFetch(status) {
-    if (_invoiceSaveInFlight) {
-        return;
-    }
+function submitFormViaFetch(status, clickedButton) {
     const form = document.getElementById('invoiceForm');
     if (!form) {
         console.error("Form not found");
         return;
     }
-    calculateTotals();
+    // calculateTotals();
     const rows = document.querySelectorAll("#itemsTableBody tr");
     if (rows.length === 0) {
         showToast("Please add at least one item to the invoice.", 'warning');
@@ -1481,10 +1575,19 @@ function submitFormViaFetch(status) {
             disc_pct: cleanNumeric(row.querySelector(".disc-pct")?.innerText || 0)
         });
     });
-
     document.getElementById("itemsData").value = JSON.stringify(items);
     const statusField = document.getElementById('invoiceStatus');
     if (statusField) statusField.value = status;
+
+    // ========== FIX: Temporarily enable all fields so disabled inputs are included ==========
+    const allInputs = form.querySelectorAll('input, select, textarea');
+    const wasDisabled = [];
+    allInputs.forEach((el, i) => {
+        wasDisabled[i] = el.disabled;
+        el.disabled = false;
+    });
+    // ========================================================================================
+
     const formData = new FormData(form);
     const isEditingExisting = isEditing;
     let url, method;
@@ -1495,31 +1598,43 @@ function submitFormViaFetch(status) {
         url = form.action;
         method = 'POST';
     }
-    const saveDraftBtn = document.getElementById('saveDraftBtn');
-    const submitBtn = document.getElementById('submitInvoiceBtn');
-    const activeBtn = status === 'Draft' ? saveDraftBtn : submitBtn;
-    if (activeBtn) activeBtn.disabled = true;
-    _invoiceSaveInFlight = true;
+
+    // Disable only the clicked button
+    if (clickedButton) clickedButton.disabled = true;
+
     fetch(url, { method: method, body: formData })
         .then(response => {
+            // If the server sends a redirect (302), override it and go to invoice list ourselves
+            if (response.redirected) {
+                showToast("Saved! Redirecting to invoice list...", "success");
+                setTimeout(() => { window.location.href = '/invoice-list'; }, 1500);
+                return null; // stop further processing
+            }
             if (!response.ok) throw new Error('Network response was not ok');
             return response.json();
         })
         .then(data => {
+            if (data === null) return; // already handled redirect
             if (data.success) {
                 showToast(data.message, 'success');
                 setTimeout(() => { window.location.href = '/invoice-list'; }, 1500);
             } else {
                 showToast('Save failed: ' + (data.error || 'Unknown error'), 'error');
+                if (clickedButton) clickedButton.disabled = false;
             }
         })
         .catch(error => {
             console.error('Error:', error);
             showToast('An error occurred while saving.', 'error');
+            if (clickedButton) clickedButton.disabled = false;
         })
         .finally(() => {
-            _invoiceSaveInFlight = false;
-            if (activeBtn) activeBtn.disabled = false;
+            // Restore disabled states after a short delay (redirect will happen anyway)
+            setTimeout(() => {
+                allInputs.forEach((el, i) => {
+                    el.disabled = wasDisabled[i];
+                });
+            }, 100);
         });
 }
 
@@ -1527,7 +1642,7 @@ function submitFormViaFetch(status) {
 // LOAD EXISTING INVOICE
 // ===================================================
 const urlParams = new URLSearchParams(window.location.search);
-const invoiceId = urlParams.get('invoice_id');
+const invoiceIdParam = urlParams.get('invoice_id');
 let isEditing = false;
 let currentStatus = null;
 // Inside loadInvoiceData, after setting currentStatus
@@ -1560,7 +1675,19 @@ async function loadInvoiceData(invoiceId) {
         setElemValue('dueDate', inv.due_date);
         setElemValue('invoiceStatusDisplay', inv.status || '');
         setElemValue('customerName', inv.customer_name);
+        setElemValue('contactPerson', inv.contact_person);
+        setElemValue('customerId', inv.customer_id) ;
+        setElemValue('paymentRefNo', inv.payment_ref_no)
+// Enable contact person if the invoice already has a sales order reference
+if (inv.sale_order_ref && inv.sale_order_ref !== '') {
+    const cp = document.getElementById('contactPerson');
+    if (cp) {
+        cp.disabled = false;
+        cp.readOnly = false;
+    }
+}
         setElemValue('paymentStatus', inv.payment_status);
+        // updateAmountPaidEditable(displayStatus);
         setElemValue('paymentMethod', inv.payment_method || '');
         setElemValue('currency', inv.currency || '');
         setElemValue('paymentRefNo', inv.payment_ref_no || '');
@@ -1582,11 +1709,18 @@ async function loadInvoiceData(invoiceId) {
         }
 
         // Payment Terms
-        if (inv.payment_terms) {
-            const termDiv = document.getElementById('paymentTermSelected');
-            if (termDiv) termDiv.textContent = inv.payment_terms;
-            setElemValue('paymentTerms', inv.payment_terms);
-        }
+       if (inv.payment_terms) {
+    document.getElementById('paymentTermsInput').value = inv.payment_terms;
+    document.getElementById('paymentTerms').value = inv.payment_terms;
+}
+
+        if (inv.invoice_tags) {
+  if (window.syncInvoiceTags) {
+    window.syncInvoiceTags(inv.invoice_tags);
+  } else {
+    document.getElementById('invoiceTags').value = inv.invoice_tags;
+  }
+}
 
         // Status & badge
         const displayStatus = getDisplayStatus(inv);
@@ -1653,6 +1787,19 @@ async function loadInvoiceData(invoiceId) {
         const amountPaidInput = document.getElementById('amountPaid');
         if (amountPaidInput) amountPaidInput.value = summary.amount_paid || 0;
 
+// Enable the Amount Paid field for draft invoices (or always enable if you prefer)
+if (window.isEditable) {
+    if (amountPaidInput) {
+        amountPaidInput.disabled = false;
+    }
+}
+
+        // 🔥 FIX: Trigger payment method change to apply correct enabled/disabled state for paymentRefNo
+        const pmSelect = document.getElementById('paymentMethod');
+        if (pmSelect) {
+            pmSelect.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+
         // ---- Comments & Attachments ----
         const historyContainer = document.getElementById('history');
         if (historyContainer) {
@@ -1697,6 +1844,7 @@ async function loadInvoiceData(invoiceId) {
 
         isEditing = true;
         syncOverdueStatus(invoiceId);
+        updatePaymentRefEnabledState(); // <-- ensure payment ref state matches loaded data (but does NOT clear value)
 
         console.log("✅ loadInvoiceData completed successfully");
     } catch (error) {
@@ -1787,6 +1935,132 @@ if (invoiceReturnBtn) {
         const ptSelected = document.getElementById('paymentTermSelected');
         if (ptSelected && !ptSelected.contains(e.target) && !ptDropdown.contains(e.target)) ptDropdown.style.display = 'none';
     });
+
+ 
+//contact person
+
+
+// Contact Person: only letters and spaces, max 20 chars
+const contactPerson = document.getElementById('contactPerson');
+if (contactPerson) {
+  // Set maxlength attribute
+  contactPerson.maxLength = 20;
+  
+  // Store last valid value
+  let lastValidValue = contactPerson.value;
+  
+  contactPerson.addEventListener('input', function(e) {
+    let raw = this.value;
+    // Allow only letters (A-Z, a-z) and spaces
+    let filtered = raw.replace(/[^A-Za-z\s]/g, '');
+    if (filtered !== raw) {
+      this.value = filtered;
+      showToast('Only letters and spaces are allowed', 'warning');
+    }
+    // Update last valid value
+    lastValidValue = this.value;
+  });
+  
+  // Optional: prevent paste of invalid characters
+  contactPerson.addEventListener('paste', function(e) {
+    const pasted = (e.clipboardData || window.clipboardData).getData('text');
+    if (!/^[A-Za-z\s]*$/.test(pasted)) {
+      e.preventDefault();
+      showToast('Pasted text contains invalid characters', 'warning');
+    }
+  });
+}
+
+//invoice tag//
+
+function initInvoiceTagsCheckboxDropdown() {
+  const allCheckbox = document.getElementById('tagAllCheckbox');
+  const tagCheckboxes = document.querySelectorAll('.tag-checkbox');
+  const hiddenInput = document.getElementById('invoiceTags');
+  const selectedSpan = document.getElementById('invoiceTagsSelected');
+
+  if (!allCheckbox || tagCheckboxes.length === 0) return;
+
+  function updateSelectedDisplay() {
+    const selected = Array.from(tagCheckboxes)
+      .filter(cb => cb.checked)
+      .map(cb => cb.value);
+    if (selected.length === 0) {
+      selectedSpan.textContent = 'Select Tags';
+    } else if (selected.length === tagCheckboxes.length) {
+      selectedSpan.textContent = 'All';
+    } else {
+      selectedSpan.textContent = selected.join(', ');
+    }
+  }
+
+  function updateHidden() {
+    const selected = Array.from(tagCheckboxes)
+      .filter(cb => cb.checked)
+      .map(cb => cb.value);
+    if (selected.length === tagCheckboxes.length) {
+      hiddenInput.value = 'All';
+    } else {
+      hiddenInput.value = selected.join(',');
+    }
+    hiddenInput.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
+  function updateAllCheckbox() {
+    const allChecked = Array.from(tagCheckboxes).every(cb => cb.checked);
+    allCheckbox.checked = allChecked;
+  }
+
+  // "All" checkbox logic
+  allCheckbox.addEventListener('change', function() {
+    const isChecked = this.checked;
+    tagCheckboxes.forEach(cb => cb.checked = isChecked);
+    updateSelectedDisplay();
+    updateHidden();
+    
+  });
+
+  // Individual tag checkboxes
+  tagCheckboxes.forEach(cb => {
+    cb.addEventListener('change', function() {
+      updateAllCheckbox();
+      updateSelectedDisplay();
+      updateHidden();
+    });
+  });
+
+  // Restore from saved value
+  window.syncInvoiceTags = function(savedValue) {
+    if (!savedValue) {
+      tagCheckboxes.forEach(cb => cb.checked = false);
+      allCheckbox.checked = false;
+    } else if (savedValue === 'All') {
+      tagCheckboxes.forEach(cb => cb.checked = true);
+      allCheckbox.checked = true;
+    } else {
+      const selectedTags = savedValue.split(',').map(s => s.trim());
+      tagCheckboxes.forEach(cb => {
+        cb.checked = selectedTags.includes(cb.value);
+      });
+      updateAllCheckbox();
+    }
+    updateSelectedDisplay();
+    updateHidden();
+  };
+
+  // Initial sync if hidden already has value
+  if (hiddenInput.value) {
+    window.syncInvoiceTags(hiddenInput.value);
+  } else {
+    updateSelectedDisplay();
+    updateHidden();
+  }
+}
+
+initInvoiceTagsCheckboxDropdown();
+
+
+
     initializeTabs();
     initializeComments();
     initializeAttachments();
@@ -1794,7 +2068,7 @@ if (invoiceReturnBtn) {
     initializePaymentTracking();
     refreshPaymentStatus();
     initializePaymentRefLogic();
-    loadPaymentTerms();
+    // loadPaymentTerms();
     loadSaleOrders();
     const invoiceDateInput = document.getElementById('invoiceDate');
     const paymentTermsHidden = document.getElementById('paymentTerms');
@@ -1806,60 +2080,149 @@ if (invoiceReturnBtn) {
         return;
     }
     window.checkAllFields = function() {
-        const requiredFields = document.querySelectorAll('#invoiceForm [required]');
-        let allFilled = true;
-        requiredFields.forEach(field => {
-            const val = field.value.trim();
-            if (val === '') allFilled = false;
-        });
-        const itemRows = document.querySelectorAll('#itemsTableBody tr');
-        if (itemRows.length === 0) allFilled = false;
+    // For non‑editable invoices (status ≠ draft), keep submit button disabled
+    if (!window.isEditable) {
         const submitBtn = document.getElementById('submitInvoiceBtn');
-        if (submitBtn) submitBtn.disabled = !allFilled;
-    };
+        if (submitBtn) submitBtn.disabled = true;
+        return;
+    }
+
+    let allFilled = true;
+
+    // 1. Contact Person (always mandatory, if not disabled)
+    const contactPerson = document.getElementById('contactPerson');
+    if (contactPerson && !contactPerson.disabled) {
+        if ((contactPerson.value || '').trim() === '') allFilled = false;
+    }
+
+    // 2. At least one item row
+    const itemRows = document.querySelectorAll('#itemsTableBody tr');
+    if (itemRows.length === 0) allFilled = false;
+
+    // 3. Amount Paid
+    const amountPaidInput = document.getElementById('amountPaid');
+    const amountPaid = parseFloat(amountPaidInput ? amountPaidInput.value : 0) || 0;
+
+    // 4. Payment Ref No – mandatory only if amountPaid > 0 and field is not disabled
+    const paymentRefNo = document.getElementById('paymentRefNo');
+    if (amountPaid > 0 && paymentRefNo && !paymentRefNo.disabled) {
+        if ((paymentRefNo.value || '').trim() === '') allFilled = false;
+    }
+
+    // 5. Transaction Date – mandatory only if amountPaid > 0
+    const transactionDate = document.getElementById('transactionDate');
+    if (amountPaid > 0 && transactionDate) {
+        if ((transactionDate.value || '').trim() === '') allFilled = false;
+    }
+
+    const submitBtn = document.getElementById('submitInvoiceBtn');
+    if (submitBtn) submitBtn.disabled = !allFilled;
+};
     const allPossibleFields = document.querySelectorAll('#invoiceForm input, #invoiceForm select, #invoiceForm textarea');
     allPossibleFields.forEach(field => {
         field.addEventListener('input', window.checkAllFields);
         field.addEventListener('change', window.checkAllFields);
     });
     window.checkAllFields();
-    const footerBtnRow = document.querySelector('.modal-footer-button');
-    if (footerBtnRow) {
-        footerBtnRow.addEventListener('click', function (e) {
-            const btn = e.target && e.target.closest ? e.target.closest('button') : null;
-            if (!btn || !footerBtnRow.contains(btn)) return;
-            if (btn.id !== 'saveDraftBtn' && btn.id !== 'submitInvoiceBtn') return;
-            e.preventDefault();
-            e.stopPropagation();
-            e.stopImmediatePropagation();
-            if (btn.id === 'submitInvoiceBtn' && btn.disabled) return;
-            if (btn.id === 'saveDraftBtn') {
-                submitFormViaFetch('Draft');
-            } else {
-                submitFormViaFetch('Send');
+    const saveDraftBtn = document.getElementById('saveDraftBtn');
+    const submitBtn = document.getElementById('submitInvoiceBtn');
+    if (saveDraftBtn) saveDraftBtn.addEventListener('click', function(e) { e.preventDefault(); submitFormViaFetch('Draft', this); });
+    if (submitBtn) submitBtn.addEventListener('click', function(e) { e.preventDefault(); if (!submitBtn.disabled) submitFormViaFetch('Send', this); });
+  
+if (invoiceIdParam) {
+    const markAsPaidBtn = document.getElementById('markAsPaid');
+    const cancelInvoiceBtn = document.getElementById('cancelInvoiceBtn');
+
+   if (markAsPaidBtn) {
+    markAsPaidBtn.addEventListener('click', () => {
+        const balanceDueSpan = document.querySelector('.grand-total:last-child span:last-child');
+        let balanceDue = 0;
+        if (balanceDueSpan) {
+            balanceDue = parseFloat(balanceDueSpan.textContent) || 0;
+        }
+
+        const paymentMethod = document.getElementById('paymentMethod');
+        const paymentRefInput = document.getElementById('paymentRefNo');
+        const isCash = paymentMethod && (paymentMethod.value === 'Cash' || paymentMethod.value === '');
+
+        // Function to check and prompt for Payment Ref No (only used when balanceDue == 0)
+        function checkAndSetPaymentRef() {
+            if (!isCash && paymentRefInput) {
+                const refValue = (paymentRefInput.value || '').trim();
+                if (refValue === '') {
+                    const userRef = prompt('Payment Reference Number is required for this payment method.\nPlease enter the reference number:');
+                    if (userRef === null) return false;
+                    if (userRef.trim() === '') {
+                        showToast('Payment Reference Number cannot be empty.', 'warning');
+                        return false;
+                    }
+                    paymentRefInput.value = userRef.trim();
+                    paymentRefInput.dispatchEvent(new Event('change', { bubbles: true }));
+                }
             }
-        }, true);
+            return true;
+        }
+
+        // Helper to temporarily enable all fields for submission (when balanceDue == 0)
+        function enableAllFieldsTemporarily() {
+            const allInputs = document.querySelectorAll('#invoiceForm input, #invoiceForm select, #invoiceForm textarea');
+            const wasDisabled = [];
+            allInputs.forEach((el, i) => {
+                wasDisabled[i] = el.disabled;
+                el.disabled = false;
+            });
+            return wasDisabled;
+        }
+
+        function restoreDisabledStates(wasDisabled) {
+            const allInputs = document.querySelectorAll('#invoiceForm input, #invoiceForm select, #invoiceForm textarea');
+            allInputs.forEach((el, i) => {
+                el.disabled = wasDisabled[i];
+            });
+        }
+
+        if (balanceDue > 0) {
+            // Balance due > 0: just focus the Amount Paid field (no payment ref prompt)
+            const userConfirmed = confirm(`Balance due is ${balanceDue.toFixed(2)}.\nClick OK to enter the payment amount.`);
+            if (userConfirmed) {
+                const amountPaidInput = document.getElementById('amountPaid');
+                if (amountPaidInput) {
+                    amountPaidInput.focus();
+                    amountPaidInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+            }
+        } else {
+            // Balance due == 0: check payment ref first, then submit
+            if (!checkAndSetPaymentRef()) return;
+
+            // Temporarily enable all fields so FormData includes them
+            const wasDisabled = enableAllFieldsTemporarily();
+            submitFormViaFetch('Paid');
+            // Restore disabled states after submission (redirect will happen anyway)
+            setTimeout(() => restoreDisabledStates(wasDisabled), 100);
+        }
+    });
+}
+
+    if (cancelInvoiceBtn) {
+        cancelInvoiceBtn.addEventListener('click', () => updateInvoiceStatus('Cancelled'));
     }
-    if (invoiceId) {
-        const markAsPaidBtn = document.getElementById('markAsPaid');
-        const cancelInvoiceBtn = document.getElementById('cancelInvoiceBtn');
-        if (markAsPaidBtn) markAsPaidBtn.addEventListener('click', () => updateInvoiceStatus('Paid'));
-        if (cancelInvoiceBtn) cancelInvoiceBtn.addEventListener('click', () => updateInvoiceStatus('Cancelled'));
-    }
-    else {
+}
+else {
     // New invoice – make dropdowns editable
     window.isEditable = true;
 }
+    
     calculateTotals();
-    if (invoiceId) {
-        loadInvoiceData(invoiceId);
+    if (invoiceIdParam) {
+        loadInvoiceData(invoiceIdParam);
     } else {
         setButtonStateByStatus('Draft');
     }
     addOverdueStyles();
     startOverdueMonitor();
     
-    if (!invoiceId) {
+    if (!invoiceIdParam) {
         const dueDateField = document.getElementById('dueDate');
         const paymentStatusField = document.getElementById('paymentStatus');
         if (dueDateField) dueDateField.addEventListener('change', checkOverdueStatus);

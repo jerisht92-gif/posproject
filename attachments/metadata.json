@@ -6,5 +6,21 @@
     "stored_filename": "QA-0005_70a7b5925c544039ae8aa27139527306.png",
     "size": 80065,
     "upload_date": "2026-02-27T10:18:48.914185"
+  },
+  {
+    "id": "7d65eb42-c120-4eba-8e62-51d1c2756ed9",
+    "quotation_id": "QA-0020",
+    "original_filename": "Screenshot 2026-04-16 175235.png",
+    "stored_filename": "QA-0020_c10096386b424021ad9101a9dc04452c.png",
+    "size": 84099,
+    "upload_date": "2026-04-18T18:44:48.522319"
+  },
+  {
+    "id": "7944e2ef-e535-49ce-bca8-179c52b4d31a",
+    "quotation_id": "QA-0020",
+    "original_filename": "Screenshot 2026-04-16 183309.png",
+    "stored_filename": "QA-0020_abbd8d8bfe64445c91487a0561b00d0c.png",
+    "size": 11748,
+    "upload_date": "2026-04-18T18:55:05.746127"
   }
 ]

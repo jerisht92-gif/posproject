@@ -282,7 +282,10 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!vehicleNoEl?.value?.trim()) return false;
     if (!trackingIdEl?.value?.trim()) return false;
     if (!deliveryNotesEl?.value?.trim()) return false;
-    return !!(itemsBody && itemsBody.querySelectorAll("tr").length > 0);
+    if (!itemsBody || !itemsBody.querySelectorAll("tr").length) return false;
+    return [...itemsBody.querySelectorAll("tr")].every((tr) =>
+      (tr.querySelector(".prodIdCell")?.textContent || "").trim()
+    );
   }
 
   let dnLiveValidationActive = false;
@@ -365,13 +368,28 @@ document.addEventListener("DOMContentLoaded", () => {
       setFieldError(deliveryNotesEl, deliveryNotesErr, "");
     }
 
-    const hasItems = itemsBody && itemsBody.querySelectorAll("tr").length > 0;
-    if (!hasItems) {
-      if (lineItemsErr) lineItemsErr.textContent = "Add at least one line item.";
-      ok = false;
-    } else if (lineItemsErr) {
-      lineItemsErr.textContent = "";
-    }
+    // const rows = itemsBody ? [...itemsBody.querySelectorAll("tr")] : [];
+    
+    // } else {
+    //   let allProductsOk = true;
+    //   rows.forEach((row) => {
+    //     const pid = row.querySelector(".prodIdCell")?.textContent?.trim() || "";
+    //     if (!pid) {
+    //       allProductsOk = false;
+    //       dnSetProductRowValidation(row, true);
+    //     } else {
+    //       dnSetProductRowValidation(row, false);
+    //     }
+    //   });
+    //   if (!allProductsOk) {
+    //     if (lineItemsErr) {
+    //       lineItemsErr.textContent = "Please select a product for each line.";
+    //     }
+    //     ok = false;
+    //   } else if (lineItemsErr) {
+    //     lineItemsErr.textContent = "";
+    //   }
+    // }
 
     return ok;
   }
@@ -823,8 +841,151 @@ function formatMoney(value) {
   }
 
   /* =========================================================
-     LINE ITEMS (Add row)
+     LINE ITEMS — product dropdown 
   ========================================================== */
+  // function buildDnProductOptions() {
+  //   if (!window.DN_PRODUCTS || !window.DN_PRODUCTS.length) {
+  //     return `<option value="">No products</option>`;
+  //   }
+  //   const opts = window.DN_PRODUCTS.map((p) => {
+  //     const pid = String(
+  //       p.product_id || p.id || p.code || p.product_code || p.sku || ""
+  //     ).trim();
+  //     const name = String(p.product_name || p.name || p.title || "").trim();
+  //     if (!pid) return "";
+  //     return `<option value="${pid}">${name ? `${name} (${pid})` : pid}</option>`;
+  //   }).join("");
+  //   return `<option value="">Select Product</option>${opts}`;
+  // }
+
+  async function loadDnProducts() {
+    try {
+      const res = await fetch("/api/sales-products", { cache: "no-store" });
+      const data = await res.json();
+      const list =
+        data && Array.isArray(data.products)
+          ? data.products
+          : data && data.data && Array.isArray(data.data.items)
+            ? data.data.items
+            : Array.isArray(data)
+              ? data
+              : [];
+      window.DN_PRODUCTS = list;
+      const map = {};
+      list.forEach((p) => {
+        const pid = String(
+          p.product_id || p.id || p.code || p.product_code || p.sku || ""
+        ).trim();
+        if (pid) map[pid] = p;
+      });
+      window.DN_PRODUCTS_MAP = map;
+      fillDnProductSelects();
+    } catch (e) {
+      console.error("Failed to load products:", e);
+      window.DN_PRODUCTS = [];
+      window.DN_PRODUCTS_MAP = {};
+    }
+  }
+
+  function fillDnProductSelects() {
+    const html = buildDnProductOptions();
+    itemsBody.querySelectorAll("select.productSelect").forEach((sel) => {
+      const old = sel.value;
+      sel.innerHTML = html;
+      if (old) sel.value = old;
+    });
+  }
+
+  // function dnRefreshProductDropdowns() {
+  //   const selects = Array.from(itemsBody.querySelectorAll("select.productSelect"));
+  //   const selectedValues = selects
+  //     .map((s) => s.value)
+  //     .filter((v) => v && v.trim() !== "");
+  //   selects.forEach((currentSelect) => {
+  //     const currentValue = currentSelect.value;
+  //     Array.from(currentSelect.options).forEach((opt) => {
+  //       if (!opt.value) {
+  //         opt.disabled = false;
+  //         return;
+  //       }
+  //       const usedElsewhere =
+  //         selectedValues.includes(opt.value) && opt.value !== currentValue;
+  //       opt.disabled = usedElsewhere;
+  //       if (usedElsewhere) {
+  //         const originalText =
+  //           opt.getAttribute("data-original-text") || opt.textContent;
+  //         opt.setAttribute("data-original-text", originalText);
+  //         opt.textContent = `${originalText} (Already added)`;
+  //       } else {
+  //         const originalText = opt.getAttribute("data-original-text");
+  //         if (originalText) opt.textContent = originalText;
+  //       }
+  //     });
+  //   });
+  // }
+
+  // function dnSetProductRowValidation(row, shouldShow) {
+  //   if (!row) return;
+  //   const wrap = row.querySelector(".dn-product-select-wrap");
+  //   const sel = row.querySelector("select.productSelect");
+  //   if (!wrap || !sel) return;
+  //   if (shouldShow) {
+  //     wrap.classList.add("show-error");
+  //     sel.classList.add("input-error");
+  //   } else {
+  //     wrap.classList.remove("show-error");
+  //     sel.classList.remove("input-error");
+  //   }
+  // }
+
+  function dnUpdateProductValidationForAllRows(showForInvalid) {
+    itemsBody.querySelectorAll("tr").forEach((row) => {
+      const pid = row.querySelector(".prodIdCell")?.textContent?.trim() || "";
+      // dnSetProductRowValidation(row, showForInvalid && !pid);
+    });
+  }
+
+  function dnApplyProductToRow(row, productId) {
+    const pidCell = row.querySelector(".prodIdCell");
+    const uomCell = row.querySelector(".uomCell");
+    const qtyInput = row.querySelector(".qtyInput");
+    const map = window.DN_PRODUCTS_MAP || {};
+    if (!productId || !map[productId]) {
+      if (pidCell) pidCell.textContent = "-";
+      if (uomCell) uomCell.textContent = "-";
+      if (qtyInput) qtyInput.removeAttribute("max");
+      return;
+    }
+    const p = map[productId];
+    const pid = String(p.product_id || p.id || p.code || productId);
+    const stock = Number(
+      p.stock_level ??
+        p.available_stock ??
+        p.quantity ??
+        p.stock ??
+        p.qty ??
+        p.opening_stock ??
+        0
+    );
+    const uomVal = String(p.uom || p.unit || "Nos");
+    if (pidCell) pidCell.textContent = pid;
+    if (uomCell) uomCell.textContent = uomVal;
+    if (qtyInput) {
+      if (stock > 0) qtyInput.max = String(stock);
+      else qtyInput.removeAttribute("max");
+    }
+  }
+
+  // window.dnOnProductChange = function (sel) {
+  //   const row = sel.closest("tr");
+  //   if (!row) return;
+  //   dnApplyProductToRow(row, sel.value);
+  //   dnSetProductRowValidation(row, !String(sel.value || "").trim());
+  //   dnRefreshProductDropdowns();
+  //   dnLiveValidationActive = true;
+  //   validateSubmit();
+  // };
+
   function addRow(prefill = {}) {
   const tr = document.createElement("tr");
 
@@ -832,30 +993,60 @@ function formatMoney(value) {
 
 
   tr.innerHTML = `
-<td class="w-sno"><span class="sno">1</span></td>
+  <td class="w-sno"><span class="sno">1</span></td>
 
-<td class="productNameCell">${prefill.product_name || ""}</td>
-<td class="prodIdCell">${prefill.product_id || ""}</td>
+  <!-- ✅ Product Name (READ ONLY) -->
+  <td class="productNameCell">
+    ${prefill.product_name || "-"}
+  </td>
 
-<td class="w-qty">
-  <input class="qtyInput" type="number" min="1" value="${qty}">
-</td>
+  <td class="prodIdCell">${prefill.product_id || "-"}</td>
 
-<td class="uomCell">${prefill.uom || ""}</td>
+  <!-- ✅ Quantity மட்டும் editable -->
+  <td class="w-qty">
+    <input class="qtyInput" type="number" min="1" value="${qty}">
+  </td>
 
-<td class="serialCell">
-  <input type="text" 
-       class="serialInput" 
-       placeholder="Enter Serial No(s)"
-       value="${prefill.serial_no || ""}">
-</td>
+  <!-- ✅ UOM read only -->
+  <td class="uomCell">${prefill.uom || "-"}</td>
 
-<td class="dn-action-col">
-  <button type="button" class="dn-delete-btn">
-    <i class="fa-solid fa-trash"></i>
-  </button>
-</td>
-`;
+  <!-- ✅ Serial மட்டும் editable -->
+  <td class="serialCell">
+    <input type="text" 
+      class="serialInput" 
+      placeholder="Enter Serial No(s)"
+      value="${prefill.serial_no || ""}">
+  </td>
+
+  <td class="dn-action-col">
+    <button type="button" class="dn-delete-btn">
+      <i class="fa-solid fa-trash"></i>
+    </button>
+  </td>
+  `;
+  const sel = tr.querySelector("select.productSelect");
+  const pidPref = String(prefill.product_id || "").trim();
+  if (sel && pidPref) {
+    sel.value = pidPref;
+    if (sel.value !== pidPref) {
+      const opt = document.createElement("option");
+      opt.value = pidPref;
+      const nm = String(prefill.product_name || "").trim();
+      opt.textContent = nm ? `${nm} (${pidPref})` : pidPref;
+      sel.appendChild(opt);
+      sel.value = pidPref;
+    }
+  }
+  dnApplyProductToRow(tr, sel?.value || "");
+  if (!window.DN_PRODUCTS_MAP?.[sel?.value]) {
+    if (prefill.product_id && tr.querySelector(".prodIdCell")) {
+      tr.querySelector(".prodIdCell").textContent = prefill.product_id;
+    }
+    if (prefill.uom && tr.querySelector(".uomCell")) {
+      tr.querySelector(".uomCell").textContent = prefill.uom;
+    }
+  }
+
   const qtyInput = tr.querySelector(".qtyInput");
 
 
@@ -898,10 +1089,18 @@ function formatMoney(value) {
 
   itemsBody.appendChild(tr);
   renumber();
+  // dnRefreshProductDropdowns();
+  dnUpdateProductValidationForAllRows(true);
   validateSubmit();
 }
 
   window.dnAddRow = addRow;
+
+  const dnAddItemBtn = document.getElementById("dnAddItemBtn");
+  if (dnAddItemBtn && !dnAddItemBtn.dataset.bound) {
+    dnAddItemBtn.dataset.bound = "1";
+    dnAddItemBtn.addEventListener("click", () => addRow());
+  }
 
   if (itemsBody && itemsBody.dataset.dnDeleteBound !== "1") {
     itemsBody.dataset.dnDeleteBound = "1";
@@ -913,6 +1112,7 @@ function formatMoney(value) {
       if (!row) return;
       row.remove();
       renumber();
+      // dnRefreshProductDropdowns();
       validateSubmit();
     });
   }
@@ -998,12 +1198,12 @@ function formatMoney(value) {
 
     const json = await res.json();
 
-    if (!json.success) {
+    const so = json.order || json.data || json;
+
+    if (!so) {
       showToast("Sales Order not found", "error");
       return;
     }
-
-    const so = json.order;
 
     console.log("Selected SO full data:", so);
 
@@ -1057,16 +1257,18 @@ function formatMoney(value) {
   /* =========================================================
      COLLECT + SAVE
   ========================================================== */
-  function collectItems() {
-  const rows = [...itemsBody.querySelectorAll("tr")];
-  return rows.map((tr) => ({
-  product_id: tr.querySelector(".prodIdCell")?.textContent?.trim() || "",
-  product_name: tr.querySelector(".productNameCell")?.textContent?.trim() || "",
-  uom: tr.querySelector(".uomCell")?.textContent?.trim() || "",
-  qty: Number(tr.querySelector(".qtyInput")?.value || 0),
-  serial_no: tr.querySelector(".serialInput")?.value || ""
-}))
-.filter((x) => x.product_id);
+ function collectItems() {
+  return [...itemsBody.querySelectorAll("tr")]
+    .map((tr) => {
+      return {
+        product_id: tr.querySelector(".prodIdCell")?.textContent?.trim() || "",
+        product_name: tr.querySelector(".productNameCell")?.textContent?.trim() || "",
+        uom: tr.querySelector(".uomCell")?.textContent?.trim() || "",
+        qty: Number(tr.querySelector(".qtyInput")?.value || 0),
+        serial_no: tr.querySelector(".serialInput")?.value || "",
+      };
+    })
+    .filter((x) => x.product_id && x.product_id !== "-");
 }
 
   async function saveDN(status) {
@@ -1365,6 +1567,7 @@ function formatMoney(value) {
   renderAckFiles();
   loadDeliveryStatusOptions("draft");
 
+  await loadDnProducts();
   await loadSORefs();
 
     if (editId) {

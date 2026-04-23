@@ -2,7 +2,7 @@
 
 {% block extra_css %}
 <!-- DN2 (New/Edit/View Delivery Note) styles -->
-<link rel="stylesheet" href="{{ url_for('static', filename='deliverynote-new.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='deliverynote-new.css') }}?v=6">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 {% endblock %}
 
@@ -119,7 +119,10 @@
       <tbody id="itemsBody"></tbody>
     </table>
 
-    
+    <div class="dn-add-item-wrap">
+      <button type="button" class="dn-add-item-btn" id="dnAddItemBtn">+ Add Item</button>
+    </div>
+
   </div>
 </div>
 
@@ -287,6 +290,6 @@
 </div>
 
 <!-- DN2 page script -->
-<script src="{{ url_for('static', filename='deliverynote-new.js') }}"></script>
+<script src="{{ url_for('static', filename='deliverynote-new.js') }}?v=6"></script>
 
 {% endblock %}

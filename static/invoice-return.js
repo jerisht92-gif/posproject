@@ -394,9 +394,21 @@ function createActionMenu(returnId, returnStatus) {
   async function loadInvoiceReturns() {
     try {
       const res = await fetch("/api/invoice-returns");
-      const data = await res.json();
-      if (data.error) throw new Error(data.error);
-      allReturns = data;
+      const payload = await res.json();
+      if (payload.error || payload.message === "Unauthorized")
+        throw new Error(payload.error || payload.message);
+      const rows = Array.isArray(payload.items)
+        ? payload.items
+        : Array.isArray(payload)
+          ? payload
+          : [];
+      allReturns = rows.map((r) => ({
+        return_id: r.invoice_return_id ?? r.return_id,
+        invoice_ref: r.invoice_id ?? r.invoice_ref,
+        customer_name: r.customer_name ?? "",
+        return_date: r.return_date ?? "",
+        status: r.status ?? "Draft",
+      }));
       filteredReturns = [...allReturns];
       populateCustomerDropdown(); // optional
       renderTable();

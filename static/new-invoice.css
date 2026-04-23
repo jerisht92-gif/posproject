@@ -1,5 +1,3 @@
-
-
 .fa-solid,
 .fa-regular,
 .fa-brands {
@@ -1317,4 +1315,24 @@ body.view-mode #submitBtn {
     .modal-footer-button button {
         width: auto;
     }
+}
+
+/* Invoice Tags dropdown with checkboxes */
+.checkbox-item {
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  padding: 8px 12px;
+}
+
+.checkbox-item:hover {
+  background: #f5d4d4;
+}
+
+.checkbox-item input {
+  margin: 0;
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
 }

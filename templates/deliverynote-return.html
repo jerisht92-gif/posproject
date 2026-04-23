@@ -1,0 +1,131 @@
+{% extends "menu.html" %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='deliverynote-return.css') }}?v=11">
+
+{% endblock %}
+
+{% block content %}
+<div class="delivery-note-page sales-order-page dnr-page">
+
+  <!-- Header -->
+  <div class="dnr-topbar">
+    <h2 class="dnr-title">Delivery Note Return</h2>
+
+    <button type="button" class="dnr-new" id="dnrNewBtn">
+      + New Delivery Note Return
+    </button>
+  </div>
+
+  <!-- Search -->
+  <div class="dnr-searchbar">
+    <div class="dnr-searchwrap">
+      
+      <input
+        type="text"
+        id="dnrSearchInput"
+        class="dnr-search"
+        placeholder="🔍︎ Search by DNR number, Customer name, Customer ID..."
+        autocomplete="off"
+      />
+    
+    </div>
+  </div>
+
+  <!-- Filters -->
+  <div class="dnr-filters" id="dnrFilters">
+    <div class="dnr-filter">
+      <label class="dnr-label">DNR Status</label>
+      
+      <select id="dnrStatusFilter" class="dnr-select">
+        <option value="all">All</option>
+      </select>
+    </div>
+
+    <!-- <div class="dnr-filter">
+      <label class="dnr-label">Customer name</label>
+      
+      <select id="dnrCustomerFilter" class="dnr-select">
+        <option value="all">All</option>
+      </select>
+    </div> -->
+
+    <div class="dnr-filter dnr-filter-date">
+  <label class="dnr-label">Delivery Date</label>
+
+  <div class="dnr-date-pill">
+    <!-- FROM -->
+    <div class="dnr-date-part">
+      <span class="dnr-date-tag">From</span>
+      <input type="date" id="dnrFromDate" class="dnr-date-input" />
+     
+    </div>
+
+    <span class="dnr-date-mid"></span>
+
+    <!-- TO -->
+    <div class="dnr-date-part">
+      <span class="dnr-date-tag">To</span>
+      <input type="date" id="dnrToDate" class="dnr-date-input" />
+      
+    </div>
+  </div>
+</div>
+
+    <button type="button" class="dnr-clear" id="dnrClearBtn">
+      Clear Filters
+    </button>
+  </div>
+
+  <!-- Table -->
+  <div class="dnr-card">
+    <div class="dnr-table-wrap">
+      <table class="dnr-table">
+        <thead>
+          <tr>
+            <th class="dnr-heading dnr-col-mark">Mark</th>
+            <th class="dnr-heading dnr-col-id">DNR ID</th>
+            <th class="dnr-heading dnr-col-ref">Invoice Return Ref.</th>
+            <th class="dnr-heading dnr-col-cust">Customer Name</th>
+            <th class="dnr-heading dnr-col-date">DNR Date</th>
+            <th class="dnr-heading dnr-col-status">Status</th>
+            <th class="dnr-heading dnr-col-action">Action</th>
+          </tr>
+        </thead>
+
+        <tbody id="dnrTbody">
+          <!-- JS renders rows here -->
+        </tbody>
+      </table>
+
+      <!-- No Data -->
+      <div class="dnr-nodata" id="dnrNoData">
+        No Data Found
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="dnr-footer">
+      <div class="dnr-showing" id="dnrShowing">Showing 0–0 of 0 Entries</div>
+
+      <div class="dnr-pager">
+        <button type="button" class="dnr-pagebtn" id="dnrPrevBtn" disabled>Prev</button>
+
+        <div class="dnr-pageinfo" id="dnrPageInfo">
+          <span class="dnr-page-current"><strong id="dnrPageCurrent">1</strong></span>
+          <span class="dnr-page-sep">of</span>
+          <span class="dnr-page-total" id="dnrPageTotal">1</span>
+        </div>
+
+        <button type="button" class="dnr-pagebtn" id="dnrNextBtn" disabled>Next</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', filename='deliverynote-return.js') }}?v=12" defer></script>
+{% endblock %}

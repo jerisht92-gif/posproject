@@ -285,8 +285,8 @@ color: #d18a84;
   color: #444;
 }
 
-.modal-footer{
-    display:flex;
+.modal-footer {
+   display:flex;
     justify-content:space-between;
     padding-top:60px;
 }
@@ -320,14 +320,14 @@ color: #d18a84;
 }
 
 /* Footer is a sibling of .quotation-full (outside #invoiceForm) — match card styling */
-.modal > .modal-footer {
+/* .modal > .modal-footer {
     background: #ffffff;
     border-radius: 12px;
     padding: 24px 36px 32px;
     box-shadow: 0 10px 20px rgba(0, 0, 0, 0.12);
     margin-top: 16px;
     padding-top: 28px;
-}
+} */
 
 
 .footer-icon-bar {

@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>{{ title or "Stackly POS" }}</title>
+  <title>{% block title %}{{ title or "Stackly POS" }}{% endblock %}</title>
 
   <link rel="stylesheet" href="{{ url_for('static', filename='menu.css') }}">
   {% block extra_css %}{% endblock %}
@@ -115,34 +115,41 @@
           </button>
 
           <div id="sales-submenu"
-               class="submenu{% if page in ['sales_order','quick_billing','delivery_note','invoice','dn_return','inv_return','Stock Receipt'] %} open{% endif %}">
-            <a href="{{ url_for('sales_order') }}"
-               class="submenu-item{% if page == 'sales_order' %} active{% endif %}">
-              <span class="submenu-icon">🧾</span>
-              <span>Sales Order</span>
-            </a>
+               class="submenu{% if page in ['sales_order','quick_billing','delivery_note','invoice','deliverynote_return','invoice_return','dn_return','inv_return','stock_receipt'] %} open{% endif %}">
+
+
             <a href="{{ url_for('quick_billing') }}"
                class="submenu-item{% if page == 'quick_billing' %} active{% endif %}">
               <span class="submenu-icon">🧾</span>
               <span>Quick Billing</span>
             </a>
+
+            <a href="{{ url_for('sales_order') }}"
+               class="submenu-item{% if page == 'sales_order' %} active{% endif %}">
+              <span class="submenu-icon">🧾</span>
+              <span>Sales Order</span>
+            </a>
+           
             <a href="{{ url_for('delivery_note') }}"
                class="submenu-item{% if page == 'delivery_note' %} active{% endif %}">
               <span class="submenu-icon">📦</span>
               <span>Delivery Note</span>
             </a>
+
+            <a href="{{ url_for('deliverynote_return') }}"
+               class="submenu-item{% if page == 'deliverynote_return' %} active{% endif %}">
+              <span class="submenu-icon">↩</span>
+              <span>Delivery Note Return</span>
+            </a>
+
             <a href="{{ url_for('invoice_list') }}"
                class="submenu-item{% if page == 'invoice' %} active{% endif %}">
               <span class="submenu-icon">🧮</span>
               <span>Invoice</span>
             </a>
-            <a href="#"
-               class="submenu-item{% if page == 'dn_return' %} active{% endif %}">
-              <span class="submenu-icon">↩</span>
-              <span>Delivery Note Return</span>
-            </a>
-            <a href="#"
-               class="submenu-item{% if page == 'inv_return' %} active{% endif %}">
+            
+            <a href="{{ url_for('invoice_return_list') }}"
+               class="submenu-item{% if page == 'invoice_return' %} active{% endif %}">
               <span class="submenu-icon">↩</span>
               <span>Invoice Return</span>
             </a>

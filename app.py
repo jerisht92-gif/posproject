@@ -8,7 +8,7 @@ import random
 import json
 import os
 import time
-from datetime import timedelta, datetime
+from datetime import timedelta, datetime, date
 import uuid
 import re
 import ssl
@@ -46,6 +46,11 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.application import MIMEApplication
 from email.mime.text import MIMEText
 
+
+from io import BytesIO
+
+
+# from reportlab.pdfbase.ttfonts import TTFo
 # ===================================================
 # IMPORTS
 # ===================================================
@@ -382,13 +387,216 @@ def execute_query(query, params=None, commit=True, return_id=False):
 # Base directory for building absolute paths
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-load_dotenv()  # Load variables from .env if present
+load_dotenv(".env")
+load_dotenv("env")  # also load "env" if you keep DB keys there instead of .env
+
+
+def _migrate_dnr_data_pos_to_public(cur):
+    """
+    Merge DNR rows from schema `pos` into `public` when both exist (search_path used to
+    create tables in `pos` while pgAdmin queries `public` by default).
+
+    Copies any `dnr_id` (and child rows) present in pos but missing in public — not only
+    when public is empty, so a partial public table does not block migration.
+    """
+    try:
+        cur.execute(
+            """
+            SELECT EXISTS (
+                SELECT 1 FROM information_schema.tables
+                WHERE table_schema = 'pos' AND table_name = 'deliverynote_returns'
+            )
+            """
+        )
+        if not cur.fetchone()[0]:
+            return
+        cur.execute("SELECT COUNT(*) FROM pos.deliverynote_returns")
+        if (cur.fetchone() or [0])[0] == 0:
+            return
+        cur.execute(
+            """
+            INSERT INTO public.deliverynote_returns
+            SELECT p.*
+            FROM pos.deliverynote_returns p
+            WHERE NOT EXISTS (
+                SELECT 1 FROM public.deliverynote_returns x WHERE x.dnr_id = p.dnr_id
+            )
+            """
+        )
+        # Child rows: omit SERIAL id so we never collide with ids already used in public.
+        cur.execute(
+            """
+            INSERT INTO public.deliverynote_return_items (
+                dnr_id, product_id, product_name, uom, invoiced_qty, returned_qty, serial_no, return_reason
+            )
+            SELECT pi.dnr_id, pi.product_id, pi.product_name, pi.uom, pi.invoiced_qty,
+                   pi.returned_qty, pi.serial_no, pi.return_reason
+            FROM pos.deliverynote_return_items pi
+            WHERE EXISTS (
+                SELECT 1 FROM public.deliverynote_returns h WHERE h.dnr_id = pi.dnr_id
+            )
+            AND NOT EXISTS (
+                SELECT 1 FROM public.deliverynote_return_items x
+                WHERE x.dnr_id = pi.dnr_id
+                  AND x.product_id IS NOT DISTINCT FROM pi.product_id
+                  AND COALESCE(x.serial_no, '') = COALESCE(pi.serial_no, '')
+            )
+            """
+        )
+        cur.execute(
+            """
+            INSERT INTO public.deliverynote_return_history (
+                dnr_id, action, description, created_by, created_at
+            )
+            SELECT h.dnr_id, h.action, h.description, h.created_by, h.created_at
+            FROM pos.deliverynote_return_history h
+            WHERE EXISTS (
+                SELECT 1 FROM public.deliverynote_returns d WHERE d.dnr_id = h.dnr_id
+            )
+            AND NOT EXISTS (
+                SELECT 1 FROM public.deliverynote_return_history x
+                WHERE x.dnr_id = h.dnr_id AND x.created_at = h.created_at
+            )
+            """
+        )
+        cur.execute(
+            """
+            INSERT INTO public.deliverynote_return_comments (
+                dnr_id, comment, created_by, created_at
+            )
+            SELECT c.dnr_id, c.comment, c.created_by, c.created_at
+            FROM pos.deliverynote_return_comments c
+            WHERE EXISTS (
+                SELECT 1 FROM public.deliverynote_returns d WHERE d.dnr_id = c.dnr_id
+            )
+            AND NOT EXISTS (
+                SELECT 1 FROM public.deliverynote_return_comments x
+                WHERE x.dnr_id = c.dnr_id AND x.created_at = c.created_at
+            )
+            """
+        )
+        cur.execute(
+            """
+            INSERT INTO public.deliverynote_return_attachments (dnr_id, file_name, file_path, uploaded_at)
+            SELECT a.dnr_id, a.file_name, a.file_path, a.uploaded_at
+            FROM pos.deliverynote_return_attachments a
+            WHERE EXISTS (
+                SELECT 1 FROM public.deliverynote_returns d WHERE d.dnr_id = a.dnr_id
+            )
+            AND NOT EXISTS (
+                SELECT 1 FROM public.deliverynote_return_attachments x
+                WHERE x.dnr_id = a.dnr_id
+                  AND COALESCE(x.file_name, '') = COALESCE(a.file_name, '')
+            )
+            """
+        )
+        for tbl in (
+            "public.deliverynote_return_items",
+            "public.deliverynote_return_history",
+            "public.deliverynote_return_comments",
+            "public.deliverynote_return_attachments",
+        ):
+            try:
+                cur.execute(
+                    f"""
+                    SELECT setval(
+                        pg_get_serial_sequence('{tbl}', 'id'),
+                        COALESCE((SELECT MAX(id) FROM {tbl}), 1),
+                        true
+                    )
+                    """
+                )
+            except Exception as se:
+                print(f"deliverynote_returns setval {tbl}: {se}")
+        print("deliverynote_returns: merged missing rows from pos → public (if any)")
+    except Exception as e:
+        print(f"deliverynote_returns pos→public migration skipped: {e}")
+
+
+def _disable_dnr_rls_if_possible(cur):
+    """Supabase: tables with RLS enabled and no policies block INSERT/SELECT for app roles."""
+    for tbl in (
+        "public.deliverynote_returns",
+        "public.deliverynote_return_items",
+        "public.deliverynote_return_history",
+        "public.deliverynote_return_comments",
+        "public.deliverynote_return_attachments",
+    ):
+        try:
+            cur.execute(f"ALTER TABLE {tbl} DISABLE ROW LEVEL SECURITY")
+        except Exception as e:
+            print(f"DNR RLS disable skipped for {tbl}: {e}")
+
+
+def _ensure_deliverynote_returns_schema():
+    """Create DNR tables if missing (same DDL as sql/deliverynote_returns_schema.sql)."""
+    path = os.path.join(BASE_DIR, "sql", "deliverynote_returns_schema.sql")
+    if not os.path.isfile(path):
+        print("deliverynote_returns schema: sql file not found, skipped")
+        return
+    try:
+        with open(path, encoding="utf-8") as f:
+            raw = f.read()
+    except OSError as e:
+        print(f"deliverynote_returns schema: read failed: {e}")
+        return
+    lines = [ln for ln in raw.splitlines() if not ln.strip().startswith("--")]
+    cleaned = "\n".join(lines)
+    parts = [p.strip() for p in cleaned.split(";") if p.strip()]
+    if not parts:
+        return
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            for stmt in parts:
+                cur.execute(stmt + ";")
+            _disable_dnr_rls_if_possible(cur)
+            _migrate_dnr_data_pos_to_public(cur)
+            cur.execute("SELECT COUNT(*) FROM public.deliverynote_returns")
+            _dnr_pub_n = cur.fetchone()[0]
+            cur.execute(
+                "SELECT current_database(), current_user, current_setting('search_path', true)"
+            )
+            _dbn, _usr, _sp = cur.fetchone()
+        conn.commit()
+        print(
+            f"deliverynote_returns schema: ensured "
+            f"(public.deliverynote_returns row count = {_dnr_pub_n})"
+        )
+        print(
+            f"deliverynote_returns connection: database={_dbn!r} role={_usr!r} search_path={_sp!r}"
+        )
+        print(
+            "If pgAdmin shows 0 rows but this count > 0, pgAdmin is connected to a "
+            "different server or database than Flask — match host + database name from .env."
+        )
+        _env_db = (os.getenv("dbname") or os.getenv("DBNAME") or "").strip()
+        _env_host = (os.getenv("host") or os.getenv("HOST") or "").strip()
+        if _env_db or _env_host:
+            print(f"deliverynote_returns .env hint: host={_env_host!r} dbname={_env_db!r}")
+    except Exception as e:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        print(f"deliverynote_returns schema ensure failed: {e}")
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
 
 # Pre-warm DB pool on startup to reduce first-login latency.
 try:
     _init_db_pool()
 except Exception as e:
     print(f"DB pool warmup skipped: {e}")
+
+try:
+    _ensure_deliverynote_returns_schema()
+except Exception as e:
+    print(f"deliverynote_returns schema ensure skipped: {e}")
 
 # =========================================
 # ✅ SQLALCHEMY ENGINE (optional)
@@ -608,6 +816,19 @@ def _invoice_return_upload_dir():
 
 
 INVOICE_RETURN_UPLOAD_FOLDER = _invoice_return_upload_dir()
+
+
+def _dnr_attachments_dir():
+    """Persisted files for Delivery Note Return attachments (PostgreSQL metadata)."""
+    base = os.path.join(UPLOAD_FOLDER, "dnr_attachments")
+    try:
+        os.makedirs(base, exist_ok=True)
+    except OSError:
+        pass
+    return base
+
+
+DNR_ATTACHMENTS_FOLDER = _dnr_attachments_dir()
 PRODUCT_FILE = os.path.join(app.root_path, "product.json")
 CATEGORY_FILE = os.path.join(app.root_path, "product_categories.json")
 TAX_CODE_FILE = os.path.join(app.root_path, "product_tax_codes.json")
@@ -623,7 +844,6 @@ BILLS_FILE = os.path.join(app.root_path, "bills.json")
 HOLD_FILE = os.path.join(app.root_path, "Hold-Billing.json")
 SALES_ORDERS_FILE = os.path.join(app.root_path, "sales_orders.json")
 DELIVERY_NOTE_FILE = os.path.join(app.root_path, "deliverynotes.json")
-
 
 
 # =========================================
@@ -771,23 +991,9 @@ def auto_session_timeout():
         if not is_api and not check_session_timeout():
             return redirect(url_for("login", message="session_expired"))
 
-    # =========================================
-    # ✅ INNER LINK RESTRICTION
-    #   - Prevent direct URL / new-tab access to
-    #     internal pages without coming from
-    #     another page inside the app.
-    #   - Skip APIs and AJAX JSON endpoints.
-    # =========================================
-    # Only apply for normal HTML GET requests
-    if request.method == "GET" and not request.path.startswith("/api/"):
-        ref = request.referrer or ""
-        # host_url example: "http://127.0.0.1:5000/"
-        base = (request.host_url or "").rstrip("/")
-
-        # If there is no referrer or it is from outside this app,
-        # block direct navigation and send user to login.
-        if (not ref) or (base and not ref.startswith(base)):
-            return redirect(url_for("login", message="invalid_navigation"))
+    # (No Referer-based "inner link" block here: after a valid session, it wrongly
+    # redirected logged-in users to /login when Referer was missing — breaking menu
+    # links like Delivery Note Return in some browsers.)
 
 
 # =========================================
@@ -1835,12 +2041,12 @@ def get_current_user_profile():
     else:
         role = "User" 
     return {
-    "email": email,
-    "name": name,
-    "role": role.strip(),
-    "department": (department or "").strip(),
-    "branch": (branch or "").strip() or "Main Branch",
-}
+        "email": email,
+        "name": name,
+        "role": str(role or "").strip() or "User",
+        "department": (department or "").strip(),
+        "branch": (branch or "").strip() or "Main Branch",
+    }
 
 
    
@@ -1898,18 +2104,19 @@ def inject_profile_display_name():
     """
     Inject consistent profile name/email for the top-right dropdown.
 
-    Some routes were passing `user_name` from `users.json` (can be stale).
-    We always prefer the DB-backed `get_current_user_profile()` here.
+    Name resolution matches routes: PostgreSQL users row, then users.json.
     """
     email = session.get("user")
     if not email:
         return {"profile_user_name": "User", "profile_user_email": ""}
 
-    prof = get_current_user_profile() or {}
-    return {
-        "profile_user_name": prof.get("name") or "User",
-        "profile_user_email": email,
-    }
+    try:
+        return {
+            "profile_user_name": _get_logged_in_user_name(),
+            "profile_user_email": email,
+        }
+    except Exception:
+        return {"profile_user_name": "User", "profile_user_email": email or ""}
 
 
 def _db_sync_users_id_sequence(cur):
@@ -8335,14 +8542,24 @@ def _get_current_user_role():
 
 
 def _get_logged_in_user_name():
-    """Helper to fetch the current logged-in user's display name for profile dropdown."""
+    """Display name for the logged-in session: PostgreSQL users row, then users.json."""
     user_email = session.get("user")
     if not user_email:
         return "User"
 
-    prof = get_current_user_profile()
-    if prof and prof.get("name"):
-        return prof.get("name")
+    dbu = _db_get_user_by_email(user_email)
+    if dbu:
+        n = (dbu.get("name") or "").strip()
+        if n:
+            return n
+
+    users = load_users()
+    for u in users:
+        if isinstance(u, dict) and (u.get("email") or "").lower() == user_email.lower():
+            n = (u.get("name") or "").strip()
+            if n:
+                return n
+
     return "User"
 
 
@@ -12403,6 +12620,21 @@ def api_quick_billing_new_id():
     return jsonify({"billId": next_id}), 200
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # ---------- Helpers ----------
 def load_sales_orders():
     """
@@ -14093,7 +14325,7 @@ def api_delivery_notes():
             notes.append({
                 "dn_id": r[0],
                 "delivery_date": str(r[1]),
-                "so_ref": r[2],  # keep same key
+                "sale_order_ref": r[2],  # keep same key
                 "customer_name": r[3],
                 "delivery_type": r[4],
                 "destination_address": r[5],
@@ -14123,7 +14355,7 @@ def api_delivery_notes():
     record = {
         "dn_id": new_id,
         "delivery_date": data.get("delivery_date", ""),
-        "so_ref": data.get("so_ref", ""),
+        "sale_order_ref": data.get("sale_order_ref", ""),
         "customer_name": data.get("customer_name", ""),
         "delivery_type": data.get("delivery_type", ""),
         "destination_address": data.get("destination_address", ""),
@@ -14163,7 +14395,7 @@ def api_delivery_notes():
     ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
     """, (
         record["dn_id"],
-        record["so_ref"],   # IMPORTANT mapping
+        record["sale_order_ref"],   # IMPORTANT mapping
         record["customer_name"],
         record["destination_address"],
         record["delivery_date"],
@@ -14283,7 +14515,7 @@ def api_delivery_note_one(dn_id):
     WHERE dn_id=%s
     """, (
         payload.get("delivery_date"),
-        payload.get("so_ref"),
+        payload.get("sale_order_ref"),
         payload.get("customer_name"),
         payload.get("delivery_type"),
         payload.get("destination_address"),
@@ -14443,8 +14675,8 @@ def email_delivery_note(dn_id):
 
     # 3) fallback sales order
     if not customer_email:
-        so_ref = dn.get("so_ref") or dn.get("so_id")
-        if so_ref:
+        sale_order_ref = dn.get("sale_order_ref") or dn.get("so_id")
+        if sale_order_ref:
             conn = get_db_connection()
             cur = conn.cursor()
 
@@ -14452,7 +14684,7 @@ def email_delivery_note(dn_id):
                 SELECT email
                 FROM sales_orders
                 WHERE so_id = %s
-            """, (so_ref,))
+            """, (sale_order_ref,))
 
             row = cur.fetchone()
 
@@ -14674,7 +14906,7 @@ def generate_delivery_note_pdf_bytes(dn):
             Paragraph("<b>Customer:</b>", label_style),
             Paragraph(safe_str(dn.get("customer_name")), value_style),
             Paragraph("<b>Sales Order Ref:</b>", label_style),
-            Paragraph(safe_str(dn.get("so_ref") or dn.get("so_id")), value_style),
+            Paragraph(safe_str(dn.get("sale_order_ref") or dn.get("so_id")), value_style),
         ],
         [
             Paragraph("<b>Delivery Type:</b>", label_style),
@@ -14842,535 +15074,161 @@ def invoice_list():
     )
 
 
-def _invoices_table_columns():
-    """Return set of column names on public.invoices (for schema drift)."""
-    conn = get_db_connection()
-    try:
-        with conn.cursor() as cur:
-            cur.execute("""
-                SELECT column_name
-                FROM information_schema.columns
-                WHERE table_schema = 'public' AND table_name = 'invoices'
-            """)
-            return {r[0] for r in cur.fetchall()}
-    finally:
-        conn.close()
-
-
-def _invoice_so_ref_column_name(cols=None):
-    """Physical column on `invoices` for sales order reference (schema varies)."""
-    c = cols if cols is not None else _invoices_table_columns()
-    if "sale_order_ref" in c:
-        return "sale_order_ref"
-    if "so_ref" in c:
-        return "so_ref"
-    return None
-
-
-def _invoice_so_ref_select_expr(cols=None):
-    """SELECT fragment that always exposes the value as sale_order_ref for row mapping."""
-    c = cols if cols is not None else _invoices_table_columns()
-    if "sale_order_ref" in c:
-        return "sale_order_ref"
-    if "so_ref" in c:
-        return "so_ref AS sale_order_ref"
-    return "CAST(NULL AS varchar) AS sale_order_ref"
-
-
-def _invoice_form_column_pairs(cols, ref_col, form, date_or_none):
-    """(column, value) for INSERT/UPDATE from form; only columns that exist on `invoices`."""
-    pairs = []
-    if ref_col:
-        pairs.append((ref_col, form.get("sale_order_reference")))
-    candidates = [
-        ("invoice_date", date_or_none(form.get("invoice_date"))),
-        ("due_date", date_or_none(form.get("due_date"))),
-        ("invoice_status", form.get("invoice_status")),
-        ("payment_terms", form.get("payment_terms")),
-        ("customer_ref_no", form.get("customer_ref_no")),
-        ("customer_name", form.get("customer_name")),
-        ("customer_id", form.get("customer_id")),
-        ("billing_address", form.get("billing_address")),
-        ("shipping_address", form.get("shipping_address")),
-        ("email", form.get("email")),
-        ("phone", form.get("phone")),
-        ("contact_person", form.get("contact_person")),
-        ("payment_method", form.get("payment_method")),
-        ("currency", form.get("currency")),
-        ("payment_ref_no", form.get("payment_ref_no")),
-        ("transaction_date", date_or_none(form.get("transaction_date"))),
-        ("payment_status", form.get("payment_status")),
-        ("amount_paid", form.get("amount_paid", 0)),
-        ("status", form.get("status")),
-        ("invoice_tags", form.get("invoice_tags")),
-        ("terms_conditions", form.get("terms_conditions")),
-    ]
-    for col, val in candidates:
-        if col in cols:
-            pairs.append((col, val))
-    return pairs
-
-
-def _invoice_col_or_null(cols, name, pg_type):
-    if name in cols:
-        return name
-    return f"CAST(NULL AS {pg_type}) AS {name}"
-
-
-def _invoice_detail_select_sql(cols, layout="api"):
-    """SELECT column list for one invoice row. `layout` must match row[] indexing in the caller."""
-    so = _invoice_so_ref_select_expr(cols)
-    c = lambda n, t: _invoice_col_or_null(cols, n, t)
-    if layout == "api":
-        return ", ".join(
-            [
-                "invoice_id",
-                so,
-                c("invoice_date", "date"),
-                c("due_date", "date"),
-                c("invoice_status", "varchar"),
-                c("payment_terms", "text"),
-                c("customer_ref_no", "varchar"),
-                c("customer_name", "text"),
-                c("customer_id", "varchar"),
-                c("billing_address", "text"),
-                c("shipping_address", "text"),
-                c("email", "varchar"),
-                c("phone", "varchar"),
-                c("contact_person", "varchar"),
-                c("payment_method", "varchar"),
-                c("currency", "varchar"),
-                c("payment_ref_no", "varchar"),
-                c("transaction_date", "date"),
-                c("payment_status", "varchar"),
-                c("amount_paid", "numeric"),
-                c("status", "varchar"),
-                c("invoice_tags", "text"),
-                c("terms_conditions", "text"),
-            ]
-        )
-    # pdf / email: same column order as invoice dict in invoice_pdf / send_invoice_email_api
-    return ", ".join(
-        [
-            "invoice_id",
-            so,
-            c("invoice_date", "date"),
-            c("due_date", "date"),
-            c("customer_name", "text"),
-            c("customer_id", "varchar"),
-            c("email", "varchar"),
-            c("phone", "varchar"),
-            c("contact_person", "varchar"),
-            c("payment_method", "varchar"),
-            c("currency", "varchar"),
-            c("payment_ref_no", "varchar"),
-            c("transaction_date", "date"),
-            c("payment_status", "varchar"),
-            c("amount_paid", "numeric"),
-            c("status", "varchar"),
-            c("invoice_tags", "text"),
-            c("billing_address", "text"),
-            c("shipping_address", "text"),
-            c("customer_ref_no", "varchar"),
-            c("payment_terms", "text"),
-            c("terms_conditions", "text"),
-        ]
-    )
-
-
-def _invoice_items_table_columns():
-    """Column names on public.invoice_items (schema may use qty/price vs quantity/unit_price)."""
-    conn = get_db_connection()
-    try:
-        with conn.cursor() as cur:
-            cur.execute("""
-                SELECT column_name
-                FROM information_schema.columns
-                WHERE table_schema = 'public' AND table_name = 'invoice_items'
-            """)
-            return {r[0] for r in cur.fetchall()}
-    finally:
-        conn.close()
-
-
-def _invoice_items_qty_price_columns(cols):
-    q = "quantity" if "quantity" in cols else ("qty" if "qty" in cols else None)
-    p = "unit_price" if "unit_price" in cols else ("price" if "price" in cols else None)
-    return q, p
-
-
-def _invoice_items_select_columns_sql(cols):
-    """SELECT list yielding logical order: product_name, product_id, quantity, uom, unit_price, tax_pct, disc_pct."""
-
-    def cn(name, typ):
-        if name in cols:
-            return name
-        return f"CAST(NULL AS {typ}) AS {name}"
-
-    parts = [cn("product_name", "text"), cn("product_id", "varchar")]
-    if "quantity" in cols:
-        parts.append("quantity")
-    elif "qty" in cols:
-        parts.append("qty AS quantity")
-    else:
-        parts.append("CAST(NULL AS numeric) AS quantity")
-    parts.append(cn("uom", "varchar"))
-    if "unit_price" in cols:
-        parts.append("unit_price")
-    elif "price" in cols:
-        parts.append("price AS unit_price")
-    else:
-        parts.append("CAST(NULL AS numeric) AS unit_price")
-    parts.append(cn("tax_pct", "numeric"))
-    parts.append(cn("disc_pct", "numeric"))
-    return ", ".join(parts)
-
-
-def _invoice_items_exec_insert_line(cur, cols, invoice_id, item):
-    qcol, pcol = _invoice_items_qty_price_columns(cols)
-    pairs = []
-    if "invoice_id" in cols:
-        pairs.append(("invoice_id", invoice_id))
-    if "product_name" in cols:
-        pairs.append(("product_name", item.get("product_name")))
-    if "product_id" in cols:
-        pairs.append(("product_id", item.get("product_id")))
-    if qcol:
-        pairs.append((qcol, int(float(item.get("quantity", 0)))))
-    if "uom" in cols:
-        pairs.append(("uom", item.get("uom")))
-    if pcol:
-        pairs.append((pcol, float(item.get("unit_price", 0))))
-    if "tax_pct" in cols:
-        pairs.append(("tax_pct", float(item.get("tax_pct", 0))))
-    if "disc_pct" in cols:
-        pairs.append(("disc_pct", float(item.get("disc_pct", 0))))
-    if not pairs:
-        return
-    cnames = ", ".join(p[0] for p in pairs)
-    ph = ", ".join(["%s"] * len(pairs))
-    cur.execute(
-        f"INSERT INTO invoice_items ({cnames}) VALUES ({ph})",
-        [p[1] for p in pairs],
-    )
-
-
-def _invoice_items_sync_id_sequence(cur):
-    """Advance SERIAL sequence so next DEFAULT id is MAX(id)+1 (fixes dup key after CSV import)."""
-    try:
-        cur.execute(
-            """
-            SELECT pg_get_serial_sequence('public.invoice_items', 'id')
-            """
-        )
-        row = cur.fetchone()
-        if not row or not row[0]:
-            return
-        seq = row[0]
-        cur.execute("SELECT COALESCE(MAX(id), 0) FROM invoice_items")
-        mx = cur.fetchone()[0]
-        cur.execute("SELECT setval(%s, %s, true)", (seq, mx))
-    except Exception:
-        pass
-
-
-def _invoice_summary_exec_insert(cur, invoice_id, form):
-    """Insert one invoice_summary row; uuid id or explicit integer MAX(id)+1 (syncs SERIAL when present)."""
-    cur.execute("""
-        SELECT column_name
-        FROM information_schema.columns
-        WHERE table_schema = 'public' AND table_name = 'invoice_summary'
-    """)
-    cols = {r[0] for r in cur.fetchall()}
-    if not cols:
-        return
-
-    def fnum(key, default=0.0):
-        v = form.get(key)
-        if v is None or v == "":
-            return default
-        try:
-            return float(v)
-        except (TypeError, ValueError):
-            return default
-
-    sub_total = fnum("sub_total")
-    tax_total = fnum("tax_total")
-    grand_total = fnum("grand_total")
-    amount_paid = fnum("amount_paid")
-    if form.get("amount_paid") in (None, "") and form.get("amt_paid") not in (None, ""):
-        amount_paid = fnum("amt_paid")
-    balance_due = fnum("balance_due")
-    if form.get("balance_due") in (None, ""):
-        balance_due = grand_total - amount_paid
-    gd = fnum("global_discount")
-    ship = fnum("shipping_charges")
-    rnd = fnum("rounding_adjustment")
-
-    pairs = []
-    if "id" in cols:
-        cur.execute(
-            """
-            SELECT data_type, udt_name FROM information_schema.columns
-            WHERE table_schema = 'public' AND table_name = 'invoice_summary'
-              AND column_name = 'id'
-            """
-        )
-        idrow = cur.fetchone() or (None, None)
-        dt, udt = idrow[0], idrow[1]
-        is_uuid = (dt and "uuid" in str(dt).lower()) or (udt and str(udt).lower() == "uuid")
-        if is_uuid:
-            pairs.append(("id", str(uuid.uuid4())))
-        else:
-            # Always insert an explicit integer id (NOT NULL) and align SERIAL if one exists.
-            cur.execute(
-                "SELECT COALESCE(MAX(id), 0) + 1 FROM invoice_summary"
-            )
-            next_id = int(cur.fetchone()[0])
-            pairs.append(("id", next_id))
-            try:
-                cur.execute(
-                    "SELECT pg_get_serial_sequence('public.invoice_summary', 'id')"
-                )
-                seq_row = cur.fetchone()
-                if seq_row and seq_row[0]:
-                    cur.execute("SELECT setval(%s, %s, true)", (seq_row[0], next_id))
-            except Exception:
-                pass
-    if "invoice_id" in cols:
-        pairs.append(("invoice_id", invoice_id))
-    if "sub_total" in cols:
-        pairs.append(("sub_total", sub_total))
-    if "global_discount_pct" in cols:
-        pairs.append(("global_discount_pct", gd))
-    elif "global_discount" in cols:
-        pairs.append(("global_discount", gd))
-    if "tax_total" in cols:
-        pairs.append(("tax_total", tax_total))
-    if "shipping_charges" in cols:
-        pairs.append(("shipping_charges", ship))
-    if "rounding_adjustment" in cols:
-        pairs.append(("rounding_adjustment", rnd))
-    if "grand_total" in cols:
-        pairs.append(("grand_total", grand_total))
-    if "amount_paid" in cols:
-        pairs.append(("amount_paid", amount_paid))
-    if "balance_due" in cols:
-        pairs.append(("balance_due", balance_due))
-    if "created_at" in cols:
-        pairs.append(("created_at", datetime.now()))
-
-    if not pairs:
-        return
-    cnames = ", ".join(p[0] for p in pairs)
-    ph = ", ".join(["%s"] * len(pairs))
-    cur.execute(f"INSERT INTO invoice_summary ({cnames}) VALUES ({ph})", [p[1] for p in pairs])
-
-
-def update_overdue_invoices():
-    """Automatically update overdue invoices in database (only if required columns exist)."""
-    cols = _invoices_table_columns()
-    if not cols:
-        return 0
-    if "due_date" not in cols or "payment_status" not in cols:
-        return 0
-    updated_count = 0
-    conn = get_db_connection()
-    cur = conn.cursor()
-    try:
-        cur.execute("""
-            UPDATE invoices
-            SET status = 'Overdue'
-            WHERE due_date < CURRENT_DATE
-            AND payment_status != 'Paid'
-            AND status NOT IN ('Paid', 'Cancelled', 'Overdue')
-        """)
-        updated_count = cur.rowcount
-        conn.commit()
-    except Exception as e:
-        print(f"Error updating overdue invoices: {e}")
-        conn.rollback()
-    finally:
-        cur.close()
-        conn.close()
-    return updated_count
-
 
 @app.route("/get-invoice")
 def get_invoice():
+    # ✅ First update overdue invoices
     update_overdue_invoices()
-
-    cols = _invoices_table_columns()
-    if not cols or "invoice_id" not in cols:
-        return jsonify([])
-
+    
     conn = get_db_connection()
     cursor = conn.cursor()
-
-    select_parts = []
-    if "id" in cols:
-        select_parts.append("id")
-    select_parts.append("invoice_id")
-    if "sale_order_ref" in cols:
-        select_parts.append("sale_order_ref")
-    elif "so_ref" in cols:
-        select_parts.append("so_ref AS sale_order_ref")
-    else:
-        select_parts.append("CAST(NULL AS varchar) AS sale_order_ref")
-    if "customer_name" in cols:
-        select_parts.append("customer_name")
-    else:
-        select_parts.append("CAST(NULL AS text) AS customer_name")
-    if "invoice_date" in cols:
-        select_parts.append("invoice_date")
-    else:
-        select_parts.append("CAST(NULL AS date) AS invoice_date")
-    if "due_date" in cols:
-        select_parts.append("due_date")
-    else:
-        select_parts.append("CAST(NULL AS date) AS due_date")
-    if "payment_status" in cols:
-        select_parts.append("payment_status")
-    else:
-        select_parts.append("CAST(NULL AS varchar) AS payment_status")
-    if "status" in cols:
-        select_parts.append("status")
-    else:
-        select_parts.append("CAST(NULL AS varchar) AS status")
-
-    order_parts = []
-    if "created_at" in cols:
-        order_parts.append("created_at DESC NULLS LAST")
-    if "id" in cols:
-        order_parts.append("id DESC")
-    order_parts.append("invoice_id DESC")
-    order_sql = ", ".join(order_parts)
-
-    cursor.execute(f"""
-        SELECT {", ".join(select_parts)}
+    
+    cursor.execute("""
+        SELECT 
+            id,
+            invoice_id,
+            sale_order_ref,
+            customer_name,
+            invoice_date,
+            due_date,
+            payment_status,
+            status
         FROM invoices
-        ORDER BY {order_sql}
+        ORDER BY id DESC
     """)
+    
     rows = cursor.fetchall()
-    desc = [d[0] for d in (cursor.description or [])]
-
+    
     data = []
-    for tup in rows:
-        row = dict(zip(desc, tup))
-        if "id" not in row:
-            row["id"] = row.get("invoice_id")
-        row["invoice_date"] = str(row["invoice_date"]) if row.get("invoice_date") else ""
-        row["due_date"] = str(row["due_date"]) if row.get("due_date") else ""
-        row["payment_status"] = row.get("payment_status") or ""
-        if row["payment_status"] == "" and row.get("status"):
-            st = str(row["status"])
-            if st == "Paid":
-                row["payment_status"] = "Paid"
-        data.append(row)
-
+    for r in rows:
+        data.append({
+            "id": r[0],
+            "invoice_id": r[1],
+            "sale_order_ref": r[2],
+            "customer_name": r[3],
+            "invoice_date": str(r[4]) if r[4] else "",
+            "due_date": str(r[5]) if r[5] else "",
+            "payment_status": r[6],
+            "status": r[7]  # ← This will be 'Overdue' if updated
+        })
+    
     cursor.close()
     conn.close()
+    
     return jsonify(data)
 
 
-@app.route("/api/invoice/<invoice_id>", methods=["GET"])
+@app.route('/api/invoice/<invoice_id>', methods=['GET'])
 def get_invoice_api(invoice_id):
-    conn = None
-    cur = None
+    conn = get_db_connection()
+    cur = conn.cursor()
     try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cols = _invoices_table_columns()
-        cur.execute(f"""
-            SELECT {_invoice_detail_select_sql(cols, "api")}
+        # 1. Invoice header
+        cur.execute("""
+            SELECT
+                invoice_id, sale_order_ref, invoice_date, due_date,
+                invoice_status, payment_terms, customer_ref_no,
+                customer_name, customer_id, billing_address,
+                shipping_address, email, phone, contact_person,
+                payment_method, currency, payment_ref_no,
+                transaction_date, payment_status, amount_paid,
+                status, invoice_tags, terms_conditions
             FROM invoices
             WHERE invoice_id = %s
         """, (invoice_id,))
         row = cur.fetchone()
         if not row:
-            return jsonify({"error": "Invoice not found"}), 404
+            return jsonify({'error': 'Invoice not found'}), 404
 
         def safe_date(value):
             if value is None:
-                return ""
+                return ''
             if isinstance(value, datetime):
-                return value.strftime("%Y-%m-%d")
+                return value.strftime('%Y-%m-%d')
             return str(value)
 
         invoice = {
-            "invoice_id": row[0],
-            "sale_order_ref": row[1] or "",
-            "invoice_date": safe_date(row[2]),
-            "due_date": safe_date(row[3]),
-            "invoice_status": row[4] or "",
-            "payment_terms": row[5] or "",
-            "customer_ref_no": row[6] or "",
-            "customer_name": row[7] or "",
-            "customer_id": row[8] or "",
-            "billing_address": row[9] or "",
-            "shipping_address": row[10] or "",
-            "email": row[11] or "",
-            "phone": row[12] or "",
-            "contact_person": row[13] or "",
-            "payment_method": row[14] or "",
-            "currency": row[15] or "",
-            "payment_ref_no": row[16] or "",
-            "transaction_date": safe_date(row[17]),
-            "payment_status": row[18] or "",
-            "amount_paid": float(row[19]) if row[19] else 0,
-            "status": row[20] or "",
-            "invoice_tags": row[21] or "",
-            "terms_conditions": row[22] or "",
+            'invoice_id': row[0],
+            'sale_order_ref': row[1] or '',
+            'invoice_date': safe_date(row[2]),
+            'due_date': safe_date(row[3]),
+            'invoice_status': row[4] or '',
+            'payment_terms': row[5] or '',
+            'customer_ref_no': row[6] or '',
+            'customer_name': row[7] or '',
+            'customer_id': row[8] or '',
+            'billing_address': row[9] or '',
+            'shipping_address': row[10] or '',
+            'email': row[11] or '',
+            'phone': row[12] or '',
+            'contact_person': row[13] or '',
+            'payment_method': row[14] or '',
+            'currency': row[15] or '',
+            'payment_ref_no': row[16] or '',
+            'transaction_date': safe_date(row[17]),
+            'payment_status': row[18] or '',
+            'amount_paid': float(row[19]) if row[19] else 0,
+            'status': row[20] or '',
+            'invoice_tags': row[21] or '',
+            'terms_conditions': row[22] or ''
         }
 
+        # 2. Invoice Items
         items = []
-        item_cols = _invoice_items_table_columns()
-        cur.execute(f"""
-            SELECT {_invoice_items_select_columns_sql(item_cols)}
+        cur.execute("""
+            SELECT product_name, product_id, quantity, uom,
+                   unit_price, tax_pct, disc_pct
             FROM invoice_items
             WHERE invoice_id = %s
         """, (invoice_id,))
         for item in cur.fetchall():
-            qty = float(item[2]) if item[2] else 0
-            price = float(item[4]) if item[4] else 0
-            tax = float(item[5]) if item[5] else 0
-            disc = float(item[6]) if item[6] else 0
-            total = qty * price * (1 - disc / 100) * (1 + tax / 100)
+            qty = float(item[2] or 0)
+            price = float(item[4] or 0)
+            tax = float(item[5] or 0)
+            disc = float(item[6] or 0)
+            total = qty * price * (1 - disc/100) * (1 + tax/100)
             items.append({
-                "product_name": item[0] or "",
-                "product_id": item[1] or "",
-                "quantity": qty,
-                "uom": item[3] or "",
-                "unit_price": price,
-                "tax_pct": tax,
-                "disc_pct": disc,
-                "total": total,
+                'product_name': item[0] or '',
+                'product_id': item[1] or '',
+                'quantity': qty,
+                'uom': item[3] or '',
+                'unit_price': price,
+                'tax_pct': tax,
+                'disc_pct': disc,
+                'total': total
             })
 
+        # 3. Invoice Summary (FIXED – includes all columns)
         summary = {}
         cur.execute("""
             SELECT
-                sub_total,
-                tax_total,
-                grand_total,
-                amount_paid,
-                balance_due
+                sub_total, tax_total, grand_total, amount_paid, balance_due,
+                COALESCE(shipping_charges, 0),
+                COALESCE(rounding_adjustment, 0),
+                COALESCE(global_discount_pct, 0)
             FROM invoice_summary
             WHERE invoice_id = %s
         """, (invoice_id,))
         summary_row = cur.fetchone()
         if summary_row:
             summary = {
-                "sub_total": float(summary_row[0]) if summary_row[0] else 0,
-                "tax_total": float(summary_row[1]) if summary_row[1] else 0,
-                "grand_total": float(summary_row[2]) if summary_row[2] else 0,
-                "amount_paid": float(summary_row[3]) if summary_row[3] else 0,
-                "balance_due": float(summary_row[4]) if summary_row[4] else 0,
-                "shipping_charges": 0,
-                "rounding_adjustment": 0,
-                "global_discount": 0,
+                'sub_total': float(summary_row[0] or 0),
+                'tax_total': float(summary_row[1] or 0),
+                'grand_total': float(summary_row[2] or 0),
+                'amount_paid': float(summary_row[3] or 0),
+                'balance_due': float(summary_row[4] or 0),
+                'shipping_charges': float(summary_row[5] or 0),
+                'rounding_adjustment': float(summary_row[6] or 0),
+                'global_discount': float(summary_row[7] or 0)   # frontend expects 'global_discount'
+            }
+        else:
+            summary = {
+                'sub_total': 0, 'tax_total': 0, 'grand_total': 0,
+                'amount_paid': 0, 'balance_due': 0,
+                'shipping_charges': 0, 'rounding_adjustment': 0, 'global_discount': 0
             }
 
+        # 4. Comments
         comments = []
         cur.execute("""
             SELECT text, created_at
@@ -15380,10 +15238,11 @@ def get_invoice_api(invoice_id):
         """, (invoice_id,))
         for comment in cur.fetchall():
             comments.append({
-                "text": comment[0] or "",
-                "date": comment[1].strftime("%Y-%m-%d %H:%M") if comment[1] else "",
+                'text': comment[0] or '',
+                'date': comment[1].strftime('%Y-%m-%d %H:%M') if comment[1] else ''
             })
 
+        # 5. Attachments
         attachments = []
         cur.execute("""
             SELECT id, filename, file_path, uploaded_at
@@ -15392,102 +15251,200 @@ def get_invoice_api(invoice_id):
         """, (invoice_id,))
         for att in cur.fetchall():
             attachments.append({
-                "id": att[0],
-                "name": att[1] or "",
-                "path": att[2] or "",
-                "date": att[3].strftime("%Y-%m-%d %H:%M") if att[3] else "",
+                'id': att[0],
+                'name': att[1] or '',
+                'path': att[2] or '',
+                'date': att[3].strftime('%Y-%m-%d %H:%M') if att[3] else ''
             })
 
+        cur.close()
+        conn.close()
+
         return jsonify({
-            "invoice": invoice,
-            "items": items,
-            "summary": summary,
-            "comments": comments,
-            "attachments": attachments,
+            'invoice': invoice,
+            'items': items,
+            'summary': summary,
+            'comments': comments,
+            'attachments': attachments
         })
+
     except Exception as e:
+        import traceback
         traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
+        return jsonify({'error': str(e)}), 500
     finally:
         if cur:
             cur.close()
         if conn:
             conn.close()
 
-
-@app.route("/api/invoice/<invoice_id>/status", methods=["PUT"])
+@app.route('/api/invoice/<invoice_id>/status', methods=['PUT'])
 def update_invoice_status(invoice_id):
-    data = request.json or {}
-    new_status = data.get("status")
-
-    if not new_status or new_status not in ["Draft", "Sent", "Paid", "Cancelled", "Overdue"]:
-        return jsonify({"success": False, "error": "Invalid status"}), 400
-
+    data = request.json
+    new_status = data.get('status')
+    
+    if not new_status or new_status not in ['Draft', 'Sent', 'Paid', 'Cancelled', 'Overdue']:
+        return jsonify({'success': False, 'error': 'Invalid status'}), 400
+    
     conn = get_db_connection()
     cur = conn.cursor()
     try:
+        # Update status
         cur.execute("UPDATE invoices SET status = %s WHERE invoice_id = %s", (new_status, invoice_id))
-        if new_status == "Paid":
+        
+        # If marking as paid, also update payment_status
+        if new_status == 'Paid':
             cur.execute("UPDATE invoices SET payment_status = 'Paid' WHERE invoice_id = %s", (invoice_id,))
+            # Also clear overdue if any
             cur.execute("UPDATE invoices SET status = 'Paid' WHERE invoice_id = %s AND status = 'Overdue'", (invoice_id,))
+        
         conn.commit()
-        return jsonify({"success": True, "message": f"Invoice status: {new_status} successfully"})
+        return jsonify({'success': True, 'message': f'Invoice status: {new_status} successfully'})
     except Exception as e:
         conn.rollback()
-        return jsonify({"success": False, "error": str(e)}), 500
+        return jsonify({'success': False, 'error': str(e)}), 500
     finally:
         cur.close()
         conn.close()
 
 
-@app.route("/update-invoice/<invoice_id>", methods=["PUT"])
+
+@app.route('/update-invoice/<invoice_id>', methods=['PUT'])
 def update_invoice(invoice_id):
     conn = get_db_connection()
     cur = conn.cursor()
     try:
-        def date_or_none(val):
-            return val if val else None
+        # Helper for optional text fields
+        def none_if_empty(val):
+            return val if val and val.strip() else None
 
+        # Check if invoice exists
         cur.execute("SELECT 1 FROM invoices WHERE invoice_id = %s", (invoice_id,))
         if not cur.fetchone():
             return jsonify({"success": False, "error": "Invoice not found"}), 404
 
-        cols = _invoices_table_columns()
-        ref_col = _invoice_so_ref_column_name(cols)
-        pairs = _invoice_form_column_pairs(cols, ref_col, request.form, date_or_none)
-        if pairs:
-            set_sql = ", ".join(f"{p[0]} = %s" for p in pairs)
-            vals = [p[1] for p in pairs] + [invoice_id]
-            cur.execute(f"UPDATE invoices SET {set_sql} WHERE invoice_id = %s", vals)
+        # SAFE numeric conversion
+        amount_paid = float(request.form.get('amount_paid') or 0)
+        sub_total   = float(request.form.get('sub_total') or 0)
+        tax_total   = float(request.form.get('tax_total') or 0)
+        grand_total = float(request.form.get('grand_total') or 0)
+        shipping    = float(request.form.get('shipping_charges') or 0)
+        rounding    = float(request.form.get('rounding_adjustment') or 0)
+        global_discount = float(request.form.get('global_discount') or 0)
 
+        # Update invoices table
+        cur.execute("""
+            UPDATE invoices SET
+                sale_order_ref = %s,
+                invoice_date = %s,
+                due_date = %s,
+                invoice_status = %s,
+                payment_terms = %s,
+                customer_ref_no = %s,
+                customer_name = %s,
+                customer_id = %s,
+                billing_address = %s,
+                shipping_address = %s,
+                email = %s,
+                phone = %s,
+                contact_person = %s,
+                payment_method = %s,
+                currency = %s,
+                payment_ref_no = %s,
+                transaction_date = %s,
+                payment_status = %s,
+                amount_paid = %s,
+                status = %s,
+                invoice_tags = %s,
+                terms_conditions = %s
+            WHERE invoice_id = %s
+        """, (
+            none_if_empty(request.form.get('sale_order_reference')),
+            none_if_empty(request.form.get('invoice_date')),
+            none_if_empty(request.form.get('due_date')),
+            none_if_empty(request.form.get('invoice_status')),
+            none_if_empty(request.form.get('payment_terms')),
+            none_if_empty(request.form.get('customer_ref_no')),
+            none_if_empty(request.form.get('customer_name')),
+            none_if_empty(request.form.get('customer_id')),
+            none_if_empty(request.form.get('billing_address')),
+            none_if_empty(request.form.get('shipping_address')),
+            none_if_empty(request.form.get('email')),
+            none_if_empty(request.form.get('phone')),
+            none_if_empty(request.form.get('contact_person')),
+            none_if_empty(request.form.get('payment_method')),
+            none_if_empty(request.form.get('currency')),
+            none_if_empty(request.form.get('payment_ref_no')),
+            none_if_empty(request.form.get('transaction_date')),
+            none_if_empty(request.form.get('payment_status')),
+            amount_paid,
+            none_if_empty(request.form.get('status')),
+            none_if_empty(request.form.get('invoice_tags')),
+            none_if_empty(request.form.get('terms_conditions')),
+            invoice_id
+        ))
+
+        # Replace items
         cur.execute("DELETE FROM invoice_items WHERE invoice_id = %s", (invoice_id,))
-        items_json = request.form.get("itemsData")
+        items_json = request.form.get('itemsData')
         if items_json:
-            item_cols = _invoice_items_table_columns()
-            _invoice_items_sync_id_sequence(cur)
             items = json.loads(items_json)
             for item in items:
-                _invoice_items_exec_insert_line(cur, item_cols, invoice_id, item)
+                cur.execute("""
+                    INSERT INTO invoice_items (
+                        invoice_id, product_name, product_id,
+                        quantity, uom, unit_price, tax_pct, disc_pct
+                    ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+                """, (
+                    invoice_id,
+                    item.get('product_name'),
+                    item.get('product_id'),
+                    int(float(item.get('quantity', 0))),
+                    item.get('uom'),
+                    float(item.get('unit_price', 0)),
+                    float(item.get('tax_pct', 0)),
+                    float(item.get('disc_pct', 0))
+                ))
 
+        # Replace summary (delete old, insert new with all columns)
         cur.execute("DELETE FROM invoice_summary WHERE invoice_id = %s", (invoice_id,))
-        _invoice_summary_exec_insert(cur, invoice_id, request.form)
+        balance_due = grand_total - amount_paid
+        cur.execute("""
+            INSERT INTO invoice_summary (
+                invoice_id, sub_total, tax_total, grand_total, amount_paid, balance_due,
+                shipping_charges, rounding_adjustment, global_discount_pct
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        """, (
+            invoice_id,
+            sub_total,
+            tax_total,
+            grand_total,
+            amount_paid,
+            balance_due,
+            shipping,
+            rounding,
+            global_discount
+        ))
 
+        # Add history entry
         cur.execute("""
             INSERT INTO invoice_history (id, invoice_id, action, details, user_name, timestamp)
-            VALUES (%s, %s, %s, %s, %s, %s)
+            VALUES (%s,%s,%s,%s,%s,%s)
         """, (
             str(uuid.uuid4()),
             invoice_id,
             "Invoice Updated",
             f"Invoice {invoice_id} updated",
             "Admin",
-            datetime.now(),
+            datetime.now()
         ))
 
         conn.commit()
         return jsonify({"success": True, "message": "Invoice updated successfully"})
+
     except Exception as e:
         conn.rollback()
+        import traceback
         traceback.print_exc()
         return jsonify({"success": False, "error": str(e)}), 500
     finally:
@@ -15495,208 +15452,341 @@ def update_invoice(invoice_id):
         conn.close()
 
 
+# ---------------------------------------------------------------------
+# PDF GENERATION FUNCTION
+# ---------------------------------------------------------------------
 def generate_invoice_pdf_bytes(invoice, items, summary):
-    """Generate PDF bytes for an invoice with all fields displayed."""
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(
-        buffer,
-        pagesize=A4,
-        rightMargin=72,
-        leftMargin=72,
-        topMargin=72,
-        bottomMargin=72,
-    )
+    """
+    Generate PDF bytes for an invoice with ALL fields displayed.
+    invoice: dict with invoice header data
+    items: list of item dicts
+    summary: dict with summary totals
+    """
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4,
+                            rightMargin=72, leftMargin=72,
+                            topMargin=72, bottomMargin=72)
+
     elements = []
     styles = getSampleStyleSheet()
 
-    currency_code = invoice.get("currency", "USD")
+    # Currency mapping
+    currency_code = invoice.get('currency', 'USD')
     currency_map = {
-        "USD": "$", "EUR": "€", "GBP": "£", "JPY": "¥", "IND": "₹", "INR": "₹",
-        "SGD": "S$", "CAD": "C$", "AUD": "A$", "CHF": "Fr", "CNY": "¥",
+        'USD': '$', 'EUR': '€', 'GBP': '£', 'JPY': '¥', 'IND': '₹', 'INR': '₹',
+        'SGD': 'S$', 'CAD': 'C$', 'AUD': 'A$', 'CHF': 'Fr', 'CNY': '¥'
     }
     currency_symbol = currency_map.get(currency_code, currency_code)
 
-    title_style = ParagraphStyle("CustomTitle", parent=styles["Heading1"], fontSize=24, textColor=colors.HexColor("#2C3E50"), alignment=1, spaceAfter=20)
-    company_style = ParagraphStyle("Company", parent=styles["Normal"], fontSize=9, leading=12, textColor=colors.black, alignment=1, spaceAfter=2, fontName="DejaVuSans")
-    status_style = ParagraphStyle("Status", parent=styles["Heading2"], fontSize=14, leading=18, alignment=1, spaceAfter=14, fontName="DejaVuSans-Bold")
-    heading_style = ParagraphStyle("Heading2", parent=styles["Heading2"], fontSize=11, leading=14, textColor=colors.HexColor("#2C3E50"), spaceBefore=8, spaceAfter=8, fontName="DejaVuSans-Bold")
-    terms_heading_style = ParagraphStyle("TermsHeading", parent=styles["Heading2"], fontSize=10, leading=13, textColor=colors.HexColor("#2C3E50"), spaceAfter=6, fontName="DejaVuSans-Bold")
-    terms_style = ParagraphStyle("Terms", parent=styles["Normal"], fontSize=7.4, leading=10, fontName="DejaVuSans")
-    footer_style = ParagraphStyle("Footer", parent=styles["Normal"], fontSize=7.5, textColor=colors.HexColor("#555555"), alignment=0)
+    # Styles
+    title_style = ParagraphStyle(
+        'CustomTitle',
+        parent=styles['Heading1'],
+        fontSize=24,
+        textColor=colors.HexColor('#2C3E50'),
+        alignment=1,
+        spaceAfter=20
+    )
+    company_style = ParagraphStyle(
+        'Company',
+        parent=styles['Normal'],
+        fontSize=9,
+        leading=12,
+        textColor=colors.black,
+        alignment=1,
+        spaceAfter=2,
+        fontName='DejaVuSans'
+    )
+    status_style = ParagraphStyle(
+        'Status',
+        parent=styles['Heading2'],
+        fontSize=14,
+        leading=18,
+        alignment=1,
+        spaceAfter=14,
+        fontName='DejaVuSans-Bold'
+    )
+    heading_style = ParagraphStyle(
+        'Heading2',
+        parent=styles['Heading2'],
+        fontSize=11,
+        leading=14,
+        textColor=colors.HexColor('#2C3E50'),
+        spaceBefore=8,
+        spaceAfter=8,
+        fontName='DejaVuSans-Bold'
+    )
+    table_cell_style = ParagraphStyle(
+        'TableCell',
+        parent=styles['Normal'],
+        fontSize=7.6,
+        leading=9,
+        fontName='DejaVuSans',
+        wordWrap='CJK'
+    )
+    terms_heading_style = ParagraphStyle(
+        'TermsHeading',
+        parent=styles['Heading2'],
+        fontSize=10,
+        leading=13,
+        textColor=colors.HexColor('#2C3E50'),
+        spaceAfter=6,
+        fontName='DejaVuSans-Bold'
+    )
+    terms_style = ParagraphStyle(
+        'Terms',
+        parent=styles['Normal'],
+        fontSize=7.4,
+        leading=10,
+        fontName='DejaVuSans'
+    )
+    footer_style = ParagraphStyle(
+        'Footer',
+        parent=styles['Normal'],
+        fontSize=7.5,
+        textColor=colors.HexColor('#555555'),
+        alignment=0
+    )
 
+    # Company header
     elements.append(Paragraph("STACKLY", title_style))
     elements.append(Paragraph("MMR Complex, Chinna Thirupathi, near Chinna Muniyappan Kovil, Salem, Tamil Nadu - 636008", company_style))
     elements.append(Paragraph("Phone: +91 7010792745", company_style))
     elements.append(Paragraph("Email: info@stackly.com", company_style))
     elements.append(Spacer(1, 10))
 
-    status_text = invoice.get("status", "DRAFT").upper()
+    # Status and watermark
+    status_text = invoice.get('status', 'DRAFT').upper()
+    status_color = {
+        'DRAFT': colors.orange,
+        'SENT': colors.blue,
+        'PAID': colors.green,
+        'CANCELLED': colors.red,
+        'OVERDUE': colors.HexColor('#FFA500')
+    }.get(status_text, colors.black)
     elements.append(Paragraph(f"INVOICE - {status_text}", status_style))
 
+    if status_text in ['CANCELLED', 'OVERDUE']:
+        watermark_text = "⚠️ CANCELLED - FOR REFERENCE ONLY ⚠️" if status_text == 'CANCELLED' else "⚠️ OVERDUE - PAYMENT REQUIRED ⚠️"
+        watermark_color = colors.red if status_text == 'CANCELLED' else colors.HexColor('#FFA500')
+        elements.append(Paragraph(
+            watermark_text,
+            ParagraphStyle(
+                'Watermark',
+                parent=styles['Normal'],
+                fontSize=16,
+                textColor=watermark_color,
+                alignment=1,
+                spaceAfter=20,
+                spaceBefore=10,
+                backColor=colors.lightgrey
+            )
+        ))
+        elements.append(Spacer(1, 10))
+
+    # ===========================================
+    # SECTION 1: INVOICE BASIC INFORMATION
+    # =========================================
     elements.append(Paragraph("INVOICE INFORMATION", heading_style))
     info_data = [
-        ["Invoice Number:", invoice.get("invoice_id", "-"), "Invoice Date:", invoice.get("invoice_date", "-")],
-        ["Sale Order Reference:", invoice.get("sale_order_ref", "-"), "Due Date:", invoice.get("due_date", "-")],
-        ["Invoice Status:", invoice.get("status", "-"), "Payment Terms:", invoice.get("payment_terms", "-")],
-        ["Customer Ref No:", invoice.get("customer_ref_no", "-"), "Invoice Tags:", invoice.get("invoice_tags", "-")],
+        ['Invoice Number:', invoice.get('invoice_id', '-'), 'Invoice Date:', invoice.get('invoice_date', '-')],
+        ['Sale Order Reference:', invoice.get('sale_order_ref', '-'), 'Due Date:', invoice.get('due_date', '-')],
+        ['Invoice Status:', invoice.get('status', '-'), 'Payment Terms:', invoice.get('payment_terms', '-')],
+        ['Customer Ref No:', invoice.get('customer_ref_no', '-'), 'Invoice Tags:', invoice.get('invoice_tags', '-')],
     ]
+    
     info_table = Table(info_data, colWidths=[120, 160, 100, 130])
     info_table.setStyle(TableStyle([
-        ("FONTNAME", (0, 0), (-1, -1), "DejaVuSans"),
-        ("FONTSIZE", (0, 0), (-1, -1), 9),
-        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-        ("BACKGROUND", (0, 0), (0, -1), colors.lightgrey),
-        ("BACKGROUND", (2, 0), (2, -1), colors.lightgrey),
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("PADDING", (0, 0), (-1, -1), 6),
+        ('FONTNAME', (0,0), (-1,-1), 'DejaVuSans'),
+        ('FONTSIZE', (0,0), (-1,-1), 9),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
+        ('BACKGROUND', (0,0), (0,-1), colors.lightgrey),
+        ('BACKGROUND', (2,0), (2,-1), colors.lightgrey),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('PADDING', (0,0), (-1,-1), 6),
     ]))
     elements.append(info_table)
     elements.append(Spacer(1, 15))
 
+    # ===========================================
+    # SECTION 2: CUSTOMER INFORMATION
+    # =========================================
     elements.append(Paragraph("CUSTOMER INFORMATION", heading_style))
     customer_data = [
-        ["Customer Name:", invoice.get("customer_name", "-"), "Customer ID:", invoice.get("customer_id", "-")],
-        ["Email:", invoice.get("email", "-"), "Phone:", invoice.get("phone", "-")],
-        ["Contact Person:", invoice.get("contact_person", "-"), "Currency:", f"{currency_code} ({currency_symbol})"],
+        ['Customer Name:', invoice.get('customer_name', '-'), 'Customer ID:', invoice.get('customer_id', '-')],
+        ['Email:', invoice.get('email', '-'), 'Phone:', invoice.get('phone', '-')],
+        ['Contact Person:', invoice.get('contact_person', '-'), 'Currency:', f"{currency_code} ({currency_symbol})"],
     ]
+    
     customer_table = Table(customer_data, colWidths=[120, 180, 100, 110])
     customer_table.setStyle(TableStyle([
-        ("FONTNAME", (0, 0), (-1, -1), "DejaVuSans"),
-        ("FONTSIZE", (0, 0), (-1, -1), 9),
-        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-        ("BACKGROUND", (0, 0), (0, -1), colors.lightgrey),
-        ("BACKGROUND", (2, 0), (2, -1), colors.lightgrey),
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("PADDING", (0, 0), (-1, -1), 6),
+        ('FONTNAME', (0,0), (-1,-1), 'DejaVuSans'),
+        ('FONTSIZE', (0,0), (-1,-1), 9),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
+        ('BACKGROUND', (0,0), (0,-1), colors.lightgrey),
+        ('BACKGROUND', (2,0), (2,-1), colors.lightgrey),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('PADDING', (0,0), (-1,-1), 6),
     ]))
     elements.append(customer_table)
     elements.append(Spacer(1, 15))
 
-    if invoice.get("billing_address") or invoice.get("shipping_address"):
+    # ===========================================
+    # SECTION 3: ADDRESS INFORMATION
+    # =========================================
+    if invoice.get('billing_address') or invoice.get('shipping_address'):
         elements.append(Paragraph("ADDRESS INFORMATION", heading_style))
-        address_data = [[
-            "Billing Address:", invoice.get("billing_address", "-"),
-            "Shipping Address:", invoice.get("shipping_address", "-"),
-        ]]
+        address_data = [
+            ['Billing Address:', invoice.get('billing_address', '-'), 'Shipping Address:', invoice.get('shipping_address', '-')],
+        ]
+        
         address_table = Table(address_data, colWidths=[120, 200, 100, 110])
         address_table.setStyle(TableStyle([
-            ("FONTNAME", (0, 0), (-1, -1), "DejaVuSans"),
-            ("FONTSIZE", (0, 0), (-1, -1), 9),
-            ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-            ("BACKGROUND", (0, 0), (0, 0), colors.lightgrey),
-            ("BACKGROUND", (2, 0), (2, 0), colors.lightgrey),
-            ("VALIGN", (0, 0), (-1, -1), "TOP"),
-            ("PADDING", (0, 0), (-1, -1), 6),
+            ('FONTNAME', (0,0), (-1,-1), 'DejaVuSans'),
+            ('FONTSIZE', (0,0), (-1,-1), 9),
+            ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
+            ('BACKGROUND', (0,0), (0,0), colors.lightgrey),
+            ('BACKGROUND', (2,0), (2,0), colors.lightgrey),
+            ('VALIGN', (0,0), (-1,-1), 'TOP'),
+            ('PADDING', (0,0), (-1,-1), 6),
         ]))
         elements.append(address_table)
         elements.append(Spacer(1, 15))
 
+    # ===========================================
+    # SECTION 4: PAYMENT INFORMATION
+    # =========================================
     elements.append(Paragraph("PAYMENT INFORMATION", heading_style))
     payment_data = [
-        ["Payment Method:", invoice.get("payment_method", "-"), "Payment Status:", invoice.get("payment_status", "-")],
-        ["Payment Ref No:", invoice.get("payment_ref_no", "-"), "Transaction Date:", invoice.get("transaction_date", "-")],
-        ["Amount Paid:", f"{currency_symbol}{invoice.get('amount_paid', 0):.2f}", "Balance Due:", f"{currency_symbol}{summary.get('balance_due', 0):.2f}"],
+        ['Payment Method:', invoice.get('payment_method', '-'), 'Payment Status:', invoice.get('payment_status', '-')],
+        ['Payment Ref No:', invoice.get('payment_ref_no', '-'), 'Transaction Date:', invoice.get('transaction_date', '-')],
+        ['Amount Paid:', f"{currency_symbol}{invoice.get('amount_paid', 0):.2f}", 'Balance Due:', f"{currency_symbol}{summary.get('balance_due', 0):.2f}"],
     ]
+    
     payment_table = Table(payment_data, colWidths=[120, 180, 100, 110])
     payment_table.setStyle(TableStyle([
-        ("FONTNAME", (0, 0), (-1, -1), "DejaVuSans"),
-        ("FONTSIZE", (0, 0), (-1, -1), 9),
-        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-        ("BACKGROUND", (0, 0), (0, -1), colors.lightgrey),
-        ("BACKGROUND", (2, 0), (2, -1), colors.lightgrey),
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("PADDING", (0, 0), (-1, -1), 6),
+        ('FONTNAME', (0,0), (-1,-1), 'DejaVuSans'),
+        ('FONTSIZE', (0,0), (-1,-1), 9),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
+        ('BACKGROUND', (0,0), (0,-1), colors.lightgrey),
+        ('BACKGROUND', (2,0), (2,-1), colors.lightgrey),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('PADDING', (0,0), (-1,-1), 6),
     ]))
     elements.append(payment_table)
     elements.append(Spacer(1, 20))
 
+    # ===========================================
+    # SECTION 5: INVOICE ITEMS
+    # =========================================
     if items:
         elements.append(Paragraph("INVOICE ITEMS", heading_style))
-        table_data = [["S.No", "Product Name", "Product ID", "Qty", "UOM", "Unit Price", "Tax %", "Disc %", "Total"]]
+        table_data = [['S.No', 'Product Name', 'Product ID', 'Qty', 'UOM', 'Unit Price', 'Tax %', 'Disc %', 'Total']]
         for idx, it in enumerate(items, 1):
             table_data.append([
-                str(idx), it.get("product_name", "-"), it.get("product_id", "-"), f"{it.get('quantity', 0):.2f}",
-                it.get("uom", "-"), f"{currency_symbol}{it.get('unit_price', 0):.2f}",
-                f"{it.get('tax_pct', 0):.1f}%" if it.get("tax_pct", 0) > 0 else "-",
-                f"{it.get('disc_pct', 0):.1f}%" if it.get("disc_pct", 0) > 0 else "-",
-                f"{currency_symbol}{it.get('total', 0):.2f}",
+                str(idx),
+                it.get('product_name', '-'),
+                it.get('product_id', '-'),
+                f"{it.get('quantity', 0):.2f}",
+                it.get('uom', '-'),
+                f"{currency_symbol}{it.get('unit_price', 0):.2f}",
+                f"{it.get('tax_pct', 0):.1f}%" if it.get('tax_pct', 0) > 0 else '-',
+                f"{it.get('disc_pct', 0):.1f}%" if it.get('disc_pct', 0) > 0 else '-',
+                f"{currency_symbol}{it.get('total', 0):.2f}"
             ])
+        
         items_table = Table(table_data, colWidths=[30, 100, 80, 35, 35, 60, 40, 40, 60])
         items_table.setStyle(TableStyle([
-            ("FONTNAME", (0, 0), (-1, -1), "DejaVuSans"),
-            ("FONTSIZE", (0, 0), (-1, -1), 7),
-            ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#2C3E50")),
-            ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
-            ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-            ("ALIGN", (5, 1), (8, -1), "RIGHT"),
-            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-            ("PADDING", (0, 0), (-1, -1), 4),
+            ('FONTNAME', (0,0), (-1,-1), 'DejaVuSans'),
+            ('FONTSIZE', (0,0), (-1,-1), 7),
+            ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
+            ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#2C3E50')),
+            ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
+            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+            ('ALIGN', (5,1), (8,1), 'RIGHT'),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('PADDING', (0,0), (-1,-1), 4),
         ]))
         elements.append(items_table)
         elements.append(Spacer(1, 20))
 
+    # ===========================================
+    # SECTION 6: TAX AND TOTALS SUMMARY
+    # =========================================
     elements.append(Paragraph("TAX AND TOTALS SUMMARY", heading_style))
+
+    # Calculate item-level discount
     total_discount = 0.0
     for it in items:
-        line_sub = it.get("quantity", 0) * it.get("unit_price", 0)
-        total_discount += line_sub * (it.get("disc_pct", 0) / 100)
+        line_sub = it.get('quantity', 0) * it.get('unit_price', 0)
+        total_discount += line_sub * (it.get('disc_pct', 0) / 100)
 
-    sub_total = summary.get("sub_total", 0)
-    tax_total = summary.get("tax_total", 0)
-    shipping = summary.get("shipping_charges", 0)
-    rounding = summary.get("rounding_adjustment", 0)
-    grand_total = summary.get("grand_total", 0)
-    amount_paid = summary.get("amount_paid", 0)
-    balance_due = summary.get("balance_due", 0)
-    global_discount_pct = summary.get("global_discount_pct", 0)
+    sub_total = summary.get('sub_total', 0)
+    tax_total = summary.get('tax_total', 0)
+    shipping = summary.get('shipping_charges', 0)
+    rounding = summary.get('rounding_adjustment', 0)
+    grand_total = summary.get('grand_total', 0)
+    amount_paid = summary.get('amount_paid', 0)
+    balance_due = summary.get('balance_due', 0)
+    global_discount_pct = summary.get('global_discount_pct', 0)
     global_discount_amt = sub_total * (global_discount_pct / 100) if global_discount_pct > 0 else 0
 
+    # Build summary rows
     summary_data = [
-        ["Subtotal:", f"{currency_symbol}{sub_total:.2f}"],
-        ["Item Level Discount:", f"-{currency_symbol}{total_discount:.2f}"],
-        ["Total Tax:", f"{currency_symbol}{tax_total:.2f}"],
-        ["Shipping Charge:", f"{currency_symbol}{shipping:.2f}"],
+        ['Subtotal:', f"{currency_symbol}{sub_total:.2f}"],
+        ['Item Level Discount:', f"-{currency_symbol}{total_discount:.2f}"],
+        ['Total Tax:', f"{currency_symbol}{tax_total:.2f}"],
+        ['Shipping Charge:', f"{currency_symbol}{shipping:.2f}"],
     ]
+    
     if global_discount_pct > 0:
-        summary_data.append([f"Global Discount ({global_discount_pct:.1f}%):", f"-{currency_symbol}{global_discount_amt:.2f}"])
+        summary_data.append([f'Global Discount ({global_discount_pct:.1f}%):', f"-{currency_symbol}{global_discount_amt:.2f}"])
+    
     if rounding != 0:
-        sign = "+" if rounding > 0 else ""
-        summary_data.append(["Rounding Adjustment:", f"{sign}{currency_symbol}{abs(rounding):.2f}"])
-    summary_data.extend([
-        ["─" * 25, "─" * 15],
-        ["GRAND TOTAL:", f"{currency_symbol}{grand_total:.2f}"],
-        ["Amount Paid:", f"{currency_symbol}{amount_paid:.2f}"],
-        ["BALANCE DUE:", f"{currency_symbol}{balance_due:.2f}"],
-    ])
+        sign = '+' if rounding > 0 else ''
+        summary_data.append(['Rounding Adjustment:', f"{sign}{currency_symbol}{abs(rounding):.2f}"])
+    
+    summary_data.append(['─' * 25, '─' * 15])
+    summary_data.append(['GRAND TOTAL:', f"{currency_symbol}{grand_total:.2f}"])
+    summary_data.append(['Amount Paid:', f"{currency_symbol}{amount_paid:.2f}"])
+    summary_data.append(['BALANCE DUE:', f"{currency_symbol}{balance_due:.2f}"])
+
     summary_table = Table(summary_data, colWidths=[200, 150])
-    summary_table.setStyle(TableStyle([
-        ("FONTNAME", (0, 0), (-1, -5), "DejaVuSans"),
-        ("FONTSIZE", (0, 0), (-1, -5), 9),
-        ("FONTNAME", (0, -3), (-1, -3), "DejaVuSans-Bold"),
-        ("FONTSIZE", (0, -3), (-1, -3), 11),
-        ("FONTNAME", (0, -1), (-1, -1), "DejaVuSans-Bold"),
-        ("FONTSIZE", (0, -1), (-1, -1), 11),
-        ("ALIGN", (0, 0), (0, -1), "LEFT"),
-        ("ALIGN", (1, 0), (1, -1), "RIGHT"),
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 6),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-        ("TOPPADDING", (0, 0), (-1, -1), 5),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-        ("BACKGROUND", (0, -3), (1, -3), colors.lightgrey),
-        ("BACKGROUND", (0, -1), (1, -1), colors.HexColor("#2C3E50")),
-        ("TEXTCOLOR", (0, -1), (1, -1), colors.whitesmoke),
-        ("LINEABOVE", (0, -3), (1, -3), 1, colors.black),
-        ("LINEBELOW", (0, -3), (1, -3), 1, colors.black),
-    ]))
+    table_style = [
+        ('FONTNAME', (0,0), (-1,-5), 'DejaVuSans'),
+        ('FONTSIZE', (0,0), (-1,-5), 9),
+        ('FONTNAME', (0,-3), (-1,-3), 'DejaVuSans-Bold'),
+        ('FONTSIZE', (0,-3), (-1,-3), 11),
+        ('FONTNAME', (0,-1), (-1,-1), 'DejaVuSans-Bold'),
+        ('FONTSIZE', (0,-1), (-1,-1), 11),
+        ('ALIGN', (0,0), (0,-1), 'LEFT'),
+        ('ALIGN', (1,0), (1,-1), 'RIGHT'),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('LEFTPADDING', (0,0), (-1,-1), 6),
+        ('RIGHTPADDING', (0,0), (-1,-1), 6),
+        ('TOPPADDING', (0,0), (-1,-1), 5),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 5),
+        ('BACKGROUND', (0,-3), (1,-3), colors.lightgrey),
+        ('BACKGROUND', (0,-1), (1,-1), colors.HexColor('#2C3E50')),
+        ('TEXTCOLOR', (0,-1), (1,-1), colors.whitesmoke),
+        ('LINEABOVE', (0,-3), (1,-3), 1, colors.black),
+        ('LINEBELOW', (0,-3), (1,-3), 1, colors.black),
+    ]
+    summary_table.setStyle(TableStyle(table_style))
+
     elements.append(summary_table)
     elements.append(Spacer(1, 20))
 
+    # ===========================================
+    # SECTION 7: TERMS AND CONDITIONS
+    # =========================================
     elements.append(Paragraph("Terms and Conditions", terms_heading_style))
-    terms_text = invoice.get("terms_conditions", "")
+    
+    # Get terms from invoice or use default
+    terms_text = invoice.get('terms_conditions', '')
     if terms_text:
-        for line in terms_text.split("\n"):
+        terms_lines = terms_text.split('\n')
+        for line in terms_lines:
             if line.strip():
                 elements.append(Paragraph(f"• {line.strip()}", terms_style))
     else:
@@ -15710,9 +15800,13 @@ def generate_invoice_pdf_bytes(invoice, items, summary):
         ]
         for line in default_terms:
             elements.append(Paragraph(line, terms_style))
+
     elements.append(Spacer(1, 18))
 
-    generated_on = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    # ===========================================
+    # SECTION 8: FOOTER
+    # =========================================
+    generated_on = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     elements.append(Paragraph(f"Generated on: {generated_on}", footer_style))
     elements.append(Paragraph("This is a system generated invoice - valid without signature", footer_style))
 
@@ -15721,169 +15815,470 @@ def generate_invoice_pdf_bytes(invoice, items, summary):
     buffer.close()
     return pdf_bytes
 
-
-@app.route("/invoice/<invoice_id>/pdf")
+# ---------------------------------------------------------------------
+# FLASK ROUTE
+# ---------------------------------------------------------------------
+@app.route('/invoice/<invoice_id>/pdf')
 def invoice_pdf(invoice_id):
-    conn = None
-    cur = None
+    conn = get_db_connection()
+    cur = conn.cursor()
     try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cols = _invoices_table_columns()
-        cur.execute(f"""
-            SELECT {_invoice_detail_select_sql(cols, "pdf")}
-            FROM invoices
+        # ----- 1. Invoice header with ALL fields -----
+        cur.execute("""
+            SELECT 
+                invoice_id, sale_order_ref, invoice_date, due_date,
+                customer_name, customer_id, email, phone, contact_person,
+                payment_method, currency, payment_ref_no, transaction_date,
+                payment_status, amount_paid, status, invoice_tags,
+                billing_address, shipping_address, customer_ref_no,
+                payment_terms, terms_conditions
+            FROM invoices 
             WHERE invoice_id = %s
         """, (invoice_id,))
+        
         row = cur.fetchone()
         if not row:
-            return jsonify({"error": f"Invoice {invoice_id} not found."}), 404
+            return jsonify({'error': f'Invoice {invoice_id} not found.'}), 404
 
         invoice = {
-            "invoice_id": row[0] or "",
-            "sale_order_ref": row[1] or "",
-            "invoice_date": row[2].strftime("%Y-%m-%d") if row[2] else "",
-            "due_date": row[3].strftime("%Y-%m-%d") if row[3] else "",
-            "customer_name": row[4] or "",
-            "customer_id": row[5] or "",
-            "email": row[6] or "",
-            "phone": row[7] or "",
-            "contact_person": row[8] or "",
-            "payment_method": row[9] or "",
-            "currency": row[10] or "USD",
-            "payment_ref_no": row[11] or "",
-            "transaction_date": row[12].strftime("%Y-%m-%d") if row[12] else "",
-            "payment_status": row[13] or "",
-            "amount_paid": float(row[14] or 0),
-            "status": row[15] or "",
-            "invoice_tags": row[16] or "",
-            "billing_address": row[17] or "",
-            "shipping_address": row[18] or "",
-            "customer_ref_no": row[19] or "",
-            "payment_terms": row[20] or "",
-            "terms_conditions": row[21] or "",
+            'invoice_id': row[0] or '',
+            'sale_order_ref': row[1] or '',
+            'invoice_date': row[2].strftime('%Y-%m-%d') if row[2] else '',
+            'due_date': row[3].strftime('%Y-%m-%d') if row[3] else '',
+            'customer_name': row[4] or '',
+            'customer_id': row[5] or '',
+            'email': row[6] or '',
+            'phone': row[7] or '',
+            'contact_person': row[8] or '',
+            'payment_method': row[9] or '',
+            'currency': row[10] or 'USD',
+            'payment_ref_no': row[11] or '',
+            'transaction_date': row[12].strftime('%Y-%m-%d') if row[12] else '',
+            'payment_status': row[13] or '',
+            'amount_paid': float(row[14] or 0),
+            'status': row[15] or '',
+            'invoice_tags': row[16] or '',
+            'billing_address': row[17] or '',
+            'shipping_address': row[18] or '',
+            'customer_ref_no': row[19] or '',
+            'payment_terms': row[20] or '',
+            'terms_conditions': row[21] or ''
         }
 
-        item_cols = _invoice_items_table_columns()
-        cur.execute(f"""
-            SELECT {_invoice_items_select_columns_sql(item_cols)}
+        # ----- 2. Items -----
+        cur.execute("""
+            SELECT product_name, product_id, quantity, uom,
+                   unit_price, tax_pct, disc_pct
             FROM invoice_items WHERE invoice_id = %s
         """, (invoice_id,))
+        
         items = []
         for r in cur.fetchall():
             qty = float(r[2] or 0)
             price = float(r[4] or 0)
             tax = float(r[5] or 0)
             disc = float(r[6] or 0)
-            total = qty * price * (1 - disc / 100) * (1 + tax / 100)
+            total = qty * price * (1 - disc/100) * (1 + tax/100)
             items.append({
-                "product_name": r[0] or "",
-                "product_id": r[1] or "",
-                "quantity": qty,
-                "uom": r[3] or "",
-                "unit_price": price,
-                "tax_pct": tax,
-                "disc_pct": disc,
-                "total": total,
+                'product_name': r[0] or '',
+                'product_id': r[1] or '',
+                'quantity': qty,
+                'uom': r[3] or '',
+                'unit_price': price,
+                'tax_pct': tax,
+                'disc_pct': disc,
+                'total': total
             })
 
+        # ----- 3. Summary -----
         cur.execute("""
             SELECT sub_total, tax_total, grand_total, amount_paid, balance_due,
-                   COALESCE(shipping_charges,0), COALESCE(rounding_adjustment,0), COALESCE(global_discount_pct,0)
+                   COALESCE(shipping_charges,0), COALESCE(rounding_adjustment,0),
+                   COALESCE(global_discount_pct,0)
             FROM invoice_summary WHERE invoice_id = %s
         """, (invoice_id,))
+        
         summary_row = cur.fetchone()
+        summary = {}
         if summary_row:
             summary = {
-                "sub_total": float(summary_row[0] or 0),
-                "tax_total": float(summary_row[1] or 0),
-                "grand_total": float(summary_row[2] or 0),
-                "amount_paid": float(summary_row[3] or 0),
-                "balance_due": float(summary_row[4] or 0),
-                "shipping_charges": float(summary_row[5] or 0),
-                "rounding_adjustment": float(summary_row[6] or 0),
-                "global_discount_pct": float(summary_row[7] or 0),
+                'sub_total': float(summary_row[0] or 0),
+                'tax_total': float(summary_row[1] or 0),
+                'grand_total': float(summary_row[2] or 0),
+                'amount_paid': float(summary_row[3] or 0),
+                'balance_due': float(summary_row[4] or 0),
+                'shipping_charges': float(summary_row[5] or 0),
+                'rounding_adjustment': float(summary_row[6] or 0),
+                'global_discount_pct': float(summary_row[7] or 0)
             }
         else:
             summary = {
-                "sub_total": 0, "tax_total": 0, "grand_total": 0, "amount_paid": 0,
-                "balance_due": 0, "shipping_charges": 0, "rounding_adjustment": 0, "global_discount_pct": 0,
+                'sub_total': 0, 'tax_total': 0, 'grand_total': 0, 'amount_paid': 0,
+                'balance_due': 0, 'shipping_charges': 0, 'rounding_adjustment': 0,
+                'global_discount_pct': 0
             }
 
+        cur.close()
+        conn.close()
+
+        # ----- 4. Generate PDF -----
         pdf_bytes = generate_invoice_pdf_bytes(invoice, items, summary)
+
+        # ----- 5. Return PDF -----
         response = make_response(pdf_bytes)
-        response.headers["Content-Type"] = "application/pdf"
-        if invoice["status"].lower() == "draft":
-            response.headers["Content-Disposition"] = 'inline; filename="invoice_preview.pdf"'
+        response.headers['Content-Type'] = 'application/pdf'
+        
+        if invoice['status'].lower() == 'draft':
+            response.headers['Content-Disposition'] = 'inline; filename="invoice_preview.pdf"'
         else:
-            response.headers["Content-Disposition"] = f'attachment; filename="invoice_{invoice_id}.pdf"'
+            response.headers['Content-Disposition'] = f'attachment; filename="invoice_{invoice_id}.pdf"'
+        
         return response
+
     except Exception as e:
+        import traceback
         traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
-    finally:
-        if cur:
-            cur.close()
-        if conn:
-            conn.close()
+        return jsonify({'error': str(e)}), 500
 
 
 def send_invoice_email(recipient_email, invoice_data, items, summary, custom_message=""):
-    """Send invoice email with HTML body and PDF attachment."""
+    """
+    Send invoice email with HTML body and PDF attachment.
+    Displays ALL invoice fields in the email body.
+    """
+    # Generate PDF bytes (reuse your existing function)
     pdf_bytes = generate_invoice_pdf_bytes(invoice_data, items, summary)
 
-    currency_code = invoice_data.get("currency", "USD")
+    # Currency symbol
+    currency_code = invoice_data.get('currency', 'USD')
     currency_map = {
-        "USD": "$", "EUR": "€", "GBP": "£", "JPY": "¥", "IND": "₹", "INR": "₹",
-        "SGD": "S$", "CAD": "C$", "AUD": "A$", "CHF": "Fr", "CNY": "¥",
+        'USD': '$', 'EUR': '€', 'GBP': '£', 'JPY': '¥', 'IND': '₹', 'INR': '₹',
+        'SGD': 'S$', 'CAD': 'C$', 'AUD': 'A$', 'CHF': 'Fr', 'CNY': '¥'
     }
     currency_symbol = currency_map.get(currency_code, currency_code)
 
+    # HTML template with ALL fields
     html_template = """
-    <html><body>
-      <h2>STACKLY</h2>
-      <p>Hi {{ invoice.customer_name }},</p>
-      <p>Your invoice has been created. Please find the attached PDF for complete details.</p>
-      <p><b>Invoice Number:</b> {{ invoice.invoice_id }}</p>
-      <p><b>Invoice Date:</b> {{ invoice.invoice_date }}</p>
-      <p><b>Due Date:</b> {{ invoice.due_date }}</p>
-      <p><b>Status:</b> {{ invoice.status }}</p>
-      <p><b>Grand Total:</b> {{ currency_symbol }}{{ summary.grand_total|round(2) }}</p>
-      <p><b>Balance Due:</b> {{ currency_symbol }}{{ summary.balance_due|round(2) }}</p>
-      {% if custom_message %}<p><b>Message:</b> {{ custom_message }}</p>{% endif %}
-      <p>Thanks,<br>Stackly Team</p>
-    </body></html>
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <style>
+            body { font-family: Arial, sans-serif; margin: 0; padding: 20px; color: #333; }
+            .container { max-width: 800px; margin: auto; background: #f9f9f9; border-radius: 8px; padding: 20px; }
+            .header { text-align: center; border-bottom: 2px solid #a12828; padding-bottom: 10px; margin-bottom: 20px; }
+            .logo { font-size: 28px; font-weight: bold; color: #a12828; }
+            .success { background: #d4edda; color: #155724; padding: 10px; border-radius: 5px; margin: 15px 0; text-align: center; }
+            .warning { background: #fff3cd; color: #856404; padding: 10px; border-radius: 5px; margin: 15px 0; text-align: center; }
+            .info-section { margin: 20px 0; padding: 15px; background: white; border-radius: 5px; border: 1px solid #ddd; }
+            .info-section h3 { margin-top: 0; color: #a12828; border-bottom: 1px solid #eee; padding-bottom: 8px; }
+            .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+            .info-item { margin-bottom: 8px; }
+            .info-label { font-weight: bold; color: #555; }
+            .info-value { color: #333; }
+            .items-table { width: 100%; border-collapse: collapse; margin: 15px 0; }
+            .items-table th, .items-table td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+            .items-table th { background: #f2f2f2; }
+            .summary { margin-top: 20px; text-align: right; }
+            .footer { margin-top: 30px; font-size: 12px; text-align: center; color: #777; border-top: 1px solid #eee; padding-top: 15px; }
+            .note { background: #fff3cd; padding: 10px; border-radius: 5px; margin: 15px 0; font-size: 13px; }
+            .badge { display: inline-block; padding: 3px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; }
+            .badge-paid { background: #d4edda; color: #155724; }
+            .badge-unpaid { background: #f8d7da; color: #721c24; }
+            .badge-overdue { background: #fff3cd; color: #856404; }
+            .badge-draft { background: #e2e3e5; color: #383d41; }
+            .badge-sent { background: #d1ecf1; color: #0c5460; }
+            .badge-cancelled { background: #f8d7da; color: #721c24; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <div class="logo">STACKLY</div>
+                <div>MMR Complex, Chinna Thirupathi, near Chinna Muniyappan Kovil, Salem, Tamil Nadu - 636008</div>
+            </div>
+            
+            <!-- Status Badge -->
+            {% if invoice.status == 'Paid' %}
+            <div class="success">✅ INVOICE PAID</div>
+            {% elif invoice.status == 'Overdue' %}
+            <div class="warning">⚠️ OVERDUE INVOICE - Payment Required Immediately</div>
+            {% elif invoice.status == 'Sent' %}
+            <div class="success">📨 Invoice Sent Successfully</div>
+            {% else %}
+            <div class="success">✔ Invoice Generated Successfully</div>
+            {% endif %}
+            
+            <p>Hi {{ invoice.customer_name }},</p>
+            <p>Your invoice has been created. Please find the attached PDF for complete details.</p>
+            
+            <!-- ========================================= -->
+            <!-- SECTION 1: INVOICE INFORMATION -->
+            <!-- ========================================= -->
+            <div class="info-section">
+                <h3>📄 Invoice Information</h3>
+                <div class="info-grid">
+                    <div class="info-item">
+                        <span class="info-label">Invoice Number:</span>
+                        <span class="info-value">{{ invoice.invoice_id }}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Invoice Date:</span>
+                        <span class="info-value">{{ invoice.invoice_date }}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Sale Order Reference:</span>
+                        <span class="info-value">{{ invoice.sale_order_ref or 'N/A' }}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Due Date:</span>
+                        <span class="info-value">{{ invoice.due_date }}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Invoice Status:</span>
+                        <span class="info-value">
+                            <span class="badge badge-{{ invoice.status|lower }}">{{ invoice.status }}</span>
+                        </span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Payment Terms:</span>
+                        <span class="info-value">{{ invoice.payment_terms or 'N/A' }}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Customer Ref No:</span>
+                        <span class="info-value">{{ invoice.customer_ref_no or 'N/A' }}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Invoice Tags:</span>
+                        <span class="info-value">{{ invoice.invoice_tags or 'N/A' }}</span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- ========================================= -->
+            <!-- SECTION 2: CUSTOMER INFORMATION -->
+            <!-- ========================================= -->
+            <div class="info-section">
+                <h3>👤 Customer Information</h3>
+                <div class="info-grid">
+                    <div class="info-item">
+                        <span class="info-label">Customer Name:</span>
+                        <span class="info-value">{{ invoice.customer_name }}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Customer ID:</span>
+                        <span class="info-value">{{ invoice.customer_id or 'N/A' }}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Email:</span>
+                        <span class="info-value">{{ invoice.email or 'N/A' }}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Phone:</span>
+                        <span class="info-value">{{ invoice.phone or 'N/A' }}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Contact Person:</span>
+                        <span class="info-value">{{ invoice.contact_person or 'N/A' }}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Currency:</span>
+                        <span class="info-value">{{ invoice.currency }} ({{ currency_symbol }})</span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- ========================================= -->
+            <!-- SECTION 3: ADDRESS INFORMATION -->
+            <!-- ========================================= -->
+            {% if invoice.billing_address or invoice.shipping_address %}
+            <div class="info-section">
+                <h3>📍 Address Information</h3>
+                <div class="info-grid">
+                    <div class="info-item">
+                        <span class="info-label">Billing Address:</span>
+                        <span class="info-value">{{ invoice.billing_address or 'N/A' }}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Shipping Address:</span>
+                        <span class="info-value">{{ invoice.shipping_address or 'N/A' }}</span>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+            
+            <!-- ========================================= -->
+            <!-- SECTION 4: PAYMENT INFORMATION -->
+            <!-- ========================================= -->
+            <div class="info-section">
+                <h3>💳 Payment Information</h3>
+                <div class="info-grid">
+                    <div class="info-item">
+                        <span class="info-label">Payment Method:</span>
+                        <span class="info-value">{{ invoice.payment_method or 'Not specified' }}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Payment Status:</span>
+                        <span class="info-value">
+                            <span class="badge badge-{{ invoice.payment_status|lower }}">{{ invoice.payment_status or 'Pending' }}</span>
+                        </span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Payment Ref No:</span>
+                        <span class="info-value">{{ invoice.payment_ref_no or 'N/A' }}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Transaction Date:</span>
+                        <span class="info-value">{{ invoice.transaction_date or 'N/A' }}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Amount Paid:</span>
+                        <span class="info-value">{{ currency_symbol }}{{ invoice.amount_paid|round(2) }}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Balance Due:</span>
+                        <span class="info-value">{{ currency_symbol }}{{ summary.balance_due|round(2) }}</span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- ========================================= -->
+            <!-- SECTION 5: INVOICE ITEMS -->
+            <!-- ========================================= -->
+            <h3>🛒 Invoice Items</h3>
+            <table class="items-table">
+                <thead>
+                    <tr>
+                        <th>S.No</th>
+                        <th>Product Name</th>
+                        <th>Product ID</th>
+                        <th>Qty</th>
+                        <th>UOM</th>
+                        <th>Unit Price</th>
+                        <th>Tax%</th>
+                        <th>Disc%</th>
+                        <th>Total</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for it in items %}
+                    <tr>
+                        <td>{{ loop.index }}</td>
+                        <td>{{ it.product_name }}</td>
+                        <td>{{ it.product_id or '-' }}</td>
+                        <td>{{ it.quantity }}</td>
+                        <td>{{ it.uom or '-' }}</td>
+                        <td>{{ currency_symbol }}{{ it.unit_price|round(2) }}</td>
+                        <td>{{ it.tax_pct }}%</td>
+                        <td>{{ it.disc_pct }}%</td>
+                        <td>{{ currency_symbol }}{{ it.total|round(2) }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            
+            <!-- ========================================= -->
+            <!-- SECTION 6: TAX AND TOTALS SUMMARY -->
+            <!-- ========================================= -->
+            <div class="summary">
+                <p><strong>Sub Total:</strong> {{ currency_symbol }}{{ summary.sub_total|round(2) }}</p>
+                <p><strong>Item Level Discount:</strong> -{{ currency_symbol }}{{ (summary.sub_total * 0)|round(2) }}</p>
+                <p><strong>Total Tax:</strong> {{ currency_symbol }}{{ summary.tax_total|round(2) }}</p>
+                <p><strong>Shipping Charge:</strong> {{ currency_symbol }}{{ summary.shipping_charges|round(2) }}</p>
+                {% if summary.global_discount_pct > 0 %}
+                <p><strong>Global Discount ({{ summary.global_discount_pct }}%):</strong> -{{ currency_symbol }}{{ (summary.sub_total * summary.global_discount_pct / 100)|round(2) }}</p>
+                {% endif %}
+                {% if summary.rounding_adjustment != 0 %}
+                <p><strong>Rounding Adjustment:</strong> {{ currency_symbol }}{{ summary.rounding_adjustment|round(2) }}</p>
+                {% endif %}
+                <p><strong>──────────────</strong></p>
+                <p><strong>GRAND TOTAL:</strong> <span style="font-size: 18px; color: #a12828;">{{ currency_symbol }}{{ summary.grand_total|round(2) }}</span></p>
+                <p><strong>Amount Paid:</strong> {{ currency_symbol }}{{ summary.amount_paid|round(2) }}</p>
+                <p><strong>Balance Due:</strong> {{ currency_symbol }}{{ summary.balance_due|round(2) }}</p>
+            </div>
+            
+            <!-- ========================================= -->
+            <!-- SECTION 7: NOTES & MESSAGES -->
+            <!-- ========================================= -->
+            <div class="note">
+                <strong>⚠️ Please Note:</strong><br>
+                - The detailed invoice is attached as a PDF with this email.<br>
+                - This invoice is valid until {{ invoice.due_date }}.<br>
+                - Prices are subject to change without prior notice.<br>
+                - Please quote invoice number when making payment.<br>
+                {% if invoice.status == 'Overdue' %}
+                - ⚠️ This invoice is OVERDUE. Please arrange payment immediately.<br>
+                {% endif %}
+            </div>
+            
+            {% if invoice.terms_conditions %}
+            <div class="info-section">
+                <h3>📋 Terms & Conditions</h3>
+                <p>{{ invoice.terms_conditions }}</p>
+            </div>
+            {% endif %}
+            
+            {% if custom_message %}
+            <div class="info-section">
+                <h3>💬 Message from us</h3>
+                <p>{{ custom_message }}</p>
+            </div>
+            {% endif %}
+            
+            <div class="footer">
+                <strong>STACKLY</strong><br>
+                MMR Complex, Chinna Thirupathi, near Chinna Muniyappan Kovil, Salem, Tamil Nadu - 636008<br>
+                For any questions, contact us at <a href="mailto:support@stackly.com">support@stackly.com</a><br>
+                Call: +91 7010792745<br>
+                © 2028 Stackly. All rights reserved.
+            </div>
+        </div>
+    </body>
+    </html>
     """
-    html_body = render_template_string(
-        html_template,
-        invoice=invoice_data,
-        items=items,
-        summary=summary,
-        currency_symbol=currency_symbol,
-        custom_message=custom_message,
-    )
+
+    html_body = render_template_string(html_template,
+                                       invoice=invoice_data,
+                                       items=items,
+                                       summary=summary,
+                                       currency_symbol=currency_symbol,
+                                       custom_message=custom_message)
+
     text_body = f"""
-Hi {invoice_data.get('customer_name', 'Customer')},
+    Hi {invoice_data['customer_name']},
 
-Your invoice {invoice_data.get('invoice_id', '')} has been generated.
-Grand Total: {currency_symbol}{summary.get('grand_total', 0):.2f}
-Balance Due: {currency_symbol}{summary.get('balance_due', 0):.2f}
-"""
+    Your invoice {invoice_data['invoice_id']} has been generated.
 
-    msg = MIMEMultipart("mixed")
-    msg["Subject"] = f"Invoice {invoice_data.get('invoice_id', '')} from Stackly"
-    msg["From"] = os.getenv("EMAIL_ADDRESS")
-    msg["To"] = recipient_email
+    Invoice Details:
+    - Invoice Number: {invoice_data['invoice_id']}
+    - Invoice Date: {invoice_data['invoice_date']}
+    - Due Date: {invoice_data['due_date']}
+    - Status: {invoice_data['status']}
+    - Grand Total: {currency_symbol}{summary['grand_total']:.2f}
+    - Balance Due: {currency_symbol}{summary['balance_due']:.2f}
 
-    msg_alternative = MIMEMultipart("alternative")
-    msg_alternative.attach(MIMEText(text_body, "plain"))
-    msg_alternative.attach(MIMEText(html_body, "html"))
+    Please find the attached PDF for complete details.
+
+    Best regards,
+    Stackly Team
+    """
+
+    # Build email
+    msg = MIMEMultipart('mixed')
+    msg['Subject'] = f"Invoice {invoice_data['invoice_id']} from Stackly"
+    msg['From'] = os.getenv("EMAIL_ADDRESS")
+    msg['To'] = recipient_email
+
+    msg_alternative = MIMEMultipart('alternative')
+    msg_alternative.attach(MIMEText(text_body, 'plain'))
+    msg_alternative.attach(MIMEText(html_body, 'html'))
     msg.attach(msg_alternative)
 
-    pdf_attachment = MIMEApplication(pdf_bytes, _subtype="pdf")
-    pdf_attachment.add_header("Content-Disposition", "attachment", filename=f"Invoice_{invoice_data.get('invoice_id', '')}.pdf")
+    pdf_attachment = MIMEApplication(pdf_bytes, _subtype='pdf')
+    pdf_attachment.add_header('Content-Disposition', 'attachment', filename=f"Invoice_{invoice_data['invoice_id']}.pdf")
     msg.attach(pdf_attachment)
 
+    # Send email
     try:
         smtp_server = os.getenv("SMTP_SERVER", "smtp.gmail.com")
         smtp_port = int(os.getenv("SMTP_PORT", "587"))
@@ -15896,152 +16291,181 @@ Balance Due: {currency_symbol}{summary.get('balance_due', 0):.2f}
         print("Email send error:", e)
         return False
 
-
-@app.route("/api/invoice/<invoice_id>/send-email", methods=["POST"])
+@app.route('/api/invoice/<invoice_id>/send-email', methods=['POST'])
 def send_invoice_email_api(invoice_id):
-    data = request.get_json() or {}
-    recipient = data.get("email")
-    custom_message = data.get("message", "")
-    if not recipient:
-        return jsonify({"success": False, "error": "Recipient email required"}), 400
+    data = request.get_json()
+    recipient = data.get('email')
+    custom_message = data.get('message', '')
 
-    conn = None
-    cur = None
+    if not recipient:
+        return jsonify({'success': False, 'error': 'Recipient email required'}), 400
+
+    conn = get_db_connection()
+    cur = conn.cursor()
     try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cols = _invoices_table_columns()
-        cur.execute(f"""
-            SELECT {_invoice_detail_select_sql(cols, "pdf")}
-            FROM invoices
+        # Fetch invoice header with ALL fields
+        cur.execute("""
+            SELECT 
+                invoice_id, sale_order_ref, invoice_date, due_date,
+                customer_name, customer_id, email, phone, contact_person,
+                payment_method, currency, payment_ref_no, transaction_date,
+                payment_status, amount_paid, status, invoice_tags,
+                billing_address, shipping_address, customer_ref_no,
+                payment_terms, terms_conditions
+            FROM invoices 
             WHERE invoice_id = %s
         """, (invoice_id,))
+        
         row = cur.fetchone()
         if not row:
-            return jsonify({"success": False, "error": "Invoice not found"}), 404
+            return jsonify({'success': False, 'error': 'Invoice not found'}), 404
 
         invoice = {
-            "invoice_id": row[0] or "",
-            "sale_order_ref": row[1] or "",
-            "invoice_date": row[2].strftime("%Y-%m-%d") if row[2] else "",
-            "due_date": row[3].strftime("%Y-%m-%d") if row[3] else "",
-            "customer_name": row[4] or "",
-            "customer_id": row[5] or "",
-            "email": row[6] or "",
-            "phone": row[7] or "",
-            "contact_person": row[8] or "",
-            "payment_method": row[9] or "",
-            "currency": row[10] or "USD",
-            "payment_ref_no": row[11] or "",
-            "transaction_date": row[12].strftime("%Y-%m-%d") if row[12] else "",
-            "payment_status": row[13] or "",
-            "amount_paid": float(row[14] or 0),
-            "status": row[15] or "",
-            "invoice_tags": row[16] or "",
-            "billing_address": row[17] or "",
-            "shipping_address": row[18] or "",
-            "customer_ref_no": row[19] or "",
-            "payment_terms": row[20] or "",
-            "terms_conditions": row[21] or "",
+            'invoice_id': row[0] or '',
+            'sale_order_ref': row[1] or '',
+            'invoice_date': row[2].strftime('%Y-%m-%d') if row[2] else '',
+            'due_date': row[3].strftime('%Y-%m-%d') if row[3] else '',
+            'customer_name': row[4] or '',
+            'customer_id': row[5] or '',
+            'email': row[6] or '',
+            'phone': row[7] or '',
+            'contact_person': row[8] or '',
+            'payment_method': row[9] or '',
+            'currency': row[10] or 'USD',
+            'payment_ref_no': row[11] or '',
+            'transaction_date': row[12].strftime('%Y-%m-%d') if row[12] else '',
+            'payment_status': row[13] or '',
+            'amount_paid': float(row[14] or 0),
+            'status': row[15] or '',
+            'invoice_tags': row[16] or '',
+            'billing_address': row[17] or '',
+            'shipping_address': row[18] or '',
+            'customer_ref_no': row[19] or '',
+            'payment_terms': row[20] or '',
+            'terms_conditions': row[21] or ''
         }
 
-        item_cols = _invoice_items_table_columns()
-        cur.execute(f"""
-            SELECT {_invoice_items_select_columns_sql(item_cols)}
-            FROM invoice_items
+        # Items
+        cur.execute("""
+            SELECT product_name, product_id, quantity, uom, 
+                   unit_price, tax_pct, disc_pct
+            FROM invoice_items 
             WHERE invoice_id = %s
         """, (invoice_id,))
+        
         items = []
         for r in cur.fetchall():
             qty = float(r[2] or 0)
             price = float(r[4] or 0)
             tax = float(r[5] or 0)
             disc = float(r[6] or 0)
-            total = qty * price * (1 - disc / 100) * (1 + tax / 100)
+            total = qty * price * (1 - disc/100) * (1 + tax/100)
             items.append({
-                "product_name": r[0] or "",
-                "product_id": r[1] or "",
-                "quantity": qty,
-                "uom": r[3] or "",
-                "unit_price": price,
-                "tax_pct": tax,
-                "disc_pct": disc,
-                "total": total,
+                'product_name': r[0] or '',
+                'product_id': r[1] or '',
+                'quantity': qty,
+                'uom': r[3] or '',
+                'unit_price': price,
+                'tax_pct': tax,
+                'disc_pct': disc,
+                'total': total
             })
 
+        # Summary
         cur.execute("""
             SELECT sub_total, tax_total, grand_total, amount_paid, balance_due,
-                   COALESCE(shipping_charges,0), COALESCE(rounding_adjustment,0), COALESCE(global_discount_pct,0)
-            FROM invoice_summary
+                   COALESCE(shipping_charges,0), COALESCE(rounding_adjustment,0),
+                   COALESCE(global_discount_pct,0)
+            FROM invoice_summary 
             WHERE invoice_id = %s
         """, (invoice_id,))
+        
         summary_row = cur.fetchone()
+        summary = {}
         if summary_row:
             summary = {
-                "sub_total": float(summary_row[0] or 0),
-                "tax_total": float(summary_row[1] or 0),
-                "grand_total": float(summary_row[2] or 0),
-                "amount_paid": float(summary_row[3] or 0),
-                "balance_due": float(summary_row[4] or 0),
-                "shipping_charges": float(summary_row[5] or 0),
-                "rounding_adjustment": float(summary_row[6] or 0),
-                "global_discount_pct": float(summary_row[7] or 0),
+                'sub_total': float(summary_row[0] or 0),
+                'tax_total': float(summary_row[1] or 0),
+                'grand_total': float(summary_row[2] or 0),
+                'amount_paid': float(summary_row[3] or 0),
+                'balance_due': float(summary_row[4] or 0),
+                'shipping_charges': float(summary_row[5] or 0),
+                'rounding_adjustment': float(summary_row[6] or 0),
+                'global_discount_pct': float(summary_row[7] or 0)
             }
         else:
             summary = {
-                "sub_total": 0, "tax_total": 0, "grand_total": 0, "amount_paid": 0,
-                "balance_due": 0, "shipping_charges": 0, "rounding_adjustment": 0, "global_discount_pct": 0,
+                'sub_total': 0, 'tax_total': 0, 'grand_total': 0, 'amount_paid': 0,
+                'balance_due': 0, 'shipping_charges': 0, 'rounding_adjustment': 0,
+                'global_discount_pct': 0
             }
 
+        cur.close()
+        conn.close()
+
+        # Send email
         success = send_invoice_email(recipient, invoice, items, summary, custom_message)
+        
         if success:
-            return jsonify({"success": True, "message": "Email sent successfully"})
-        return jsonify({"success": False, "error": "Failed to send email. Check SMTP credentials."}), 500
+            return jsonify({'success': True, 'message': 'Email sent successfully'})
+        else:
+            return jsonify({'success': False, 'error': 'Failed to send email. Check SMTP credentials.'}), 500
+
     except Exception as e:
+        import traceback
         traceback.print_exc()
-        return jsonify({"success": False, "error": str(e)}), 500
+        return jsonify({'success': False, 'error': str(e)}), 500
     finally:
         if cur:
             cur.close()
         if conn:
-            conn.close()
+            conn.close()        
 
+UPLOAD_FOLDER = "uploads"
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
+# =========================
+# GENERATE INVOICE ID
+# =========================
 def generate_invoice_id():
-    cols = _invoices_table_columns()
     conn = get_db_connection()
     cur = conn.cursor()
-    if "id" in cols:
-        cur.execute("SELECT invoice_id FROM invoices ORDER BY id DESC LIMIT 1")
-    elif "created_at" in cols:
-        cur.execute(
-            "SELECT invoice_id FROM invoices ORDER BY created_at DESC NULLS LAST, invoice_id DESC LIMIT 1"
-        )
-    else:
-        cur.execute("""
-            SELECT invoice_id FROM invoices
-            ORDER BY CAST(NULLIF(SPLIT_PART(invoice_id, '-', 2), '') AS INTEGER) DESC NULLS LAST
-            LIMIT 1
-        """)
+
+    cur.execute("SELECT invoice_id FROM invoices ORDER BY id DESC LIMIT 1")
     row = cur.fetchone()
+
     cur.close()
     conn.close()
+
     if not row:
-        return "INV-0001"
+        return "INV-001"
+
     num = int(row[0].split("-")[1]) + 1
-    return f"INV-{num:04d}"
+    return f"INV-{num:03d}"
 
-
+# =========================
+# NEW INVOICE PAGE
+# =========================
 @app.route("/new-invoice")
 def new_invoice():
     conn = get_db_connection()
     cur = conn.cursor()
+
     cur.execute("""
-        SELECT so_id, customer_name
-        FROM sales_orders
+        SELECT so_id, customer_name 
+        FROM sales_orders 
         ORDER BY so_id DESC
     """)
-    sales_orders = [{"so_id": r[0], "customer_name": r[1]} for r in cur.fetchall()]
+
+    rows = cur.fetchall()
+
+    sales_orders = []
+    for r in rows:
+        sales_orders.append({
+            "so_id": r[0],
+            "customer_name": r[1]
+        })
+
     cur.close()
     conn.close()
 
@@ -16049,6 +16473,7 @@ def new_invoice():
     user_email = session.get("user")
     if not user_email:
         return redirect(url_for("login", message="session_expired"))
+
     users = load_users()
     user_name = "User"
     for u in users:
@@ -16063,19 +16488,25 @@ def new_invoice():
         user_email=user_email,
         user_name=user_name,
         invoice_id=invoice_id,
-        sales_orders=sales_orders,
+        sales_orders=sales_orders
+
+
     )
-
-
-@app.route("/get-sales-order/<so_id>")
+# =========================
+# GET SALES ORDER (FROM DB)
+# =========================
+@app.route('/get-sales-order/<so_id>')
 def get_sales_order(so_id):
     conn = get_db_connection()
     cur = conn.cursor()
     try:
+        # Get all sales order data (including summary fields)
         cur.execute("""
-            SELECT customer_name, customer_id, billing_address, shipping_address, email, phone,
+            SELECT customer_name, customer_id, billing_address,
+                   shipping_address, email, phone,
                    payment_method, currency, due_date,
-                   subtotal, tax_total, grand_total, global_discount, shipping_charges
+                   subtotal, tax_total, grand_total,
+                   global_discount, shipping_charges
             FROM sales_orders
             WHERE so_id = %s
         """, (so_id,))
@@ -16083,6 +16514,7 @@ def get_sales_order(so_id):
         if not sale:
             return jsonify({})
 
+        # Get items
         cur.execute("""
             SELECT product_name, product_id, qty, uom, price, tax_pct, disc_pct
             FROM sales_order_items
@@ -16100,53 +16532,130 @@ def get_sales_order(so_id):
             "payment_method": sale[6],
             "currency": sale[7],
             "due_date": str(sale[8]) if sale[8] else None,
-            "items": [{
-                "product_name": i[0], "product_id": i[1], "quantity": i[2], "uom": i[3],
-                "unit_price": float(i[4] or 0), "tax_pct": float(i[5] or 0), "disc_pct": float(i[6] or 0),
-            } for i in items],
             "subtotal": float(sale[9] or 0),
             "tax_total": float(sale[10] or 0),
             "grand_total": float(sale[11] or 0),
             "global_discount": float(sale[12] or 0),
             "shipping_charges": float(sale[13] or 0),
-            "rounding": 0,
+            "rounding": 0.0,   # add column if needed, or set default
+            "items": [
+                {
+                    "product_name": i[0],
+                    "product_id": i[1],
+                    "quantity": float(i[2]),
+                    "uom": i[3],
+                    "unit_price": float(i[4]),
+                    "tax_pct": float(i[5]),
+                    "disc_pct": float(i[6])
+                } for i in items
+            ]
         })
     finally:
         cur.close()
-        conn.close()
+        conn.close()  
 
-
-@app.route("/save-invoice", methods=["POST"])
+@app.route('/save-invoice', methods=['POST'])
 def save_invoice():
     conn = get_db_connection()
     cur = conn.cursor()
+
     try:
-        invoice_id = request.form.get("invoice_id") or generate_invoice_id()
-        cols = _invoices_table_columns()
-        ref_col = _invoice_so_ref_column_name(cols)
+        invoice_id = request.form.get('invoice_id') or generate_invoice_id()
 
-        def date_or_none_save(val):
-            return val if val else None
+        # Helper for optional text fields (convert empty strings to None)
+        def none_if_empty(val):
+            return val if val and val.strip() else None
 
-        pairs = _invoice_form_column_pairs(cols, ref_col, request.form, date_or_none_save)
-        insert_cols = ["invoice_id"] + [p[0] for p in pairs]
-        insert_vals = [invoice_id] + [p[1] for p in pairs]
-        ph = ", ".join(["%s"] * len(insert_cols))
-        cur.execute(
-            f"INSERT INTO invoices ({', '.join(insert_cols)}) VALUES ({ph})",
-            insert_vals,
-        )
+        # SAFE numeric conversion (empty string → 0)
+        amount_paid = float(request.form.get('amount_paid') or 0)
+        sub_total   = float(request.form.get('sub_total') or 0)
+        tax_total   = float(request.form.get('tax_total') or 0)
+        grand_total = float(request.form.get('grand_total') or 0)
+        shipping    = float(request.form.get('shipping_charges') or 0)
+        rounding    = float(request.form.get('rounding_adjustment') or 0)
+        global_discount = float(request.form.get('global_discount') or 0)
 
-        items_json = request.form.get("itemsData")
+        # Insert into invoices
+        cur.execute("""
+            INSERT INTO invoices (
+                invoice_id, sale_order_ref, invoice_date, due_date,
+                invoice_status, payment_terms, customer_ref_no,
+                customer_name, customer_id, billing_address,
+                shipping_address, email, phone, contact_person,
+                payment_method, currency, payment_ref_no,
+                transaction_date, payment_status, amount_paid, status,
+                invoice_tags, terms_conditions
+            )
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        """, (
+            invoice_id,
+            none_if_empty(request.form.get('sale_order_reference')),
+            none_if_empty(request.form.get('invoice_date')),
+            none_if_empty(request.form.get('due_date')),
+            none_if_empty(request.form.get('invoice_status')),
+            none_if_empty(request.form.get('payment_terms')),
+            none_if_empty(request.form.get('customer_ref_no')),
+            none_if_empty(request.form.get('customer_name')),
+            none_if_empty(request.form.get('customer_id')),
+            none_if_empty(request.form.get('billing_address')),
+            none_if_empty(request.form.get('shipping_address')),
+            none_if_empty(request.form.get('email')),
+            none_if_empty(request.form.get('phone')),
+            none_if_empty(request.form.get('contact_person')),
+            none_if_empty(request.form.get('payment_method')),
+            none_if_empty(request.form.get('currency')),
+            none_if_empty(request.form.get('payment_ref_no')),
+            none_if_empty(request.form.get('transaction_date')),
+            none_if_empty(request.form.get('payment_status')),
+            amount_paid,
+            none_if_empty(request.form.get('status')),
+            none_if_empty(request.form.get('invoice_tags')),
+            none_if_empty(request.form.get('terms_conditions'))
+        ))
+
+        # Insert items
+        items_json = request.form.get('itemsData')
         if items_json:
-            item_cols = _invoice_items_table_columns()
-            _invoice_items_sync_id_sequence(cur)
             items = json.loads(items_json)
             for item in items:
-                _invoice_items_exec_insert_line(cur, item_cols, invoice_id, item)
+                cur.execute("""
+                    INSERT INTO invoice_items (
+                        invoice_id, product_name, product_id,
+                        quantity, uom, unit_price, tax_pct, disc_pct
+                    )
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+                """, (
+                    invoice_id,
+                    item.get('product_name'),
+                    item.get('product_id'),
+                    int(float(item.get('quantity', 0))),
+                    item.get('uom'),
+                    float(item.get('unit_price', 0)),
+                    float(item.get('tax_pct', 0)),
+                    float(item.get('disc_pct', 0))
+                ))
 
-        _invoice_summary_exec_insert(cur, invoice_id, request.form)
+        # Insert summary with all columns
+        balance_due = grand_total - amount_paid
+        cur.execute("""
+            INSERT INTO invoice_summary (
+                invoice_id, sub_total, tax_total, grand_total, amount_paid, balance_due,
+                shipping_charges, rounding_adjustment, global_discount_pct
+            )
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        """, (
+            invoice_id,
+            sub_total,
+            tax_total,
+            grand_total,
+            amount_paid,
+            balance_due,
+            shipping,
+            rounding,
+            global_discount
+        ))
 
+        # Insert history
         cur.execute("""
             INSERT INTO invoice_history (id, invoice_id, action, details, user_name, timestamp)
             VALUES (%s,%s,%s,%s,%s,%s)
@@ -16156,46 +16665,61 @@ def save_invoice():
             "Invoice Created",
             f"Invoice {invoice_id} created",
             "Admin",
-            datetime.now(),
+            datetime.now()
         ))
 
         conn.commit()
-        status = request.form.get("status", "Draft")
-        return jsonify({"success": True, "message": f"Invoice saved in status : {status}"})
+        status = request.form.get('status', 'Draft')
+        return jsonify({
+            "success": True,
+            "message": f"Invoice saved in status : {status}"
+        })
+
     except Exception as e:
         conn.rollback()
         return jsonify({"success": False, "error": str(e)})
+
     finally:
         cur.close()
         conn.close()
 
-
-@app.route("/api/invoice/<invoice_id>/comments", methods=["GET"])
+# =========================
+# COMMENTS
+# =========================
+@app.route('/api/invoice/<invoice_id>/comments', methods=['GET'])
 def get_comments_invoice(invoice_id):
     conn = get_db_connection()
     cur = conn.cursor()
+
     cur.execute("""
-        SELECT id, text, author, created_at
+        SELECT id, text, author, created_at 
         FROM invoice_comments
         WHERE invoice_id=%s
         ORDER BY created_at DESC
     """, (invoice_id,))
-    comments = [{
-        "id": r[0],
-        "text": r[1],
-        "author": r[2],
-        "created_at": r[3],
-    } for r in cur.fetchall()]
+
+    rows = cur.fetchall()
     cur.close()
     conn.close()
+
+    comments = []
+    for r in rows:
+        comments.append({
+            "id": r[0],
+            "text": r[1],
+            "author": r[2],
+            "created_at": r[3]
+        })
+
     return jsonify({"comments": comments})
 
-
-@app.route("/api/invoice/<invoice_id>/comments", methods=["POST"])
+@app.route('/api/invoice/<invoice_id>/comments', methods=['POST'])
 def add_comment_invoice(invoice_id):
     conn = get_db_connection()
     cur = conn.cursor()
-    data = request.get_json() or {}
+
+    data = request.get_json()
+
     cur.execute("""
         INSERT INTO invoice_comments (id, invoice_id, text, author, created_at)
         VALUES (%s,%s,%s,%s,%s)
@@ -16204,49 +16728,62 @@ def add_comment_invoice(invoice_id):
         invoice_id,
         data.get("comment_text"),
         "Admin",
-        datetime.now(),
+        datetime.now()
     ))
+
     conn.commit()
     cur.close()
     conn.close()
+
     return jsonify({"success": True})
 
-
-@app.route("/api/invoice/<invoice_id>/attachments", methods=["GET"])
+# =========================
+# ATTACHMENTS
+# =========================
+@app.route('/api/invoice/<invoice_id>/attachments', methods=['GET'])
 def get_attachments_invoice(invoice_id):
     conn = get_db_connection()
     cur = conn.cursor()
+
     cur.execute("""
         SELECT id, filename, file_path, size, uploaded_at
         FROM invoice_attachments
         WHERE invoice_id=%s
         ORDER BY uploaded_at DESC
     """, (invoice_id,))
-    data = [{
-        "id": r[0],
-        "filename": r[1],
-        "file_path": r[2],
-        "size": r[3],
-        "uploaded_at": r[4],
-    } for r in cur.fetchall()]
+
+    rows = cur.fetchall()
     cur.close()
     conn.close()
+
+    data = []
+    for r in rows:
+        data.append({
+            "id": r[0],
+            "filename": r[1],
+            "file_path": r[2],
+            "size": r[3],
+            "uploaded_at": r[4]
+        })
+
     return jsonify({"success": True, "attachments": data})
 
-
-@app.route("/api/invoice/<invoice_id>/attachments", methods=["POST"])
+@app.route('/api/invoice/<invoice_id>/attachments', methods=['POST'])
 def upload_attachment_invoice(invoice_id):
-    file = request.files["file"]
+    file = request.files['file']
+
     filename = file.filename
-    ext = filename.split(".")[-1]
+    ext = filename.split('.')[-1]
     stored = f"{uuid.uuid4()}.{ext}"
+
     path = os.path.join(UPLOAD_FOLDER, stored)
     file.save(path)
 
     conn = get_db_connection()
     cur = conn.cursor()
+
     cur.execute("""
-        INSERT INTO invoice_attachments
+        INSERT INTO invoice_attachments 
         (id, invoice_id, filename, stored_name, file_path, size, uploaded_by, uploaded_at)
         VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
     """, (
@@ -16257,89 +16794,133 @@ def upload_attachment_invoice(invoice_id):
         path,
         os.path.getsize(path),
         "Admin",
-        datetime.now(),
+        datetime.now()
     ))
+
     conn.commit()
     cur.close()
     conn.close()
+
     return jsonify({"success": True})
 
+import mimetypes
 
-@app.route("/api/invoice/<invoice_id>/attachments/<id>/download")
+# Keep your existing download route (as_attachment=True)
+@app.route('/api/invoice/<invoice_id>/attachments/<id>/download')
 def download_attachment_invoice(invoice_id, id):
     conn = get_db_connection()
     cur = conn.cursor()
-    cur.execute("""
-        SELECT file_path, filename
-        FROM invoice_attachments
-        WHERE id=%s
-    """, (id,))
+    cur.execute("SELECT file_path, filename FROM invoice_attachments WHERE id=%s", (id,))
     row = cur.fetchone()
     cur.close()
     conn.close()
     if not row:
-        return "Not found"
+        return "Not found", 404
     return send_file(row[0], as_attachment=True, download_name=row[1])
 
+# NEW: View route (as_attachment=False)
+@app.route('/api/invoice/<invoice_id>/attachments/<id>/view')
+def view_attachment_invoice(invoice_id, id):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT file_path, filename FROM invoice_attachments WHERE id=%s", (id,))
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    if not row:
+        return "Not found", 404
+    # Serve inline (browser will display images, PDFs, etc.)
+    return send_file(row[0], as_attachment=False, download_name=row[1])
 
-@app.route("/api/invoice/<invoice_id>/attachments/<attachment_id>", methods=["DELETE"])
+
+@app.route('/api/invoice/<invoice_id>/attachments/<attachment_id>', methods=['DELETE'])
 def delete_invoice_attachment(invoice_id, attachment_id):
+    """Delete attachment from both database and filesystem"""
     try:
         conn = get_db_connection()
         cur = conn.cursor()
+        
+        # Get file path before deletion
         cur.execute("""
-            SELECT file_path, filename
+            SELECT file_path, filename 
             FROM invoice_attachments
             WHERE id = %s AND invoice_id = %s
         """, (attachment_id, invoice_id))
+        
         row = cur.fetchone()
+        
         if not row:
             cur.close()
             conn.close()
-            return jsonify({"success": False, "error": "Attachment not found"}), 404
-
+            return jsonify({'success': False, 'error': 'Attachment not found'}), 404
+        
         file_path = row[0]
         filename = row[1]
+        
+        # Delete from database
         cur.execute("""
             DELETE FROM invoice_attachments
             WHERE id = %s AND invoice_id = %s
         """, (attachment_id, invoice_id))
+        
         conn.commit()
         cur.close()
         conn.close()
-
+        
+        # Delete physical file from filesystem
         if os.path.exists(file_path):
             os.remove(file_path)
-        return jsonify({"success": True, "message": f"Attachment {filename} deleted successfully"})
+            print(f"✅ Deleted file: {file_path}")
+        else:
+            print(f"⚠️ File not found on disk: {file_path}")
+        
+        return jsonify({
+            'success': True, 
+            'message': f'Attachment {filename} deleted successfully'
+        })
+        
     except Exception as e:
+        print(f"❌ Error deleting attachment: {e}")
+        import traceback
         traceback.print_exc()
-        return jsonify({"success": False, "error": str(e)}), 500
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
-@app.route("/api/payment-terms")
+@app.route('/api/payment-terms')
 def get_payment_terms():
     conn = get_db_connection()
     cur = conn.cursor()
+
     try:
         cur.execute("""
-            SELECT DISTINCT payment_terms
-            FROM customers
+            SELECT DISTINCT payment_terms 
+            FROM customers 
             WHERE payment_terms IS NOT NULL AND payment_terms != ''
             ORDER BY payment_terms
         """)
-        terms = [r[0] for r in cur.fetchall()]
-        return jsonify({"success": True, "terms": terms})
+
+        rows = cur.fetchall()
+
+        terms = [r[0] for r in rows]
+
+        return jsonify({
+            'success': True,
+            'terms': terms
+        })
+
     except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
+        return jsonify({'success': False, 'error': str(e)}), 500
+
     finally:
         cur.close()
         conn.close()
 
 
-@app.route("/api/customer-by-name/<name>")
+@app.route('/api/customer-by-name/<name>')
 def get_customer_by_name(name):
     conn = get_db_connection()
     cur = conn.cursor()
+
     try:
         cur.execute("""
             SELECT id, name, email, phone, billing_address, shipping_address, payment_terms
@@ -16347,21 +16928,52 @@ def get_customer_by_name(name):
             WHERE LOWER(name) = LOWER(%s)
             LIMIT 1
         """, (name,))
+
         row = cur.fetchone()
+
         if not row:
-            return jsonify({"success": True, "customer": None})
+            return jsonify({'success': True, 'customer': None})
+
         customer = {
-            "id": row[0],
-            "name": row[1],
-            "email": row[2],
-            "phone": row[3],
-            "billing_address": row[4],
-            "shipping_address": row[5],
-            "paymentTerms": row[6],
+            'id': row[0],
+            'name': row[1],
+            'email': row[2],
+            'phone': row[3],
+            'billing_address': row[4],
+            'shipping_address': row[5],
+            'paymentTerms': row[6]   # ⚠️ IMPORTANT (match your JS)
         }
-        return jsonify({"success": True, "customer": customer})
+
+        return jsonify({
+            'success': True,
+            'customer': customer
+        })
+
     except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.route('/api/customer/<string:customer_id>/payment-term')
+def get_customer_payment_term(customer_id):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        # Use customer_id column (e.g., 'CUST-001') instead of numeric id
+        cur.execute("""
+            SELECT payment_terms
+            FROM customers
+            WHERE customer_id = %s
+        """, (customer_id,))
+        row = cur.fetchone()
+        if not row or row[0] is None:
+            return jsonify({'success': True, 'payment_term': None})
+        return jsonify({'success': True, 'payment_term': row[0]})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
     finally:
         cur.close()
         conn.close()
@@ -16370,33 +16982,65 @@ def get_customer_by_name(name):
 @app.route("/api/invoices", methods=["GET"])
 def get_invoices():
     try:
-        cols = _invoices_table_columns()
-        if not cols or not {"invoice_id", "customer_name", "invoice_date", "status"}.issubset(cols):
-            return jsonify({"success": False, "error": "invoices table schema mismatch"}), 500
-        order_by = "created_at DESC NULLS LAST" if "created_at" in cols else "invoice_id DESC"
-        amt_expr = "total_amount" if "total_amount" in cols else "CAST(0 AS numeric)"
         conn = get_db_connection()
         cur = conn.cursor()
-        cur.execute(f"""
-            SELECT invoice_id, customer_name, invoice_date, {amt_expr}, status
+
+        cur.execute("""
+            SELECT invoice_id, customer_name, invoice_date, total_amount, status
             FROM invoices
-            ORDER BY {order_by}
+            ORDER BY created_at DESC
         """)
+
         rows = cur.fetchall()
+
         invoices = []
         for row in rows:
             invoices.append({
                 "invoice_id": row[0],
                 "customer_name": row[1],
                 "invoice_date": str(row[2]),
-                "total_amount": float(row[3] or 0),
-                "status": row[4],
+                "total_amount": float(row[3]),
+                "status": row[4]
             })
+
         cur.close()
         conn.close()
+
         return jsonify({"success": True, "invoices": invoices})
+
     except Exception as e:
         return jsonify({"success": False, "error": str(e)})
+
+def update_overdue_invoices():
+    """Automatically update overdue invoices in database"""
+    conn = get_db_connection()
+    cur = conn.cursor()
+    
+    try:
+        # Update invoices that are overdue
+        cur.execute("""
+            UPDATE invoices
+            SET status = 'Overdue'
+            WHERE due_date < CURRENT_DATE
+            AND payment_status != 'Paid'
+            AND status NOT IN ('Paid', 'Cancelled', 'Overdue')
+        """)
+        
+        updated_count = cur.rowcount
+        conn.commit()
+        
+        if updated_count > 0:
+            print(f"✅ Updated {updated_count} invoices to Overdue")
+            
+    except Exception as e:
+        print(f"❌ Error updating overdue invoices: {e}")
+        conn.rollback()
+    finally:
+        cur.close()
+        conn.close()
+    
+    return updated_count
+
 
 # =======================================
 # Stock Reciept
@@ -16815,56 +17459,102 @@ def stock_receipt():
 
 # =========================================
 # INVOICE RETURN MODULE
-# =========================================
+# INVOICE-RETURN-LIST
+# ========================================
 
+@app.get("/invoice-return-list")
+def invoice_return_list():
+    user_email = session.get("user")
+    if not user_email:
+        return redirect(url_for("login", message="session_expired"))
 
-def generate_invoice_return_id():
+    users = load_users()
+    user_name = "User"
+    for u in users:
+        if isinstance(u, dict) and (u.get("email") or "").lower() == user_email.lower():
+            user_name = u.get("name") or "User"
+            break
+
+    return render_template(
+        "invoice-return.html",
+        page="inv_return",
+        title="Invoice Return List - Stackly",
+        user_email=user_email,
+        user_name=user_name,
+    )
+
+@app.route('/api/invoice-returns')
+def api_invoice_returns():
     conn = get_db_connection()
     cur = conn.cursor()
     try:
         cur.execute("""
-            SELECT invoice_return_id FROM invoice_return
-            ORDER BY created_at DESC NULLS LAST
-            LIMIT 1
+            SELECT 
+                invoice_return_id,
+                invoice_id,
+                customer_name,
+                return_date,
+                status
+            FROM invoice_return
+            ORDER BY created_at DESC
         """)
-        row = cur.fetchone()
-    except Exception:
-        cur.execute("""
-            SELECT invoice_return_id FROM invoice_return
-            ORDER BY
-              COALESCE(
-                NULLIF(regexp_replace(invoice_return_id, '^IR-', ''), '')::integer,
-                0
-              ) DESC,
-              invoice_return_id DESC
-            LIMIT 1
-        """)
-        row = cur.fetchone()
+        rows = cur.fetchall()
+        
+        invoice_returns = []
+        for row in rows:
+            invoice_returns.append({
+                "return_id": row[0],       # invoice_return_id
+                "invoice_ref": row[1],     # invoice_id
+                "customer_name": row[2],
+                "return_date": row[3].strftime('%Y-%m-%d') if row[3] else "",
+                "status": row[4]
+            })
+        return jsonify(invoice_returns)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
     finally:
         cur.close()
         conn.close()
+
+
+# =========================
+# GENERATE NEW INVOICE RETURN ID
+# =========================
+def generate_invoice_return_id():
+    conn = get_db_connection()
+    cur = conn.cursor()
+    # Use correct table name (singular)
+    cur.execute("SELECT invoice_return_id FROM invoice_return ORDER BY created_at DESC LIMIT 1")
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
     if row and row[0]:
         last_id = row[0]
-        try:
-            num = int(str(last_id).split("-")[1]) + 1
-            return f"IR-{num:04d}"
-        except (IndexError, ValueError):
-            return "IR-0001"
-    return "IR-0001"
+        # Assuming format IR-XXXX
+        num = int(last_id.split('-')[1]) + 1
+        return f"IR-{num:03d}"
+    else:
+        return "IR-001"
 
-
+# =========================
+# GET ALL INVOICES (for dropdown)
+# =========================
 def get_all_invoices():
     conn = get_db_connection()
     cur = conn.cursor()
     cur.execute("""
         SELECT invoice_id, customer_name
         FROM invoices
-        ORDER BY created_at DESC NULLS LAST
+        ORDER BY created_at DESC
     """)
     rows = cur.fetchall()
-    cur.close()
-    conn.close()
-    return [{"invoice_id": r[0], "customer_name": r[1] if len(r) > 1 else ""} for r in rows]
+
+    invoices = []
+    for r in rows:
+        invoices.append({
+            "invoice_id": r[0],
+        })
+    return invoices
 
 
 @app.route("/new-invoice-return")
@@ -16880,10 +17570,14 @@ def new_invoice_return():
             user_name = u.get("name") or "User"
             break
 
+    # Read query parameters
     edit_id = request.args.get("edit_id")
     view_id = request.args.get("view_id")
     existing_id = edit_id or view_id
+
+    # Determine invoice return ID for the hidden field
     invoice_return_id = existing_id if existing_id else generate_invoice_return_id()
+
     invoices = get_all_invoices()
 
     return render_template(
@@ -16893,173 +17587,174 @@ def new_invoice_return():
         user_email=user_email,
         user_name=user_name,
         invoices=invoices,
-        invoice_id=invoice_return_id,
+        invoice_id=invoice_return_id
     )
 
-
+# =========================
+# FETCH INVOICE DETAILS (AJAX)
+# =========================
 @app.route("/get-invoice-details/<invoice_id>")
 def get_invoice_details(invoice_id):
     conn = get_db_connection()
     cur = conn.cursor()
 
-    cur.execute(
-        """
-        SELECT * FROM invoices
-        WHERE invoice_id = %s
-        ORDER BY created_at DESC NULLS LAST
-        LIMIT 1
-        """,
-        (invoice_id,),
-    )
+    # =========================
+    # 1. Invoice Main
+    # =========================
+    cur.execute("""
+        SELECT * FROM invoices 
+        WHERE invoice_id = %s 
+        ORDER BY created_at DESC LIMIT 1
+    """, (invoice_id,))
+    
     row = cur.fetchone()
     if not row:
-        cur.close()
-        conn.close()
         return jsonify({"error": "Invoice not found"}), 404
 
     columns = [desc[0] for desc in cur.description]
     invoice = dict(zip(columns, row))
 
-    item_cols = _invoice_items_table_columns()
-    cur.execute(
-        f"""
-        SELECT {_invoice_items_select_columns_sql(item_cols)}
+    # =========================
+    # 2. Invoice Items (simplified - only tax and discount)
+    # =========================
+    cur.execute("""
+        SELECT product_id, product_name, quantity, uom,
+               unit_price, tax_pct, disc_pct
         FROM invoice_items
         WHERE invoice_id = %s
         ORDER BY id
-        """,
-        (invoice_id,),
-    )
+    """, (invoice_id,))
+
     items_rows = cur.fetchall()
     items = []
-    for item_row in items_rows:
-        qty = Decimal(item_row[2] or 0)
-        price = Decimal(item_row[4] or 0)
-        tax = Decimal(item_row[5] or 0)
-        disc = Decimal(item_row[6] or 0)
+    for row in items_rows:
+        qty = Decimal(row[2] or 0)
+        price = Decimal(row[4] or 0)
+        tax = Decimal(row[5] or 0)
+        disc = Decimal(row[6] or 0)
+
+        # Calculate total (simple calculation)
         total = qty * price
+        # Apply discount if any
         if disc > 0:
             total = total - (total * (disc / Decimal(100)))
+        # Apply tax if any
         if tax > 0:
             total = total + (total * (tax / Decimal(100)))
-        items.append(
-            {
-                "product_id": item_row[1],
-                "product_name": item_row[0],
-                "quantity": float(qty),
-                "uom": item_row[3],
-                "unit_price": float(price),
-                "tax_pct": float(tax),
-                "disc_pct": float(disc),
-                "total": float(total),
-            }
-        )
 
-    cur.execute(
-        """
+        items.append({
+            "product_id": row[0],
+            "product_name": row[1],
+            "quantity": float(qty),
+            "uom": row[3],
+            "unit_price": float(price),
+            "tax_pct": float(tax),  # From invoice_items (default 0)
+            "disc_pct": float(disc), # From invoice_items (default 0)
+            "total": float(total)
+        })
+
+    # =========================
+    # 3. Invoice Summary (simplified - only grand_total and global_discount_pct)
+    # =========================
+    cur.execute("""
         SELECT grand_total, global_discount_pct
         FROM invoice_summary
         WHERE invoice_id = %s
-        ORDER BY created_at DESC NULLS LAST
-        LIMIT 1
-        """,
-        (invoice_id,),
-    )
+        ORDER BY created_at DESC LIMIT 1
+    """, (invoice_id,))
+
     summary_row = cur.fetchone()
+
     if summary_row:
         grand_total = float(summary_row[0] or 0)
         global_discount_pct = float(summary_row[1] or 0)
+        
         summary = {
-            "original_total": grand_total,
-            "global_discount_pct": global_discount_pct,
-            "subtotal": grand_total,
+            "original_total": grand_total,  # Original Grand Total from invoice
+            "global_discount_pct": global_discount_pct,  # Global Discount % from invoice
+            "subtotal": grand_total,  # Use grand_total as subtotal for now
             "discount_amount": 0,
+            # "tax_amount":0,
+
             "rounding": 0,
-            "refund_amount": 0,
+            "refund_amount": 0
         }
     else:
+        # Fallback if no summary found
         summary = {
             "original_total": 0,
             "global_discount_pct": 0,
             "subtotal": 0,
             "discount_amount": 0,
+            # "tax_amount":0,
             "rounding": 0,
-            "refund_amount": 0,
+            "refund_amount": 0
         }
 
-    cur.execute(
-        """
-        SELECT text, created_at
-        FROM invoice_comments
-        WHERE invoice_id=%s
+    # =========================
+    # 4. Comments (optional - if needed)
+    # =========================
+    cur.execute("""
+        SELECT text, created_at 
+        FROM invoice_comments 
+        WHERE invoice_id=%s 
         ORDER BY created_at DESC
-        """,
-        (invoice_id,),
-    )
+    """, (invoice_id,))
+
     comments = []
     for c in cur.fetchall():
-        comments.append(
-            {
-                "text": c[0],
-                "created_at": c[1].strftime("%Y-%m-%d %H:%M") if c[1] else "",
-            }
-        )
+        comments.append({
+            "text": c[0],
+            "created_at": c[1].strftime("%Y-%m-%d %H:%M") if c[1] else ""
+        })
 
     cur.close()
     conn.close()
 
-    return jsonify(
-        {
-            "invoice_id": invoice.get("invoice_id"),
-            "customer_name": invoice.get("customer_name"),
-            "customer_id": invoice.get("customer_id"),
-            "email": invoice.get("email"),
-            "phone": invoice.get("phone"),
-            "contact_person": invoice.get("contact_person"),
-            "customer_ref_no": invoice.get("customer_ref_no"),
-            "items": items,
-            "summary": summary,
-            "comments": comments,
-        }
-    )
-
-
-def _normalize_ir_status_for_db(status):
-    """Accept Draft/Submitted/Cancelled (UI) or draft/submitted/cancelled (API)."""
-    if not status:
-        return "Draft"
-    s = str(status).strip().lower()
-    if s == "draft":
-        return "Draft"
-    if s == "submitted":
-        return "Submitted"
-    if s == "cancelled":
-        return "Cancelled"
-    return str(status).strip()
-
-
+    # =========================
+    # 5. FINAL RESPONSE
+    # =========================
+    return jsonify({
+        "invoice_id": invoice.get("invoice_id"),
+        "customer_name": invoice.get("customer_name"),
+        "customer_id": invoice.get("customer_id"),
+        "email": invoice.get("email"),
+        "phone": invoice.get("phone"),
+        "contact_person": invoice.get("contact_person"),
+        "customer_ref_no": invoice.get("customer_ref_no"),
+        "items": items,
+        "summary": summary,
+        "comments": comments
+    })
+# =========================
+# SAVE INVOICE RETURN
+# =========================
+from flask import request, jsonify
+import traceback
 @app.route("/save-invoice-return", methods=["POST"])
 def save_invoice_return():
     conn = get_db_connection()
     cur = conn.cursor()
+
     try:
         data = request.json
         invoice_return_id = data.get("invoice_return_id")
+
+        # If no ID was sent, generate a new one
         if not invoice_return_id:
             invoice_return_id = generate_invoice_return_id()
             is_update = False
         else:
-            cur.execute(
-                "SELECT 1 FROM invoice_return WHERE invoice_return_id = %s",
-                (invoice_return_id,),
-            )
-            is_update = cur.fetchone() is not None
-
-        st = _normalize_ir_status_for_db(data.get("status"))
+            # Check if the record already exists
+            cur.execute("SELECT 1 FROM invoice_return WHERE invoice_return_id = %s", (invoice_return_id,))
+            exists = cur.fetchone() is not None
+            is_update = exists
 
         if is_update:
-            cur.execute(
-                """
+            # =========================
+            # 1. UPDATE HEADER
+            # =========================
+            cur.execute("""
                 UPDATE invoice_return
                 SET invoice_id = %s,
                     customer_name = %s,
@@ -17072,32 +17767,27 @@ def save_invoice_return():
                     refund_amount = %s,
                     status = %s
                 WHERE invoice_return_id = %s
-                """,
-                (
-                    data.get("invoice_id"),
-                    data.get("customer_name"),
-                    data.get("customer_id"),
-                    data.get("email"),
-                    data.get("phone"),
-                    data.get("contact_person"),
-                    data.get("customer_ref_no"),
-                    data.get("return_date"),
-                    float(data.get("refund_amount", 0)),
-                    st,
-                    invoice_return_id,
-                ),
-            )
-            cur.execute(
-                "DELETE FROM invoice_return_items WHERE invoice_return_id = %s",
-                (invoice_return_id,),
-            )
-            cur.execute(
-                "DELETE FROM invoice_return_summary WHERE invoice_return_id = %s",
-                (invoice_return_id,),
-            )
+            """, (
+                data.get("invoice_id"),
+                data.get("customer_name"),
+                data.get("customer_id"),
+                data.get("email"),
+                data.get("phone"),
+                data.get("contact_person"),
+                data.get("customer_ref_no"),
+                data.get("return_date"),
+                float(data.get("refund_amount", 0)),
+                data.get("status"),
+                invoice_return_id
+            ))
+            # Delete old items and summary (for update)
+            cur.execute("DELETE FROM invoice_return_items WHERE invoice_return_id = %s", (invoice_return_id,))
+            cur.execute("DELETE FROM invoice_return_summary WHERE invoice_return_id = %s", (invoice_return_id,))
         else:
-            cur.execute(
-                """
+            # =========================
+            # 1. INSERT HEADER (for new record)
+            # =========================
+            cur.execute("""
                 INSERT INTO invoice_return (
                     invoice_return_id,
                     invoice_id,
@@ -17112,37 +17802,30 @@ def save_invoice_return():
                     status
                 )
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                """,
-                (
-                    invoice_return_id,
-                    data.get("invoice_id"),
-                    data.get("customer_name"),
-                    data.get("customer_id"),
-                    data.get("email"),
-                    data.get("phone"),
-                    data.get("contact_person"),
-                    data.get("customer_ref_no"),
-                    data.get("return_date"),
-                    float(data.get("refund_amount", 0)),
-                    st,
-                ),
-            )
+            """, (
+                invoice_return_id,
+                data.get("invoice_id"),
+                data.get("customer_name"),
+                data.get("customer_id"),
+                data.get("email"),
+                data.get("phone"),
+                data.get("contact_person"),
+                data.get("customer_ref_no"),
+                data.get("return_date"),
+                float(data.get("refund_amount", 0)),
+                data.get("status")
+            ))
 
+        # =========================
+        # 2. INSERT ITEMS (for both new and update)
+        # =========================
         items = data.get("items", [])
         if not items:
-            conn.rollback()
             return jsonify({"error": "No items found"}), 400
 
         for item in items:
-            rq = item.get("quantity", 0)
-            try:
-                rq_int = int(float(rq))
-            except (TypeError, ValueError):
-                rq_int = 0
-            cur.execute(
-                """
+            cur.execute("""
                 INSERT INTO invoice_return_items (
-                    id,
                     invoice_return_id,
                     product_id,
                     product_name,
@@ -17156,32 +17839,28 @@ def save_invoice_return():
                     disc_pct,
                     total
                 )
-                VALUES (
-                    (SELECT COALESCE(MAX(id), 0) + 1 FROM invoice_return_items),
-                    %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s
-                )
-                """,
-                (
-                    invoice_return_id,
-                    item.get("product_id"),
-                    item.get("product_name"),
-                    float(item.get("invoice_quantity", 0)),
-                    rq_int,
-                    item.get("serial_number", ""),
-                    item.get("return_reason", ""),
-                    item.get("uom"),
-                    float(item.get("unit_price", 0)),
-                    float(item.get("tax_pct", 0)),
-                    float(item.get("disc_pct", 0)),
-                    float(item.get("total", 0)),
-                ),
-            )
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            """, (
+                invoice_return_id,
+                item.get("product_id"),
+                item.get("product_name"),
+                float(item.get("invoice_quantity", 0)),
+                float(item.get("quantity", 0)),
+                item.get("serial_number", ""),
+                item.get("return_reason", ""),
+                item.get("uom"),
+                float(item.get("unit_price", 0)),
+                float(item.get("tax_pct", 0)),
+                float(item.get("disc_pct", 0)),
+                float(item.get("total", 0))
+            ))
 
+        # =========================
+        # 3. INSERT SUMMARY (for both new and update)
+        # =========================
         summary = data.get("summary", {})
-        cur.execute(
-            """
+        cur.execute("""
             INSERT INTO invoice_return_summary (
-                id,
                 invoice_return_id,
                 original_total,
                 discount_pct,
@@ -17190,260 +17869,284 @@ def save_invoice_return():
                 rounding,
                 refund_amount
             )
-            VALUES (
-                (SELECT COALESCE(MAX(id), 0) + 1 FROM invoice_return_summary),
-                %s,%s,%s,%s,%s,%s,%s
-            )
-            """,
-            (
-                invoice_return_id,
-                float(summary.get("original_total", 0)),
-                float(summary.get("discount_pct", 0)),
-                float(summary.get("subtotal", 0)),
-                float(summary.get("discount_amount", 0)),
-                float(summary.get("rounding", 0)),
-                float(data.get("refund_amount", 0)),
-            ),
-        )
+            VALUES (%s,%s,%s,%s,%s,%s,%s)
+        """, (
+            invoice_return_id,
+            float(summary.get("original_total", 0)),
+            float(summary.get("discount_pct", 0)),
+            float(summary.get("subtotal", 0)),
+            float(summary.get("discount_amount", 0)),
+            float(summary.get("rounding", 0)),
+            float(data.get("refund_amount", 0))
+        ))
 
         conn.commit()
-        return jsonify({"success": True, "invoice_return_id": invoice_return_id})
+
+        return jsonify({
+            "success": True,
+            "invoice_return_id": invoice_return_id
+        })
+
     except Exception as e:
         conn.rollback()
+        print("❌ ERROR in save_invoice_return:", e)
         traceback.print_exc()
-        return (
-            jsonify(
-                {
-                    "success": False,
-                    "message": "Failed to save invoice return",
-                    "error": str(e),
-                }
-            ),
-            500,
-        )
+        return jsonify({
+            "success": False,
+            "message": "Failed to save invoice return",
+            "error": str(e)
+        }), 500
+
     finally:
         cur.close()
         conn.close()
 
-
-@app.route("/api/invoice-return/<invoice_return_id>/comments", methods=["GET"])
+@app.route('/api/invoice-return/<invoice_return_id>/comments', methods=['GET'])
 def get_comments_invoice_return(invoice_return_id):
     conn = get_db_connection()
     cur = conn.cursor()
-    cur.execute(
-        """
+
+    cur.execute("""
         SELECT id, comment, created_at
         FROM invoice_return_comments
         WHERE invoice_return_id=%s
         ORDER BY created_at DESC
-        """,
-        (invoice_return_id,),
-    )
+    """, (invoice_return_id,))
+
     rows = cur.fetchall()
     cur.close()
     conn.close()
+
     comments = []
     for r in rows:
-        comments.append(
-            {
-                "id": r[0],
-                "text": r[1],
-                "created_at": r[2].strftime("%Y-%m-%d %H:%M") if r[2] else "",
-            }
-        )
+        comments.append({
+            "id": r[0],
+            "text": r[1],
+            "created_at": r[2].strftime("%Y-%m-%d %H:%M")
+        })
+
     return jsonify({"comments": comments})
 
 
-@app.route("/api/invoice-return/<invoice_return_id>/comments", methods=["POST"])
+@app.route('/api/invoice-return/<invoice_return_id>/comments', methods=['POST'])
 def add_comment_invoice_return(invoice_return_id):
     conn = get_db_connection()
     cur = conn.cursor()
-    try:
-        data = request.get_json() or {}
-        text = (data.get("comment_text") or "").strip()
-        if not text:
-            return jsonify({"success": False, "error": "Comment is empty"}), 400
-        # id is NOT NULL and may have no SERIAL default (e.g. after CSV import)
-        cur.execute(
-            """
-            INSERT INTO invoice_return_comments (id, invoice_return_id, comment, created_at)
-            VALUES (
-                (SELECT COALESCE(MAX(id), 0) + 1 FROM invoice_return_comments),
-                %s, %s, %s
-            )
-            """,
-            (invoice_return_id, text, datetime.now()),
-        )
-        conn.commit()
-        return jsonify({"success": True})
-    except Exception as e:
-        conn.rollback()
-        traceback.print_exc()
-        return jsonify({"success": False, "error": str(e)}), 500
-    finally:
-        cur.close()
-        conn.close()
+
+    data = request.get_json()
+
+    # ✅ REMOVED the explicit id column – database will auto‑generate it
+    cur.execute("""
+        INSERT INTO invoice_return_comments (invoice_return_id, comment, created_at)
+        VALUES (%s,%s,%s)
+    """, (
+        invoice_return_id,
+        data.get("comment_text"),
+        datetime.now()
+    ))
+
+    conn.commit()
+    cur.close()
+    conn.close()
+
+    return jsonify({"success": True})
 
 
-@app.route("/api/invoice-return/<invoice_return_id>/attachments", methods=["GET"])
+@app.route('/api/invoice-return/<invoice_return_id>/attachments', methods=['GET'])
 def get_attachments_invoice_return(invoice_return_id):
     conn = get_db_connection()
     cur = conn.cursor()
-    cur.execute(
-        """
+    cur.execute("""
         SELECT id, file_name, file_path, file_size, created_at
         FROM invoice_return_attachments
         WHERE invoice_return_id=%s
         ORDER BY created_at DESC
-        """,
-        (invoice_return_id,),
-    )
+    """, (invoice_return_id,))
     rows = cur.fetchall()
     cur.close()
     conn.close()
+
     data = []
     for r in rows:
-        sz = r[3] if len(r) > 3 and r[3] is not None else 0
-        created = r[4] if len(r) > 4 else None
-        data.append(
-            {
-                "id": r[0],
-                "filename": r[1],
-                "file_path": r[2],
-                "size": int(sz) if sz is not None else 0,
-                "uploaded_at": created.strftime("%Y-%m-%d %H:%M")
-                if created
-                else "",
-            }
-        )
+        data.append({
+            "id": r[0],
+            "filename": r[1],
+            "file_path": r[2],
+            "size": r[3] if r[3] is not None else 0,   # ← include size
+            "uploaded_at": r[4].strftime("%Y-%m-%d %H:%M")
+        })
     return jsonify({"success": True, "attachments": data})
 
 
-@app.route("/api/invoice-return/<invoice_return_id>/attachments", methods=["POST"])
+UPLOAD_FOLDER = "uploads/invoice_return"
+# Make sure folder exists
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+@app.route('/api/invoice-return/<invoice_return_id>/attachments', methods=['POST'])
 def upload_attachment_invoice_return(invoice_return_id):
     try:
-        if "file" not in request.files:
+        if 'file' not in request.files:
             return jsonify({"success": False, "message": "No file uploaded"}), 400
-        file = request.files["file"]
+
+        file = request.files['file']
         if file.filename == "":
             return jsonify({"success": False, "message": "Empty filename"}), 400
-        original_name = file.filename
-        ext = original_name.rsplit(".", 1)[-1] if "." in original_name else "bin"
+
+        original_name = file.filename           # ✅ correct attribute
+        ext = original_name.split('.')[-1]
         stored_name = f"{uuid.uuid4()}.{ext}"
-        file_path = os.path.join(INVOICE_RETURN_UPLOAD_FOLDER, stored_name)
+        file_path = os.path.join(UPLOAD_FOLDER, stored_name)
         file.save(file_path)
-        file_size = os.path.getsize(file_path) if os.path.exists(file_path) else 0
+
+        # Optional: if you want to store file size, uncomment and add column
+        # file_size = os.path.getsize(file_path)
 
         conn = get_db_connection()
         cur = conn.cursor()
-        cur.execute(
-            """
+
+        # ✅ No explicit 'id' – let the database auto‑increment it
+        # ✅ Removed 'size' if the column doesn't exist
+        cur.execute("""
             INSERT INTO invoice_return_attachments (
-                id, invoice_return_id, file_name, file_path, created_at, file_size
-            ) VALUES (
-                (SELECT COALESCE(MAX(id), 0) + 1 FROM invoice_return_attachments),
-                %s, %s, %s, %s, %s
-            )
-            """,
-            (
-                invoice_return_id,
-                original_name,
-                file_path,
-                datetime.now(),
-                file_size,
-            ),
-        )
+                invoice_return_id, file_name, file_path, created_at
+            ) VALUES (%s, %s, %s, %s)
+        """, (
+            invoice_return_id,
+            original_name,
+            file_path,
+            datetime.now()
+        ))
+
         conn.commit()
         cur.close()
         conn.close()
+
         return jsonify({"success": True, "message": "File uploaded successfully"})
+
     except Exception as e:
-        traceback.print_exc()
+        print("❌ Upload Error:", e)
         return jsonify({"success": False, "error": str(e)}), 500
 
 
-@app.route(
-    "/api/invoice-return/<invoice_return_id>/attachments/<attachment_id>",
-    methods=["DELETE"],
-)
+@app.route('/api/invoice-return/<invoice_return_id>/attachments/<attachment_id>', methods=['DELETE'])
 def delete_attachment_invoice_return(invoice_return_id, attachment_id):
     try:
         conn = get_db_connection()
         cur = conn.cursor()
-        cur.execute(
-            """
-            SELECT file_path
+
+        # Get file path
+        cur.execute("""
+            SELECT file_path 
             FROM invoice_return_attachments
             WHERE id=%s AND invoice_return_id=%s
-            """,
-            (attachment_id, invoice_return_id),
-        )
+        """, (attachment_id, invoice_return_id))
+
         row = cur.fetchone()
+
         if not row:
-            cur.close()
-            conn.close()
             return jsonify({"success": False, "message": "Attachment not found"}), 404
+
         file_path = row[0]
+
+        # Delete file from disk
         if file_path and os.path.exists(file_path):
-            try:
-                os.remove(file_path)
-            except OSError:
-                pass
-        cur.execute(
-            """
+            os.remove(file_path)
+
+        # Delete from DB
+        cur.execute("""
             DELETE FROM invoice_return_attachments
             WHERE id=%s AND invoice_return_id=%s
-            """,
-            (attachment_id, invoice_return_id),
-        )
+        """, (attachment_id, invoice_return_id))
+
         conn.commit()
         cur.close()
         conn.close()
-        return jsonify({"success": True, "message": "Attachment deleted successfully"})
+
+        return jsonify({
+            "success": True,
+            "message": "Attachment deleted successfully"
+        })
+
     except Exception as e:
-        traceback.print_exc()
+        print("❌ Delete Error:", e)
         return jsonify({"success": False, "error": str(e)}), 500
 
-
-@app.route(
-    "/api/invoice-return/<invoice_return_id>/attachments/<attachment_id>/download"
-)
+# ===================================================
+# DOWNLOAD (forces save to disk)
+# ===================================================
+@app.route('/api/invoice-return/<invoice_return_id>/attachments/<attachment_id>/download')
 def download_invoice_return_attachment(invoice_return_id, attachment_id):
     conn = get_db_connection()
     cur = conn.cursor()
     try:
-        cur.execute(
-            """
+        cur.execute("""
             SELECT file_path, file_name
             FROM invoice_return_attachments
             WHERE id = %s AND invoice_return_id = %s
-            """,
-            (attachment_id, invoice_return_id),
-        )
+        """, (attachment_id, invoice_return_id))
         row = cur.fetchone()
         if not row:
             return jsonify({"error": "Attachment not found"}), 404
+
         file_path = row[0]
         original_name = row[1]
-        if not file_path or not os.path.exists(file_path):
+
+        if not os.path.exists(file_path):
             return jsonify({"error": "File not found on server"}), 404
+
+        # as_attachment=True → forces download
         return send_file(file_path, as_attachment=True, download_name=original_name)
+
     except Exception as e:
-        traceback.print_exc()
+        print("❌ Download error:", e)
         return jsonify({"error": str(e)}), 500
     finally:
         cur.close()
         conn.close()
 
 
+# ===================================================
+# VIEW (displays inline in browser)
+# ===================================================
+@app.route('/api/invoice-return/<invoice_return_id>/attachments/<attachment_id>/view')
+def view_invoice_return_attachment(invoice_return_id, attachment_id):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            SELECT file_path, file_name
+            FROM invoice_return_attachments
+            WHERE id = %s AND invoice_return_id = %s
+        """, (attachment_id, invoice_return_id))
+        row = cur.fetchone()
+        if not row:
+            return jsonify({"error": "Attachment not found"}), 404
+
+        file_path = row[0]
+        original_name = row[1]
+
+        if not os.path.exists(file_path):
+            return jsonify({"error": "File not found on server"}), 404
+
+        # as_attachment=False → browser displays images/PDFs inline
+        return send_file(file_path, as_attachment=False, download_name=original_name)
+
+    except Exception as e:
+        print("❌ View error:", e)
+        return jsonify({"error": str(e)}), 500
+    finally:
+        cur.close()
+        conn.close()
+        
 @app.route("/api/invoice-return/<invoice_return_id>", methods=["GET"])
 def get_invoice_return_data(invoice_return_id):
     conn = get_db_connection()
     cur = conn.cursor()
+    
     try:
-        cur.execute(
-            """
-            SELECT
+        # 1. Header
+        cur.execute("""
+            SELECT 
                 invoice_return_id,
                 invoice_id,
                 customer_name,
@@ -17457,13 +18160,12 @@ def get_invoice_return_data(invoice_return_id):
                 status
             FROM invoice_return
             WHERE invoice_return_id = %s
-            """,
-            (invoice_return_id,),
-        )
+        """, (invoice_return_id,))
+        
         row = cur.fetchone()
         if not row:
             return jsonify({"success": False, "error": "Invoice return not found"}), 404
-
+        
         invoice_return = {
             "invoice_return_id": row[0],
             "invoice_id": row[1],
@@ -17475,12 +18177,12 @@ def get_invoice_return_data(invoice_return_id):
             "customer_ref_no": row[7],
             "return_date": row[8].strftime("%Y-%m-%d") if row[8] else "",
             "refund_amount": float(row[9]) if row[9] else 0,
-            "status": row[10] or "Draft",
+            "status": row[10] or "Draft"
         }
-
-        cur.execute(
-            """
-            SELECT
+        
+        # 2. Items
+        cur.execute("""
+            SELECT 
                 product_id,
                 product_name,
                 invoice_quantity,
@@ -17489,452 +18191,380 @@ def get_invoice_return_data(invoice_return_id):
                 return_reason,
                 uom,
                 unit_price,
-                tax_pct,
                 disc_pct,
                 total
             FROM invoice_return_items
             WHERE invoice_return_id = %s
             ORDER BY id
-            """,
-            (invoice_return_id,),
-        )
+        """, (invoice_return_id,))
+        
         items = []
-        for ir in cur.fetchall():
-            items.append(
-                {
-                    "product_id": ir[0],
-                    "product_name": ir[1],
-                    "invoice_quantity": float(ir[2] or 0),
-                    "return_quantity": float(ir[3] or 0),
-                    "serial_number": ir[4] or "",
-                    "return_reason": ir[5] or "",
-                    "uom": ir[6] or "",
-                    "unit_price": float(ir[7] or 0),
-                    "tax_pct": float(ir[8] or 0),
-                    "disc_pct": float(ir[9] or 0),
-                    "total": float(ir[10] or 0),
-                }
-            )
-
-        cur.execute(
-            """
+        for row in cur.fetchall():
+            items.append({
+                "product_id": row[0],
+                "product_name": row[1],
+                "invoice_quantity": float(row[2]) if row[2] else 0,
+                "return_quantity": float(row[3]) if row[3] else 0,
+                "serial_number": row[4] or "",
+                "return_reason": row[5] or "",
+                "uom": row[6] or "",
+                "unit_price": float(row[7]) if row[7] else 0,
+                "disc_pct": float(row[8]) if row[8] else 0,
+                "total": float(row[9]) if row[9] else 0
+            })
+        
+        # 3. Comments
+        cur.execute("""
             SELECT id, comment, created_at
             FROM invoice_return_comments
             WHERE invoice_return_id = %s
             ORDER BY created_at DESC
-            """,
-            (invoice_return_id,),
-        )
+        """, (invoice_return_id,))
+        
         comments = []
-        for c in cur.fetchall():
-            comments.append(
-                {
-                    "id": c[0],
-                    "text": c[1],
-                    "created_at": c[2].strftime("%Y-%m-%d %H:%M:%S") if c[2] else "",
-                    "author": "System",
-                }
-            )
-
-        cur.execute(
-            """
+        for row in cur.fetchall():
+            comments.append({
+                "id": row[0],
+                "text": row[1],
+                "created_at": row[2].strftime("%Y-%m-%d %H:%M:%S") if row[2] else "",
+                "author": "System"  # You can modify if you store author
+            })
+        
+        # 4. Attachments
+        cur.execute("""
             SELECT id, file_name, file_path, created_at
             FROM invoice_return_attachments
             WHERE invoice_return_id = %s
             ORDER BY created_at DESC
-            """,
-            (invoice_return_id,),
-        )
+        """, (invoice_return_id,))
+        
         attachments = []
-        for a in cur.fetchall():
-            attachments.append(
-                {
-                    "id": a[0],
-                    "filename": a[1],
-                    "file_path": a[2],
-                    "uploaded_at": a[3].strftime("%Y-%m-%d %H:%M:%S") if a[3] else "",
-                }
-            )
-
-        cur.execute(
-            """
-            SELECT original_total, discount_pct, subtotal, discount_amount, rounding, refund_amount
+        for row in cur.fetchall():
+            attachments.append({
+                "id": row[0],
+                "filename": row[1],
+                "file_path": row[2],
+                "uploaded_at": row[3].strftime("%Y-%m-%d %H:%M:%S") if row[3] else ""
+            })
+        
+        # 5. Summary
+        cur.execute("""
+            SELECT original_total, discount_pct, subtotal, discount_amount, refund_amount
             FROM invoice_return_summary
             WHERE invoice_return_id = %s
-            """,
-            (invoice_return_id,),
-        )
+        """, (invoice_return_id,))
+        
         summary_row = cur.fetchone()
-        if summary_row:
-            summary = {
-                "original_total": float(summary_row[0] or 0),
-                "discount_pct": float(summary_row[1] or 0),
-                "subtotal": float(summary_row[2] or 0),
-                "discount_amount": float(summary_row[3] or 0),
-                "rounding": float(summary_row[4] or 0),
-                "refund_amount": float(summary_row[5] or 0),
-            }
-        else:
-            summary = {
-                "original_total": 0,
-                "discount_pct": 0,
-                "subtotal": 0,
-                "discount_amount": 0,
-                "rounding": 0,
-                "refund_amount": 0,
-            }
-
-        return jsonify(
-            {
-                "success": True,
-                "invoice_return": invoice_return,
-                "items": items,
-                "comments": comments,
-                "attachments": attachments,
-                "summary": summary,
-            }
-        )
+        summary = {
+            "original_total": float(summary_row[0]) if summary_row else 0,
+            "discount_pct": float(summary_row[1]) if summary_row else 0,
+            "subtotal": float(summary_row[2]) if summary_row else 0,
+            "discount_amount": float(summary_row[3]) if summary_row else 0,
+            "refund_amount": float(summary_row[4]) if summary_row else 0
+        }
+        
+        return jsonify({
+            "success": True,
+            "invoice_return": invoice_return,
+            "items": items,
+            "comments": comments,
+            "attachments": attachments,
+            "summary": summary
+        })
+        
     except Exception as e:
-        traceback.print_exc()
+        print("❌ Error fetching invoice return:", e)
         return jsonify({"success": False, "error": str(e)}), 500
     finally:
         cur.close()
         conn.close()
 
-
-@app.route("/api/invoice-return/<return_id>/status", methods=["PUT"])
+@app.route('/api/invoice-return/<return_id>/status', methods=['PUT'])
 def update_invoice_return_status(return_id):
-    data = request.json or {}
-    raw = (data.get("status") or "").strip().lower()
-    allowed = {"draft", "submitted", "cancelled"}
-    if raw not in allowed:
-        return jsonify({"success": False, "error": "Invalid status"}), 400
-    db_status = _normalize_ir_status_for_db(raw)
+    data = request.json
+    new_status = data.get('status')
+
+    # Validate allowed statuses
+    if not new_status or new_status not in ['draft', 'submitted', 'cancelled']:
+        return jsonify({'success': False, 'error': 'Invalid status'}), 400
 
     conn = get_db_connection()
     cur = conn.cursor()
     try:
-        cur.execute(
-            "UPDATE invoice_return SET status = %s WHERE invoice_return_id = %s",
-            (db_status, return_id),
-        )
+        # Update the status
+        cur.execute("UPDATE invoice_return SET status = %s WHERE invoice_return_id = %s", (new_status, return_id))
+
+        # Check if any row was affected
         if cur.rowcount == 0:
-            return jsonify({"success": False, "error": "Invoice return not found"}), 404
+            return jsonify({'success': False, 'error': 'Invoice return not found'}), 404
+
         conn.commit()
-        return jsonify(
-            {"success": True, "message": f"Status updated to {db_status}"}
-        )
+        return jsonify({'success': True, 'message': f'Status updated to {new_status}'})
+
     except Exception as e:
         conn.rollback()
-        return jsonify({"success": False, "error": str(e)}), 500
+        return jsonify({'success': False, 'error': str(e)}), 500
     finally:
         cur.close()
         conn.close()
 
 
+
+# ==============================================
+# PDF GENERATION (UPDATED)
+# ==============================================
 def generate_invoice_return_pdf_bytes(invoice_return, items, summary):
+    """
+    Generate PDF bytes for an invoice return with all columns.
+    """
     buffer = io.BytesIO()
-    doc = SimpleDocTemplate(
-        buffer,
-        pagesize=A4,
-        rightMargin=72,
-        leftMargin=72,
-        topMargin=72,
-        bottomMargin=72,
-    )
+    doc = SimpleDocTemplate(buffer, pagesize=A4,
+                            rightMargin=72, leftMargin=72,
+                            topMargin=72, bottomMargin=72)
+
     elements = []
     styles = getSampleStyleSheet()
-    currency_symbol = "₹"
 
+    # Currency symbol
+    currency_symbol = '₹'
+
+    # Custom styles (unchanged)
     title_style = ParagraphStyle(
-        "CustomTitle",
-        parent=styles["Heading1"],
+        'CustomTitle',
+        parent=styles['Heading1'],
         fontSize=24,
-        textColor=colors.HexColor("#2C3E50"),
+        textColor=colors.HexColor('#2C3E50'),
         alignment=TA_CENTER,
-        spaceAfter=20,
+        spaceAfter=20
     )
     company_style = ParagraphStyle(
-        "Company",
-        parent=styles["Normal"],
+        'Company',
+        parent=styles['Normal'],
         fontSize=9,
         leading=12,
         textColor=colors.black,
         alignment=TA_CENTER,
         spaceAfter=2,
-        fontName="DejaVuSans",
+        fontName='DejaVuSans'
     )
     status_style = ParagraphStyle(
-        "Status",
-        parent=styles["Heading2"],
+        'Status',
+        parent=styles['Heading2'],
         fontSize=14,
         leading=18,
         alignment=TA_CENTER,
         spaceAfter=14,
-        fontName="DejaVuSans-Bold",
+        fontName='DejaVuSans-Bold'
     )
     heading_style = ParagraphStyle(
-        "IRHeading2",
-        parent=styles["Heading2"],
+        'Heading2',
+        parent=styles['Heading2'],
         fontSize=11,
         leading=14,
-        textColor=colors.HexColor("#2C3E50"),
+        textColor=colors.HexColor('#2C3E50'),
         spaceBefore=8,
         spaceAfter=8,
-        fontName="DejaVuSans-Bold",
+        fontName='DejaVuSans-Bold'
+    )
+    table_cell_style = ParagraphStyle(
+        'TableCell',
+        parent=styles['Normal'],
+        fontSize=7.6,
+        leading=9,
+        fontName='DejaVuSans',
+        wordWrap='CJK'
     )
     terms_heading_style = ParagraphStyle(
-        "TermsHeading",
-        parent=styles["Heading2"],
+        'TermsHeading',
+        parent=styles['Heading2'],
         fontSize=10,
         leading=13,
-        textColor=colors.HexColor("#2C3E50"),
+        textColor=colors.HexColor('#2C3E50'),
         spaceAfter=6,
-        fontName="DejaVuSans-Bold",
+        fontName='DejaVuSans-Bold'
     )
     terms_style = ParagraphStyle(
-        "Terms",
-        parent=styles["Normal"],
+        'Terms',
+        parent=styles['Normal'],
         fontSize=7.4,
         leading=10,
-        fontName="DejaVuSans",
+        fontName='DejaVuSans'
     )
     footer_style = ParagraphStyle(
-        "Footer",
-        parent=styles["Normal"],
+        'Footer',
+        parent=styles['Normal'],
         fontSize=7.5,
-        textColor=colors.HexColor("#555555"),
-        alignment=TA_LEFT,
+        textColor=colors.HexColor('#555555'),
+        alignment=TA_LEFT
     )
 
+    # Company header
     elements.append(Paragraph("STACKLY", title_style))
-    elements.append(
-        Paragraph(
-            "MMR Complex, Chinna Thirupathi, near Chinna Muniyappan Kovil, Salem, Tamil Nadu - 636008",
-            company_style,
-        )
-    )
+    elements.append(Paragraph("MMR Complex, Chinna Thirupathi, near Chinna Muniyappan Kovil, Salem, Tamil Nadu - 636008", company_style))
     elements.append(Paragraph("Phone: +91 7010792745", company_style))
     elements.append(Paragraph("Email: info@stackly.com", company_style))
     elements.append(Spacer(1, 10))
 
-    status_text = (invoice_return.get("status") or "DRAFT").upper()
+    # Status and watermark
+    status_text = invoice_return.get('status', 'DRAFT').upper()
     status_color = {
-        "DRAFT": colors.orange,
-        "SUBMITTED": colors.blue,
-        "CANCELLED": colors.red,
+        'DRAFT': colors.orange,
+        'SUBMITTED': colors.blue,
+        'CANCELLED': colors.red,
     }.get(status_text, colors.black)
-    elements.append(
-        Paragraph(
-            f"INVOICE RETURN - {status_text}",
-            ParagraphStyle(
-                "StatColored",
-                parent=status_style,
-                textColor=status_color,
-            ),
-        )
-    )
+    elements.append(Paragraph(f"INVOICE RETURN - {status_text}", status_style))
 
-    if status_text == "CANCELLED":
-        elements.append(
-            Paragraph(
-                "CANCELLED - FOR REFERENCE ONLY",
-                ParagraphStyle(
-                    "Watermark",
-                    parent=styles["Normal"],
-                    fontSize=16,
-                    textColor=colors.red,
-                    alignment=TA_CENTER,
-                    spaceAfter=20,
-                    spaceBefore=10,
-                    backColor=colors.lightgrey,
-                ),
+    if status_text == 'CANCELLED':
+        elements.append(Paragraph(
+            "⚠️ CANCELLED - FOR REFERENCE ONLY ⚠️",
+            ParagraphStyle(
+                'Watermark',
+                parent=styles['Normal'],
+                fontSize=16,
+                textColor=colors.red,
+                alignment=TA_CENTER,
+                spaceAfter=20,
+                spaceBefore=10,
+                backColor=colors.lightgrey
             )
-        )
+        ))
         elements.append(Spacer(1, 10))
 
+    # ===========================================
+    # SECTION 1: RETURN INFORMATION (unchanged)
+    # =========================================
     elements.append(Paragraph("RETURN INFORMATION", heading_style))
     info_data = [
-        [
-            "Return Number:",
-            str(invoice_return.get("invoice_return_id", "-")),
-            "Return Date:",
-            str(invoice_return.get("return_date", "-")),
-        ],
-        [
-            "Original Invoice:",
-            str(invoice_return.get("invoice_id", "-")),
-            "Status:",
-            str(invoice_return.get("status", "-")),
-        ],
-        [
-            "Customer Ref No:",
-            str(invoice_return.get("customer_ref_no", "-")),
-            "Refund Amount:",
-            f"{currency_symbol}{float(invoice_return.get('refund_amount', 0) or 0):.2f}",
-        ],
+        ['Return Number:', invoice_return.get('invoice_return_id', '-'), 'Return Date:', invoice_return.get('return_date', '-')],
+        ['Original Invoice:', invoice_return.get('invoice_id', '-'), 'Status:', invoice_return.get('status', '-')],
+        ['Customer Ref No:', invoice_return.get('customer_ref_no', '-'), 'Refund Amount:', f"{currency_symbol}{invoice_return.get('refund_amount', 0):.2f}"],
     ]
     info_table = Table(info_data, colWidths=[120, 160, 100, 130])
-    info_table.setStyle(
-        TableStyle(
-            [
-                ("FONTNAME", (0, 0), (-1, -1), "DejaVuSans"),
-                ("FONTSIZE", (0, 0), (-1, -1), 9),
-                ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-                ("BACKGROUND", (0, 0), (0, -1), colors.lightgrey),
-                ("BACKGROUND", (2, 0), (2, -1), colors.lightgrey),
-                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                ("PADDING", (0, 0), (-1, -1), 6),
-            ]
-        )
-    )
+    info_table.setStyle(TableStyle([
+        ('FONTNAME', (0,0), (-1,-1), 'DejaVuSans'),
+        ('FONTSIZE', (0,0), (-1,-1), 9),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
+        ('BACKGROUND', (0,0), (0,-1), colors.lightgrey),
+        ('BACKGROUND', (2,0), (2,-1), colors.lightgrey),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('PADDING', (0,0), (-1,-1), 6),
+    ]))
     elements.append(info_table)
     elements.append(Spacer(1, 15))
 
+    # ===========================================
+    # SECTION 2: CUSTOMER INFORMATION (unchanged)
+    # =========================================
     elements.append(Paragraph("CUSTOMER INFORMATION", heading_style))
     customer_data = [
-        [
-            "Customer Name:",
-            str(invoice_return.get("customer_name", "-")),
-            "Customer ID:",
-            str(invoice_return.get("customer_id", "-")),
-        ],
-        [
-            "Email:",
-            str(invoice_return.get("email", "-")),
-            "Phone:",
-            str(invoice_return.get("phone", "-")),
-        ],
-        [
-            "Contact Person:",
-            str(invoice_return.get("contact_person", "-")),
-            "Currency:",
-            "INR (₹)",
-        ],
+        ['Customer Name:', invoice_return.get('customer_name', '-'), 'Customer ID:', invoice_return.get('customer_id', '-')],
+        ['Email:', invoice_return.get('email', '-'), 'Phone:', invoice_return.get('phone', '-')],
+        ['Contact Person:', invoice_return.get('contact_person', '-'), 'Currency:', 'INR (₹)'],
     ]
     customer_table = Table(customer_data, colWidths=[120, 180, 100, 110])
-    customer_table.setStyle(
-        TableStyle(
-            [
-                ("FONTNAME", (0, 0), (-1, -1), "DejaVuSans"),
-                ("FONTSIZE", (0, 0), (-1, -1), 9),
-                ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-                ("BACKGROUND", (0, 0), (0, -1), colors.lightgrey),
-                ("BACKGROUND", (2, 0), (2, -1), colors.lightgrey),
-                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                ("PADDING", (0, 0), (-1, -1), 1),
-            ]
-        )
-    )
+    customer_table.setStyle(TableStyle([
+        ('FONTNAME', (0,0), (-1,-1), 'DejaVuSans'),
+        ('FONTSIZE', (0,0), (-1,-1), 9),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
+        ('BACKGROUND', (0,0), (0,-1), colors.lightgrey),
+        ('BACKGROUND', (2,0), (2,-1), colors.lightgrey),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('PADDING', (0,0), (-1,-1), 1),
+    ]))
     elements.append(customer_table)
     elements.append(Spacer(1, 15))
 
+    # ===========================================
+    # SECTION 3: RETURN ITEMS (UPDATED – added Invoice Qty column)
+    # =========================================
     if items:
         elements.append(Paragraph("RETURN ITEMS", heading_style))
-        col_widths = [20, 60, 45, 40, 40, 35, 50, 45, 55, 55]
-        table_data = [
-            [
-                "S.No",
-                "Product Name",
-                "Product ID",
-                "Invoice Qty",
-                "Return Qty",
-                "UOM",
-                "Unit Price",
-                "Total",
-                "Serial Number",
-                "Return Reason",
-            ]
-        ]
-        for idx, it in enumerate(items, 1):
-            table_data.append(
-                [
-                    str(idx),
-                    str(it.get("product_name", "-")),
-                    str(it.get("product_id", "-")),
-                    f"{float(it.get('invoice_quantity', 0) or 0):.2f}",
-                    f"{float(it.get('return_quantity', 0) or 0):.2f}",
-                    str(it.get("uom", "-")),
-                    f"{currency_symbol}{float(it.get('unit_price', 0) or 0):.2f}",
-                    f"{currency_symbol}{float(it.get('total', 0) or 0):.2f}",
-                    str(it.get("serial_number", "-")),
-                    str(it.get("return_reason", "-")),
-                ]
-            )
-        items_table = Table(table_data, colWidths=col_widths)
-        items_table.setStyle(
-            TableStyle(
-                [
-                    ("FONTNAME", (0, 0), (-1, -1), "DejaVuSans"),
-                    ("FONTSIZE", (0, 0), (-1, -1), 6.5),
-                    ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#2C3E50")),
-                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
-                    ("ALIGN", (0, 0), (-1, 0), "CENTER"),
-                    ("ALIGN", (6, 1), (7, -1), "RIGHT"),
-                    ("ALIGN", (0, 1), (0, -1), "CENTER"),
-                    ("ALIGN", (2, 1), (5, -1), "CENTER"),
-                    ("ALIGN", (1, 1), (1, -1), "LEFT"),
-                    ("ALIGN", (8, 1), (9, -1), "LEFT"),
-                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                    ("PADDING", (0, 0), (-1, -1), 2),
-                ]
-            )
-        )
-        elements.append(items_table)
-        elements.append(Spacer(1, 20))
 
+          # Define column widths that fit within ~450 points
+        col_widths = [20, 60, 45, 40, 40, 35, 50, 45, 55, 55]
+          # Sum = 20+60+45+40+40+35+50+45+55+55 = 445 (fits comfortably)
+
+        table_data = [
+        ['S.No', 'Product Name', 'Product ID', 'Invoice Qty', 'Return Qty',
+         'UOM', 'Unit Price', 'Total', 'Serial Number', 'Return Reason']
+        ]
+
+    for idx, it in enumerate(items, 1):
+        table_data.append([
+            str(idx),
+            it.get('product_name', '-'),
+            it.get('product_id', '-'),
+            f"{it.get('invoice_quantity', 0):.2f}",
+            f"{it.get('return_quantity', 0):.2f}",
+            it.get('uom', '-'),
+            f"{currency_symbol}{it.get('unit_price', 0):.2f}",
+            f"{currency_symbol}{it.get('total', 0):.2f}",
+            it.get('serial_number', '-'),
+            it.get('return_reason', '-')
+        ])
+
+    items_table = Table(table_data, colWidths=col_widths)
+    items_table.setStyle(TableStyle([
+        ('FONTNAME', (0, 0), (-1, -1), 'DejaVuSans'),
+        ('FONTSIZE', (0, 0), (-1, -1), 6.5),                # slightly smaller font
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2C3E50')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        # Center all header cells and most data cells
+        ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
+        # Right-align numeric columns (Unit Price, Total) for all rows
+        ('ALIGN', (6, 1), (7, -1), 'RIGHT'),   # columns 6 and 7 (0-indexed)
+        # Center other data columns (S.No, Product ID, Invoice Qty, Return Qty, UOM)
+        ('ALIGN', (0, 1), (0, -1), 'CENTER'),
+        ('ALIGN', (2, 1), (5, -1), 'CENTER'),
+        # Left-align Product Name, Serial Number, Return Reason (they may wrap)
+        ('ALIGN', (1, 1), (1, -1), 'LEFT'),
+        ('ALIGN', (8, 1), (9, -1), 'LEFT'),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('PADDING', (0, 0), (-1, -1), 2),   # reduced padding from 4 to 2
+        # Allow word wrapping for potentially long text columns
+        ('WORDWRAP', (1, 1), (1, -1), True),    # Product Name
+        ('WORDWRAP', (8, 1), (9, -1), True),    # Serial Number, Return Reason
+    ]))
+    elements.append(items_table)
+    elements.append(Spacer(1, 20))
+
+    # ===========================================
+    # SECTION 4: SUMMARY (UPDATED – all columns)
+    # =========================================
     elements.append(Paragraph("SUMMARY", heading_style))
+    # 🆕 Include all summary fields (original_total, subtotal, discount_pct, discount_amount, rounding, refund_amount)
     summary_data = [
-        [
-            "Original Grand Total:",
-            f"{currency_symbol}{float(summary.get('original_total', 0) or 0):.2f}",
-        ],
-        [
-            "Return Subtotal:",
-            f"{currency_symbol}{float(summary.get('subtotal', 0) or 0):.2f}",
-        ],
-        [
-            "Global Discount (%) :",
-            f"{float(summary.get('discount_pct', 0) or 0):.2f}%",
-        ],
-        [
-            "Global Discount Amount:",
-            f"-{currency_symbol}{float(summary.get('discount_amount', 0) or 0):.2f}",
-        ],
-        [
-            "Rounding Adjustment:",
-            f"{currency_symbol}{float(summary.get('rounding', 0) or 0):.2f}",
-        ],
-        [
-            "Amount to Refund:",
-            f"{currency_symbol}{float(invoice_return.get('refund_amount', 0) or 0):.2f}",
-        ],
+        ['Original Grand Total:', f"{currency_symbol}{summary.get('original_total', 0):.2f}"],
+        ['Return Subtotal:', f"{currency_symbol}{summary.get('subtotal', 0):.2f}"],
+        ['Global Discount (%) :', f"{summary.get('discount_pct', 0):.2f}%"],
+        ['Global Discount Amount:', f"-{currency_symbol}{summary.get('discount_amount', 0):.2f}"],
+        ['Rounding Adjustment:', f"{currency_symbol}{summary.get('rounding', 0):.2f}"],
+        ['Amount to Refund:', f"{currency_symbol}{invoice_return.get('refund_amount', 0):.2f}"]
     ]
     summary_table = Table(summary_data, colWidths=[200, 150])
-    summary_table.setStyle(
-        TableStyle(
-            [
-                ("FONTNAME", (0, 0), (-1, -1), "DejaVuSans"),
-                ("FONTSIZE", (0, 0), (-1, -1), 9),
-                ("FONTNAME", (0, -1), (-1, -1), "DejaVuSans-Bold"),
-                ("FONTSIZE", (0, -1), (-1, -1), 11),
-                ("ALIGN", (0, 0), (0, -1), "LEFT"),
-                ("ALIGN", (1, 0), (1, -1), "RIGHT"),
-                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                ("PADDING", (0, 0), (-1, -1), 5),
-                ("LINEABOVE", (0, -1), (1, -1), 1, colors.black),
-                ("BACKGROUND", (0, -1), (1, -1), colors.lightgrey),
-            ]
-        )
-    )
+    summary_table.setStyle(TableStyle([
+        ('FONTNAME', (0,0), (-1,-1), 'DejaVuSans'),
+        ('FONTSIZE', (0,0), (-1,-1), 9),
+        ('FONTNAME', (0,-1), (-1,-1), 'DejaVuSans-Bold'),
+        ('FONTSIZE', (0,-1), (-1,-1), 11),
+        ('ALIGN', (0,0), (0,-1), 'LEFT'),
+        ('ALIGN', (1,0), (1,-1), 'RIGHT'),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('PADDING', (0,0), (-1,-1), 5),
+        ('LINEABOVE', (0,-1), (1,-1), 1, colors.black),
+        ('BACKGROUND', (0,-1), (1,-1), colors.lightgrey),
+    ]))
     elements.append(summary_table)
     elements.append(Spacer(1, 20))
 
+    # ===========================================
+    # SECTION 5: TERMS AND CONDITIONS (unchanged)
+    # =========================================
     elements.append(Paragraph("Terms and Conditions", terms_heading_style))
-    terms_text = invoice_return.get("terms_conditions", "")
+    terms_text = invoice_return.get('terms_conditions', '')
     if terms_text:
-        for line in str(terms_text).split("\n"):
+        for line in terms_text.split('\n'):
             if line.strip():
                 elements.append(Paragraph(f"• {line.strip()}", terms_style))
     else:
@@ -17942,20 +18572,16 @@ def generate_invoice_return_pdf_bytes(invoice_return, items, summary):
             "1. Return must be processed within 30 days of invoice date.",
             "2. All returned items must be in original condition with serial numbers intact.",
             "3. Refund will be processed after quality check.",
-            "4. Please quote return number for any correspondence.",
+            "4. Please quote return number for any correspondence."
         ]
         for line in default_terms:
             elements.append(Paragraph(line, terms_style))
     elements.append(Spacer(1, 18))
 
-    generated_on = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    # Footer
+    generated_on = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     elements.append(Paragraph(f"Generated on: {generated_on}", footer_style))
-    elements.append(
-        Paragraph(
-            "This is a system generated document - valid without signature",
-            footer_style,
-        )
-    )
+    elements.append(Paragraph("This is a system generated document - valid without signature", footer_style))
 
     doc.build(elements)
     pdf_bytes = buffer.getvalue()
@@ -17963,11 +18589,16 @@ def generate_invoice_return_pdf_bytes(invoice_return, items, summary):
     return pdf_bytes
 
 
-def send_invoice_return_email(
-    recipient_email, invoice_return, items, summary, custom_message=""
-):
+# ==============================================
+# EMAIL SENDING FUNCTION (UPDATED)
+# ==============================================
+def send_invoice_return_email(recipient_email, invoice_return, items, summary, custom_message=""):
+    """
+    Send invoice return email with HTML body and PDF attachment.
+    HTML table now includes all columns (including Invoice Qty).
+    """
     pdf_bytes = generate_invoice_return_pdf_bytes(invoice_return, items, summary)
-    currency_symbol = "₹"
+    currency_symbol = '₹'
 
     html_template = """
     <!DOCTYPE html>
@@ -17976,62 +18607,81 @@ def send_invoice_return_email(
         <meta charset="UTF-8">
         <style>
             body { font-family: Arial, sans-serif; margin: 0; padding: 20px; color: #333; }
-            .container { max-width: 800px; margin: auto; background: #f9f9f9;
-                border-radius: 8px; padding: 20px; }
-            .header { text-align: center; border-bottom: 2px solid #a12828;
-                padding-bottom: 10px; margin-bottom: 20px; }
+            .container { max-width: 800px; margin: auto; background: #f9f9f9; border-radius: 8px; padding: 20px; }
+            .header { text-align: center; border-bottom: 2px solid #a12828; padding-bottom: 10px; margin-bottom: 20px; }
             .logo { font-size: 28px; font-weight: bold; color: #a12828; }
-            .success { background: #d4edda; color: #155724; padding: 10px;
-                border-radius: 5px; margin: 15px 0; text-align: center; }
-            .info-section { margin: 20px 0; padding: 15px; background: white;
-                border-radius: 5px; border: 1px solid #ddd; }
-            .info-section h3 { margin-top: 0; color: #a12828;
-                border-bottom: 1px solid #eee; padding-bottom: 8px; }
+            .success { background: #d4edda; color: #155724; padding: 10px; border-radius: 5px; margin: 15px 0; text-align: center; }
+            .warning { background: #fff3cd; color: #856404; padding: 10px; border-radius: 5px; margin: 15px 0; text-align: center; }
+            .info-section { margin: 20px 0; padding: 15px; background: white; border-radius: 5px; border: 1px solid #ddd; }
+            .info-section h3 { margin-top: 0; color: #a12828; border-bottom: 1px solid #eee; padding-bottom: 8px; }
             .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
             .info-item { margin-bottom: 8px; }
             .info-label { font-weight: bold; color: #555; }
             .info-value { color: #333; }
             .items-table { width: 100%; border-collapse: collapse; margin: 15px 0; }
-            .items-table th, .items-table td { border: 1px solid #ddd; padding: 8px; }
+            .items-table th, .items-table td { border: 1px solid #ddd; padding: 8px; text-align: left; }
             .items-table th { background: #f2f2f2; }
             .summary { margin-top: 20px; text-align: right; }
-            .footer { margin-top: 30px; font-size: 12px; text-align: center;
-                color: #777; border-top: 1px solid #eee; padding-top: 15px; }
-            .note { background: #fff3cd; padding: 10px; border-radius: 5px;
-                margin: 15px 0; font-size: 13px; }
+            .footer { margin-top: 30px; font-size: 12px; text-align: center; color: #777; border-top: 1px solid #eee; padding-top: 15px; }
+            .note { background: #fff3cd; padding: 10px; border-radius: 5px; margin: 15px 0; font-size: 13px; }
+            .badge { display: inline-block; padding: 3px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; }
+            .badge-draft { background: #e2e3e5; color: #383d41; }
+            .badge-submitted { background: #d1ecf1; color: #0c5460; }
+            .badge-cancelled { background: #f8d7da; color: #721c24; }
         </style>
     </head>
     <body>
         <div class="container">
             <div class="header">
                 <div class="logo">STACKLY</div>
-                <div>MMR Complex, Chinna Thirupathi, Salem, Tamil Nadu - 636008</div>
+                <div>MMR Complex, Chinna Thirupathi, near Chinna Muniyappan Kovil, Salem, Tamil Nadu - 636008</div>
             </div>
-            <div class="success">Invoice Return Generated</div>
+
+            <div class="success">📄 Invoice Return Generated</div>
+
             <p>Hi {{ invoice_return.customer_name }},</p>
-            <p>Your return request has been processed. PDF is attached.</p>
+            <p>Your return request has been processed. Please find the attached PDF for details.</p>
+
+            <!-- Return Information -->
             <div class="info-section">
-                <h3>Return Information</h3>
+                <h3>📦 Return Information</h3>
                 <div class="info-grid">
-                    <div class="info-item"><span class="info-label">Return Number:</span>
-                      <span class="info-value">{{ invoice_return.invoice_return_id }}</span></div>
-                    <div class="info-item"><span class="info-label">Return Date:</span>
-                      <span class="info-value">{{ invoice_return.return_date }}</span></div>
-                    <div class="info-item"><span class="info-label">Original Invoice:</span>
-                      <span class="info-value">{{ invoice_return.invoice_id }}</span></div>
-                    <div class="info-item"><span class="info-label">Refund Amount:</span>
-                      <span class="info-value">{{ currency_symbol }}{{ invoice_return.refund_amount|round(2) }}</span></div>
+                    <div class="info-item"><span class="info-label">Return Number:</span> <span class="info-value">{{ invoice_return.invoice_return_id }}</span></div>
+                    <div class="info-item"><span class="info-label">Return Date:</span> <span class="info-value">{{ invoice_return.return_date }}</span></div>
+                    <div class="info-item"><span class="info-label">Original Invoice:</span> <span class="info-value">{{ invoice_return.invoice_id }}</span></div>
+                    <div class="info-item"><span class="info-label">Status:</span> <span class="info-value"><span class="badge badge-{{ invoice_return.status|lower }}">{{ invoice_return.status }}</span></span></div>
+                    <div class="info-item"><span class="info-label">Customer Ref No:</span> <span class="info-value">{{ invoice_return.customer_ref_no or 'N/A' }}</span></div>
+                    <div class="info-item"><span class="info-label">Refund Amount:</span> <span class="info-value">{{ currency_symbol }}{{ invoice_return.refund_amount|round(2) }}</span></div>
                 </div>
             </div>
-            <h3>Return Items</h3>
+
+            <!-- Customer Information -->
+            <div class="info-section">
+                <h3>👤 Customer Information</h3>
+                <div class="info-grid">
+                    <div class="info-item"><span class="info-label">Name:</span> <span class="info-value">{{ invoice_return.customer_name }}</span></div>
+                    <div class="info-item"><span class="info-label">Customer ID:</span> <span class="info-value">{{ invoice_return.customer_id or 'N/A' }}</span></div>
+                    <div class="info-item"><span class="info-label">Email:</span> <span class="info-value">{{ invoice_return.email or 'N/A' }}</span></div>
+                    <div class="info-item"><span class="info-label">Phone:</span> <span class="info-value">{{ invoice_return.phone or 'N/A' }}</span></div>
+                    <div class="info-item"><span class="info-label">Contact Person:</span> <span class="info-value">{{ invoice_return.contact_person or 'N/A' }}</span></div>
+                </div>
+            </div>
+
+            <!-- Return Items (UPDATED: added Invoice Qty column) -->
+            <h3>🔄 Return Items</h3>
             <table class="items-table">
                 <thead>
                     <tr>
                         <th>S.No</th>
-                        <th>Product</th>
-                        <th>Invoice Qty</th>
+                        <th>Product Name</th>
+                        <th>Product ID</th>
+                        <th>Invoice Qty</th>          <!-- 🆕 -->
                         <th>Return Qty</th>
+                        <th>UOM</th>
+                        <th>Unit Price</th>
                         <th>Total</th>
+                        <th>Serial Number</th>
+                        <th>Return Reason</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -18039,76 +18689,94 @@ def send_invoice_return_email(
                     <tr>
                         <td>{{ loop.index }}</td>
                         <td>{{ it.product_name }}</td>
-                        <td>{{ it.invoice_quantity|round(2) }}</td>
+                        <td>{{ it.product_id }}</td>
+                        <td>{{ it.invoice_quantity|round(2) }}</td>      <!-- 🆕 -->
                         <td>{{ it.return_quantity|round(2) }}</td>
+                        <td>{{ it.uom or '-' }}</td>
+                        <td>{{ currency_symbol }}{{ it.unit_price|round(2) }}</td>
                         <td>{{ currency_symbol }}{{ it.total|round(2) }}</td>
+                        <td>{{ it.serial_number or '-' }}</td>
+                        <td>{{ it.return_reason or '-' }}</td>
                     </tr>
                     {% endfor %}
                 </tbody>
             </table>
+
+            <!-- Summary (UPDATED: all fields) -->
             <div class="summary">
-                <p><strong>Original Grand Total:</strong>
-                  {{ currency_symbol }}{{ summary.original_total|round(2) }}</p>
-                <p><strong>Rounding:</strong>
-                  {{ currency_symbol }}{{ summary.rounding|round(2) }}</p>
-                <p><strong>Amount to Refund:</strong>
-                  {{ currency_symbol }}{{ invoice_return.refund_amount|round(2) }}</p>
+                <p><strong>Original Grand Total:</strong> {{ currency_symbol }}{{ summary.original_total|round(2) }}</p>
+                <p><strong>Return Subtotal:</strong> {{ currency_symbol }}{{ summary.subtotal|round(2) }}</p>
+                <p><strong>Global Discount ({{ summary.discount_pct }}%):</strong> -{{ currency_symbol }}{{ summary.discount_amount|round(2) }}</p>
+                <p><strong>Rounding Adjustment:</strong> {{ currency_symbol }}{{ summary.rounding|round(2) }}</p>
+                <p><strong>Amount to Refund:</strong> <span style="font-size: 18px; color: #a12828;">{{ currency_symbol }}{{ invoice_return.refund_amount|round(2) }}</span></p>
             </div>
-            {% if custom_message %}
-            <p>{{ custom_message }}</p>
-            {% endif %}
-            <div class="footer">Stackly — support@stackly.com</div>
+
+            <div class="note">
+                <strong>⚠️ Please Note:</strong><br>
+                - The detailed return document is attached as a PDF.<br>
+                - Return will be processed within 5-7 business days.<br>
+                - Please quote return number for any inquiries.<br>
+            </div>
+
+            <div class="footer">
+                <strong>STACKLY</strong><br>
+                MMR Complex, Chinna Thirupathi, near Chinna Muniyappan Kovil, Salem, Tamil Nadu - 636008<br>
+                For any questions, contact us at <a href="mailto:support@stackly.com">support@stackly.com</a><br>
+                Call: +91 7010792745<br>
+                © 2028 Stackly. All rights reserved.
+            </div>
         </div>
     </body>
     </html>
     """
 
-    class _Obj:
-        pass
+    html_body = render_template_string(html_template,
+                                       invoice_return=invoice_return,
+                                       items=items,
+                                       summary=summary,
+                                       currency_symbol=currency_symbol,
+                                       custom_message=custom_message)
 
-    ir = _Obj()
-    for k, v in (invoice_return or {}).items():
-        setattr(ir, k, v)
-    html_body = render_template_string(
-        html_template,
-        invoice_return=ir,
-        items=items,
-        summary=summary,
-        currency_symbol=currency_symbol,
-        custom_message=custom_message,
-    )
+    text_body = f"""
+    Hi {invoice_return['customer_name']},
 
-    text_body = (
-        f"Hi {invoice_return.get('customer_name')},\n\n"
-        f"Return {invoice_return.get('invoice_return_id')} — see attached PDF.\n"
-    )
+    Your return request {invoice_return['invoice_return_id']} has been processed.
 
-    msg = MIMEMultipart("mixed")
-    msg["Subject"] = f"Invoice Return {invoice_return.get('invoice_return_id')} — Stackly"
-    msg["From"] = os.getenv("EMAIL_ADDRESS") or ""
-    msg["To"] = recipient_email
-    msg_alt = MIMEMultipart("alternative")
-    msg_alt.attach(MIMEText(text_body, "plain"))
-    msg_alt.attach(MIMEText(html_body, "html"))
-    msg.attach(msg_alt)
-    pdf_attachment = MIMEApplication(pdf_bytes, _subtype="pdf")
-    pdf_attachment.add_header(
-        "Content-Disposition",
-        "attachment",
-        filename=f"Invoice_Return_{invoice_return.get('invoice_return_id')}.pdf",
-    )
+    Return Details:
+    - Return Number: {invoice_return['invoice_return_id']}
+    - Original Invoice: {invoice_return['invoice_id']}
+    - Return Date: {invoice_return['return_date']}
+    - Status: {invoice_return['status']}
+    - Refund Amount: {currency_symbol}{invoice_return['refund_amount']:.2f}
+
+    Please find the attached PDF for complete details.
+
+    Best regards,
+    Stackly Team
+    """
+
+    # Build email
+    msg = MIMEMultipart('mixed')
+    msg['Subject'] = f"Invoice Return {invoice_return['invoice_return_id']} from Stackly"
+    msg['From'] = os.getenv("EMAIL_ADDRESS")
+    msg['To'] = recipient_email
+
+    msg_alternative = MIMEMultipart('alternative')
+    msg_alternative.attach(MIMEText(text_body, 'plain'))
+    msg_alternative.attach(MIMEText(html_body, 'html'))
+    msg.attach(msg_alternative)
+
+    pdf_attachment = MIMEApplication(pdf_bytes, _subtype='pdf')
+    pdf_attachment.add_header('Content-Disposition', 'attachment', filename=f"Invoice_Return_{invoice_return['invoice_return_id']}.pdf")
     msg.attach(pdf_attachment)
 
+    # Send email
     try:
         smtp_server = os.getenv("SMTP_SERVER", "smtp.gmail.com")
         smtp_port = int(os.getenv("SMTP_PORT", "587"))
-        addr = os.getenv("EMAIL_ADDRESS")
-        pwd = os.getenv("EMAIL_PASSWORD")
-        if not addr or not pwd:
-            return False
         with smtplib.SMTP(smtp_server, smtp_port) as server:
             server.starttls()
-            server.login(addr, pwd)
+            server.login(os.getenv("EMAIL_ADDRESS"), os.getenv("EMAIL_PASSWORD"))
             server.send_message(msg)
         return True
     except Exception as e:
@@ -18116,255 +18784,246 @@ def send_invoice_return_email(
         return False
 
 
-@app.route("/invoice-return/<invoice_return_id>/pdf")
+# ==============================================
+# FLASK ROUTES (unchanged except for minor fixes)
+# ==============================================
+@app.route('/invoice-return/<invoice_return_id>/pdf')
 def invoice_return_pdf(invoice_return_id):
     conn = get_db_connection()
     cur = conn.cursor()
     try:
-        cur.execute(
-            """
+        # Fetch return header
+        cur.execute("""
             SELECT invoice_return_id, invoice_id, customer_name, customer_id,
                    email, phone, contact_person, customer_ref_no,
                    return_date, refund_amount, status
             FROM invoice_return
             WHERE invoice_return_id = %s
-            """,
-            (invoice_return_id,),
-        )
+        """, (invoice_return_id,))
         row = cur.fetchone()
         if not row:
-            return jsonify({"error": f"Invoice return {invoice_return_id} not found."}), 404
+            return jsonify({'error': f'Invoice return {invoice_return_id} not found.'}), 404
 
         invoice_return = {
-            "invoice_return_id": row[0] or "",
-            "invoice_id": row[1] or "",
-            "customer_name": row[2] or "",
-            "customer_id": row[3] or "",
-            "email": row[4] or "",
-            "phone": row[5] or "",
-            "contact_person": row[6] or "",
-            "customer_ref_no": row[7] or "",
-            "return_date": row[8].strftime("%Y-%m-%d") if row[8] else "",
-            "refund_amount": float(row[9] or 0),
-            "status": row[10] or "",
+            'invoice_return_id': row[0] or '',
+            'invoice_id': row[1] or '',
+            'customer_name': row[2] or '',
+            'customer_id': row[3] or '',
+            'email': row[4] or '',
+            'phone': row[5] or '',
+            'contact_person': row[6] or '',
+            'customer_ref_no': row[7] or '',
+            'return_date': row[8].strftime('%Y-%m-%d') if row[8] else '',
+            'refund_amount': float(row[9] or 0),
+            'status': row[10] or '',
         }
 
-        cur.execute(
-            """
+        # Fetch items
+        cur.execute("""
             SELECT product_id, product_name, invoice_quantity, return_quantity,
                    serial_number, return_reason, uom, unit_price, total
             FROM invoice_return_items
             WHERE invoice_return_id = %s
-            ORDER BY id
-            """,
-            (invoice_return_id,),
-        )
+        """, (invoice_return_id,))
         items = []
         for r in cur.fetchall():
-            items.append(
-                {
-                    "product_id": r[0] or "",
-                    "product_name": r[1] or "",
-                    "invoice_quantity": float(r[2] or 0),
-                    "return_quantity": float(r[3] or 0),
-                    "serial_number": r[4] or "",
-                    "return_reason": r[5] or "",
-                    "uom": r[6] or "",
-                    "unit_price": float(r[7] or 0),
-                    "total": float(r[8] or 0),
-                }
-            )
+            items.append({
+                'product_id': r[0] or '',
+                'product_name': r[1] or '',
+                'invoice_quantity': float(r[2] or 0),
+                'return_quantity': float(r[3] or 0),
+                'serial_number': r[4] or '',
+                'return_reason': r[5] or '',
+                'uom': r[6] or '',
+                'unit_price': float(r[7] or 0),
+                'total': float(r[8] or 0),
+            })
 
-        cur.execute(
-            """
+        # Fetch summary
+        cur.execute("""
             SELECT original_total, discount_pct, subtotal, discount_amount,
                    rounding, refund_amount
             FROM invoice_return_summary
             WHERE invoice_return_id = %s
-            """,
-            (invoice_return_id,),
-        )
+        """, (invoice_return_id,))
         summary_row = cur.fetchone()
+        summary = {}
         if summary_row:
             summary = {
-                "original_total": float(summary_row[0] or 0),
-                "discount_pct": float(summary_row[1] or 0),
-                "subtotal": float(summary_row[2] or 0),
-                "discount_amount": float(summary_row[3] or 0),
-                "rounding": float(summary_row[4] or 0),
-                "refund_amount": float(summary_row[5] or 0),
+                'original_total': float(summary_row[0] or 0),
+                'discount_pct': float(summary_row[1] or 0),
+                'subtotal': float(summary_row[2] or 0),
+                'discount_amount': float(summary_row[3] or 0),
+                'rounding': float(summary_row[4] or 0),
+                'refund_amount': float(summary_row[5] or 0),
             }
         else:
             summary = {
-                "original_total": 0,
-                "discount_pct": 0,
-                "subtotal": 0,
-                "discount_amount": 0,
-                "rounding": 0,
-                "refund_amount": 0,
+                'original_total': 0,
+                'discount_pct': 0,
+                'subtotal': 0,
+                'discount_amount': 0,
+                'rounding': 0,
+                'refund_amount': 0,
             }
+
+        cur.close()
+        conn.close()
 
         pdf_bytes = generate_invoice_return_pdf_bytes(invoice_return, items, summary)
         response = make_response(pdf_bytes)
-        response.headers["Content-Type"] = "application/pdf"
-        response.headers["Content-Disposition"] = (
-            f'attachment; filename="invoice_return_{invoice_return_id}.pdf"'
-        )
+        response.headers['Content-Type'] = 'application/pdf'
+        response.headers['Content-Disposition'] = f'attachment; filename="invoice_return_{invoice_return_id}.pdf"'
         return response
+
     except Exception as e:
+        import traceback
         traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
+        return jsonify({'error': str(e)}), 500
     finally:
-        cur.close()
-        conn.close()
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
 
 
-@app.route("/api/invoice-return/<invoice_return_id>/email", methods=["POST"])
+@app.route('/api/invoice-return/<invoice_return_id>/email', methods=['POST'])
 def send_invoice_return_email_api(invoice_return_id):
-    data = request.get_json() or {}
-    recipient = data.get("email")
-    custom_message = data.get("message", "")
+    data = request.get_json()
+    recipient = data.get('email')
+    custom_message = data.get('message', '')
+
     if not recipient:
-        return jsonify({"success": False, "error": "Recipient email required"}), 400
+        return jsonify({'success': False, 'error': 'Recipient email required'}), 400
 
     conn = get_db_connection()
     cur = conn.cursor()
     try:
-        cur.execute(
-            """
+        # Fetch return header (same as above)
+        cur.execute("""
             SELECT invoice_return_id, invoice_id, customer_name, customer_id,
                    email, phone, contact_person, customer_ref_no,
                    return_date, refund_amount, status
             FROM invoice_return
             WHERE invoice_return_id = %s
-            """,
-            (invoice_return_id,),
-        )
+        """, (invoice_return_id,))
         row = cur.fetchone()
         if not row:
-            return jsonify({"success": False, "error": "Return not found"}), 404
+            return jsonify({'success': False, 'error': 'Return not found'}), 404
 
         invoice_return = {
-            "invoice_return_id": row[0] or "",
-            "invoice_id": row[1] or "",
-            "customer_name": row[2] or "",
-            "customer_id": row[3] or "",
-            "email": row[4] or "",
-            "phone": row[5] or "",
-            "contact_person": row[6] or "",
-            "customer_ref_no": row[7] or "",
-            "return_date": row[8].strftime("%Y-%m-%d") if row[8] else "",
-            "refund_amount": float(row[9] or 0),
-            "status": row[10] or "",
+            'invoice_return_id': row[0] or '',
+            'invoice_id': row[1] or '',
+            'customer_name': row[2] or '',
+            'customer_id': row[3] or '',
+            'email': row[4] or '',
+            'phone': row[5] or '',
+            'contact_person': row[6] or '',
+            'customer_ref_no': row[7] or '',
+            'return_date': row[8].strftime('%Y-%m-%d') if row[8] else '',
+            'refund_amount': float(row[9] or 0),
+            'status': row[10] or '',
         }
 
-        cur.execute(
-            """
+        # Fetch items
+        cur.execute("""
             SELECT product_id, product_name, invoice_quantity, return_quantity,
                    serial_number, return_reason, uom, unit_price, total
             FROM invoice_return_items
             WHERE invoice_return_id = %s
-            ORDER BY id
-            """,
-            (invoice_return_id,),
-        )
+        """, (invoice_return_id,))
         items = []
         for r in cur.fetchall():
-            items.append(
-                {
-                    "product_id": r[0] or "",
-                    "product_name": r[1] or "",
-                    "invoice_quantity": float(r[2] or 0),
-                    "return_quantity": float(r[3] or 0),
-                    "serial_number": r[4] or "",
-                    "return_reason": r[5] or "",
-                    "uom": r[6] or "",
-                    "unit_price": float(r[7] or 0),
-                    "total": float(r[8] or 0),
-                }
-            )
+            items.append({
+                'product_id': r[0] or '',
+                'product_name': r[1] or '',
+                'invoice_quantity': float(r[2] or 0),
+                'return_quantity': float(r[3] or 0),
+                'serial_number': r[4] or '',
+                'return_reason': r[5] or '',
+                'uom': r[6] or '',
+                'unit_price': float(r[7] or 0),
+                'total': float(r[8] or 0),
+            })
 
-        cur.execute(
-            """
+        # Fetch summary
+        cur.execute("""
             SELECT original_total, discount_pct, subtotal, discount_amount,
                    rounding, refund_amount
             FROM invoice_return_summary
             WHERE invoice_return_id = %s
-            """,
-            (invoice_return_id,),
-        )
+        """, (invoice_return_id,))
         summary_row = cur.fetchone()
+        summary = {}
         if summary_row:
             summary = {
-                "original_total": float(summary_row[0] or 0),
-                "discount_pct": float(summary_row[1] or 0),
-                "subtotal": float(summary_row[2] or 0),
-                "discount_amount": float(summary_row[3] or 0),
-                "rounding": float(summary_row[4] or 0),
-                "refund_amount": float(summary_row[5] or 0),
+                'original_total': float(summary_row[0] or 0),
+                'discount_pct': float(summary_row[1] or 0),
+                'subtotal': float(summary_row[2] or 0),
+                'discount_amount': float(summary_row[3] or 0),
+                'rounding': float(summary_row[4] or 0),
+                'refund_amount': float(summary_row[5] or 0),
             }
         else:
             summary = {
-                "original_total": 0,
-                "discount_pct": 0,
-                "subtotal": 0,
-                "discount_amount": 0,
-                "rounding": 0,
-                "refund_amount": 0,
+                'original_total': 0,
+                'discount_pct': 0,
+                'subtotal': 0,
+                'discount_amount': 0,
+                'rounding': 0,
+                'refund_amount': 0,
             }
 
-        success = send_invoice_return_email(
-            recipient, invoice_return, items, summary, custom_message
-        )
-        if success:
-            return jsonify({"success": True, "message": "Email sent successfully"})
-        return jsonify({"success": False, "error": "Failed to send email"}), 500
-    except Exception as e:
-        traceback.print_exc()
-        return jsonify({"success": False, "error": str(e)}), 500
-    finally:
         cur.close()
         conn.close()
 
+        success = send_invoice_return_email(recipient, invoice_return, items, summary, custom_message)
+        if success:
+            return jsonify({'success': True, 'message': 'Email sent successfully'})
+        else:
+            return jsonify({'success': False, 'error': 'Failed to send email'}), 500
 
-@app.route("/api/invoice-return/<return_id>/update-items-summary", methods=["PUT"])
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+    finally:
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
+
+
+
+@app.route('/api/invoice-return/<return_id>/update-items-summary', methods=['PUT'])
 def update_invoice_return_items_summary(return_id):
+    """
+    Update line items and summary for a draft invoice return.
+    Expects JSON: { "items": [...], "summary": {...} }
+    """
     conn = get_db_connection()
     cur = conn.cursor()
     try:
-        cur.execute(
-            "SELECT status FROM invoice_return WHERE invoice_return_id = %s",
-            (return_id,),
-        )
+        # 1. Check if return exists and status is 'draft'
+        cur.execute("SELECT status FROM invoice_return WHERE invoice_return_id = %s", (return_id,))
         row = cur.fetchone()
         if not row:
-            return jsonify({"success": False, "error": "Invoice return not found"}), 404
-        if (row[0] or "").strip().lower() != "draft":
-            return (
-                jsonify({"success": False, "error": "Only draft returns can be updated"}),
-                403,
-            )
+            return jsonify({'success': False, 'error': 'Invoice return not found'}), 404
+        if row[0].lower() != 'draft':
+            return jsonify({'success': False, 'error': 'Only draft returns can be updated'}), 403
 
-        data = request.get_json() or {}
-        items = data.get("items", [])
-        summary = data.get("summary", {})
+        data = request.get_json()
+        items = data.get('items', [])
+        summary = data.get('summary', {})
+
         if not items:
-            return jsonify({"success": False, "error": "No items provided"}), 400
+            return jsonify({'success': False, 'error': 'No items provided'}), 400
 
-        cur.execute(
-            "DELETE FROM invoice_return_items WHERE invoice_return_id = %s",
-            (return_id,),
-        )
+        # 2. Replace items (delete old, insert new)
+        cur.execute("DELETE FROM invoice_return_items WHERE invoice_return_id = %s", (return_id,))
         for item in items:
-            rq = item.get("quantity", 0)
-            try:
-                rq_int = int(float(rq))
-            except (TypeError, ValueError):
-                rq_int = 0
-            cur.execute(
-                """
+            cur.execute("""
                 INSERT INTO invoice_return_items (
-                    id,
                     invoice_return_id,
                     product_id,
                     product_name,
@@ -18377,35 +19036,26 @@ def update_invoice_return_items_summary(return_id):
                     tax_pct,
                     disc_pct,
                     total
-                ) VALUES (
-                    (SELECT COALESCE(MAX(id), 0) + 1 FROM invoice_return_items),
-                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
-                )
-                """,
-                (
-                    return_id,
-                    item.get("product_id"),
-                    item.get("product_name"),
-                    float(item.get("invoice_quantity", 0)),
-                    rq_int,
-                    item.get("serial_number", ""),
-                    item.get("return_reason", ""),
-                    item.get("uom"),
-                    float(item.get("unit_price", 0)),
-                    float(item.get("tax_pct", 0)),
-                    float(item.get("disc_pct", 0)),
-                    float(item.get("total", 0)),
-                ),
-            )
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """, (
+                return_id,
+                item.get('product_id'),
+                item.get('product_name'),
+                float(item.get('invoice_quantity', 0)),
+                float(item.get('quantity', 0)),
+                item.get('serial_number', ''),
+                item.get('return_reason', ''),
+                item.get('uom'),
+                float(item.get('unit_price', 0)),
+                float(item.get('tax_pct', 0)),
+                float(item.get('disc_pct', 0)),
+                float(item.get('total', 0))
+            ))
 
-        cur.execute(
-            "DELETE FROM invoice_return_summary WHERE invoice_return_id = %s",
-            (return_id,),
-        )
-        cur.execute(
-            """
+        # 3. Replace summary (delete old, insert new)
+        cur.execute("DELETE FROM invoice_return_summary WHERE invoice_return_id = %s", (return_id,))
+        cur.execute("""
             INSERT INTO invoice_return_summary (
-                id,
                 invoice_return_id,
                 original_total,
                 discount_pct,
@@ -18413,83 +19063,1197 @@ def update_invoice_return_items_summary(return_id):
                 discount_amount,
                 rounding,
                 refund_amount
-            ) VALUES (
-                (SELECT COALESCE(MAX(id), 0) + 1 FROM invoice_return_summary),
-                %s, %s, %s, %s, %s, %s, %s
-            )
-            """,
-            (
-                return_id,
-                float(summary.get("original_total", 0)),
-                float(summary.get("discount_pct", 0)),
-                float(summary.get("subtotal", 0)),
-                float(summary.get("discount_amount", 0)),
-                float(summary.get("rounding", 0)),
-                float(summary.get("refund_amount", 0)),
-            ),
-        )
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+        """, (
+            return_id,
+            float(summary.get('original_total', 0)),
+            float(summary.get('discount_pct', 0)),
+            float(summary.get('subtotal', 0)),
+            float(summary.get('discount_amount', 0)),
+            float(summary.get('rounding', 0)),
+            float(summary.get('refund_amount', 0))
+        ))
 
         conn.commit()
-        return jsonify({"success": True, "message": "Items and summary updated successfully"})
+        return jsonify({'success': True, 'message': 'Items and summary updated successfully'})
+
     except Exception as e:
         conn.rollback()
+        print("❌ Error updating items/summary:", e)
         traceback.print_exc()
-        return jsonify({"success": False, "error": str(e)}), 500
+        return jsonify({'success': False, 'error': str(e)}), 500
     finally:
         cur.close()
         conn.close()
 
 
-@app.route("/invoice-return-list")
-def invoice_return_list_page():
+
+
+# ========================================================
+# DELIVERY note-return- first page
+# ====================================================
+
+# =========================================================
+# PAGE ROUTE
+# Delivery Note Return List Page
+# =========================================================
+@app.route("/deliverynote_return")
+def deliverynote_return():
     user_email = session.get("user")
     if not user_email:
         return redirect(url_for("login", message="session_expired"))
-    users = load_users()
-    user_name = "User"
-    for u in users:
-        if isinstance(u, dict) and (u.get("email") or "").lower() == user_email.lower():
-            user_name = u.get("name") or "User"
-            break
+
+    user_name = _get_logged_in_user_name()
+
     return render_template(
-        "invoice-return.html",
-        page="invoice_return",
-        title="Invoice Return List",
+        "deliverynote-return.html",
+        page="deliverynote_return",
+        title="Delivery Note Return",
         user_email=user_email,
         user_name=user_name,
     )
 
 
-@app.route("/api/invoice-returns")
-def api_invoice_returns_list():
-    if not session.get("user"):
-        return jsonify({"error": "Unauthorized"}), 401
-    conn = get_db_connection()
-    cur = conn.cursor()
+# =========================================================
+# DELIVERY NOTE RETURN — PostgreSQL
+# Tables: sql/deliverynote_returns_schema.sql
+# =========================================================
+def _dnr_parse_date(val):
+    if val is None or val == "":
+        return date.today()
+    if isinstance(val, date):
+        return val
     try:
-        cur.execute(
+        return datetime.strptime(str(val)[:10], "%Y-%m-%d").date()
+    except Exception:
+        return date.today()
+
+
+def generate_dnr_id():
+    """Next DNR-NNN id (3-digit suffix) from deliverynote_returns (PostgreSQL)."""
+    try:
+        row = fetch_one(
             """
-            SELECT invoice_return_id, invoice_id, customer_name, return_date, status
-            FROM invoice_return
-            ORDER BY return_date DESC NULLS LAST, invoice_return_id DESC
+            SELECT COALESCE(MAX(SPLIT_PART(dnr_id, '-', 2)::integer), 0) AS mx
+            FROM public.deliverynote_returns
+            WHERE dnr_id LIKE 'DNR-%'
+            """,
+            None,
+        )
+        n = int((row or {}).get("mx") or 0)
+        return f"DNR-{n + 1:03d}"
+    except Exception as e:
+        print(f"generate_dnr_id failed: {e}")
+        raise
+
+
+def get_dnr_by_id(dnr_id):
+    """Header + line items shaped for PDF/email (legacy dict keys)."""
+    if not dnr_id:
+        return None
+    try:
+        row = fetch_one(
+            "SELECT * FROM public.deliverynote_returns WHERE dnr_id = %s",
+            (dnr_id,),
+        )
+    except Exception as e:
+        print(f"get_dnr_by_id fetch header: {e}")
+        return None
+    if not row:
+        return None
+    d = dict(row)
+    try:
+        items_rows = fetch_all(
+            """
+            SELECT product_id, product_name, uom, invoiced_qty, returned_qty, serial_no, return_reason
+            FROM public.deliverynote_return_items
+            WHERE dnr_id = %s
+            ORDER BY id ASC
+            """,
+            (dnr_id,),
+        )
+    except Exception as e:
+        print(f"get_dnr_by_id items: {e}")
+        items_rows = []
+    items = []
+    for ir in items_rows or []:
+        ir = dict(ir)
+        items.append(
+            {
+                "product_id": ir.get("product_id"),
+                "product_name": ir.get("product_name"),
+                "uom": ir.get("uom"),
+                "invoiced_qty": ir.get("invoiced_qty"),
+                "returned_qty": ir.get("returned_qty"),
+                "serial_no": ir.get("serial_no"),
+                "reason": ir.get("return_reason"),
+                "qty": ir.get("returned_qty"),
+            }
+        )
+    d["items"] = items
+    ds = str(d["dnr_date"]) if d.get("dnr_date") else ""
+    d["dnr_date"] = ds
+    d["return_date"] = ds
+    d["date"] = ds
+    d["invoice_return_ref"] = d.get("invoice_return_ref_id") or ""
+    for _ts in ("created_at", "updated_at"):
+        v = d.get(_ts)
+        if v is not None and hasattr(v, "isoformat"):
+            d[_ts] = v.isoformat()
+    try:
+        crows = fetch_all(
+            """
+            SELECT created_by, comment, created_at
+            FROM public.deliverynote_return_comments
+            WHERE dnr_id = %s
+            ORDER BY created_at ASC
+            """,
+            (dnr_id,),
+        )
+    except Exception as e:
+        print(f"get_dnr_by_id comments: {e}")
+        crows = []
+    comments = []
+    for c in crows or []:
+        c = dict(c)
+        ts = c.get("created_at")
+        if ts is not None and hasattr(ts, "strftime"):
+            tstr = ts.strftime("%b %d, %Y, %I:%M %p")
+        else:
+            tstr = str(ts) if ts else ""
+        comments.append(
+            {
+                "user": c.get("created_by") or "",
+                "message": c.get("comment") or "",
+                "time": tstr,
+            }
+        )
+    d["comments"] = comments
+    return d
+
+
+# =========================================================
+# API: GET ALL DELIVERY NOTE RETURNS
+# Used for list page table
+# =========================================================
+@app.route("/api/delivery-note-returns")
+def get_dn_returns():
+    try:
+        rows = fetch_all(
+            """
+            SELECT dnr_id,
+                   dnr_date,
+                   invoice_return_ref_id AS invoice_return_ref,
+                   customer_name,
+                   customer_id,
+                   status
+            FROM public.deliverynote_returns
+            ORDER BY
+              COALESCE(
+                NULLIF(regexp_replace(dnr_id, '^DNR-', ''), '')::integer,
+                0
+              ) DESC,
+              dnr_id DESC
             """
         )
-        out = []
-        for r in cur.fetchall():
-            rd = r[3].strftime("%Y-%m-%d") if r[3] else ""
-            out.append(
+    except Exception as e:
+        print(traceback.format_exc())
+        return (
+            jsonify(
                 {
-                    "return_id": r[0],
-                    "invoice_ref": r[1],
-                    "customer_name": r[2] or "",
-                    "return_date": rd,
-                    "status": r[4] or "Draft",
+                    "success": False,
+                    "data": [],
+                    "items": [],
+                    "error": str(e),
                 }
+            ),
+            500,
+        )
+    out = []
+    for r in rows or []:
+        x = dict(r)
+        x["dnr_date"] = str(x["dnr_date"]) if x.get("dnr_date") else ""
+        out.append(x)
+    # Same shape as GET /api/delivery-notes (success + data); keep items for older clients.
+    return jsonify({"success": True, "data": out, "items": out})
+
+
+@app.route("/api/dnr-history/<dnr_id>")
+def get_dnr_history(dnr_id):
+    try:
+        rows = fetch_all(
+            """
+            SELECT action, description, created_by, created_at
+            FROM public.deliverynote_return_history
+            WHERE dnr_id = %s
+            ORDER BY created_at DESC
+            """,
+            (dnr_id,),
+        )
+    except Exception as e:
+        print(traceback.format_exc())
+        return jsonify({"success": False, "history": [], "message": str(e)})
+
+    hist = []
+    for h in rows or []:
+        h = dict(h)
+        ts = h.get("created_at")
+        if ts is not None and hasattr(ts, "strftime"):
+            tstr = ts.strftime("%b %d, %Y, %I:%M %p")
+        else:
+            tstr = str(ts) if ts else ""
+        msg = (h.get("description") or "").strip() or (h.get("action") or "")
+        hist.append(
+            {
+                "user": h.get("created_by") or "",
+                "time": tstr,
+                "action": msg,
+            }
+        )
+    return jsonify({"success": True, "history": hist})
+
+
+# =========================================================
+# API: CREATE DELIVERY NOTE RETURN
+# =========================================================
+@app.route("/api/delivery-note-returns", methods=["POST"])
+def create_dn_return():
+    body = request.json or {}
+    try:
+        new_id = generate_dnr_id()
+        d = _dnr_parse_date(body.get("dnr_date"))
+        execute_query(
+            """
+            INSERT INTO public.deliverynote_returns (
+                dnr_id, dnr_date, invoice_return_ref_id, customer_ref_no,
+                customer_id, customer_name, email, phone, contact_person, status
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                new_id,
+                d,
+                (body.get("invoice_return_ref") or body.get("invoice_return_ref_id") or "").strip() or None,
+                (body.get("customer_ref_no") or "").strip() or None,
+                (body.get("customer_id") or "").strip() or None,
+                (body.get("customer_name") or "").strip() or None,
+                (body.get("email") or body.get("customer_email") or "").strip() or None,
+                (body.get("phone") or body.get("customer_phone") or "").strip() or None,
+                (body.get("contact_person") or "").strip() or None,
+                _normalize_dnr_store_status(body.get("status")),
+            ),
+        )
+    except Exception as e:
+        print(traceback.format_exc())
+        return jsonify({"success": False, "message": str(e)}), 500
+
+    _ns = _normalize_dnr_store_status(body.get("status"))
+    item = {
+        "dnr_id": new_id,
+        "invoice_return_ref": body.get("invoice_return_ref", ""),
+        "customer_name": body.get("customer_name", ""),
+        "customer_id": body.get("customer_id", ""),
+        "dnr_date": str(d),
+        "status": _ns,
+    }
+    return jsonify({"success": True, "item": item})
+
+
+# =========================================================
+# DELIVERY NOTE RETURN - 2nd page
+# =========================================================
+@app.route("/deliverynote_return/new")
+def deliverynote_return_new():
+    user_email = session.get("user")
+    if not user_email:
+        return redirect(url_for("login", message="session_expired"))
+
+    user_name = _get_logged_in_user_name()
+
+    dnr_q = request.args.get("dnr_id")
+    mode = request.args.get("mode", "new")
+
+    record = None
+    if dnr_q:
+        try:
+            row = fetch_one(
+                "SELECT * FROM public.deliverynote_returns WHERE dnr_id = %s",
+                (dnr_q,),
             )
-        return jsonify(out)
+            if row:
+                record = dict(row)
+        except Exception as e:
+            print(f"deliverynote_return_new load record: {e}")
+
+    if mode == "new" or not record:
+        try:
+            dnr_id = generate_dnr_id()
+        except Exception:
+            dnr_id = dnr_q or "DNR-001"
+    else:
+        dnr_id = dnr_q
+
+    return render_template(
+        "deliverynotereturn-new.html",
+        dnr_id=dnr_id,
+        record=record,
+        mode=mode,
+        page="deliverynote_return",
+        title="New Delivery Note Return",
+        user_email=user_email,
+        user_name=user_name,
+    )
+
+# =========================================================
+# API: GET DELIVERY NOTE BY ID (PostgreSQL — used by DNR autofill ?dn_id=)
+# =========================================================
+@app.route("/api/delivery-note/<dn_id>")
+def get_delivery_note_by_id(dn_id):
+    if not (dn_id or "").strip():
+        return jsonify({"success": False})
+    dn = get_dn_by_id(dn_id.strip())
+    if not dn:
+        return jsonify({"success": False})
+    item = {
+        "dn_id": dn.get("dn_id") or "",
+        "customer_name": dn.get("customer_name") or "",
+        "customer_id": dn.get("customer_id") or "",
+        "customer_ref_no": dn.get("customer_ref_no") or "",
+        "customer_email": (dn.get("email") or dn.get("customer_email") or ""),
+        "customer_phone": (dn.get("phone") or dn.get("customer_phone") or ""),
+        "contact_person": dn.get("contact_person") or "",
+        "destination_address": dn.get("destination_address") or "",
+        "sale_order_ref": dn.get("so_id") or "",
+        "delivery_date": str(dn.get("delivery_date") or ""),
+        "items": dn.get("items") or [],
+    }
+    return jsonify({"success": True, "item": item})
+
+
+# =========================================
+# SAVE DELIVERY NOTE RETURN DRAFT (PostgreSQL)
+# =========================================
+def _normalize_dnr_store_status(raw):
+    """Allow only Draft / Submitted / Cancelled in storage; unknown values become Draft."""
+    x = (raw or "Draft").strip() or "Draft"
+    low = x.lower()
+    if low == "draft":
+        return "Draft"
+    if low == "submitted":
+        return "Submitted"
+    if low == "cancelled":
+        return "Cancelled"
+    return "Draft"
+
+
+def _dnr_status_bucket(s):
+    """Compare previous vs new status without case/spacing noise."""
+    x = (s or "").strip().lower()
+    if x == "submitted":
+        return "submitted"
+    if x == "cancelled":
+        return "cancelled"
+    return "draft"
+
+
+@app.route("/api/save-dnr-draft", methods=["POST"])
+def save_dnr_draft():
+    # force=True: some proxies/clients omit Content-Type; otherwise body is empty and nothing saves.
+    body = request.get_json(force=True, silent=True) or {}
+    dnr_id = (body.get("dnr_id") or "").strip()
+    if not dnr_id:
+        return jsonify({"success": False, "message": "dnr_id required"}), 400
+
+    user_name = _get_logged_in_user_name()
+
+    dnr_date = _dnr_parse_date(body.get("dnr_date"))
+    invoice_ref = (body.get("invoice_ref") or body.get("invoice_return_ref_id") or "").strip() or None
+    cust_ref = (body.get("customer_ref_no") or "").strip() or None
+    cid = (body.get("customer_id") or "").strip() or None
+    cname = (body.get("customer_name") or "").strip() or None
+    email = (body.get("customer_email") or body.get("email") or "").strip() or None
+    phone = (body.get("customer_phone") or body.get("phone") or "").strip() or None
+    contact = (body.get("contact_person") or "").strip() or None
+    normalized_status = _normalize_dnr_store_status(body.get("status"))
+    if normalized_status == "Submitted":
+        hist_action = "Submitted"
+    elif normalized_status == "Cancelled":
+        hist_action = "Cancelled"
+    else:
+        hist_action = "Saved as Draft"
+    _raw_items = body.get("items")
+    _items_list = _raw_items if isinstance(_raw_items, list) else []
+    # History.description was always ""; store a short summary (optional client note wins).
+    _hist_note = (body.get("history_description") or body.get("history_note") or "").strip()
+    if _hist_note:
+        hist_description = _hist_note[:4000]
+    else:
+        _n_lines = sum(1 for i in _items_list if isinstance(i, dict))
+        _parts = [f"{hist_action}", f"{_n_lines} line item(s)"]
+        if invoice_ref:
+            _parts.insert(0, f"Invoice return ref {invoice_ref}")
+        hist_description = " · ".join(_parts)
+
+    conn = get_db_connection()
+    saved_db = None
+    try:
+        # Drop any stale transaction on pooled connections before writing.
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT status FROM public.deliverynote_returns WHERE dnr_id = %s",
+            (dnr_id,),
+        )
+        prev_row = cur.fetchone()
+        prev_status = prev_row[0] if prev_row else None
+
+        cur.execute(
+            """
+            INSERT INTO public.deliverynote_returns (
+                dnr_id, dnr_date, invoice_return_ref_id, customer_ref_no,
+                customer_id, customer_name, email, phone, contact_person, status
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (dnr_id) DO UPDATE SET
+                dnr_date = EXCLUDED.dnr_date,
+                invoice_return_ref_id = EXCLUDED.invoice_return_ref_id,
+                customer_ref_no = EXCLUDED.customer_ref_no,
+                customer_id = EXCLUDED.customer_id,
+                customer_name = EXCLUDED.customer_name,
+                email = EXCLUDED.email,
+                phone = EXCLUDED.phone,
+                contact_person = EXCLUDED.contact_person,
+                status = EXCLUDED.status,
+                updated_at = CURRENT_TIMESTAMP
+            """,
+            (
+                dnr_id,
+                dnr_date,
+                invoice_ref,
+                cust_ref,
+                cid,
+                cname,
+                email,
+                phone,
+                contact,
+                normalized_status,
+            ),
+        )
+        cur.execute(
+            "DELETE FROM public.deliverynote_return_items WHERE dnr_id = %s",
+            (dnr_id,),
+        )
+        for it in _items_list:
+            if not isinstance(it, dict):
+                continue
+            pid = (it.get("product_id") or "").strip() or None
+            pname = (it.get("product_name") or "").strip() or None
+            uom = (it.get("uom") or "").strip() or None
+            try:
+                inv_q = int(it.get("invoiced_qty") or it.get("invoice_quantity") or 0)
+            except (TypeError, ValueError):
+                inv_q = 0
+            try:
+                ret_q = int(it.get("returned_qty") or it.get("return_quantity") or 0)
+            except (TypeError, ValueError):
+                ret_q = 0
+            serial = (it.get("serial_no") or it.get("serial_number") or "").strip() or None
+            reason = (it.get("return_reason") or it.get("reason") or "").strip() or None
+            cur.execute(
+                """
+                INSERT INTO public.deliverynote_return_items (
+                    dnr_id, product_id, product_name, uom, invoiced_qty, returned_qty, serial_no, return_reason
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                (dnr_id, pid, pname, uom, inv_q, ret_q, serial, reason),
+            )
+        append_history = prev_status is None or _dnr_status_bucket(
+            prev_status
+        ) != _dnr_status_bucket(normalized_status)
+        if append_history:
+            cur.execute(
+                """
+                INSERT INTO public.deliverynote_return_history (dnr_id, action, description, created_by)
+                VALUES (%s, %s, %s, %s)
+                """,
+                (dnr_id, hist_action, hist_description, user_name),
+            )
+        # Comments: avoid wiping DB when client omits "comments" or sets sync_comments=false.
+        _explicit_no_comment_sync = body.get("sync_comments") is False
+        _comments_omitted = "comments" not in body
+        if not _explicit_no_comment_sync and not _comments_omitted:
+            cur.execute(
+                "DELETE FROM public.deliverynote_return_comments WHERE dnr_id = %s",
+                (dnr_id,),
+            )
+            _raw_comments = body.get("comments")
+            _comments_list = (
+                _raw_comments if isinstance(_raw_comments, list) else []
+            )
+            for c in _comments_list:
+                if not isinstance(c, dict):
+                    continue
+                msg = (c.get("message") or "").strip()
+                if not msg:
+                    continue
+                who = (c.get("user") or user_name or "User").strip() or "User"
+                cur.execute(
+                    """
+                    INSERT INTO public.deliverynote_return_comments (dnr_id, comment, created_by)
+                    VALUES (%s, %s, %s)
+                    """,
+                    (dnr_id, msg, who),
+                )
+        conn.commit()
+        cur.execute(
+            "SELECT 1 FROM public.deliverynote_returns WHERE dnr_id = %s",
+            (dnr_id,),
+        )
+        if cur.fetchone() is None:
+            raise RuntimeError(
+                "Persist check failed: dnr_id not found in public.deliverynote_returns after commit"
+            )
+        cur.execute("SELECT current_database()")
+        saved_db = cur.fetchone()[0]
+        cur.execute("SELECT COUNT(*) FROM public.deliverynote_returns")
+        row_n = cur.fetchone()[0]
+        print(
+            f"save_dnr_draft OK: dnr_id={dnr_id!r} status={normalized_status!r} "
+            f"database={saved_db!r} public.deliverynote_returns rows={row_n}"
+        )
+    except Exception as e:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        print(traceback.format_exc())
+        return jsonify({"success": False, "message": str(e)}), 500
     finally:
-        cur.close()
-        conn.close()
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+    return jsonify(
+        {
+            "success": True,
+            "dnr_id": dnr_id,
+            "database": saved_db,
+        }
+    )
+
+
+@app.route("/api/delivery-note-return/<dnr_id>")
+def get_dnr_by_id_api(dnr_id):
+    d = get_dnr_by_id(dnr_id)
+    if not d:
+        return jsonify({"success": False, "message": "Delivery Note Return not found"}), 404
+    payload = dict(d)
+    # Same shape as GET /api/delivery-notes/<dn_id> (success + data).
+    return jsonify({"success": True, "data": payload})
+# =========================================
+# DELIVERY NOTE RETURN PDF (same layout pattern as generate_delivery_note_pdf_bytes)
+# =========================================
+def generate_delivery_note_return_pdf_bytes(dnr):
+    buffer = io.BytesIO()
+
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        rightMargin=18,
+        leftMargin=18,
+        topMargin=16,
+        bottomMargin=18,
+    )
+
+    styles = getSampleStyleSheet()
+
+    company_style = ParagraphStyle(
+        name="DNR_CompanyName",
+        parent=styles["Normal"],
+        fontName="DejaVuSans-Bold",
+        fontSize=20,
+        leading=24,
+        textColor=colors.HexColor("#8c1f1f"),
+        alignment=TA_CENTER,
+        spaceAfter=4,
+    )
+
+    company_info_style = ParagraphStyle(
+        name="DNR_CompanyInfo",
+        parent=styles["Normal"],
+        fontName="DejaVuSans",
+        fontSize=9,
+        leading=12,
+        textColor=colors.black,
+        alignment=TA_CENTER,
+        spaceAfter=1,
+    )
+
+    page_title_style = ParagraphStyle(
+        name="DNR_PageTitle",
+        parent=styles["Heading1"],
+        fontName="DejaVuSans-Bold",
+        fontSize=16,
+        leading=20,
+        textColor=colors.green,
+        alignment=TA_CENTER,
+        spaceBefore=12,
+        spaceAfter=12,
+    )
+
+    section_style = ParagraphStyle(
+        name="DNR_Section",
+        parent=styles["Heading3"],
+        fontName="DejaVuSans-Bold",
+        fontSize=11,
+        leading=14,
+        textColor=colors.HexColor("#8c1f1f"),
+        spaceAfter=6,
+        spaceBefore=10,
+    )
+
+    label_style = ParagraphStyle(
+        name="DNR_Label",
+        parent=styles["Normal"],
+        fontName="DejaVuSans-Bold",
+        fontSize=8.5,
+        leading=11,
+        textColor=colors.HexColor("#6b1a1a"),
+    )
+
+    value_style = ParagraphStyle(
+        name="DNR_Value",
+        parent=styles["Normal"],
+        fontName="DejaVuSans",
+        fontSize=8.5,
+        leading=11,
+        textColor=colors.black,
+    )
+
+    header_small_style = ParagraphStyle(
+        name="DNR_HeaderSmall",
+        parent=styles["Normal"],
+        fontName="DejaVuSans-Bold",
+        fontSize=8,
+        leading=10,
+        textColor=colors.white,
+        alignment=TA_CENTER,
+    )
+
+    terms_style = ParagraphStyle(
+        name="DNR_Terms",
+        parent=styles["Normal"],
+        fontName="DejaVuSans",
+        fontSize=8,
+        leading=11,
+        textColor=colors.black,
+        leftIndent=8,
+    )
+
+    elements = []
+
+    def safe_str(val, default="-"):
+        if val is None:
+            return default
+        s = str(val).strip()
+        return s if s else default
+
+    def safe_float(val, default=0.0):
+        try:
+            if val in (None, ""):
+                return default
+            return float(val)
+        except Exception:
+            return default
+
+    # COMPANY HEADER (same as Delivery Note PDF)
+    elements.append(Paragraph("STACKLY", company_style))
+    elements.append(
+        Paragraph(
+            "MMR Complex, Chinna Thirupathi, near Chinna Muniyappan Kovil, Salem, Tamil Nadu - 636008",
+            company_info_style,
+        )
+    )
+    elements.append(Paragraph("Phone: +91 7010792745", company_info_style))
+    elements.append(Paragraph("Email: info@stackly.com", company_info_style))
+    elements.append(Spacer(1, 10))
+
+    status_text = safe_str(dnr.get("status") or "SUBMITTED").upper()
+    elements.append(Paragraph(f"DELIVERY NOTE RETURN - {status_text}", page_title_style))
+    elements.append(Spacer(1, 2))
+
+    ir_ref = safe_str(dnr.get("invoice_return_ref") or dnr.get("invoice_return_ref_id") or "")
+
+    dnr_details_data = [
+        [
+            Paragraph("<b>Delivery Note Return No:</b>", label_style),
+            Paragraph(safe_str(dnr.get("dnr_id")), value_style),
+            Paragraph("<b>Date:</b>", label_style),
+            Paragraph(safe_str(dnr.get("dnr_date") or dnr.get("return_date")), value_style),
+        ],
+        [
+            Paragraph("<b>Customer:</b>", label_style),
+            Paragraph(safe_str(dnr.get("customer_name")), value_style),
+            Paragraph("<b>Invoice Return Ref:</b>", label_style),
+            Paragraph(ir_ref, value_style),
+        ],
+        [
+            Paragraph("<b>Customer Ref No:</b>", label_style),
+            Paragraph(safe_str(dnr.get("customer_ref_no")), value_style),
+            Paragraph("<b>Phone:</b>", label_style),
+            Paragraph(safe_str(dnr.get("phone")), value_style),
+        ],
+        [
+            Paragraph("<b>Email:</b>", label_style),
+            Paragraph(safe_str(dnr.get("email")), value_style),
+            Paragraph("<b>Contact Person:</b>", label_style),
+            Paragraph(safe_str(dnr.get("contact_person")), value_style),
+        ],
+        [
+            Paragraph("<b>Customer ID:</b>", label_style),
+            Paragraph(safe_str(dnr.get("customer_id")), value_style),
+            Paragraph("<b>Status:</b>", label_style),
+            Paragraph(status_text, value_style),
+        ],
+    ]
+
+    details_table = Table(dnr_details_data, colWidths=[110, 170, 95, 145])
+    details_table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f3f3f3")),
+                ("BOX", (0, 0), (-1, -1), 0.8, colors.HexColor("#8a8a8a")),
+                ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#a5a5a5")),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 6),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                ("TOPPADDING", (0, 0), (-1, -1), 5),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+            ]
+        )
+    )
+    elements.append(details_table)
+    elements.append(Spacer(1, 16))
+
+    elements.append(Paragraph("DELIVERY NOTE RETURN ITEMS", section_style))
+    elements.append(Spacer(1, 2))
+
+    items = dnr.get("items", []) or []
+
+    item_data = [
+        [
+            Paragraph("S.No", header_small_style),
+            Paragraph("Product Name", header_small_style),
+            Paragraph("Product ID", header_small_style),
+            Paragraph("Inv. Qty", header_small_style),
+            Paragraph("Return Qty", header_small_style),
+            Paragraph("UOM", header_small_style),
+            Paragraph("Serial No", header_small_style),
+            Paragraph("Return Reason", header_small_style),
+        ]
+    ]
+
+    for idx, item in enumerate(items, start=1):
+        product_name = safe_str(item.get("product_name"))
+        product_id = safe_str(item.get("product_id"))
+        inv_q = safe_float(item.get("invoiced_qty"), 0.0)
+        ret_q = safe_float(item.get("returned_qty") or item.get("qty"), 0.0)
+        uom = safe_str(item.get("uom"))
+        serial_no = safe_str(item.get("serial_no"))
+        reason = safe_str(item.get("reason") or item.get("return_reason") or "")
+
+        item_data.append(
+            [
+                Paragraph(str(idx), value_style),
+                Paragraph(product_name, value_style),
+                Paragraph(product_id, value_style),
+                Paragraph(f"{inv_q:.2f}".rstrip("0").rstrip("."), value_style),
+                Paragraph(f"{ret_q:.2f}".rstrip("0").rstrip("."), value_style),
+                Paragraph(uom, value_style),
+                Paragraph(serial_no, value_style),
+                Paragraph(reason, value_style),
+            ]
+        )
+
+    if len(item_data) == 1:
+        item_data.append(
+            [
+                Paragraph("-", value_style),
+                Paragraph("No line items available", value_style),
+                Paragraph("-", value_style),
+                Paragraph("-", value_style),
+                Paragraph("-", value_style),
+                Paragraph("-", value_style),
+                Paragraph("-", value_style),
+                Paragraph("-", value_style),
+            ]
+        )
+
+    items_table = Table(
+        item_data,
+        colWidths=[35, 118, 58, 44, 48, 38, 75, 94],
+        repeatRows=1,
+    )
+    items_table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#a12828")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("FONTNAME", (0, 0), (-1, 0), "DejaVuSans-Bold"),
+                ("FONTNAME", (0, 1), (-1, -1), "DejaVuSans"),
+                ("FONTSIZE", (0, 0), (-1, -1), 7.5),
+                ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                ("ALIGN", (1, 1), (2, -1), "LEFT"),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#999999")),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f7f7f7")]),
+                ("LEFTPADDING", (0, 0), (-1, -1), 4),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+                ("TOPPADDING", (0, 0), (-1, -1), 5),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+            ]
+        )
+    )
+    elements.append(items_table)
+    elements.append(Spacer(1, 16))
+
+    comments = dnr.get("comments") or []
+    if comments:
+        elements.append(Paragraph("Comments", section_style))
+        comments_text = "\n".join(
+            f"{safe_str(c.get('user') or '')} ({safe_str(c.get('time') or '')}): {safe_str(c.get('message') or '')}"
+            for c in comments
+        )
+        notes_table = Table([[Paragraph(comments_text, value_style)]], colWidths=[500])
+        notes_table.setStyle(
+            TableStyle(
+                [
+                    ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor("#999999")),
+                    ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#fafafa")),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 8),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+                    ("TOPPADDING", (0, 0), (-1, -1), 8),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+                ]
+            )
+        )
+        elements.append(notes_table)
+        elements.append(Spacer(1, 12))
+
+    elements.append(Paragraph("Terms and Conditions", section_style))
+
+    terms_list = [
+        "1. This Delivery Note Return confirms goods returned as per the details above.",
+        "2. Return quantities and reasons are subject to verification.",
+        "3. Kindly retain this document for your records.",
+        "4. Any discrepancy should be reported without delay.",
+        "5. Processing of credit or replacement will follow company policy.",
+    ]
+
+    for term in terms_list:
+        elements.append(Paragraph(term, terms_style))
+
+    doc.build(elements)
+    pdf_bytes = buffer.getvalue()
+    buffer.close()
+    return pdf_bytes
+
+
+# =========================================
+# DELIVERY NOTE RETURN - API (PDF)
+# =========================================
+@app.get("/api/delivery-note-returns/<dnr_id>/pdf")
+def delivery_note_return_pdf(dnr_id):
+    dnr = get_dnr_by_id(dnr_id)
+    if not dnr:
+        return jsonify({"success": False, "message": "DNR not found"}), 404
+    pdf_bytes = generate_delivery_note_return_pdf_bytes(dnr)
+    return send_file(
+        io.BytesIO(pdf_bytes),
+        mimetype="application/pdf",
+        download_name=f"{dnr_id}.pdf",
+        as_attachment=False,
+    )
+
+
+# =========================================
+# DELIVERY NOTE RETURN - EMAIL API
+# =========================================
+@app.post("/api/delivery-note-returns/<dnr_id>/email")
+def email_delivery_note_return(dnr_id):
+    dnr = get_dnr_by_id(dnr_id)
+    if not dnr:
+        return jsonify({"success": False, "message": "DNR not found"}), 404
+
+    customer_email = (dnr.get("email") or "").strip()
+
+    if not customer_email:
+        customer = find_customer_by_name(dnr.get("customer_name", ""))
+        if customer:
+            customer_email = customer.get("email", "")
+
+    if not customer_email:
+        return jsonify({"success": False, "message": "Customer email not available"}), 400
+
+    pdf_bytes = generate_delivery_note_return_pdf_bytes(dnr)
+
+    ok = send_email_with_attachments(
+        to_email=customer_email,
+        subject=f"Delivery Note Return {dnr_id}",
+        body=f"Dear {dnr.get('customer_name','')},\n\nPlease find attached Delivery Note Return {dnr_id}.",
+        from_email=EMAIL_ADDRESS,
+        password=EMAIL_PASSWORD,
+        attachments=[{"filename": f"{dnr_id}.pdf", "content_bytes": pdf_bytes}],
+    )
+
+    if not ok:
+        return jsonify({"success": False, "message": "Email sending failed"}), 500
+
+    return jsonify({"success": True, "message": "Email sent successfully"})
+
+
+# =========================================
+# DELIVERY NOTE RETURN — ATTACHMENTS (same behaviour as quotation attachments)
+# =========================================
+@app.post("/api/dnr-upload-attachment")
+def dnr_upload_attachment():
+    try:
+        if "file" not in request.files:
+            return jsonify({"success": False, "error": "No file provided"}), 400
+        file = request.files["file"]
+        dnr_id = (request.form.get("dnr_id") or "").strip()
+        if not dnr_id:
+            return jsonify({"success": False, "error": "dnr_id required"}), 400
+        if file.filename == "":
+            return jsonify({"success": False, "error": "No file selected"}), 400
+
+        file.seek(0, os.SEEK_END)
+        file_length = file.tell()
+        file.seek(0)
+        if file_length > MAX_FILE_SIZE_BYTES:
+            return jsonify(
+                {"success": False, "error": f"File size exceeds {MAX_FILE_SIZE_MB} MB"}
+            ), 400
+        if not allowed_file(file.filename):
+            return jsonify(
+                {
+                    "success": False,
+                    "error": f'File type not allowed. Allowed: {", ".join(ALLOWED_EXTENSIONS)}',
+                }
+            ), 400
+
+        hdr = fetch_one(
+            "SELECT 1 AS ok FROM public.deliverynote_returns WHERE dnr_id = %s",
+            (dnr_id,),
+        )
+        if not hdr:
+            return jsonify(
+                {
+                    "success": False,
+                    "error": "Save Delivery Note Return as draft first, then attach files.",
+                }
+            ), 400
+
+        cnt_row = fetch_one(
+            """
+            SELECT COUNT(*)::int AS c
+            FROM public.deliverynote_return_attachments
+            WHERE dnr_id = %s
+            """,
+            (dnr_id,),
+        )
+        current_count = int((cnt_row or {}).get("c") or 0)
+        if current_count >= MAX_ATTACHMENTS_PER_QUOTATION:
+            return jsonify(
+                {
+                    "success": False,
+                    "error": f"Maximum {MAX_ATTACHMENTS_PER_QUOTATION} files allowed per delivery note return",
+                }
+            ), 400
+
+        file_ext = file.filename.rsplit(".", 1)[1].lower() if "." in file.filename else ""
+        unique_filename = f"{dnr_id}_{uuid.uuid4().hex}.{file_ext}" if file_ext else f"{dnr_id}_{uuid.uuid4().hex}"
+        abs_path = os.path.join(DNR_ATTACHMENTS_FOLDER, unique_filename)
+        file.save(abs_path)
+
+        row = None
+        conn = get_db_connection()
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    INSERT INTO public.deliverynote_return_attachments
+                        (dnr_id, file_name, file_path, uploaded_at)
+                    VALUES (%s, %s, %s, CURRENT_TIMESTAMP)
+                    RETURNING id
+                    """,
+                    (dnr_id, file.filename, unique_filename),
+                )
+                row = cur.fetchone()
+            conn.commit()
+        except Exception:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            if os.path.isfile(abs_path):
+                try:
+                    os.remove(abs_path)
+                except OSError:
+                    pass
+            raise
+        finally:
+            conn.close()
+
+        new_id = row["id"] if row else None
+        return jsonify(
+            {
+                "success": True,
+                "attachment": {
+                    "id": new_id,
+                    "original_filename": file.filename,
+                    "stored_filename": unique_filename,
+                    "size": file_length,
+                    "upload_date": datetime.now().isoformat(),
+                },
+            }
+        )
+    except Exception as e:
+        print(traceback.format_exc())
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.get("/api/dnr-attachments/<dnr_id>")
+def dnr_get_attachments(dnr_id):
+    try:
+        rows = fetch_all(
+            """
+            SELECT id, file_name, file_path, uploaded_at
+            FROM public.deliverynote_return_attachments
+            WHERE dnr_id = %s
+            ORDER BY id ASC
+            """,
+            (dnr_id,),
+        )
+    except Exception as e:
+        print(f"dnr_get_attachments: {e}")
+        return jsonify({"success": False, "attachments": [], "error": str(e)}), 500
+
+    attachments = []
+    for r in rows or []:
+        r = dict(r)
+        ts = r.get("uploaded_at")
+        tstr = ""
+        if ts is not None:
+            if hasattr(ts, "strftime"):
+                tstr = ts.strftime("%Y-%m-%d %H:%M:%S")
+            else:
+                tstr = str(ts)
+        rel = os.path.basename(str(r.get("file_path") or ""))
+        sz = 0
+        ap = os.path.join(DNR_ATTACHMENTS_FOLDER, rel)
+        if rel and os.path.isfile(ap):
+            try:
+                sz = os.path.getsize(ap)
+            except OSError:
+                sz = 0
+        attachments.append(
+            {
+                "id": r.get("id"),
+                "original_filename": r.get("file_name") or "",
+                "size": sz,
+                "upload_date": tstr or "—",
+            }
+        )
+    return jsonify({"success": True, "attachments": attachments})
+
+
+def _dnr_attachment_abs_path(att_id):
+    row = fetch_one(
+        """
+        SELECT id, dnr_id, file_name, file_path
+        FROM public.deliverynote_return_attachments
+        WHERE id = %s
+        """,
+        (att_id,),
+    )
+    if not row:
+        return None, None
+    row = dict(row)
+    rel = os.path.basename(str(row.get("file_path") or ""))
+    if not rel:
+        return None, None
+    abs_path = os.path.join(DNR_ATTACHMENTS_FOLDER, rel)
+    if not os.path.isfile(abs_path):
+        return None, None
+    return abs_path, row
+
+
+@app.get("/api/dnr-attachment/<int:att_id>/view")
+def dnr_view_attachment(att_id):
+    tup = _dnr_attachment_abs_path(att_id)
+    if not tup[0]:
+        return jsonify({"success": False, "message": "Attachment not found"}), 404
+    abs_path, row = tup
+    return send_file(
+        abs_path,
+        download_name=row.get("file_name") or "file",
+        as_attachment=False,
+    )
+
+
+@app.get("/api/dnr-attachment/<int:att_id>/download")
+def dnr_download_attachment(att_id):
+    tup = _dnr_attachment_abs_path(att_id)
+    if not tup[0]:
+        return jsonify({"success": False, "message": "Attachment not found"}), 404
+    abs_path, row = tup
+    return send_file(
+        abs_path,
+        download_name=row.get("file_name") or "file",
+        as_attachment=True,
+    )
+
+
+@app.delete("/api/dnr-attachment/<int:att_id>")
+def dnr_delete_attachment(att_id):
+    try:
+        row = fetch_one(
+            """
+            SELECT id, file_path
+            FROM public.deliverynote_return_attachments
+            WHERE id = %s
+            """,
+            (att_id,),
+        )
+        if not row:
+            return jsonify({"success": False, "error": "Attachment not found"}), 404
+        row = dict(row)
+        rel = os.path.basename(str(row.get("file_path") or ""))
+        abs_path = os.path.join(DNR_ATTACHMENTS_FOLDER, rel) if rel else ""
+
+        conn = get_db_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "DELETE FROM public.deliverynote_return_attachments WHERE id = %s",
+                    (att_id,),
+                )
+            conn.commit()
+        finally:
+            conn.close()
+
+        if abs_path and os.path.isfile(abs_path):
+            try:
+                os.remove(abs_path)
+            except OSError:
+                pass
+        return jsonify({"success": True})
+    except Exception as e:
+        print(traceback.format_exc())
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
 # =========================================
@@ -18498,3 +20262,6 @@ def api_invoice_returns_list():
 if __name__ == "__main__":
     print("Application is running successfully")
     app.run(debug=True)
+    
+
+

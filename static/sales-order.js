@@ -654,3 +654,21 @@ flyEl.appendChild(
   ========================================================== */
   loadSalesOrders();
 });
+
+
+
+
+const checkboxes = document.querySelectorAll('.so-row-check');
+
+function toggleButtons() {
+  const anyChecked = [...document.querySelectorAll('.so-row-check')]
+    .some(cb => cb.checked);
+
+  buttons.forEach(btn => btn.disabled = !anyChecked);
+}
+
+document.addEventListener('change', function (e) {
+  if (e.target.classList.contains('so-row-check')) {
+    toggleButtons();
+  }
+});

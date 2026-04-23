@@ -232,48 +232,42 @@
    GENERATE ACTION BUTTONS
    Bulk action buttons above the table
 ========================================================= */
-.dn-gen-actions{
-  display: flex;
-  justify-content: flex-end;
-  gap: 14px;
-  margin: 14px 0 12px;
-  flex-wrap: wrap;
-}
+/* DN buttons  */
+.dn-gen-btn {
+  padding: 8px 16px;
+  border-radius: 10px;
+  border: none;
 
-.dn-gen-btn{
-  border: 2px solid #a12828;
-  background: #fff;
-  color: #a12828;
-  padding: 8px 10px;
-  border-radius: 999px;
+  background: #d1d5db;
+  color: #374151;
+
   font-size: 13px;
-  letter-spacing: 0.2px;
-  box-shadow: 0 6px 14px rgba(161, 40, 40, 0.12);
-  transition: 0.2s ease;
+  font-weight: 500;
+
+  box-shadow: 0 3px 0 #9ca3af;
+  cursor: pointer;
+  transition: all 0.15s ease;
 }
 
-.dn-gen-btn:disabled{
-  background: #fff;
-  border-color: #c77a7a;
-  color: #a12828;
-  opacity: 1;
-  cursor: default;
-  box-shadow: none;
+/* Hover */
+.dn-gen-btn:hover:not(:disabled) {
+  background: #c4c7cc;
 }
 
-.dn-gen-btn:not(:disabled):hover{
-  background: linear-gradient(#a12828, #8c1f1f);
-  color: #a12828;
-  transform: translateY(-1px);
-  box-shadow: 0 10px 18px rgba(161, 40, 40, 0.20);
+/* Press effect */
+.dn-gen-btn:active:not(:disabled) {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 #9ca3af;
 }
 
-.dn-gen-btn:not(:disabled):active{
-  transform: translateY(0px);
-  box-shadow: 0 6px 14px rgba(161, 40, 40, 0.18);
+/* Disabled  */
+.dn-gen-btn:disabled {
+  background: #d1d5db;
+  color: #6b7280;
+  box-shadow: 0 3px 0 #bcbfc4;
+  cursor: not-allowed;
+  opacity: 1;   
 }
-
-
 /* =========================================================
    TABLE WRAPPER
 ========================================================= */
@@ -281,6 +275,16 @@
   overflow-x: auto;
   overflow-y: visible;
   border-radius: 10px;
+}
+
+.dn-gen-actions {
+  display: flex;
+  justify-content: flex-end;   
+  align-items: center;
+  gap: 10px;
+
+  margin-top: 12px;
+  margin-bottom: 16px;  
 }
 
 
@@ -450,7 +454,7 @@
 }
 
 .dn-badge.returned{
-  background: #3c363d;
+  background: #e6a2f2;
   color: #000;
 }
 
