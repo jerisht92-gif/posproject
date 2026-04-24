@@ -65,6 +65,10 @@ import traceback
 import socket
 from urllib.parse import urlparse, unquote, quote_plus
 
+
+import hashlib
+
+
 DB_POOL = None
 
 
@@ -597,6 +601,9 @@ load_dotenv("env")  # also load "env" if you keep DB keys there instead of .env
 #     _ensure_deliverynote_returns_schema()
 # except Exception as e:
 #     print(f"deliverynote_returns schema ensure skipped: {e}")
+
+
+
 
 # =========================================
 # ✅ SQLALCHEMY ENGINE (optional)
@@ -7571,292 +7578,361 @@ def verify_otp():
 # =========================================
 # 1. ROOT & AUTH — Signup API
 # =========================================
+# =========================================
+# 1. ROOT & AUTH — Signup API
+# =========================================
 @app.route("/signup", methods=["POST"])
 def signup():
-    data = request.get_json() or {}
-
-    name = (data.get("name") or "").strip()
-    phone = (data.get("phone") or "").strip()
-    email = (data.get("email") or "").strip().lower()
-    password = (data.get("password") or "").strip()
-
-    missing = []
-    if not name:
-        missing.append("Name")
-    if not phone:
-        missing.append("Phone number")
-    if not email:
-        missing.append("Email")
-    if not password:
-        missing.append("Password")
-
-    if missing:
-        if len(missing) == 1:
-            msg = f"⚠️ {missing[0]} is required"
-        else:
-            msg = "⚠️ " + ", ".join(missing[:-1]) + f" and {missing[-1]} are required"
-        return jsonify({"success": False, "message": msg}), 400
-
-    if not NAME_REGEX.match(name):
-        return jsonify({"success": False, "message": "⚠️ Name must be 3–20 letters only"}), 400
-
-    if not re.match(r"^\+\d{8,15}$", phone):
-       return jsonify({"success": False, "message": "Enter valid phone with country code like +91XXXXXXXXXX"}), 400
-
-    if len(email) > MAX_EMAIL_LENGTH:
-        return jsonify({"success": False, "message": "⚠️ Email is too long (max 50 characters)"}), 400
-
-    if not EMAIL_REGEX.match(email):
-        return jsonify({"success": False, "message": "⚠️ Enter a valid email address (like name@gmail.com or name@outlook.com)"}), 400
-
-    if not is_email_otp_verified(email):
-        return jsonify({
-            "success": False,
-            "message": "⚠️ Please verify OTP for this email before signing up."
-        }), 400
-
-    users = load_users()
-    if any((u.get("email") or "").strip().lower() == email for u in users):
-        return jsonify({"success": False, "message": "⚠️ User already exists"}), 409
-
-    users.append({
-        "name": name,
-        "phone": phone,
-        "email": email,
-        "password": password,
-        "role": "User",   # ✅ assigned automatically
-    })
-    save_users(users)
-
-    otps = load_otps()
-    otps.pop(email, None)
-    save_otps(otps)
-
-    send_email(email, "Welcome!", f"Hello {name}, your account has been created successfully!")
-
-    return jsonify({"success": True, "message": "🎉 Signup successful!"}), 200
-
-
+    try:
+        data = request.get_json() or {}
+ 
+        name = (data.get("name") or "").strip()
+        phone = (data.get("phone") or "").strip()
+        email = (data.get("email") or "").strip().lower()
+        password = (data.get("password") or "").strip()
+ 
+        # ========= VALIDATION =========
+        missing = []
+        if not name:
+            missing.append("Name")
+        if not phone:
+            missing.append("Phone number")
+        if not email:
+            missing.append("Email")
+        if not password:
+            missing.append("Password")
+ 
+        if missing:
+            if len(missing) == 1:
+                msg = f"⚠️ {missing[0]} is required"
+            else:
+                msg = "⚠️ " + ", ".join(missing[:-1]) + f" and {missing[-1]} are required"
+            return jsonify({"success": False, "message": msg}), 400
+ 
+        if not NAME_REGEX.match(name):
+            return jsonify({"success": False, "message": "⚠️ Name must be 3–20 letters only"}), 400
+ 
+        if not re.match(r"^\+\d{8,15}$", phone):
+            return jsonify({"success": False, "message": "Enter valid phone like +91XXXXXXXXXX"}), 400
+ 
+        if len(email) > MAX_EMAIL_LENGTH:
+            return jsonify({"success": False, "message": "⚠️ Email too long"}), 400
+ 
+        if not EMAIL_REGEX.match(email):
+            return jsonify({"success": False, "message": "⚠️ Invalid email"}), 400
+ 
+        if not is_email_otp_verified(email):
+            return jsonify({
+                "success": False,
+                "message": "⚠️ Please verify OTP before signup"
+            }), 400
+ 
+        # ========= DB CONNECTION =========
+        conn = get_db_connection()
+        cur = conn.cursor()
+ 
+        # ========= CHECK USER EXISTS =========
+        cur.execute("SELECT user_id FROM users WHERE LOWER(email) = LOWER(%s)", (email,))
+        if cur.fetchone():
+            cur.close()
+            conn.close()
+            return jsonify({"success": False, "message": "⚠️ User already exists"}), 409
+ 
+        # ========= INSERT USER =========
+        import hashlib
+        hashed_password = hashlib.sha256(password.encode()).hexdigest()
+        cur.execute("""
+            INSERT INTO users (name, phone, email, password, role)
+            VALUES (%s, %s, %s, %s, %s)
+        """, (name, phone, email, hashed_password, "User"))
+ 
+        conn.commit()
+        cur.close()
+        conn.close()
+ 
+        # ========= CLEAR OTP =========
+        otps = load_otps()
+        otps.pop(email, None)
+        save_otps(otps)
+ 
+        # ========= SEND EMAIL =========
+        try:
+            send_email(email, "Welcome!", f"Hello {name}, your account has been created successfully!")
+        except Exception as mail_err:
+            print("Welcome email failed:", mail_err)
+ 
+        return jsonify({"success": True, "message": "Signup successful!"}), 200
+ 
+    except Exception as e:
+        print("Signup error:", e)
+        return jsonify({"success": False, "message": "Server error"}), 500
 # =========================================
 # 1. ROOT & AUTH — Login API
 # =========================================
+ 
 @app.route("/login", methods=["POST"])
 def login_post():
-    """
-    Login endpoint (JSON API).
-    Handles:
-      - basic validation
-      - account lockout after repeated failures
-      - session creation on success
-    """
     try:
-        # Safely get JSON data
         if not request.is_json:
-            return (
-                jsonify(
-                    {
-                        "success": False,
-                        "message": "Invalid request format. Expected JSON.",
-                    }
-                ),
-                400,
-            )
-
+            return jsonify({"success": False, "message": "Expected JSON"}), 400
+ 
         data = request.get_json(silent=True) or {}
         email = (data.get("email") or "").strip().lower()
         password = (data.get("password") or "").strip()
         remember_me = data.get("rememberMe", False)
-
-        # Validate input
+ 
         if not email:
-            return jsonify({"success": False, "message": "Email is required"}), 400
+            return jsonify({"success": False, "message": "Email required"}), 400
         if not password:
-            return jsonify({"success": False, "message": "Password is required"}), 400
-
-        # Load users and failed attempts with error handling
-        
-        # ✅ DB LOGIN
-        try:
-            conn = get_db_connection()
-            cursor = conn.cursor()
-
-            db_user = None
-            try:
-                cursor.execute(
-                    """
-                    SELECT name, role, password, branch, department FROM users
-                    WHERE email = %s
-                    LIMIT 1
-                    """,
-                    (email,),
-                )
-                db_user = cursor.fetchone()
-            except Exception:
-                cursor.execute(
-                    """
-                    SELECT name, role, password FROM users
-                    WHERE email = %s
-                    LIMIT 1
-                    """,
-                    (email,),
-                )
-                db_user = cursor.fetchone()
-
-            if not db_user:
-                try:
-                    cursor.execute(
-                        """
-                        SELECT name, role, password, branch, department FROM users
-                        WHERE LOWER(email) = LOWER(%s)
-                        LIMIT 1
-                        """,
-                        (email,),
-                    )
-                    db_user = cursor.fetchone()
-                except Exception:
-                    cursor.execute(
-                        """
-                        SELECT name, role, password FROM users
-                        WHERE LOWER(email) = LOWER(%s)
-                        LIMIT 1
-                        """,
-                        (email,),
-                    )
-                    db_user = cursor.fetchone()
-
-            cursor.close()
+            return jsonify({"success": False, "message": "Password required"}), 400
+ 
+        conn = get_db_connection()
+        cur = conn.cursor()
+ 
+        # ✅ Get user
+        cur.execute("""
+            SELECT user_id, name, role, password, branch, department
+            FROM users
+            WHERE LOWER(email) = LOWER(%s)
+            LIMIT 1
+        """, (email,))
+        user = cur.fetchone()
+ 
+        if not user:
+            cur.close()
             conn.close()
-
-        except Exception as e:
-            print("❌ DB error:", e)
-            return jsonify({"success": False, "message": "Database error"}), 500
-
-
-        # ❌ User not found
-        if not db_user:
             return jsonify({"success": False, "message": "User not found"}), 404
-
-        db_name = db_user[0]
-        db_role = db_user[1]
-        db_password = db_user[2]
-        db_branch = db_user[3] if len(db_user) > 3 else ""
-        db_department = db_user[4] if len(db_user) > 4 else ""
-
-        # ❌ Password wrong
-        if db_password != password:
-            return jsonify({"success": False, "message": "Incorrect password"}), 401
-
-        # ✅ Login success (store branch/department for roles.json RBAC matching)
-        session.permanent = bool(remember_me)
+ 
+        (
+            user_id,
+            db_name,
+            db_role,
+            db_password,
+            db_branch,
+            db_department
+        ) = user
+ 
+        # ❌ Wrong password
+        import hashlib
+        hashed_input = hashlib.sha256(password.encode()).hexdigest()
+        password_match = (db_password == hashed_input) or (db_password == password)
+        if not password_match:
+            cur.close()
+            conn.close()
+            return jsonify({"success": False, "message": "Wrong password"}), 401
+ 
+        # ✅ Password correct — set session directly
+        session.permanent = True
         session["user"] = email
         session["role"] = db_role
-        session["branch"] = (db_branch or "").strip() or "Main Branch"
-        session["department"] = (db_department or "").strip()
+        session["branch"] = db_branch or "Main Branch"
+        session["department"] = db_department or ""
         session["last_active"] = time.time()
-
+        session["remember_me"] = remember_me
+ 
+        conn.commit()
+        cur.close()
+        conn.close()
+ 
         return jsonify({"success": True, "message": "Login successful"}), 200
-
-        # Check if account is locked
-        info = failed_attempts.get(email, {})
-        if "locked_until" in info and time.time() < info["locked_until"]:
-            remaining = int(info["locked_until"] - time.time())
-            return (
-                jsonify(
-                    {
-                        "success": False,
-                        "message": f"Account locked. Try again in {remaining}s.",
-                    }
-                ),
-                403,
-            )
-
-        # Verify password
-        if user.get("password") != password:
-            info.setdefault("count", 0)
-            info["count"] += 1
-
-            if info["count"] >= LOCKOUT_THRESHOLD:
-                info["locked_until"] = time.time() + LOCKOUT_DURATION
-                failed_attempts[email] = info
-                try:
-                    save_failed_attempts(failed_attempts)
-                except Exception as e:  # pragma: no cover - defensive
-                    print(f"❌ Error saving failed attempts: {e}")
-                return (
-                    jsonify(
-                        {
-                            "success": False,
-                            "message": f"Too many failed attempts. Locked for {LOCKOUT_DURATION//60} min.",
-                        }
-                    ),
-                    403,
-                )
-
-            failed_attempts[email] = info
-            try:
-                save_failed_attempts(failed_attempts)
-            except Exception as e:  # pragma: no cover - defensive
-                print(f"❌ Error saving failed attempts: {e}")
-
-            remaining = LOCKOUT_THRESHOLD - info["count"]
-            return (
-                jsonify(
-                    {
-                        "success": False,
-                        "message": f"Incorrect password. {remaining} attempts left.",
-                    }
-                ),
-                401,
-            )
-
-        # Clear failed attempts on successful login
-        if email in failed_attempts:
-            failed_attempts.pop(email, None)
-            try:
-                save_failed_attempts(failed_attempts)
-            except Exception as e:  # pragma: no cover - defensive
-                print(f"❌ Error saving failed attempts: {e}")
-
-        # Set session
-        try:
-            session.permanent = bool(remember_me)
-            session["user"] = email
-            session["remember_me"] = bool(
-                remember_me
-            )  # Store remember_me flag in session
-            session["role"] = user.get("role", "User")
-            session["last_active"] = time.time()
-            print("✅ Login success, session active")
-            return (
-                jsonify({"success": True, "message": "Login successful"}),
-                200,
-            )
-        except Exception as e:  # pragma: no cover - defensive
-            print(f"❌ Error setting session: {e}")
-            return (
-                jsonify(
-                    {
-                        "success": False,
-                        "message": "Server error. Please try again later.",
-                    }
-                ),
-                500,
-            )
-
-    except Exception as e:  # pragma: no cover - defensive
-        print(f"❌ Unexpected error in login_post: {e}")
+ 
+    except Exception as e:
         import traceback
-
         traceback.print_exc()
-        return (
-            jsonify(
-                {
-                    "success": False,
-                    "message": "Server error. Please try again later.",
-                }
-            ),
-            500,
-        )
+        print("LOGIN ERROR DETAIL:", repr(e))
+        return jsonify({"success": False, "message": f"Server error: {str(e)}"}), 500
+    #---------otp verify---------
+ 
+@app.route("/verify-login-otp", methods=["POST"])
+def verify_login_otp():
+    try:
+        data = request.get_json()
+        user_id = data.get("user_id")
+        otp = data.get("otp")
+ 
+        conn = get_db_connection()
+        cur = conn.cursor()
+ 
+        cur.execute("""
+            SELECT email, email_otp, otp_expiry, role, branch, department
+            FROM users
+            WHERE user_id = %s
+        """, (user_id,))
+        user = cur.fetchone()
+ 
+        if not user:
+            return jsonify({"success": False, "message": "User not found"}), 404
+ 
+        email, db_otp, expiry, role, branch, department = user
+ 
+        if otp != db_otp:
+            return jsonify({"success": False, "message": "Invalid OTP"}), 400
+ 
+        if expiry:
+            expiry_naive = expiry.replace(tzinfo=None) if expiry.tzinfo else expiry
+            if datetime.now() > expiry_naive:
+                return jsonify({"success": False, "message": "OTP expired"}), 400
+ 
+        # ✅ SUCCESS LOGIN
+        session.permanent = True
+        session["user"] = email
+        session["role"] = role
+        session["branch"] = branch or "Main Branch"
+        session["department"] = department or ""
+        session["last_active"] = time.time()
+        session["remember_me"] = data.get("rememberMe", False)
+ 
+        # ✅ Update last_seen
+        cur.execute("""
+            UPDATE users
+            SET last_seen = NOW(),
+                email_otp = NULL,
+                otp_expiry = NULL
+            WHERE user_id = %s
+        """, (user_id,))
+ 
+        conn.commit()
+        cur.close()
+        conn.close()
+ 
+        return jsonify({"success": True, "message": "Login successful"})
+ 
+    except Exception as e:
+        print("❌ OTP error:", e)
+        return jsonify({"success": False, "message": "Server error"}), 500
+ 
+ 
+
+
+# @app.route("/login", methods=["POST"])
+# def login_post():
+#     try:
+#         data = request.get_json()
+#         email = (data.get("email") or "").strip().lower()
+#         password = (data.get("password") or "").strip()
+
+#         conn = get_db_connection()
+#         cur = conn.cursor()
+
+#         # Get user
+#         cur.execute("""
+#             SELECT id, password, failed_attempts, is_locked
+#             FROM users
+#             WHERE LOWER(email) = LOWER(%s)
+#         """, (email,))
+#         user = cur.fetchone()
+
+#         if not user:
+#             return jsonify({"success": False, "message": "User not found"}), 404
+
+#         user_id, db_password, failed_attempts, is_locked = user
+
+#         # 🔒 Check if locked
+#         if is_locked:
+#             return jsonify({"success": False, "message": "Account locked. Try later"}), 403
+
+#         # ❌ Wrong password
+#         if password != db_password:
+#             failed_attempts += 1
+
+#             if failed_attempts >= 3:
+#                 cur.execute("""
+#                     UPDATE users
+#                     SET failed_attempts = %s,
+#                         is_locked = TRUE,
+#                         lock_time = NOW()
+#                     WHERE id = %s
+#                 """, (failed_attempts, user_id))
+#             else:
+#                 cur.execute("""
+#                     UPDATE users
+#                     SET failed_attempts = %s
+#                     WHERE id = %s
+#                 """, (failed_attempts, user_id))
+
+#             conn.commit()
+#             return jsonify({"success": False, "message": f"Wrong password ({failed_attempts}/3)"}), 401
+
+#         # ✅ Correct password → reset attempts
+#         cur.execute("""
+#             UPDATE users
+#             SET failed_attempts = 0
+#             WHERE id = %s
+#         """, (user_id,))
+
+#         # 🔐 Generate OTP
+#         otp = str(random.randint(100000, 999999))
+#         expiry = datetime.now() + timedelta(minutes=5)
+
+#         cur.execute("""
+#             UPDATE users
+#             SET email_otp = %s,
+#                 otp_expiry = %s
+#             WHERE id = %s
+#         """, (otp, expiry, user_id))
+
+#         conn.commit()
+
+#         # 📧 Send OTP
+#         send_email(email, "Login OTP", f"Your OTP is {otp}")
+
+#         return jsonify({
+#             "success": True,
+#             "message": "OTP sent to email",
+#             "user_id": user_id
+#         })
+
+#     except Exception as e:
+#         return jsonify({"success": False, "message": str(e)}), 500
+
+
+# @app.route("/verify-login-otp", methods=["POST"])
+# def verify_login_otp():
+#     try:
+#         data = request.get_json()
+#         user_id = data.get("user_id")
+#         otp = data.get("otp")
+
+#         conn = get_db_connection()
+#         cur = conn.cursor()
+
+#         cur.execute("""
+#             SELECT email, email_otp, otp_expiry
+#             FROM users
+#             WHERE id = %s
+#         """, (user_id,))
+#         user = cur.fetchone()
+
+#         if not user:
+#             return jsonify({"success": False, "message": "User not found"}), 404
+
+#         email, db_otp, expiry = user
+
+#         # ❌ OTP wrong
+#         if otp != db_otp:
+#             return jsonify({"success": False, "message": "Invalid OTP"}), 400
+
+#         # ⏰ OTP expired
+#         if datetime.now() > expiry:
+#             return jsonify({"success": False, "message": "OTP expired"}), 400
+
+#         # ✅ SUCCESS LOGIN
+#         session["user"] = email
+
+#         cur.execute("""
+#             UPDATE users
+#             SET last_seen = NOW(),
+#                 email_otp = NULL,
+#                 otp_expiry = NULL
+#             WHERE id = %s
+#         """, (user_id,))
+
+#         conn.commit()
+
+#         return jsonify({"success": True, "message": "Login successful"})
+
+#     except Exception as e:
+#         return jsonify({"success": False, "message": str(e)}), 500
 
 
 # =========================
@@ -8188,6 +8264,61 @@ def global_search():
     return jsonify({"results": results})
 
 
+# =========================================
+# 2. DASHBOARD — End of dashboard routes
+# =========================================
+@app.route("/api/top-products")
+def top_products():
+    try:
+        query = """
+            SELECT
+                product_name AS name,
+                SUM(qty)::float AS qty,
+                ROUND(
+                    (SUM(qty) * 100.0 / SUM(SUM(qty)) OVER()),
+                    2
+                )::float AS percentage
+            FROM sales_order_items
+            GROUP BY product_name
+            ORDER BY qty DESC
+            LIMIT 5;
+        """
+        rows = fetch_all(query)
+        result = [
+            {"name": str(r["name"] or ""), "qty": float(r["qty"] or 0), "percentage": float(r["percentage"] or 0)}
+            for r in (rows or [])
+        ]
+        return jsonify(result)
+    except Exception as e:
+        print(f"top_products error: {e}")
+        return jsonify([]), 200
+@app.route("/api/monthly-sales")
+def monthly_sales():
+    try:
+        query = """
+            SELECT
+                TO_CHAR(m.month, 'Mon') AS month,
+                COALESCE(SUM(s.grand_total), 0) AS total
+            FROM generate_series(
+                DATE_TRUNC('year', CURRENT_DATE),
+                DATE_TRUNC('year', CURRENT_DATE) + INTERVAL '11 months',
+                INTERVAL '1 month'
+            ) AS m(month)
+            LEFT JOIN sales_orders s
+                ON DATE_TRUNC('month', s.order_date) = m.month
+            GROUP BY m.month
+            ORDER BY m.month;
+        """
+        rows = fetch_all(query)
+        result = [
+            {"month": str(r["month"]), "total": float(r["total"] or 0)}
+            for r in (rows or [])
+        ]
+        return jsonify(result)
+    except Exception as e:
+        print(f"monthly_sales error: {e}")
+        return jsonify([]), 200
+ 
 # =========================================
 # 3. MASTERS — Manage Users — API
 # =========================================
