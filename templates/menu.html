@@ -1,3 +1,5 @@
+
+
 <!-- templates/menu.html -->
 <!DOCTYPE html>
 <html lang="en">
@@ -163,6 +165,35 @@
                   <span class="submenu-icon">📦</span>
                   <span>Stock Receipt</span>
               </a>
+          </div>
+        </div>
+        <!-- Finance -->
+        <div class="menu-group finance-group">
+          <button
+            type="button"
+            class="menu-toggle"
+            data-target="finance-submenu"
+          >
+            <span class="menu-icon">💰</span>
+            <span class="menu-text">Finance</span>
+            <span class="menu-chevron">›</span>
+          </button>
+
+          <div id="finance-submenu"
+              class="submenu{% if page in ['credit_note','debit_note'] %} open{% endif %}">
+
+            <a href="#"
+              class="submenu-item{% if page == 'credit_note' %} active{% endif %}">
+              <span class="submenu-icon">💳</span>
+              <span>Credit Note</span>
+            </a>
+
+            <a href="#"
+              class="submenu-item{% if page == 'debit_note' %} active{% endif %}">
+              <span class="submenu-icon">💳</span>
+              <span>Debit Note</span>
+            </a>
+
           </div>
         </div>
       </nav>

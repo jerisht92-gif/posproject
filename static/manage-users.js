@@ -336,6 +336,13 @@ confirmDeleteBtn?.addEventListener("click", () => {
   const editEmailInput = document.getElementById("editEmail");
   const editPhoneInput = document.getElementById("editPhone");
   const editRoleSelect = document.getElementById("editRole");
+  const editFirstNameInput = document.getElementById("editFirstName");
+  const editLastNameInput = document.getElementById("editLastName");
+  const editBranchInput = document.getElementById("editBranch");
+  const editDepartmentInput = document.getElementById("editDepartment");
+  const editReportingToInput = document.getElementById("editReportingTo");
+  const editAvailableBranchesInput = document.getElementById("editAvailableBranches");
+  const editEmployeeIdInput = document.getElementById("editEmployeeId");
 
   // Country rules (national number length) — same set as Create New Branch Users
   const COUNTRY_RULES = {
@@ -367,6 +374,13 @@ confirmDeleteBtn?.addEventListener("click", () => {
   const emailError = document.getElementById("editEmailError");
   const phoneError = document.getElementById("editPhoneError");
   const roleError  = document.getElementById("editRoleError");
+  const firstNameError = document.getElementById("editFirstNameError");
+  const lastNameError = document.getElementById("editLastNameError");
+  const branchError = document.getElementById("editBranchError");
+  const departmentError = document.getElementById("editDepartmentError");
+  const reportingToError = document.getElementById("editReportingToError");
+  const availableBranchesError = document.getElementById("editAvailableBranchesError");
+  const employeeIdError = document.getElementById("editEmployeeIdError");
 
   // 🔹 Accessibility: remember last focused element (tab)
   let lastFocusedElement = null;
@@ -386,17 +400,46 @@ confirmDeleteBtn?.addEventListener("click", () => {
     clearError(editEmailInput, emailError);
     clearError(editPhoneInput, phoneError);
     clearError(editRoleSelect, roleError);
+    clearError(editFirstNameInput, firstNameError);
+    clearError(editLastNameInput, lastNameError);
+    clearError(editBranchInput, branchError);
+    clearError(editDepartmentInput, departmentError);
+    clearError(editReportingToInput, reportingToError);
+    clearError(editAvailableBranchesInput, availableBranchesError);
+    clearError(editEmployeeIdInput, employeeIdError);
+  }
+
+  function splitName(fullName) {
+    const normalized = (fullName || "").trim().replace(/\s+/g, " ");
+    if (!normalized) return { firstName: "", lastName: "" };
+    const parts = normalized.split(" ");
+    return {
+      firstName: parts[0] || "",
+      lastName: parts.slice(1).join(" ") || "",
+    };
   }
 
   // ✅ strict email domains (same as Create New Branch Users)
   const strictEmailRegex =
     /^[A-Za-z0-9._%+-]{3,40}@(gmail\.com|yahoo\.com|yahoo\.co\.in|outlook\.com|hotmail\.com|thestackly\.com|stackly\.in)$/i;
   const nameRegex = /^[A-Za-z\s]+$/;
+  const firstNameRegex = /^[A-Za-z\s]{1,40}$/;
+  const lastNameRegex = /^[A-Za-z\s]{1,30}$/;
+  const reportingRegex = /^[A-Za-z.\-\s]{1,40}$/;
+  const branchesRegex = /^\d+(,\s*\d+)*$/;
+  const employeeIdRegex = /^[A-Za-z0-9\-]{1,20}$/;
 
   let originalName  = "";
   let originalEmail = "";
   let originalPhone = "";
   let originalRole  = "";
+  let originalFirstName = "";
+  let originalLastName = "";
+  let originalBranch = "";
+  let originalDepartment = "";
+  let originalReportingTo = "";
+  let originalAvailableBranches = "";
+  let originalEmployeeId = "";
 
   let currentEditId = null;
   let currentEditRow   = null;
@@ -411,6 +454,13 @@ confirmDeleteBtn?.addEventListener("click", () => {
     const email = (editEmailInput?.value || "").trim();
     const phone = (editPhoneInput?.value || "").trim();
     const role = (editRoleSelect?.value || "").trim();
+    const firstName = (editFirstNameInput?.value || "").trim();
+    const lastName = (editLastNameInput?.value || "").trim();
+    const branch = (editBranchInput?.value || "").trim();
+    const department = (editDepartmentInput?.value || "").trim();
+    const reportingTo = (editReportingToInput?.value || "").trim();
+    const availableBranches = (editAvailableBranchesInput?.value || "").trim();
+    const employeeId = (editEmployeeIdInput?.value || "").trim();
     
     const nameValid =
       name && name.length >= 3 && name.length <= 40 && nameRegex.test(name);
@@ -440,9 +490,28 @@ confirmDeleteBtn?.addEventListener("click", () => {
     
     // Validate role
     const roleValid = !!role;
+    const firstNameValid = firstName && firstNameRegex.test(firstName);
+    const lastNameValid = lastName && lastNameRegex.test(lastName);
+    const branchValid = !!branch;
+    const departmentValid = !!department;
+    const reportingToValid = reportingTo && reportingRegex.test(reportingTo);
+    const availableBranchesValid = availableBranches && branchesRegex.test(availableBranches);
+    const employeeIdValid = employeeId && employeeIdRegex.test(employeeId);
     
     // Enable button only if all fields are valid
-    saveEditBtn.disabled = !(nameValid && emailValid && phoneValid && roleValid);
+    saveEditBtn.disabled = !(
+      nameValid &&
+      emailValid &&
+      phoneValid &&
+      roleValid &&
+      firstNameValid &&
+      lastNameValid &&
+      branchValid &&
+      departmentValid &&
+      reportingToValid &&
+      availableBranchesValid &&
+      employeeIdValid
+    );
   }
 
   // ============================
@@ -467,6 +536,13 @@ confirmDeleteBtn?.addEventListener("click", () => {
     const name  = (editNameInput?.value  || "").trim();
     const phone = (editPhoneInput?.value || "").trim();
     const role  = (editRoleSelect?.value || "").trim();
+    const firstName = (editFirstNameInput?.value || "").trim();
+    const lastName = (editLastNameInput?.value || "").trim();
+    const branch = (editBranchInput?.value || "").trim();
+    const department = (editDepartmentInput?.value || "").trim();
+    const reportingTo = (editReportingToInput?.value || "").trim();
+    const availableBranches = (editAvailableBranchesInput?.value || "").trim();
+    const employeeId = (editEmployeeIdInput?.value || "").trim();
 
     if (field === editNameInput) {
       clearError(editNameInput, nameError);
@@ -519,6 +595,51 @@ confirmDeleteBtn?.addEventListener("click", () => {
       if (!role) {
         setError(editRoleSelect, roleError, "Please select a Role.");
       }
+    } else if (field === editFirstNameInput) {
+      clearError(editFirstNameInput, firstNameError);
+      if (!firstName) {
+        setError(editFirstNameInput, firstNameError, "First Name is required.");
+      } else if (!firstNameRegex.test(firstName)) {
+        setError(editFirstNameInput, firstNameError, "First Name should contain only letters (1-40).");
+      }
+    } else if (field === editLastNameInput) {
+      clearError(editLastNameInput, lastNameError);
+      if (!lastName) {
+        setError(editLastNameInput, lastNameError, "Last Name is required.");
+      } else if (!lastNameRegex.test(lastName)) {
+        setError(editLastNameInput, lastNameError, "Last Name should contain only letters (1-30).");
+      }
+    } else if (field === editBranchInput) {
+      clearError(editBranchInput, branchError);
+      if (!branch) {
+        setError(editBranchInput, branchError, "Branch is required.");
+      }
+    } else if (field === editDepartmentInput) {
+      clearError(editDepartmentInput, departmentError);
+      if (!department) {
+        setError(editDepartmentInput, departmentError, "Department is required.");
+      }
+    } else if (field === editReportingToInput) {
+      clearError(editReportingToInput, reportingToError);
+      if (!reportingTo) {
+        setError(editReportingToInput, reportingToError, "Reporting To is required.");
+      } else if (!reportingRegex.test(reportingTo)) {
+        setError(editReportingToInput, reportingToError, "Reporting To may contain letters, dots, hyphens and spaces.");
+      }
+    } else if (field === editAvailableBranchesInput) {
+      clearError(editAvailableBranchesInput, availableBranchesError);
+      if (!availableBranches) {
+        setError(editAvailableBranchesInput, availableBranchesError, "Available Branches is required.");
+      } else if (!branchesRegex.test(availableBranches)) {
+        setError(editAvailableBranchesInput, availableBranchesError, "Use format like: 1,2,3");
+      }
+    } else if (field === editEmployeeIdInput) {
+      clearError(editEmployeeIdInput, employeeIdError);
+      if (!employeeId) {
+        setError(editEmployeeIdInput, employeeIdError, "Employee ID is required.");
+      } else if (!employeeIdRegex.test(employeeId)) {
+        setError(editEmployeeIdInput, employeeIdError, "Employee ID may have letters, numbers and '-' (max 20).");
+      }
     }
 
     updateEditUserButtonState();
@@ -529,6 +650,13 @@ confirmDeleteBtn?.addEventListener("click", () => {
     validateEditEmailDisplay(true);
     validateEditField(editPhoneInput);
     validateEditField(editRoleSelect);
+    validateEditField(editFirstNameInput);
+    validateEditField(editLastNameInput);
+    validateEditField(editBranchInput);
+    validateEditField(editDepartmentInput);
+    validateEditField(editReportingToInput);
+    validateEditField(editAvailableBranchesInput);
+    validateEditField(editEmployeeIdInput);
   }
 
   // ---- input restrictions + live validation while typing / on blur ----
@@ -590,6 +718,66 @@ confirmDeleteBtn?.addEventListener("click", () => {
       validateEditField(editRoleSelect);
     });
     editRoleSelect.addEventListener("blur", () => validateEditField(editRoleSelect));
+  }
+
+  if (editFirstNameInput) {
+    editFirstNameInput.addEventListener("input", () => {
+      let v = editFirstNameInput.value || "";
+      v = v.replace(/[^A-Za-z\s]/g, "").replace(/\s{2,}/g, " ").slice(0, 40);
+      editFirstNameInput.value = v;
+      validateEditField(editFirstNameInput);
+    });
+    editFirstNameInput.addEventListener("blur", () => validateEditField(editFirstNameInput));
+  }
+
+  if (editLastNameInput) {
+    editLastNameInput.addEventListener("input", () => {
+      let v = editLastNameInput.value || "";
+      v = v.replace(/[^A-Za-z\s]/g, "").replace(/\s{2,}/g, " ").slice(0, 30);
+      editLastNameInput.value = v;
+      validateEditField(editLastNameInput);
+    });
+    editLastNameInput.addEventListener("blur", () => validateEditField(editLastNameInput));
+  }
+
+  if (editBranchInput) {
+    editBranchInput.addEventListener("change", () => validateEditField(editBranchInput));
+    editBranchInput.addEventListener("blur", () => validateEditField(editBranchInput));
+  }
+
+  if (editDepartmentInput) {
+    editDepartmentInput.addEventListener("change", () => validateEditField(editDepartmentInput));
+    editDepartmentInput.addEventListener("blur", () => validateEditField(editDepartmentInput));
+  }
+
+  if (editReportingToInput) {
+    editReportingToInput.addEventListener("input", () => {
+      let v = editReportingToInput.value || "";
+      v = v.replace(/[^A-Za-z.\-\s]/g, "").replace(/\s{2,}/g, " ").slice(0, 40);
+      editReportingToInput.value = v;
+      validateEditField(editReportingToInput);
+    });
+    editReportingToInput.addEventListener("blur", () => validateEditField(editReportingToInput));
+  }
+
+  if (editAvailableBranchesInput) {
+    editAvailableBranchesInput.addEventListener("input", () => {
+      let v = editAvailableBranchesInput.value || "";
+      v = v.replace(/[^0-9,\s]/g, "");
+      editAvailableBranchesInput.value = v;
+      validateEditField(editAvailableBranchesInput);
+    });
+    editAvailableBranchesInput.addEventListener("blur", () => validateEditField(editAvailableBranchesInput));
+  }
+
+  if (editEmployeeIdInput) {
+    editEmployeeIdInput.addEventListener("input", () => {
+      let v = editEmployeeIdInput.value || "";
+      v = v.replace(/[^A-Za-z0-9\-]/g, "").slice(0, 20);
+      editEmployeeIdInput.value = v;
+      validateEditField(editEmployeeIdInput);
+    });
+    editEmployeeIdInput.addEventListener("blur", () => validateEditField(editEmployeeIdInput));
   }
 
   // Initialize button as disabled when modal opens
@@ -688,18 +876,42 @@ function trapFocus(container) {
     const name  = (u && u.name) ? String(u.name).trim() : "";
     const email = (u && u.email) ? String(u.email).trim() : "";
     const phone = (u && u.phone) ? String(u.phone).trim() : "";
+    const firstNameFromDb = (u && u.first_name) ? String(u.first_name).trim() : "";
+    const lastNameFromDb = (u && u.last_name) ? String(u.last_name).trim() : "";
+    const split = splitName(name);
+    const firstName = firstNameFromDb || split.firstName;
+    const lastName = lastNameFromDb || split.lastName;
+    const branch = (u && u.branch) ? String(u.branch).trim() : "";
+    const department = (u && u.department) ? String(u.department).trim() : "";
+    const reportingTo = (u && u.reporting_to) ? String(u.reporting_to).trim() : "";
+    const availableBranches = (u && u.available_branches) ? String(u.available_branches).trim() : "";
+    const employeeId = (u && u.employee_id) ? String(u.employee_id).trim() : "";
     let role  = (u && u.role) ? String(u.role).trim() : "";
-    if (role === "Super Admin") role = "Super_Admin";
+    if (role === "Super_Admin") role = "Super Admin";
 
     if (editNameInput)  editNameInput.value  = name;
     if (editEmailInput) editEmailInput.value = email;
     if (editPhoneInput) editPhoneInput.value = phone;
     if (editRoleSelect) editRoleSelect.value = role;
+    if (editFirstNameInput) editFirstNameInput.value = firstName;
+    if (editLastNameInput) editLastNameInput.value = lastName;
+    if (editBranchInput) editBranchInput.value = branch;
+    if (editDepartmentInput) editDepartmentInput.value = department;
+    if (editReportingToInput) editReportingToInput.value = reportingTo;
+    if (editAvailableBranchesInput) editAvailableBranchesInput.value = availableBranches;
+    if (editEmployeeIdInput) editEmployeeIdInput.value = employeeId;
 
     originalName  = name;
     originalEmail = email;
     originalPhone = phone;
     originalRole  = role;
+    originalFirstName = firstName;
+    originalLastName = lastName;
+    originalBranch = branch;
+    originalDepartment = department;
+    originalReportingTo = reportingTo;
+    originalAvailableBranches = availableBranches;
+    originalEmployeeId = employeeId;
 
     clearAllErrors();
     openModal();
@@ -732,6 +944,13 @@ function trapFocus(container) {
     const email = (editEmailInput?.value || "").trim();
     const phone = (editPhoneInput?.value || "").trim();
     const role  = (editRoleSelect?.value || "").trim();
+    const first_name = (editFirstNameInput?.value || "").trim();
+    const last_name = (editLastNameInput?.value || "").trim();
+    const branch = (editBranchInput?.value || "").trim();
+    const department = (editDepartmentInput?.value || "").trim();
+    const reporting_to = (editReportingToInput?.value || "").trim();
+    const available_branches = (editAvailableBranchesInput?.value || "").trim();
+    const employee_id = (editEmployeeIdInput?.value || "").trim();
 
     clearAllErrors();
     let hasError = false;
@@ -811,6 +1030,56 @@ if (!phone) {
       hasError = true;
     }
 
+    if (!first_name) {
+      setError(editFirstNameInput, firstNameError, "First Name is required.");
+      hasError = true;
+    } else if (!firstNameRegex.test(first_name)) {
+      setError(editFirstNameInput, firstNameError, "First Name should contain only letters (1-40).");
+      hasError = true;
+    }
+
+    if (!last_name) {
+      setError(editLastNameInput, lastNameError, "Last Name is required.");
+      hasError = true;
+    } else if (!lastNameRegex.test(last_name)) {
+      setError(editLastNameInput, lastNameError, "Last Name should contain only letters (1-30).");
+      hasError = true;
+    }
+
+    if (!branch) {
+      setError(editBranchInput, branchError, "Branch is required.");
+      hasError = true;
+    }
+
+    if (!department) {
+      setError(editDepartmentInput, departmentError, "Department is required.");
+      hasError = true;
+    }
+
+    if (!reporting_to) {
+      setError(editReportingToInput, reportingToError, "Reporting To is required.");
+      hasError = true;
+    } else if (!reportingRegex.test(reporting_to)) {
+      setError(editReportingToInput, reportingToError, "Reporting To may contain letters, dots, hyphens and spaces.");
+      hasError = true;
+    }
+
+    if (!available_branches) {
+      setError(editAvailableBranchesInput, availableBranchesError, "Available Branches is required.");
+      hasError = true;
+    } else if (!branchesRegex.test(available_branches)) {
+      setError(editAvailableBranchesInput, availableBranchesError, "Use format like: 1,2,3");
+      hasError = true;
+    }
+
+    if (!employee_id) {
+      setError(editEmployeeIdInput, employeeIdError, "Employee ID is required.");
+      hasError = true;
+    } else if (!employeeIdRegex.test(employee_id)) {
+      setError(editEmployeeIdInput, employeeIdError, "Employee ID may have letters, numbers and '-' (max 20).");
+      hasError = true;
+    }
+
     if (hasError) {
       // Re-enable button on validation error
       if (saveEditBtn) {
@@ -826,8 +1095,18 @@ if (!phone) {
     const emailChanged = email !== originalEmail;
     const phoneChanged = phone !== originalPhone;
     const roleChanged  = role  !== originalRole;
+    const firstNameChanged = first_name !== originalFirstName;
+    const lastNameChanged = last_name !== originalLastName;
+    const branchChanged = branch !== originalBranch;
+    const departmentChanged = department !== originalDepartment;
+    const reportingToChanged = reporting_to !== originalReportingTo;
+    const availableBranchesChanged = available_branches !== originalAvailableBranches;
+    const employeeIdChanged = employee_id !== originalEmployeeId;
 
-    if (!nameChanged && !emailChanged && !phoneChanged && !roleChanged) {
+    if (!nameChanged && !emailChanged && !phoneChanged && !roleChanged &&
+        !firstNameChanged && !lastNameChanged && !branchChanged &&
+        !departmentChanged && !reportingToChanged &&
+        !availableBranchesChanged && !employeeIdChanged) {
       showErrorNotification("No changes to save.");
       
       // Re-enable button
@@ -839,7 +1118,20 @@ if (!phone) {
       return;
     }
 
-    const payload = { user_id: currentEditId, name, email, phone, role };
+    const payload = {
+      user_id: currentEditId,
+      name,
+      email,
+      phone,
+      role,
+      first_name,
+      last_name,
+      branch,
+      department,
+      reporting_to,
+      available_branches,
+      employee_id,
+    };
 
     fetch(`/update-user/${currentEditId}`, {
       method: "PUT",

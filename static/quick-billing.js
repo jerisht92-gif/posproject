@@ -1545,7 +1545,35 @@ function updateFinalizeState() {
     productNameInput?.focus();
   });
 
-  /* finalizeOk: single handler below (section 22) — avoids duplicate window.print */
+  // finalizeOk?.addEventListener("click", async () => {
+  //   const mode = String(paymentMode?.value || "").trim();
+  //   if (!mode) {
+  //     showToast("Select Payment Mode", "error");
+  //     return;
+  //   }
+
+  //   if (mode === "Multiple") {
+  //     const raw = localStorage.getItem("qb_payment_detail");
+  //     if (!raw) {
+  //       showToast("Enter Multiple payment split", "error");
+  //       return;
+  //     }
+  //   }
+
+  //   localStorage.setItem("qb_payment_mode", mode);
+  //   finalizeModal?.classList.remove("show");
+
+  //   // ✅ SAVE BILL (ADD THIS)
+  // const ok = await saveBillToServer();
+  // if (!ok) return;
+
+  //   doPrintIframe();
+
+  //   setTimeout(() => {
+  //     clearBillState();
+  //     showToast("Bill completed", "success");
+  //   }, 900);
+  // });
 
   /* =========================================================
      18) FOCUS TRAP
@@ -2242,18 +2270,14 @@ async function newBill() {
   clearSelection();
 }
 
-// ---------- Finalize bill – delete hold file only if this bill came from hold ----------
-// If user pressed Ctrl+E after Ctrl+H, isHoldLoaded is false while the server still has the
-// parked hold; finalizing the new bill must NOT DELETE that file (otherwise Ctrl+B has nothing to load).
+// ---------- Finalize bill – delete hold file ----------
 async function finalizeAndRemoveHold() {
-  if (isHoldLoaded) {
-    try {
-      await fetch('/api/hold-bill', { method: 'DELETE' });
-    } catch (err) {
-      console.error('Failed to delete hold file', err);
-    }
-    isHoldLoaded = false;
+  try {
+    await fetch('/api/hold-bill', { method: 'DELETE' });
+  } catch (err) {
+    console.error('Failed to delete hold file', err);
   }
+  isHoldLoaded = false;
   await updateHoldButtonState();
   updateNewButtonState();
   clearSelection();
@@ -2340,7 +2364,6 @@ finalizeOk.addEventListener('click', async () => {
     showToast('Enter Multiple payment split', 'error'); return;
   }
   localStorage.setItem('qb_payment_mode', mode);
-  untrapFocus(finalizeModal);
   finalizeModal?.classList.remove('show');
 
   const ok = await saveBillToServer();

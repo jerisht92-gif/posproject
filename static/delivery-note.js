@@ -193,7 +193,7 @@ function loadDnStatusFilterOptions() {
   }
 
   function generateDeliveryReturn(dnId) {
-    window.location.href = `/delivery-return/create/${encodeURIComponent(dnId)}`;
+    window.location.href = `/deliverynote_return/new?dn_id=${encodeURIComponent(dnId)}`;
   }
 
   /* =========================================================

@@ -137,6 +137,14 @@
           </tbody>
         </table>
       </div>
+      {% set total_roles = (roles|length) if roles else 0 %}
+      <div class="roles-entries-info">
+        {% if total_roles > 0 %}
+          Showing 1-{{ 10 if total_roles > 10 else total_roles }} of {{ total_roles }} Entries
+        {% else %}
+          Showing 0 Entries
+        {% endif %}
+      </div>
 
       <div id="rolesHidden"></div>
 

@@ -8,7 +8,8 @@ const signupBtn = document.getElementById("signupBtn");
 const otpInput = document.getElementById("otp");
 const emailInput = document.getElementById("email");
 const passwordInput = document.querySelector('input[name="password"]');
-const nameInput = document.querySelector('input[name="name"]');
+const firstNameInput = document.querySelector('input[name="firstName"]');
+const lastNameInput = document.querySelector('input[name="lastName"]');
 const phoneInput = document.querySelector('input[name="phone"]');
 const countryCodeSelect = document.getElementById("countryCode");
 const statusMsg = document.getElementById("statusMsg");
@@ -31,6 +32,7 @@ const emailRegex =
   /^[A-Za-z0-9._%+-]{3,40}@(gmail\.com|yahoo\.com|yahoo\.co\.in|outlook\.com|hotmail\.com|thestackly\.com|stackly\.in)$/i;
 
 const passwordRegex = /^(?=.*[A-Z])(?=(?:.*\d){3,})(?=.*[!@#$%^&*]).{8,15}$/;
+const lastNameRegex = /^[A-Za-z\s]{1,30}$/;
 
 const COUNTRY_RULES = {
   "91":  { min: 10, max: 10 }, // IN
@@ -111,17 +113,35 @@ function handleCapsWarning(e) {
 // =============================
 // 🌟 Field Validations
 // =============================
-nameInput.addEventListener("input", (e) => {
+firstNameInput.addEventListener("input", (e) => {
   e.target.value = e.target.value.replace(/[^A-Za-z\s]/g, "");
-  validateName();
+  validateFirstName();
 });
 
-function validateName() {
-  const val = nameInput.value.trim();
-  if (!val) return showError(nameInput, "Name is required"), false;
+lastNameInput.addEventListener("input", (e) => {
+  e.target.value = e.target.value.replace(/[^A-Za-z\s]/g, "");
+  validateLastName();
+});
+
+function validateFirstName() {
+  const val = firstNameInput.value.trim();
+  if (!val) return showError(firstNameInput, "First name is required"), false;
   if (val.length < 3)
-    return showError(nameInput, "Minimum 3 characters required"), false;
-  showSuccess(nameInput);
+    return showError(firstNameInput, "Minimum 3 characters required"), false;
+  if (!nameRegex.test(val))
+    return showError(firstNameInput, "Use 3-20 letters only"), false;
+  showSuccess(firstNameInput);
+  return true;
+}
+
+function validateLastName() {
+  const val = lastNameInput.value.trim();
+  if (!val) return showError(lastNameInput, "Last name is required"), false;
+  if (val.length < 1)
+    return showError(lastNameInput, "Minimum 1 characters required"), false;
+  if (!lastNameRegex.test(val))
+    return showError(lastNameInput, "Use 1-30 letters only"), false;
+  showSuccess(lastNameInput);
   return true;
 }
 
@@ -456,7 +476,8 @@ verifyOtpBtn.onclick = function () {
 function updateSignupButtonState() {
   if (!signupBtn) return;
   
-  const validName = validateName();
+  const validFirstName = validateFirstName();
+  const validLastName = validateLastName();
   const validPhone = validatePhone();
   const validEmail = validateEmail();
   const validPass = validatePassword();
@@ -466,12 +487,17 @@ function updateSignupButtonState() {
   const isOtpVerified = otpVerified;
   
   // Enable button only if all fields are valid AND OTP is verified
-  signupBtn.disabled = !(validName && validPhone && validEmail && validPass && validConfirm && isOtpVerified);
+  signupBtn.disabled = !(validFirstName && validLastName && validPhone && validEmail && validPass && validConfirm && isOtpVerified);
 }
 
 // Call updateSignupButtonState whenever fields change
-nameInput.addEventListener("input", () => {
-  validateName();
+firstNameInput.addEventListener("input", () => {
+  validateFirstName();
+  updateSignupButtonState();
+});
+
+lastNameInput.addEventListener("input", () => {
+  validateLastName();
   updateSignupButtonState();
 });
 
@@ -517,13 +543,14 @@ signupForm.addEventListener("submit", async (e) => {
     signupBtn.dataset.originalText = originalText;
   }
 
-  const validName = validateName();
+  const validFirstName = validateFirstName();
+  const validLastName = validateLastName();
   const validPhone = validatePhone();
   const validEmail = validateEmail();
   const validPass = validatePassword();
   const validConfirm = validateConfirmPassword();
 
-  if (!validName || !validPhone || !validEmail || !validPass || !validConfirm) {
+  if (!validFirstName || !validLastName || !validPhone || !validEmail || !validPass || !validConfirm) {
     statusMsg.textContent = "❌ Please Fill all the fields .";
     statusMsg.style.color = "white";
     
@@ -535,9 +562,14 @@ signupForm.addEventListener("submit", async (e) => {
     return;
   }
 
+  const fullName = `${firstNameInput.value.trim()} ${lastNameInput.value.trim()}`.trim();
   const userData = {
-    name: nameInput.value.trim(),
+    name: fullName,
+    first_name: firstNameInput.value.trim(),
+    last_name: lastNameInput.value.trim(),
     phone: buildFullPhone(),
+    country_code: countryCodeSelect.value,
+    contact_number: phoneInput.value.trim(),
     email: emailInput.value.trim(),
     password: passwordInput.value.trim(),
   };
@@ -651,7 +683,7 @@ async function verifyOtp() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               email: email,
-              name: nameInput.value.trim() || "User",
+              name: `${firstNameInput.value.trim()} ${lastNameInput.value.trim()}`.trim() || "User",
             }),
           });
           console.log("Welcome email sent");

@@ -545,7 +545,7 @@ box-shadow: 0 0 6px rgba(185, 71, 62, 0.35);
 }
 
 .form-field textarea {
-  resize: vertical;
+  resize: none;
   min-height: 70px;
 }
 
@@ -616,6 +616,13 @@ box-shadow: 0 0 6px rgba(185, 71, 62, 0.35);
 .roles-table {
   width: 100%;
   border-collapse: collapse;
+}
+
+.roles-entries-info {
+  margin-top: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #7a1d1d;
 }
 
 .roles-table th,
@@ -723,6 +730,19 @@ box-shadow: 0 0 6px rgba(185, 71, 62, 0.35);
   color: white;
   cursor: pointer;
   font-weight: 600;
+  transition: 0.25s ease;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+}
+
+.edit-btn:hover,
+.delete-btn:hover {
+  transform: translateY(-3px);
+  background-color: #4a1f1a;
+  color: beige;
 }
 
 /* Disabled Edit button (non-admin) */

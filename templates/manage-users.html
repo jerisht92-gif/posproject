@@ -71,6 +71,7 @@
 <div id="editUserModal" class="modal">
   <div class="modal-content">
     <h2 class="modal-title">Edit User</h2>
+    <div class="edit-modal-scroll">
 
     <label>Name</label>
     <input type="text" id="editName">
@@ -87,11 +88,50 @@
     <label>Role</label>
     <select id="editRole">
       <option value="">Select Role</option>
-      <option value="Super_Admin">Super Admin</option>
+      <option value="Super Admin">Super Admin</option>
       <option value="Admin">Admin</option>
       <option value="User">User</option>
     </select>
     <div id="editRoleError" class="field-error"></div>
+
+    <label>First Name</label>
+    <input type="text" id="editFirstName" maxlength="40">
+    <div id="editFirstNameError" class="field-error"></div>
+
+    <label>Last Name</label>
+    <input type="text" id="editLastName" maxlength="30">
+    <div id="editLastNameError" class="field-error"></div>
+
+    <label>Branch</label>
+    <select id="editBranch">
+      <option value="">Select a branch</option>
+      <option value="Main Branch">Main Branch</option>
+      <option value="Branch 1">Branch 1</option>
+      <option value="Branch 2">Branch 2</option>
+    </select>
+    <div id="editBranchError" class="field-error"></div>
+
+    <label>Department</label>
+    <select id="editDepartment">
+      <option value="">Select Department</option>
+      <option value="Sales">Sales</option>
+      <option value="Finanace">Finanace</option>
+      <option value="Purchase">Purchase</option>
+    </select>
+    <div id="editDepartmentError" class="field-error"></div>
+
+    <label>Reporting To</label>
+    <input type="text" id="editReportingTo" maxlength="40">
+    <div id="editReportingToError" class="field-error"></div>
+
+    <label>Available Branches</label>
+    <input type="text" id="editAvailableBranches">
+    <div id="editAvailableBranchesError" class="field-error"></div>
+
+    <label>Employee ID</label>
+    <input type="text" id="editEmployeeId" maxlength="20">
+    <div id="editEmployeeIdError" class="field-error"></div>
+    </div>
 
     <div class="modal-actions">
       <button id="saveEditBtn" class="primary-btn">Save</button>

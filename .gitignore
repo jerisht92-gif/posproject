@@ -19,5 +19,10 @@ env/
 .DS_Store
 Thumbs.db
 
+# Legacy local JSON (OTP / lockout now use PostgreSQL; ignore if recreated)
+email_otps.json
+failed_attempts.json
+users.json
+
 # Optional: uncomment to ignore uploads (user-uploaded images)
 # static/uploads/

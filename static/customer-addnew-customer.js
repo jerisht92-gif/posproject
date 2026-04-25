@@ -136,20 +136,6 @@ document.addEventListener("DOMContentLoaded", () => {
       if (!option) {
         option = new Option(value, value);
         select.add(option);
-  
-        await fetch("/api/custom-dropdowns", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            field:
-              select.id === "paymentTerms"
-                ? "paymentTerms"
-                : select.id === "creditTerm"
-                ? "creditTerms"
-                : "salesReps",
-            value
-          })
-        });
       }
   
       select.value = value;
@@ -194,7 +180,7 @@ document.addEventListener("DOMContentLoaded", () => {
   //   });
   // }
   
-  // ================= LOAD DROPDOWNS FROM customer.json + custom-dropdowns =================
+  // ================= LOAD DROPDOWNS FROM CUSTOMER DB =================
   function addOptionIfMissing(select, value) {
     if (!select) return;
     const val = (value || "").trim();
@@ -242,35 +228,16 @@ async function loadDropdownsFromCustomerJson() {
     customers.forEach((c) => {
       addOptionIfMissing(customerTypeInput, c.customer_type);
       addOptionIfMissing(salesRepInput, c.sales_rep || "");
+      addOptionIfMissing(paymentTermsInput, c.payment_terms || "");
+      addOptionIfMissing(creditTermInput, c.credit_term || "");
     });
 
   } catch (e) {
     console.error("❌ Error loading customers:", e);
   }
 }
-  async function loadCustomDropdowns() {
-    try {
-      const res = await fetch("/api/custom-dropdowns");
-      const data = await res.json();
-
-      if (data.paymentTerms) {
-        data.paymentTerms.forEach((v) => addOptionIfMissing(paymentTermsInput, v));
-      }
-
-      if (data.creditTerms) {
-        data.creditTerms.forEach((v) => addOptionIfMissing(creditTermInput, v));
-      }
-
-      if (data.salesReps && salesRepInput) {
-        data.salesReps.forEach((v) => addOptionIfMissing(salesRepInput, v));
-      }
-    } catch (e) {
-      console.error("❌ Error loading custom dropdowns:", e);
-    }
-  }
-
-  // First load values from existing customers, then merge any saved custom values
-  loadDropdownsFromCustomerJson().then(loadCustomDropdowns);
+  // Load all dropdown options from existing customer records.
+  loadDropdownsFromCustomerJson();
 
   function showSuccessNotification(message) {
     const existing = document.querySelector(".success-notification");

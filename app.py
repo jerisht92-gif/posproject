@@ -805,10 +805,7 @@ def _init_upload_paths():
     return up, att
 
 
-USER_FILE = os.path.join(app.root_path, "users.json")
 ROLE_FILE = os.path.join(app.root_path, "roles.json")
-FAILED_ATTEMPTS_FILE = os.path.join(app.root_path, "failed_attempts.json")
-OTP_FILE = os.path.join(app.root_path, "email_otps.json")
 DEPARTMENT_FILE = os.path.join(app.root_path, "departments.json")
 UPLOAD_FOLDER, ATTACHMENTS_FOLDER = _init_upload_paths()
 
@@ -1014,7 +1011,7 @@ def ensure_role():
 # =========================================
 # ✅ JSON HELPERS — Users storage shape
 # =========================================
-# Persisted users.json records: full branch-user fields + password, never "id".
+# Persisted user records: full branch-user fields + password, never "id".
 # DEFAULT_BRANCH_USER_PASSWORD applies when admin-created users have no password yet.
 _USER_PHONE_COUNTRY_PREFIXES = tuple(
     sorted(
@@ -1043,7 +1040,7 @@ def _infer_country_and_contact_from_phone(phone: str):
 
 
 def normalize_user_record_for_storage(u: dict) -> dict:
-    """Normalize one user dict for users.json: drop id, ensure password + full field set."""
+    """Normalize one user dict for DB sync: drop id, ensure password + full field set."""
     if not isinstance(u, dict):
         return {}
     out = {k: v for k, v in u.items() if k != "id"}
@@ -1094,51 +1091,163 @@ def user_public_dict(u: dict) -> dict:
 
 
 def load_users():
-    """Read users from users.json as a list of dicts."""
-    if not os.path.exists(USER_FILE):
-        return []
-    with open(USER_FILE, "r", encoding="utf-8") as f:
-        try:
-            data = json.load(f)
-            if isinstance(data, list):
-                return data
-            if isinstance(data, dict):
-                return list(data.values())
-            return []
-        except json.JSONDecodeError:
-            return []
+    """DB-backed users loader kept for compatibility with existing call sites."""
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            SELECT name, phone, first_name, last_name, email,
+                   country_code, contact_number, branch, department,
+                   role, reporting_to, available_branches, employee_id, password
+            FROM users
+            ORDER BY user_id DESC
+            """
+        )
+        rows = cur.fetchall()
+        out = []
+        for r in rows:
+            out.append(
+                {
+                    "name": r[0] or "",
+                    "phone": r[1] or "",
+                    "first_name": r[2] or "",
+                    "last_name": r[3] or "",
+                    "email": r[4] or "",
+                    "country_code": r[5] or "",
+                    "contact_number": r[6] or "",
+                    "branch": r[7] or "",
+                    "department": r[8] or "",
+                    "role": r[9] or "User",
+                    "reporting_to": r[10] or "",
+                    "available_branches": str(r[11]) if r[11] is not None else "",
+                    "employee_id": r[12] or "",
+                    "password": r[13] or "",
+                }
+            )
+        return out
+    finally:
+        cur.close()
+        conn.close()
 
 
 
 
 def save_users(data):
-    """Write users back to users.json as list (no id; always password + full keys)."""
+    """DB-backed users saver kept for compatibility with existing call sites."""
     if isinstance(data, dict):
         data = list(data.values())
     normalized = []
-    for item in data:
+    for item in data or []:
         if isinstance(item, dict):
             norm = normalize_user_record_for_storage(item)
             item.clear()
             item.update(norm)
-            normalized.append(item)
-    with open(USER_FILE, "w", encoding="utf-8") as f:
-        json.dump(normalized, f, indent=2, ensure_ascii=False)
+            normalized.append(norm)
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        for u in normalized:
+            email = (u.get("email") or "").strip()
+            if not email:
+                continue
+            cur.execute(
+                """
+                UPDATE users
+                SET name = %s,
+                    phone = %s,
+                    first_name = %s,
+                    last_name = %s,
+                    country_code = %s,
+                    contact_number = %s,
+                    branch = %s,
+                    department = %s,
+                    role = %s,
+                    reporting_to = %s,
+                    available_branches = %s,
+                    employee_id = %s,
+                    password = %s
+                WHERE LOWER(email) = LOWER(%s)
+                """,
+                (
+                    u.get("name") or "",
+                    u.get("phone") or "",
+                    u.get("first_name") or "",
+                    u.get("last_name") or "",
+                    u.get("country_code") or "",
+                    u.get("contact_number") or "",
+                    u.get("branch") or "",
+                    u.get("department") or "",
+                    u.get("role") or "User",
+                    u.get("reporting_to") or "",
+                    u.get("available_branches") or None,
+                    u.get("employee_id") or "",
+                    u.get("password") or "",
+                    email,
+                ),
+            )
+            if cur.rowcount == 0:
+                cur.execute(
+                    """
+                    INSERT INTO users (
+                        name, phone, first_name, last_name, email,
+                        country_code, contact_number, branch, department,
+                        role, reporting_to, available_branches, employee_id, password
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    (
+                        u.get("name") or "",
+                        u.get("phone") or "",
+                        u.get("first_name") or "",
+                        u.get("last_name") or "",
+                        email,
+                        u.get("country_code") or "",
+                        u.get("contact_number") or "",
+                        u.get("branch") or "",
+                        u.get("department") or "",
+                        u.get("role") or "User",
+                        u.get("reporting_to") or "",
+                        u.get("available_branches") or None,
+                        u.get("employee_id") or "",
+                        u.get("password") or "",
+                    ),
+                )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cur.close()
+        conn.close()
 
 
 def load_failed_attempts():
-    if os.path.exists(FAILED_ATTEMPTS_FILE):
+    """DB-backed failed attempts map for Manage Users compatibility."""
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
         try:
-            with open(FAILED_ATTEMPTS_FILE, "r") as f:
-                return json.load(f)
-        except json.JSONDecodeError:
+            cur.execute("SELECT LOWER(email), COALESCE(failed_attempts, 0) FROM users")
+        except Exception:
+            # Column may not exist yet; keep API compatible with zero values.
             return {}
-    return {}
+        rows = cur.fetchall()
+        out = {}
+        for email, count in rows:
+            key = (email or "").strip().lower()
+            if key:
+                out[key] = {"count": int(count or 0)}
+        return out
+    finally:
+        cur.close()
+        conn.close()
 
 
 def save_failed_attempts(data):
-    with open(FAILED_ATTEMPTS_FILE, "w") as f:
-        json.dump(data, f)
+    """No-op after DB migration (kept to avoid breaking call sites)."""
+    return
 
 
 # =========================================
@@ -1163,20 +1272,56 @@ def send_email(to_email, subject, body):
 # ✅ OTP HELPERS
 # =========================================
 def load_otps():
-    """Return dict: { email: {otp, verified, timestamp} }"""
+    """
+    DB-backed OTP loader for compatibility with existing call sites.
+    Returns dict: { email: {otp, verified, timestamp} }.
+    """
+    conn = get_db_connection()
+    cur = conn.cursor()
     try:
-        with open(OTP_FILE, "r") as f:
-            data = json.load(f)
-            if isinstance(data, dict):
-                return data
-            return {}
-    except FileNotFoundError:
-        return {}
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS email_otp_store (
+                email VARCHAR(255) PRIMARY KEY,
+                otp VARCHAR(10) NOT NULL,
+                otp_expiry TIMESTAMP,
+                verified BOOLEAN DEFAULT FALSE
+            )
+            """
+        )
+        conn.commit()
+        cur.execute(
+            """
+            SELECT LOWER(email), otp, otp_expiry, COALESCE(verified, FALSE)
+            FROM email_otp_store
+            """
+        )
+        rows = cur.fetchall()
+        out = {}
+        for email, otp, expiry, verified in rows:
+            key = (email or "").strip().lower()
+            if not key or not (otp or "").strip():
+                continue
+            ts = time.time()
+            if expiry is not None:
+                try:
+                    ts = float(expiry.timestamp()) - 300.0
+                except Exception:
+                    ts = time.time()
+            out[key] = {
+                "otp": str(otp).strip(),
+                "verified": bool(verified),
+                "timestamp": ts,
+            }
+        return out
+    finally:
+        cur.close()
+        conn.close()
 
 
 def save_otps(otps: dict):
-    with open(OTP_FILE, "w") as f:
-        json.dump(otps, f, indent=2)
+    """No-op after DB migration (kept to avoid breaking call sites)."""
+    return
 
 
 def generate_otp():
@@ -1185,15 +1330,48 @@ def generate_otp():
 
 
 def save_otp_in_db(email, otp):
-    """Store/overwrite OTP for this email, mark as not verified yet."""
+    """Store/overwrite OTP in DB for this email."""
     email = (email or "").strip().lower()
-    otps = load_otps()
-    otps[email] = {
-        "otp": otp,
-        "verified": False,
-        "timestamp": time.time(),
-    }
-    save_otps(otps)
+    ts = time.time()
+    try:
+        expiry_dt = datetime.fromtimestamp(float(ts) + 300)
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS email_otp_store (
+                email VARCHAR(255) PRIMARY KEY,
+                otp VARCHAR(10) NOT NULL,
+                otp_expiry TIMESTAMP,
+                verified BOOLEAN DEFAULT FALSE
+            )
+            """
+        )
+        cur.execute(
+            """
+            INSERT INTO email_otp_store (email, otp, otp_expiry, verified)
+            VALUES (%s, %s, %s, FALSE)
+            ON CONFLICT (email)
+            DO UPDATE SET otp = EXCLUDED.otp,
+                          otp_expiry = EXCLUDED.otp_expiry,
+                          verified = FALSE
+            """,
+            (email, otp, expiry_dt),
+        )
+        cur.execute(
+            """
+            UPDATE users
+            SET email_otp = %s,
+                otp_expiry = %s
+            WHERE LOWER(email) = LOWER(%s)
+            """,
+            (otp, expiry_dt, email),
+        )
+        conn.commit()
+        cur.close()
+        conn.close()
+    except Exception as db_err:
+        print("save_otp_in_db mirror warning:", db_err)
 
 
 def verify_otp_in_db(email, otp, expiry_seconds=300):
@@ -1202,39 +1380,94 @@ def verify_otp_in_db(email, otp, expiry_seconds=300):
     If valid, mark as verified and return True.
     """
     email = (email or "").strip().lower()
-    otps = load_otps()
-    entry = otps.get(email)
-
-    if not entry:
+    otp = (otp or "").strip()
+    if not email or not otp:
         return False
 
-    now = time.time()
-    if now - entry.get("timestamp", 0) > expiry_seconds:
-        return False
-
-    if entry.get("otp") != otp:
-        return False
-
-    entry["verified"] = True
-    otps[email] = entry
-    save_otps(otps)
-    return True
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS email_otp_store (
+                email VARCHAR(255) PRIMARY KEY,
+                otp VARCHAR(10) NOT NULL,
+                otp_expiry TIMESTAMP,
+                verified BOOLEAN DEFAULT FALSE
+            )
+            """
+        )
+        cur.execute(
+            """
+            SELECT otp, otp_expiry
+            FROM email_otp_store
+            WHERE LOWER(email) = LOWER(%s)
+            LIMIT 1
+            """,
+            (email,),
+        )
+        row = cur.fetchone()
+        if not row:
+            return False
+        db_otp, expiry = row
+        if (db_otp or "").strip() != otp:
+            return False
+        if not expiry:
+            return False
+        expiry_naive = expiry.replace(tzinfo=None) if getattr(expiry, "tzinfo", None) else expiry
+        if datetime.now() > expiry_naive:
+            return False
+        cur.execute(
+            "UPDATE email_otp_store SET verified = TRUE WHERE LOWER(email)=LOWER(%s)",
+            (email,),
+        )
+        conn.commit()
+        return True
+    finally:
+        cur.close()
+        conn.close()
 
 
 def is_email_otp_verified(email: str) -> bool:
-    """Used during signup to ensure email's OTP was verified."""
+    """Used during signup to ensure email OTP exists and is still valid in DB."""
     email = (email or "").strip().lower()
-    otps = load_otps()
-    entry = otps.get(email)
-
-    if not entry:
+    if not email:
         return False
-
-    max_age = 10 * 60
-    if time.time() - entry.get("timestamp", 0) > max_age:
-        return False
-
-    return bool(entry.get("verified"))
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS email_otp_store (
+                email VARCHAR(255) PRIMARY KEY,
+                otp VARCHAR(10) NOT NULL,
+                otp_expiry TIMESTAMP,
+                verified BOOLEAN DEFAULT FALSE
+            )
+            """
+        )
+        cur.execute(
+            """
+            SELECT otp, otp_expiry, COALESCE(verified, FALSE)
+            FROM email_otp_store
+            WHERE LOWER(email) = LOWER(%s)
+            LIMIT 1
+            """,
+            (email,),
+        )
+        row = cur.fetchone()
+        if not row:
+            return False
+        db_otp, expiry, verified = row
+        if not (db_otp or "").strip() or not expiry:
+            return False
+        if not bool(verified):
+            return False
+        expiry_naive = expiry.replace(tzinfo=None) if getattr(expiry, "tzinfo", None) else expiry
+        return datetime.now() <= expiry_naive
+    finally:
+        cur.close()
+        conn.close()
 
 
 def send_otp_email(to_email, otp):
@@ -2026,8 +2259,8 @@ def normalize_menu_permissions(raw):
 
 def get_current_user_profile():
     """
-    Prefer PostgreSQL session + DB row (login uses DB). Fallback to users.json.
-    Fixes RBAC when user exists only in DB or role differs from stale JSON.
+    Prefer PostgreSQL session + DB row (login uses DB).
+    Fixes RBAC when user exists only in DB.
     """
     email = session.get("user")
     if not email:
@@ -2111,7 +2344,7 @@ def inject_profile_display_name():
     """
     Inject consistent profile name/email for the top-right dropdown.
 
-    Name resolution matches routes: PostgreSQL users row, then users.json.
+    Name resolution matches routes: PostgreSQL users row.
     """
     email = session.get("user")
     if not email:
@@ -2230,7 +2463,14 @@ def manage_users():
                     name,
                     email,
                     phone,
-                    role
+                    role,
+                    first_name,
+                    last_name,
+                    branch,
+                    department,
+                    reporting_to,
+                    available_branches,
+                    employee_id
                 FROM users
                 {where_sql}
                 ORDER BY user_id DESC
@@ -2243,14 +2483,44 @@ def manage_users():
             cur.close()
             conn.close()
 
+        otp_data = load_otps()
+        failed_attempts_data = load_failed_attempts()
+        now_ts = time.time()
+
         page_users = [
-            {
-                "user_id": r[0],  
-                "name": r[1],
-                "email": r[2],
-                "phone": r[3],
-                "role": r[4],
-            }
+            (
+                lambda email_key, otp_entry, failed_entry: {
+                    "user_id": r[0],
+                    "name": r[1],
+                    "email": r[2],
+                    "phone": r[3],
+                    "role": r[4],
+                    "first_name": r[5] or "",
+                    "last_name": r[6] or "",
+                    "branch": r[7] or "",
+                    "department": r[8] or "",
+                    "reporting_to": r[9] or "",
+                    "available_branches": str(r[10]) if r[10] is not None else "",
+                    "employee_id": r[11] or "",
+                    "email_otp": (otp_entry.get("otp") or "") if isinstance(otp_entry, dict) else "",
+                    "otp_expiry": (
+                        datetime.fromtimestamp(float(otp_entry.get("timestamp", 0)) + 300).isoformat(sep=" ")
+                        if isinstance(otp_entry, dict)
+                        and otp_entry.get("timestamp")
+                        and (float(otp_entry.get("timestamp", 0)) + 300) >= now_ts
+                        else ""
+                    ),
+                    "failed_attempts": (
+                        int(failed_entry.get("count", 0))
+                        if isinstance(failed_entry, dict)
+                        else int(failed_entry or 0)
+                    ),
+                }
+            )(
+                ((r[2] or "").strip().lower()),
+                otp_data.get((r[2] or "").strip().lower(), {}),
+                failed_attempts_data.get((r[2] or "").strip().lower(), {}),
+            )
             for r in rows
         ]
 
@@ -2769,14 +3039,20 @@ def api_create_department():
                 "message": "Department name already exists. Please use a different name."
             }), 409
     
-    new_dept = {
-        "code": code,
-        "name": name,
-        "branch": branch,
-        "description": description,
-    }
-    departments.append(new_dept)
-    # save_departments(departments)
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO departments (code, name, branch, description)
+        VALUES (%s, %s, %s, %s)
+        """,
+        (code, name, branch, description),
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
+
+    new_dept = {"code": code, "name": name, "branch": branch, "description": description}
     
     return jsonify({
         "success": True,
@@ -2816,7 +3092,7 @@ def api_update_department(dept_ref):
     if not dept_ref or not str(dept_ref).strip():
         return jsonify({"success": False, "message": "Department code is required in the URL."}), 400
     
-    departments = load_departments()
+    departments = get_departments_from_db()
     current = find_department_by_code(departments, dept_ref)
     if not current:
         return jsonify({"success": False, "message": "Department not found"}), 404
@@ -2844,14 +3120,33 @@ def api_update_department(dept_ref):
                 "message": "Department name already exists. Please use a different name."
             }), 409
 
-    if code:
-        current["code"] = code
-    if name:
-        current["name"] = name
-    if description is not None:
-        current["description"] = description
-    
-    save_departments(departments)
+    merged_code = (code or current.get("code") or "").strip()
+    merged_name = (name or current.get("name") or "").strip()
+    merged_branch = (data.get("branch") or current.get("branch") or "").strip()
+    merged_description = description if description is not None else (current.get("description") or "")
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        UPDATE departments
+        SET code = %s,
+            name = %s,
+            branch = %s,
+            description = %s
+        WHERE LOWER(code) = LOWER(%s)
+        """,
+        (merged_code, merged_name, merged_branch, merged_description, dept_ref),
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
+
+    current["code"] = merged_code
+    current["name"] = merged_name
+    current["branch"] = merged_branch
+    current["description"] = merged_description
+
     return jsonify({
         "success": True,
         "message": "Department updated successfully",
@@ -2884,17 +3179,17 @@ def api_delete_department(dept_ref):
     if not dept_ref or not str(dept_ref).strip():
         return jsonify({"success": False, "message": "Department code is required in the URL."}), 400
     
-    departments = load_departments()
-    before_count = len(departments)
-    cref = str(dept_ref).strip().lower()
-    
-    departments = [d for d in departments if _dept_code_key(d) != cref]
-    after_count = len(departments)
-    
-    if after_count == before_count:
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM departments WHERE LOWER(code) = LOWER(%s)", (dept_ref,))
+    deleted = cur.rowcount
+    conn.commit()
+    cur.close()
+    conn.close()
+
+    if deleted == 0:
         return jsonify({"success": False, "message": "Department not found"}), 404
-    
-    save_departments(departments)
+
     return jsonify({
         "success": True,
         "message": "Department deleted successfully"
@@ -3703,10 +3998,10 @@ def create_user():
     # Validate Last Name
     if not last_name:
         errors.append("Last Name is required")
-    elif len(last_name) < 3:
-        errors.append("Last Name must be at least 3 characters")
-    elif not NAME_REGEX.match(last_name):
-        errors.append("Last Name should contain only letters and spaces (3-20 characters)")
+    elif len(last_name) < 1:
+        errors.append("Last Name must be at least 1 character")
+    elif not re.match(r"^[A-Za-z\s]{1,30}$", last_name):
+        errors.append("Last Name should contain only letters and spaces (1-30 characters)")
 
     # Validate Email
     if not email:
@@ -3940,9 +4235,34 @@ def update_user(user_id):
     email = (data.get("email") or "").strip()
     phone = (data.get("phone") or "").strip()
     role = (data.get("role") or "").strip()
+    country_code = (data.get("country_code") or "").strip()
+    contact_number = (data.get("contact_number") or "").strip()
+    first_name = (data.get("first_name") or "").strip()
+    last_name = (data.get("last_name") or "").strip()
+    branch = (data.get("branch") or "").strip()
+    department = (data.get("department") or "").strip()
+    reporting_to = (data.get("reporting_to") or "").strip()
+    available_branches = (data.get("available_branches") or "").strip()
+    employee_id = (data.get("employee_id") or "").strip()
 
-    if not name or not email or not phone or not role:
+    if (
+        not name
+        or not email
+        or not phone
+        or not role
+        or not first_name
+        or not last_name
+        or not branch
+        or not department
+        or not reporting_to
+        or not available_branches
+        or not employee_id
+    ):
         return jsonify({"success": False, "message": "All fields required"}), 400
+
+    # Keep phone parts in sync for DB rows that were created with only full phone.
+    if not country_code or not contact_number:
+        country_code, contact_number = _infer_country_and_contact_from_phone(phone)
 
     conn = get_db_connection()
     cur = conn.cursor()
@@ -3967,9 +4287,33 @@ def update_user(user_id):
             SET name=%s,
                 email=%s,
                 phone=%s,
-                role=%s
+                role=%s,
+                first_name=%s,
+                last_name=%s,
+                country_code=%s,
+                contact_number=%s,
+                branch=%s,
+                department=%s,
+                reporting_to=%s,
+                available_branches=%s,
+                employee_id=%s
             WHERE user_id=%s
-        """, (name, email, phone, role, user_id))
+        """, (
+            name,
+            email,
+            phone,
+            role,
+            first_name,
+            last_name,
+            country_code,
+            contact_number,
+            branch,
+            department,
+            reporting_to,
+            available_branches,
+            employee_id,
+            user_id,
+        ))
 
         conn.commit()
 
@@ -7424,72 +7768,6 @@ def upload_customer_file():
         "error_details": error_details
     })
 
-# =========================================
-# ✅ CUSTOM DROPDOWNS
-# =========================================
-CUSTOM_DROPDOWNS = os.path.join(app.root_path, "custom_dropdowns.json")
-
-
-@app.route("/api/custom-dropdowns", methods=["GET"])
-def get_custom_dropdowns():
-    if not os.path.exists(CUSTOM_DROPDOWNS):
-        return jsonify({
-            "paymentTerms": [],
-            "creditTerms": [],
-            "salesReps": []
-        })
-
-    with open(CUSTOM_DROPDOWNS, "r", encoding="utf-8") as f:
-        try:
-            data = json.load(f)
-        except json.JSONDecodeError:
-            data = {}
-
-    return jsonify({
-        "paymentTerms": data.get("paymentTerms", []),
-        "creditTerms": data.get("creditTerms", []),
-        "salesReps": data.get("salesReps", [])
-    })
-
-
-@app.route("/api/custom-dropdowns", methods=["POST"])
-def save_custom_dropdown():
-    data = request.get_json()
-    field = data.get("field")
-    value = data.get("value")
-
-    if not field or not value:
-        return jsonify({"error": "Invalid data"}), 400
-
-    # default structure
-    dropdowns = {
-        "paymentTerms": [],
-        "creditTerms": [],
-        "salesReps": []
-    }
-
-    # load existing data safely
-    if os.path.exists(CUSTOM_DROPDOWNS):
-        with open(CUSTOM_DROPDOWNS, "r", encoding="utf-8") as f:
-            try:
-                existing = json.load(f)
-                dropdowns.update(existing)  # 🔥 merge safely
-            except json.JSONDecodeError:
-                pass
-
-    # ensure key exists (important)
-    if field not in dropdowns:
-        dropdowns[field] = []
-
-    # avoid duplicates (case-insensitive)
-    if value.lower() not in [v.lower() for v in dropdowns[field]]:
-        dropdowns[field].append(value)
-
-    with open(CUSTOM_DROPDOWNS, "w", encoding="utf-8") as f:
-        json.dump(dropdowns, f, indent=2, ensure_ascii=False)
-
-    return jsonify({"success": True})
-
 @app.route("/api/customers", methods=["GET"])
 def api_get_customers():
     try:
@@ -7586,15 +7864,22 @@ def signup():
     try:
         data = request.get_json() or {}
  
+        first_name = (data.get("first_name") or data.get("firstName") or "").strip()
+        last_name = (data.get("last_name") or data.get("lastName") or "").strip()
         name = (data.get("name") or "").strip()
+        if not name:
+            name = f"{first_name} {last_name}".strip()
         phone = (data.get("phone") or "").strip()
         email = (data.get("email") or "").strip().lower()
         password = (data.get("password") or "").strip()
+        country_code, contact_number = _infer_country_and_contact_from_phone(phone)
  
         # ========= VALIDATION =========
         missing = []
-        if not name:
-            missing.append("Name")
+        if not first_name:
+            missing.append("First Name")
+        if not last_name:
+            missing.append("Last Name")
         if not phone:
             missing.append("Phone number")
         if not email:
@@ -7609,8 +7894,11 @@ def signup():
                 msg = "⚠️ " + ", ".join(missing[:-1]) + f" and {missing[-1]} are required"
             return jsonify({"success": False, "message": msg}), 400
  
-        if not NAME_REGEX.match(name):
-            return jsonify({"success": False, "message": "⚠️ Name must be 3–20 letters only"}), 400
+        if not NAME_REGEX.match(first_name):
+            return jsonify({"success": False, "message": "⚠️ First name must be 3–20 letters only"}), 400
+
+        if not re.match(r"^[A-Za-z\s]{1,30}$", last_name):
+            return jsonify({"success": False, "message": "⚠️ Last name must be 1–30 letters only"}), 400
  
         if not re.match(r"^\+\d{8,15}$", phone):
             return jsonify({"success": False, "message": "Enter valid phone like +91XXXXXXXXXX"}), 400
@@ -7642,18 +7930,46 @@ def signup():
         import hashlib
         hashed_password = hashlib.sha256(password.encode()).hexdigest()
         cur.execute("""
-            INSERT INTO users (name, phone, email, password, role)
-            VALUES (%s, %s, %s, %s, %s)
-        """, (name, phone, email, hashed_password, "User"))
+            INSERT INTO users (name, phone, email, password, role, first_name, last_name, country_code, contact_number)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """, (
+            name,
+            phone,
+            email,
+            hashed_password,
+            "User",
+            first_name,
+            last_name,
+            country_code,
+            contact_number,
+        ))
  
+        # If signup OTP exists in cache, persist it in DB columns too.
+        otps = load_otps()
+        otp_entry = otps.get(email) if isinstance(otps, dict) else None
+        if isinstance(otp_entry, dict):
+            cached_otp = (otp_entry.get("otp") or "").strip()
+            cached_ts = otp_entry.get("timestamp")
+            otp_expiry_dt = None
+            if cached_ts:
+                try:
+                    otp_expiry_dt = datetime.fromtimestamp(float(cached_ts) + 300)
+                except Exception:
+                    otp_expiry_dt = None
+            if cached_otp:
+                cur.execute(
+                    """
+                    UPDATE users
+                    SET email_otp = %s,
+                        otp_expiry = %s
+                    WHERE LOWER(email) = LOWER(%s)
+                    """,
+                    (cached_otp, otp_expiry_dt, email),
+                )
+
         conn.commit()
         cur.close()
         conn.close()
- 
-        # ========= CLEAR OTP =========
-        otps = load_otps()
-        otps.pop(email, None)
-        save_otps(otps)
  
         # ========= SEND EMAIL =========
         try:
@@ -7729,6 +8045,16 @@ def login_post():
         session["department"] = db_department or ""
         session["last_active"] = time.time()
         session["remember_me"] = remember_me
+
+        # Keep DB login audit columns updated for normal password login too.
+        cur.execute(
+            """
+            UPDATE users
+            SET last_seen = NOW()
+            WHERE user_id = %s
+            """,
+            (user_id,),
+        )
  
         conn.commit()
         cur.close()
@@ -7785,9 +8111,7 @@ def verify_login_otp():
         # ✅ Update last_seen
         cur.execute("""
             UPDATE users
-            SET last_seen = NOW(),
-                email_otp = NULL,
-                otp_expiry = NULL
+            SET last_seen = NOW()
             WHERE user_id = %s
         """, (user_id,))
  
@@ -8654,7 +8978,7 @@ def generate_enquiry_id():
 
 
 def _get_current_user_role():
-    """Get current user's role from session / DB profile (not users.json alone)."""
+    """Get current user's role from session / DB profile."""
     user_email = session.get("user")
     if not user_email:
         return None
@@ -8664,16 +8988,11 @@ def _get_current_user_role():
     prof = get_current_user_profile()
     if prof and prof.get("role"):
         return (prof.get("role") or "User").strip().replace(" ", "").replace("_", "").lower()
-    users = load_users()
-    for u in users:
-        if isinstance(u, dict) and (u.get("email") or "").lower() == user_email.lower():
-            role = (u.get("role") or "User").strip()
-            return role.replace(" ", "").replace("_", "").lower()
     return "user"
 
 
 def _get_logged_in_user_name():
-    """Display name for the logged-in session: PostgreSQL users row, then users.json."""
+    """Display name for the logged-in session from PostgreSQL users row."""
     user_email = session.get("user")
     if not user_email:
         return "User"
@@ -8683,13 +9002,6 @@ def _get_logged_in_user_name():
         n = (dbu.get("name") or "").strip()
         if n:
             return n
-
-    users = load_users()
-    for u in users:
-        if isinstance(u, dict) and (u.get("email") or "").lower() == user_email.lower():
-            n = (u.get("name") or "").strip()
-            if n:
-                return n
 
     return "User"
 
@@ -9590,16 +9902,6 @@ def get_product_config():
         product_ids=product_ids,
     )
 
-
-
-
-
-
-
-
-
-
-
 # =========================================
 # ✅ Helper function for quotation (QUOTATION)
 # =========================================
@@ -9608,74 +9910,381 @@ _quotation_cache = None
 _quotation_cache_time = 0.0
 QUOTATION_CACHE_TTL = 3  # seconds
 
+# ==================== DATABASE HELPER FUNCTIONS ====================
+def load_quotations_from_db(filters=None, page=1, per_page=7):
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        base_where = "WHERE 1=1"
+        params = []
+        if filters:
+            q = filters.get('q')
+            if q:
+                base_where += " AND (LOWER(quotation_id) LIKE %s OR LOWER(customer_name) LIKE %s)"
+                like = f"%{q}%"
+                params.extend([like, like])
+            status = filters.get('status')
+            if status:
+                base_where += " AND LOWER(status) = %s"
+                params.append(status)
+            qtype = filters.get('type')
+            if qtype:
+                base_where += " AND LOWER(quotation_type) = %s"
+                params.append(qtype)
+            sales_rep = filters.get('sales_rep')
+            if sales_rep:
+                base_where += " AND LOWER(sales_rep) = %s"
+                params.append(sales_rep)
 
-def _invalidate_quotation_cache():
-    global _quotation_cache, _quotation_cache_time
-    _quotation_cache = None
-    _quotation_cache_time = 0.0
+        # Count
+        cur.execute(f"SELECT COUNT(*) as total FROM quotations {base_where}", params)
+        total = cur.fetchone()['total']
 
+        # Paginated data – no customer_id, no grand_total
+        offset = (page - 1) * per_page
+        cur.execute(f"""
+            SELECT 
+                quotation_id, 
+                quotation_type, 
+                customer_name,
+                sales_rep,
+                quotation_date, 
+                status,
+                grand_total
+            FROM quotations
+            {base_where}
+            ORDER BY quotation_date DESC
+            LIMIT %s OFFSET %s
+        """, params + [per_page, offset])
+        items = cur.fetchall()
+        for item in items:
+            if item['quotation_date']:
+                item['quotation_date'] = item['quotation_date'].isoformat()
 
-def load_quotations():
-    global _quotation_cache, _quotation_cache_time
-    now = time.time()
-    if _quotation_cache is not None and (now - _quotation_cache_time) < QUOTATION_CACHE_TTL:
-        return _quotation_cache
+        # Distinct sales reps
+        cur.execute("SELECT DISTINCT sales_rep FROM quotations WHERE sales_rep IS NOT NULL AND sales_rep != ''")
+        reps = [r['sales_rep'] for r in cur.fetchall()]
 
-    base = os.path.dirname(QUOTATION_FILE)
-    if base:
-        os.makedirs(base, exist_ok=True)
-    if not os.path.exists(QUOTATION_FILE):
-        with open(QUOTATION_FILE, "w", encoding="utf-8") as f:
-            json.dump([], f)
-        _quotation_cache = []
-        _quotation_cache_time = time.time()
-        return []
+        return items, total, reps
+    finally:
+        cur.close()
+        conn.close()
 
-    with open(QUOTATION_FILE, "r", encoding="utf-8") as f:
-        try:
-            data = json.load(f)
-            out = data if isinstance(data, list) else []
-        except Exception:
-            out = []
-    _quotation_cache = out
-    _quotation_cache_time = time.time()
-    return out
+def get_full_quotation_from_db(quotation_id):
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        # Main quotation (no customer_id, no grand_total)
+        cur.execute("""
+            SELECT 
+                q.quotation_id, q.quotation_type, q.quotation_date, q.expiry_date,
+                q.customer_name, q.customer_po, q.sales_rep, q.currency,  q.payment_terms AS "paymentTerms",    q.expected_date, q.status, q.created_at, q.last_updated,
+                COALESCE(t.subtotal, 0) as subtotal,
+                COALESCE(t.global_discount_percent, 0) as global_discount_percent,
+                COALESCE(t.tax_summary, 0) as tax_summary,
+                COALESCE(t.shipping_charge, 0) as shipping_charge,
+                COALESCE(t.rounding_adjustment, 0) as rounding_adjustment,
+                COALESCE(t.grand_total, 0) as grand_total
+            FROM quotations q
+            LEFT JOIN quotation_totals t ON q.quotation_id = t.quotation_id
+            WHERE q.quotation_id = %s
+        """, (quotation_id,))
+        quotation = cur.fetchone()
+        if not quotation:
+            return None
 
+        # Convert dates to strings
+        for key in ['quotation_date', 'expiry_date', 'expected_date', 'created_at', 'last_updated']:
+            if quotation.get(key):
+                quotation[key] = quotation[key].isoformat()
 
-def save_quotations(items):
-    base = os.path.dirname(QUOTATION_FILE)
-    if base:
-        os.makedirs(base, exist_ok=True)
-    with open(QUOTATION_FILE, "w", encoding="utf-8") as f:
-        json.dump(items, f, indent=2)
-    _invalidate_quotation_cache()
+        # Items (no sl_no)
+        cur.execute("""
+            SELECT 
+                item_id, product_name, product_id, quantity, uom,
+                unit_price, tax_percent as tax, discount_percent as discount, total
+            FROM quotation_items
+            WHERE quotation_id = %s
+            ORDER BY item_id
+        """, (quotation_id,))
+        items = cur.fetchall()
+        for item in items:
+            for num in ['quantity', 'unit_price', 'tax', 'discount', 'total']:
+                if item.get(num) is not None:
+                    item[num] = float(item[num])
+        quotation['items'] = items
 
-def generate_quotation_id(items):
-    max_no = 0
-    for q in items:
-        qid = str(q.get("quotation_id", ""))
-        if qid.startswith("Q") and qid[1:].isdigit():
-            max_no = max(max_no, int(qid[1:]))
-    return f"Q{max_no + 1}"
+        # Taxes – if you don't have quotation_tax table, return empty list
+        quotation['taxes'] = []
 
+        # Comments
+        cur.execute("""
+            SELECT comment_id, comment, created_by as user, created_at as time
+            FROM quotation_comments
+            WHERE quotation_id = %s
+            ORDER BY created_at DESC
+        """, (quotation_id,))
+        comments = cur.fetchall()
+        for c in comments:
+            if c.get('time'):
+                c['time'] = c['time'].strftime('%Y-%m-%d %H:%M:%S')
+        quotation['comments'] = comments
 
+        # Attachments
+        cur.execute("""
+            SELECT attachment_id as id, file_name as original_filename,
+                   file_size as size, uploaded_at as upload_date
+            FROM quotation_attachments
+            WHERE quotation_id = %s
+        """, (quotation_id,))
+        attachments = cur.fetchall()
+        for a in attachments:
+            if a.get('upload_date'):
+                a['upload_date'] = a['upload_date'].strftime('%Y-%m-%d %H:%M:%S')
+        quotation['attachments'] = attachments
 
+        # Build a 'totals' object to match frontend expectation
+        quotation['totals'] = {
+            'subtotal': float(quotation.get('subtotal', 0)),
+            'global_discount_percent': float(quotation.get('global_discount_percent', 0)),
+            'tax_summary': float(quotation.get('tax_summary', 0)),
+            'shipping_charge': float(quotation.get('shipping_charge', 0)),
+            'rounding_adjustment': float(quotation.get('rounding_adjustment', 0)),
+            'grand_total': float(quotation.get('grand_total', 0))
+        }
 
-# ================================
-# QUOTATION  PAGE ROUTE
-# ================================
+        return quotation
+    finally:
+        cur.close()
+        conn.close()
 
+def save_quotation_to_db(data):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        quotation_id = data['quotation_id']
+        now = datetime.now()
+
+        # Check existence
+        cur.execute("SELECT 1 FROM quotations WHERE quotation_id = %s", (quotation_id,))
+        exists = cur.fetchone()
+
+        # Main fields – using customer_name, now including grand_total
+        main_fields = {
+            'quotation_id': quotation_id,
+            'quotation_type': data.get('quotation_type'),
+            'quotation_date': data.get('quotation_date'),
+            'expiry_date': data.get('expiry_date'),
+            'customer_name': data.get('customer_name'),
+            'customer_po': data.get('customer_po'),
+            'sales_rep': data.get('sales_rep'),
+            'currency': data.get('currency'),
+            'payment_terms': data.get('paymentTerms'),
+            'expected_date': data.get('expected_date'),
+            'status': data.get('status', 'draft'),
+            'last_updated': now,
+            'grand_total': data.get('totals', {}).get('grand_total', 0)   # ✅ added comma
+        }
+
+        if exists:
+            cur.execute("""
+                UPDATE quotations SET
+                    quotation_type = %(quotation_type)s,
+                    quotation_date = %(quotation_date)s,
+                    expiry_date = %(expiry_date)s,
+                    customer_name = %(customer_name)s,
+                    customer_po = %(customer_po)s,
+                    sales_rep = %(sales_rep)s,
+                    currency = %(currency)s,
+                    payment_terms = %(payment_terms)s,
+                    expected_date = %(expected_date)s,
+                    status = %(status)s,
+                    last_updated = %(last_updated)s,
+                    grand_total = %(grand_total)s
+                WHERE quotation_id = %(quotation_id)s
+            """, main_fields)
+        else:
+            cur.execute("""
+                INSERT INTO quotations (
+                    quotation_id, quotation_type, quotation_date, expiry_date,
+                    customer_name, customer_po, sales_rep,
+                    currency, payment_terms, expected_date, status, last_updated, grand_total
+                ) VALUES (
+                    %(quotation_id)s, %(quotation_type)s, %(quotation_date)s, %(expiry_date)s,
+                    %(customer_name)s, %(customer_po)s, %(sales_rep)s,
+                    %(currency)s, %(payment_terms)s, %(expected_date)s, %(status)s, %(last_updated)s, %(grand_total)s
+                )
+            """, main_fields)
+
+        # Replace items – no sl_no
+        cur.execute("DELETE FROM quotation_items WHERE quotation_id = %s", (quotation_id,))
+        for item in data.get('items', []):
+            cur.execute("""
+                INSERT INTO quotation_items (
+                    quotation_id, product_name, product_id, quantity,
+                    uom, unit_price, tax_percent, discount_percent, total
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """, (
+                quotation_id,
+                item.get('product_name'), item.get('product_id'),
+                item.get('quantity'), item.get('uom'),
+                item.get('unit_price'), item.get('tax', 0),
+                item.get('discount', 0), item.get('total', 0)
+            ))
+
+        # Insert or update totals (quotation_totals table)
+        totals = data.get('totals', {})
+        cur.execute("""
+            INSERT INTO quotation_totals (
+                quotation_id, subtotal, global_discount_percent, tax_summary,
+                shipping_charge, rounding_adjustment, grand_total, updated_at
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (quotation_id) DO UPDATE SET
+                subtotal = EXCLUDED.subtotal,
+                global_discount_percent = EXCLUDED.global_discount_percent,
+                tax_summary = EXCLUDED.tax_summary,
+                shipping_charge = EXCLUDED.shipping_charge,
+                rounding_adjustment = EXCLUDED.rounding_adjustment,
+                grand_total = EXCLUDED.grand_total,
+                updated_at = EXCLUDED.updated_at
+        """, (
+            quotation_id,
+            totals.get('subtotal', 0),
+            totals.get('global_discount_percent', 0),
+            totals.get('tax_summary', 0),
+            totals.get('shipping_charge', 0),
+            totals.get('rounding_adjustment', 0),
+            totals.get('grand_total', 0),
+            now
+        ))
+
+        # Add comment if provided
+        if data.get('comment_text'):
+            cur.execute("""
+                INSERT INTO quotation_comments (quotation_id, comment, created_by)
+                VALUES (%s, %s, %s)
+            """, (quotation_id, data['comment_text'], data.get('submitted_by', 'System')))
+
+        conn.commit()
+        return True
+    except Exception as e:
+        conn.rollback()
+        raise e
+    finally:
+        cur.close()
+        conn.close()
+
+def check_duplicate_customer_po(quotation_id, customer_po):
+    """Return True if duplicate exists (case-insensitive)"""
+    if not customer_po:
+        return False
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            SELECT 1 FROM quotations
+            WHERE LOWER(customer_po) = %s AND quotation_id != %s
+        """, (customer_po.lower(), quotation_id))
+        return cur.fetchone() is not None
+    finally:
+        cur.close()
+        conn.close()
+
+def generate_quotation_id_db():
+    """Generate QA-XXXX from existing DB records"""
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT quotation_id FROM quotations WHERE quotation_id ~ '^QA-[0-9]+$'")
+        rows = cur.fetchall()
+        max_num = 0
+        for row in rows:
+            try:
+                num = int(row[0].split('-')[1])
+                if num > max_num:
+                    max_num = num
+            except:
+                continue
+        new_num = max_num + 1
+        return f"QA-{new_num:03d}"
+    finally:
+        cur.close()
+        conn.close()
+
+def update_quotation_status_in_db(quotation_id, new_status, status_date, rejection_reason, status_history_entry):
+    """Update status and optionally add status history (as JSON field)"""
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        # Get current quotation to update status_history JSON (stored as text in DB)
+        cur.execute("SELECT status_history FROM quotations WHERE quotation_id = %s", (quotation_id,))
+        row = cur.fetchone()
+        if not row:
+            return False
+        status_history = row[0] if row[0] else []
+        if isinstance(status_history, str):
+            status_history = json.loads(status_history)
+        status_history.append(status_history_entry)
+        cur.execute("""
+            UPDATE quotations
+            SET status = %s, status_date = %s, rejection_reason = %s,
+                last_updated = %s, status_history = %s
+            WHERE quotation_id = %s
+        """, (new_status, status_date, rejection_reason, datetime.now(), json.dumps(status_history), quotation_id))
+        conn.commit()
+        return True
+    finally:
+        cur.close()
+        conn.close()
+
+def check_and_update_expired_quotations_db():
+    """Update status to 'expired' for quotations with expiry_date < today and status in ('send','sent','submitted')"""
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        today = datetime.now().date()
+        cur.execute("""
+            SELECT quotation_id, expiry_date, status_history FROM quotations
+            WHERE status IN ('send', 'sent', 'submitted')
+              AND expiry_date < %s
+        """, (today,))
+        expired = cur.fetchall()
+        for row in expired:
+            qid = row[0]
+            expiry_date = row[1]
+            status_history = row[2] if row[2] else []
+            if isinstance(status_history, str):
+                status_history = json.loads(status_history)
+            status_history.append({
+                'status': 'expired',
+                'date': today.isoformat(),
+                'time': datetime.now().strftime('%H:%M:%S'),
+                'reason': 'Auto-expired',
+                'notes': f'Expired on {today} (valid until {expiry_date})'
+            })
+            cur.execute("""
+                UPDATE quotations SET status = 'expired', status_history = %s, last_updated = %s
+                WHERE quotation_id = %s
+            """, (json.dumps(status_history), datetime.now(), qid))
+        conn.commit()
+        return [row[0] for row in expired]
+    finally:
+        cur.close()
+        conn.close()
+
+# ==================== ROUTES (unchanged names, but using DB) ====================
 
 @app.route("/quotation")
 def quotation():
     user_email = session.get("user")
     if not user_email:
-       return redirect(url_for("login", message="session_expired"))
-
-    prof = get_current_user_profile() or {}
-    user_name = prof.get("name") or "User"
-    user_role = prof.get("role") or "User"
-
+        return redirect(url_for("login", message="session_expired"))
+    users = load_users()  # you must have load_users() defined elsewhere; keep as is
+    user_name = "User"
+    for u in users:
+        if isinstance(u, dict) and (u.get("email") or "").lower() == user_email.lower():
+            user_name = u.get("name") or "User"
+            break
     return render_template(
         "quotation.html",
         title="Quotation - Stackly",
@@ -9683,50 +10292,32 @@ def quotation():
         section="crm",
         user_email=user_email,
         user_name=user_name,
-        user_role=user_role,
     )
 
-# ============ API LIST ============
 @app.route("/api/quotations", methods=["GET"])
 def api_quotations():
     if "user" not in session:
         return jsonify(success=False, message="Session expired"), 401
 
-    items = load_quotations()
-
     q = (request.args.get("q") or "").strip().lower()
     status = (request.args.get("status") or "").strip().lower()
     qtype = (request.args.get("type") or "").strip().lower()
     sales_rep = (request.args.get("sales_rep") or "").strip().lower()
+    page = int(request.args.get("page", 1))
+    per_page = int(request.args.get("per_page", 7))
 
-    page = int(request.args.get("page") or 1)
-    per_page = int(request.args.get("per_page") or 7)
+    filters = {}
+    if q:
+        filters['q'] = q
+    if status:
+        filters['status'] = status
+    if qtype:
+        filters['type'] = qtype
+    if sales_rep:
+        filters['sales_rep'] = sales_rep
 
-    # ---- Filter ----
-    filtered = []
-    for it in items:
-        if q:
-            hay = f"{it.get('quotation_id','')} {it.get('customer_name','')}".lower()
-            if q not in hay:
-                continue
-        if status and (it.get("status","").lower() != status):
-            continue
-        if qtype and (it.get("quotation_type","").lower() != qtype):
-            continue
-        if sales_rep and (it.get("sales_rep","").lower() != sales_rep):
-            continue
-        filtered.append(it)
-
-    # ---- Collect sales reps for dropdown ----
-    reps = sorted({ (x.get("sales_rep") or "").strip() for x in items if (x.get("sales_rep") or "").strip() })
-
-    total = len(filtered)
+    items, total, reps = load_quotations_from_db(filters, page, per_page)
     total_pages = max(1, math.ceil(total / per_page))
-    page = max(1, min(page, total_pages))
-
-    start = (page - 1) * per_page
-    end = start + per_page
-    page_items = filtered[start:end]
 
     return jsonify(
         success=True,
@@ -9734,19 +10325,17 @@ def api_quotations():
         page=page,
         per_page=per_page,
         total_pages=total_pages,
-        items=page_items,
+        items=items,
         sales_reps=reps
     )
 
-# ============ API CREATE (optional starter) ============
 @app.route("/api/quotations", methods=["POST"])
 def api_create_quotation():
     if "user" not in session:
         return jsonify(success=False, message="Session expired"), 401
 
     data = request.get_json(force=True) or {}
-    items = load_quotations()
-    new_id = generate_quotation_id(items)
+    new_id = generate_quotation_id_db()
 
     new_item = {
         "quotation_id": new_id,
@@ -9758,200 +10347,131 @@ def api_create_quotation():
         "grand_total": float(data.get("grand_total") or 0),
     }
 
-    items.insert(0, new_item)
-    save_quotations(items)
+    # Insert directly
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            INSERT INTO quotations (quotation_id, quotation_type, customer_name, sales_rep, quotation_date, status, grand_total)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+        """, (new_id, new_item['quotation_type'], new_item['customer_name'], new_item['sales_rep'],
+              new_item['quotation_date'], new_item['status'], new_item['grand_total']))
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        return jsonify(success=False, error=str(e)), 500
+    finally:
+        cur.close()
+        conn.close()
+
     return jsonify(success=True, item=new_item)
-
-
-
-# ================================
-# ADD NEW QUOTATION PAGE ROUTE
-# ================================
 
 @app.route("/add-new-quotation")
 def add_new_quotation():
     user_email = session.get("user")
     if not user_email:
         return redirect(url_for("login", message="session_expired"))
-
-    prof = get_current_user_profile() or {}
-    user_name = prof.get("name") or "User"
-    user_role = prof.get("role") or "User"
-
-    # RBAC guard: users without quotation create/edit access cannot open this page.
-    role_norm = normalize_role(user_role)
-    can_by_role = role_norm in ["superadmin", "admin"]
-    q_perm = (get_effective_permissions_for_session() or {}).get("quotation", {})
-    can_by_matrix = bool(q_perm.get("full_access") or q_perm.get("create") or q_perm.get("edit"))
-    if not (can_by_role or can_by_matrix):
-        return redirect(url_for("quotation"))
-
+    users = load_users()
+    user_name = "User"
+    for u in users:
+        if isinstance(u, dict) and (u.get("email") or "").lower() == user_email.lower():
+            user_name = u.get("name") or "User"
+            break
     return render_template(
-        "add-new-quotation.html", 
+        "add-new-quotation.html",
         title="Add-New-Quotation - Stackly",
         page="quotation",
         section="crm",
         user_email=user_email,
         user_name=user_name,
-        user_role=user_role,
     )
 
-# automatically fill dropdown customer type,sales rep,payment term
 @app.route("/get-customers-quotation")
 def get_customers_quotation():
     try:
-        with open(CUSTOMER_FILE, "r") as file:
-            customers = json.load(file)
-        return jsonify(customers)
+        # Use the correct connection function
+        # If your app uses get_db_connection, keep it; otherwise change to get_connection
+        conn = get_db_connection()  # or get_db_connection()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        try:
+            cur.execute("""
+                SELECT 
+                    customer_id,
+                    name,
+                    first_name,
+                    last_name,
+                    company,
+                    email,
+                    phone,
+                    sales_rep,
+                    payment_terms AS "paymentTerms",
+                    credit_limit,
+                    billing_address,
+                    shipping_address,
+                    customer_status AS status    -- ✅ fixed column name
+                FROM customers
+                ORDER BY name
+            """)
+            customers = cur.fetchall()
+            return jsonify(customers)
+        finally:
+            cur.close()
+            conn.close()
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        print(f"❌ Error fetching customers: {e}")
+        import traceback
+        traceback.print_exc()
+        # Return empty array so frontend doesn't break
+        return jsonify([])
 
-
-
-
-# ===================================================
-# PRODUCT ENDPOINTS
-# ===================================================
 
 @app.route('/get-products')
 def get_products():
     try:
-        with open(PRODUCT_FILE, 'r') as f:
-            products = json.load(f)
-        return jsonify(products)
-    except FileNotFoundError:
-        return jsonify([])
-
-
-
-# ===================================================
-# GENERATE QUOTATION ID - FIXED VERSION
-# ===================================================
-
-def generate_quotation_id():
-    """Generate quotation ID in format QA-0001, QA-0002, etc."""
-    try:
-        # Check if file exists
-        if not os.path.exists(QUOTATION_FILE):
-            print("📄 Quotation file not found, starting with QA-0001")
-            return "QA-0001"
-        
-        with open(QUOTATION_FILE, "r") as file:
-            quotations = json.load(file)
-
-        if not quotations:
-            print("📄 No quotations found, starting with QA-0001")
-            return "QA-0001"
-
-        # Find the highest QA-XXXX number
-        max_number = 0
-        
-        for q in quotations:
-            q_id = q.get("quotation_id", "")
-            
-            # Only look for IDs in format QA-XXXX
-            if q_id and q_id.startswith("QA-"):
-                try:
-                    # Extract the number part (after "QA-")
-                    number_part = q_id.split("-")[1]
-                    # Convert to integer
-                    num = int(number_part)
-                    if num > max_number:
-                        max_number = num
-                        print(f"  Found QA-{num:04d}")
-                except (ValueError, IndexError):
-                    # Skip if format is wrong
-                    continue
-        
-        # Increment by 1
-        new_number = max_number + 1
-        
-        # Format with leading zeros (0001, 0002, etc.)
-        new_id = f"QA-{new_number:04d}"
-        print(f"✅ Generated new quotation ID: {new_id}")
-        
-        return new_id
-
-    except FileNotFoundError:
-        print("📄 Quotation file not found, starting with QA-0001")
-        return "QA-0001"
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        try:
+            cur.execute("""
+                SELECT 
+                    product_id,
+                    product_name,
+                    unit_price,
+                    uom_name AS uom,          -- alias to match frontend
+                    tax_percent AS tax,       -- alias to match frontend
+                    discount,
+                    quantity,
+                    status
+                FROM products
+                WHERE status = 'Active'
+                ORDER BY product_name
+            """)
+            products = cur.fetchall()
+            for p in products:
+                if p.get('unit_price') is not None:
+                    p['unit_price'] = float(p['unit_price'])
+                if p.get('tax') is not None:
+                    p['tax'] = float(p['tax'])
+                if p.get('discount') is not None:
+                    p['discount'] = float(p['discount'])
+                if p.get('quantity') is not None:
+                    p['quantity'] = float(p['quantity'])
+            return jsonify(products)
+        finally:
+            cur.close()
+            conn.close()
     except Exception as e:
-        print(f"❌ Error generating quotation ID: {e}")
-        return "QA-0001"
+        print(f"Error fetching products: {e}")
+        return jsonify([]), 500
 
-# ===================================================
-# API ROUTE FOR QUOTATION ID
-# ===================================================
+
 
 @app.route('/generate-quotation-id')
 def generate_quotation_id_route():
-    """API endpoint to generate quotation ID"""
     try:
-        quotation_id = generate_quotation_id()
-        print(f"🚀 Returning ID: {quotation_id}")
-        return jsonify({
-            'success': True,
-            'quotation_id': quotation_id
-        })
+        new_id = generate_quotation_id_db()
+        return jsonify({'success': True, 'quotation_id': new_id})
     except Exception as e:
-        print(f"❌ Route error: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
-
-# ===================================================
-# DEBUG ROUTE TO CHECK QUOTATION IDs
-# ===================================================
-
-@app.route('/debug-quotation-ids')
-def debug_quotation_ids():
-    """Debug endpoint to see what IDs are in the file"""
-    try:
-        if not os.path.exists(QUOTATION_FILE):
-            return jsonify({
-                'file_exists': False,
-                'message': 'Quotation file not found'
-            })
-        
-        with open(QUOTATION_FILE, 'r') as f:
-            quotations = json.load(f)
-        
-        # Extract all QA-XXXX IDs
-        qa_ids = []
-        other_ids = []
-        
-        for q in quotations:
-            q_id = q.get('quotation_id', 'NO ID')
-            if q_id and q_id.startswith('QA-'):
-                qa_ids.append(q_id)
-            else:
-                other_ids.append(q_id)
-        
-        # Find the highest QA number
-        max_qa_number = 0
-        for q_id in qa_ids:
-            try:
-                num = int(q_id.split('-')[1])
-                if num > max_qa_number:
-                    max_qa_number = num
-            except:
-                pass
-        
-        return jsonify({
-            'total_quotations': len(quotations),
-            'qa_format_ids': qa_ids,
-            'other_format_ids': other_ids,
-            'highest_qa_number': max_qa_number,
-            'next_qa_id': f"QA-{max_qa_number + 1:04d}" if max_qa_number > 0 else "QA-0001",
-            'file_path': QUOTATION_FILE,
-            'file_exists': os.path.exists(QUOTATION_FILE)
-        })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-# ===================================================
-# SAVE QUOTATION
-# ===================================================
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/save-quotation', methods=['POST'])
 def save_quotation():
@@ -9959,170 +10479,86 @@ def save_quotation():
         data = request.json
         quotation_id = data.get('quotation_id')
         status = data.get('status', 'draft')
-        
-        # Load existing quotations
-        try:
-            with open(QUOTATION_FILE, 'r') as f:
-                quotations = json.load(f)
-        except FileNotFoundError:
-            quotations = []
-        
+
+        # Duplicate PO check
+        customer_po = (data.get('customer_po') or '').strip()
+        if check_duplicate_customer_po(quotation_id, customer_po):
+            return jsonify({
+                'success': False,
+                'error': 'Customer PO Reference already exists. Please use a unique value.',
+                'duplicate_field': 'customer_po'
+            }), 400
+
         # Add timestamps
         data['last_updated'] = datetime.now().isoformat()
         data['created_at'] = data.get('created_at', datetime.now().isoformat())
-        
-        # Initialize status history if not exists
+
+        # Status history (keep as list in data, will be stored as JSON in DB)
         if 'status_history' not in data:
             data['status_history'] = []
-        
-        # Add status change to history
         status_entry = {
             'status': status,
             'date': data.get('status_date', datetime.now().isoformat()),
             'user': data.get('submitted_by', 'System'),
             'notes': f'Quotation {status}'
         }
-        
         if status == 'rejected' and data.get('rejection_reason'):
             status_entry['notes'] = f'Quotation rejected: {data["rejection_reason"]}'
-        
         data['status_history'].append(status_entry)
-        
-        # Check if quotation already exists
-        existing_index = None
-        for i, q in enumerate(quotations):
-            if q.get('quotation_id') == quotation_id:
-                existing_index = i
-                break
-        
-        # Prevent duplicate Customer PO Reference (case-insensitive)
-        customer_po = (data.get('customer_po') or '').strip()
-        if customer_po:
-            customer_po_lower = customer_po.lower()
-            for i, q in enumerate(quotations):
-                if existing_index is not None and i == existing_index:
-                    continue
-                existing_po = (q.get('customer_po') or '').strip()
-                if existing_po and existing_po.lower() == customer_po_lower:
-                    return jsonify({
-                        'success': False,
-                        'error': 'Customer PO Reference already exists. Please use a unique value.',
-                        'duplicate_field': 'customer_po'
-                    }), 400
-        
-        if existing_index is not None:
-            quotations[existing_index] = data
-            message = f'Quotation {quotation_id} updated with status: {status}'
-        else:
-            quotations.append(data)
-            message = f'New quotation {quotation_id} created with status: {status}'
-        
-        # Save back to file
-        with open(QUOTATION_FILE, 'w', encoding='utf-8') as f:
-            json.dump(quotations, f, indent=2)
-        _invalidate_quotation_cache()
+
+        save_quotation_to_db(data)
         return jsonify({
             'success': True,
-            'message': message,
+            'message': f'Quotation {quotation_id} saved with status: {status}',
             'quotation_id': quotation_id,
             'status': status
         })
-        
     except Exception as e:
         print(f"Error saving quotation: {str(e)}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
-
-# ===================================================
-# CHECK CUSTOMER PO REFERENCE (LIVE DUPLICATE CHECK)
-# ===================================================
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/check-customer-po', methods=['GET'])
 def check_customer_po():
-    """
-    GET /check-customer-po?value=CP-0001&exclude_quotation_id=QA-0012
-    Returns { "duplicate": true/false } (case-insensitive).
-    exclude_quotation_id: when editing, exclude this quotation from the check.
-    """
     try:
-        value = (request.args.get('value') or '').strip()
-        exclude_quotation_id = (request.args.get('exclude_quotation_id') or '').strip()
-
+        value = request.args.get('value', '').strip()
+        exclude_id = request.args.get('exclude_quotation_id', '').strip()
         if not value:
-            return jsonify({'success': True, 'duplicate': False}), 200
-
-        quotations = load_quotations()
-        value_lower = value.lower()
-
-        for q in quotations:
-            if exclude_quotation_id and q.get('quotation_id') == exclude_quotation_id:
-                continue
-            existing_po = (q.get('customer_po') or '').strip()
-            if existing_po and existing_po.lower() == value_lower:
-                return jsonify({
-                    'success': True,
-                    'duplicate': True,
-                    'message': 'Customer PO Reference already exists. Please use a unique value.'
-                }), 200
-
-        return jsonify({'success': True, 'duplicate': False}), 200
+            return jsonify({'success': True, 'duplicate': False})
+        duplicate = check_duplicate_customer_po(exclude_id, value)
+        return jsonify({'success': True, 'duplicate': duplicate})
     except Exception as e:
-        print(f"Error in check_customer_po: {e}")
-        return jsonify({'success': False, 'duplicate': False, 'error': str(e)}), 500
-
-
-# ===================================================
-# GET SINGLE QUOTATION
-# ===================================================
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/get-quotation/<quotation_id>')
 def get_quotation(quotation_id):
     try:
-        quotations = load_quotations()
-        for quotation in quotations:
-            if quotation.get('quotation_id') == quotation_id:
-                return jsonify({
-                    'success': True,
-                    'quotation': quotation
-                })
-        return jsonify({
-            'success': False,
-            'error': 'Quotation not found'
-        }), 404
+        quotation = get_full_quotation_from_db(quotation_id)
+        if not quotation:
+            return jsonify({'success': False, 'error': 'Quotation not found'}), 404
+        return jsonify({'success': True, 'quotation': quotation})
     except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
-
-# ===================================================
-# GET QUOTATIONS BY STATUS
-# ===================================================
+        print(f"❌ Error in get_quotation: {e}")   # <-- add this
+        import traceback
+        traceback.print_exc()                      # <-- add this
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/get-quotations/<status>')
 def get_quotations_by_status(status):
     try:
-        quotations = load_quotations()
-        if status and status != 'all':
-            filtered = [q for q in quotations if q.get('status') == status]
-        else:
-            filtered = quotations
-        return jsonify({
-            'success': True,
-            'quotations': filtered,
-            'count': len(filtered)
-        })
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        try:
+            if status and status != 'all':
+                cur.execute("SELECT * FROM quotations WHERE status = %s", (status,))
+            else:
+                cur.execute("SELECT * FROM quotations")
+            quotations = cur.fetchall()
+            return jsonify({'success': True, 'quotations': quotations, 'count': len(quotations)})
+        finally:
+            cur.close()
+            conn.close()
     except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
-
-# ===================================================
-# COMMENTS ENDPOINTS
-# ===================================================
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/add-comment', methods=['POST'])
 def add_comment():
@@ -10132,322 +10568,367 @@ def add_comment():
         comment = data.get('comment')
         user = data.get('user', 'Admin')
         
-        # Load existing comments
+        if not quotation_id or not comment:
+            return jsonify({'success': False, 'error': 'Missing quotation_id or comment'}), 400
+        
+        conn = get_db_connection()
+        cur = conn.cursor()
         try:
-            with open(COMMENTS_FILE, 'r') as f:
-                all_comments = json.load(f)
-        except FileNotFoundError:
-            all_comments = {}
-        
-        # Initialize comments for this quotation if not exists
-        if quotation_id not in all_comments:
-            all_comments[quotation_id] = []
-        
-        # Add new comment
-        all_comments[quotation_id].append({
-            'id': str(uuid.uuid4()),
-            'user': user,
-            'comment': comment,
-            'time': datetime.now().isoformat()
-        })
-        
-        # Save back to file
-        with open(COMMENTS_FILE, 'w') as f:
-            json.dump(all_comments, f, indent=2)
-        
-        return jsonify({
-            'success': True,
-            'message': 'Comment added successfully'
-        })
-        
+            # Check if quotation exists
+            cur.execute("SELECT 1 FROM quotations WHERE quotation_id = %s", (quotation_id,))
+            exists = cur.fetchone()
+            
+            if not exists:
+                # Auto-create a minimal draft quotation
+                now = datetime.now().date()
+                cur.execute("""
+                    INSERT INTO quotations (
+                        quotation_id, quotation_type, quotation_date, expiry_date,
+                        customer_name, status, created_at, last_updated
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """, (
+                    quotation_id,
+                    'Standard',                    # default type
+                    now,                           # quotation_date = today
+                    (now + timedelta(days=15)),    # expiry_date = +15 days
+                    'Auto-created',                # placeholder customer_name
+                    'draft',
+                    datetime.now(),
+                    datetime.now()
+                ))
+                conn.commit()
+                print(f"✅ Auto-created draft quotation {quotation_id} for comment")
+            
+            # Now insert the comment
+            cur.execute("""
+                INSERT INTO quotation_comments (quotation_id, comment, created_by)
+                VALUES (%s, %s, %s)
+            """, (quotation_id, comment, user))
+            conn.commit()
+            
+            return jsonify({'success': True, 'message': 'Comment added successfully'})
+        finally:
+            cur.close()
+            conn.close()
     except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
+        print(f"Error adding comment: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @app.route('/get-comments/<quotation_id>')
 def get_comments(quotation_id):
     try:
-        with open(COMMENTS_FILE, 'r') as f:
-            all_comments = json.load(f)
-        
-        comments = all_comments.get(quotation_id, [])
-        
-        # Sort by time descending (newest first)
-        comments.sort(key=lambda x: x['time'], reverse=True)
-        
-        # Pagination parameters
         page = int(request.args.get('page', 1))
         per_page = int(request.args.get('per_page', 5))
-        
-        total = len(comments)
-        start = (page - 1) * per_page
-        end = start + per_page
-        paginated = comments[start:end]
-        
-        # Format for display
-        formatted = []
-        for comment in paginated:
-            formatted.append({
-                'user': comment['user'],
-                'comment': comment['comment'],
-                'time': datetime.fromisoformat(comment['time']).strftime('%Y-%m-%d %H:%M:%S')
+        offset = (page - 1) * per_page
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        try:
+            cur.execute("SELECT COUNT(*) as total FROM quotation_comments WHERE quotation_id = %s", (quotation_id,))
+            total = cur.fetchone()['total']
+            cur.execute("""
+                SELECT comment, created_by as user, created_at as time
+                FROM quotation_comments
+                WHERE quotation_id = %s
+                ORDER BY created_at DESC
+                LIMIT %s OFFSET %s
+            """, (quotation_id, per_page, offset))
+            comments = cur.fetchall()
+            for c in comments:
+                c['time'] = c['time'].strftime('%Y-%m-%d %H:%M:%S') if c['time'] else ''
+            return jsonify({
+                'comments': comments,
+                'total': total,
+                'page': page,
+                'per_page': per_page,
+                'has_more': (offset + per_page) < total
             })
-        
-        return jsonify({
-            'comments': formatted,
-            'total': total,
-            'page': page,
-            'per_page': per_page,
-            'has_more': end < total
-        })
-        
-    except FileNotFoundError:
-        return jsonify({'comments': [], 'total': 0, 'has_more': False})
-    except Exception as e:
+        finally:
+            cur.close()
+            conn.close()
+    except Exception:
         return jsonify({'comments': [], 'total': 0, 'has_more': False})
 
 
-
-
+ALLOWED_EXTENSIONS = {'pdf', 'doc', 'docx', 'xls', 'xlsx', 'jpg', 'jpeg', 'png'}
+MAX_FILE_SIZE_MB = 10
+MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
 @app.route('/upload-attachment', methods=['POST'])
 def upload_attachment():
     try:
         if 'file' not in request.files:
             return jsonify({'success': False, 'error': 'No file provided'}), 400
-        
+
         file = request.files['file']
         quotation_id = request.form.get('quotation_id')
-        
+
+        if not quotation_id:
+            return jsonify({'success': False, 'error': 'quotation_id is required'}), 400
+
         if file.filename == '':
             return jsonify({'success': False, 'error': 'No file selected'}), 400
-        
-        # Check file size
+
+        # Validate file size
         file.seek(0, os.SEEK_END)
-        file_length = file.tell()
+        file_size = file.tell()
         file.seek(0)
-        if file_length > MAX_FILE_SIZE_BYTES:
-            return jsonify({
-                'success': False,
-                'error': f'File size exceeds {MAX_FILE_SIZE_MB} MB'
-            }), 400
-        
-        # Check file extension
+        if file_size > MAX_FILE_SIZE_BYTES:
+            return jsonify({'success': False, 'error': f'File exceeds {MAX_FILE_SIZE_MB} MB'}), 400
+
+        # Validate extension
         if not allowed_file(file.filename):
-            return jsonify({
-                'success': False,
-                'error': f'File type not allowed. Allowed: {", ".join(ALLOWED_EXTENSIONS)}'
-            }), 400
-        
-        # Load existing attachments for this quotation
-        metadata_file = os.path.join(ATTACHMENTS_FOLDER, 'metadata.json')
+            return jsonify({'success': False, 'error': 'File type not allowed'}), 400
+
+        # ‼️ STEP 1: Make sure the quotation exists (auto‑create draft if missing)
+        conn = get_db_connection()
+        cur = conn.cursor()
         try:
-            with open(metadata_file, 'r') as f:
-                attachments = json.load(f)
-        except FileNotFoundError:
-            attachments = []
-        
-        # Count current attachments for this quotation
-        current_count = sum(1 for a in attachments if a['quotation_id'] == quotation_id)
-        if current_count >= MAX_ATTACHMENTS_PER_QUOTATION:
-            return jsonify({
-                'success': False,
-                'error': f'Maximum {MAX_ATTACHMENTS_PER_QUOTATION} files allowed per quotation'
-            }), 400
-        
-        # Generate unique filename
-        file_ext = file.filename.rsplit('.', 1)[1].lower() if '.' in file.filename else ''
-        unique_filename = f"{quotation_id}_{uuid.uuid4().hex}.{file_ext}"
-        file_path = os.path.join(ATTACHMENTS_FOLDER, unique_filename)
-        
+            cur.execute("SELECT 1 FROM quotations WHERE quotation_id = %s", (quotation_id,))
+            exists = cur.fetchone()
+            if not exists:
+                now = datetime.now().date()
+                cur.execute("""
+                    INSERT INTO quotations (
+                        quotation_id, quotation_type, quotation_date, expiry_date,
+                        customer_name, status, created_at, last_updated
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """, (
+                    quotation_id,
+                    'Standard',                     # default type
+                    now,                            # quotation_date = today
+                    (now + timedelta(days=15)),     # expiry_date = +15 days
+                    'Auto-created',                 # placeholder customer_name
+                    'draft',
+                    datetime.now(),
+                    datetime.now()
+                ))
+                conn.commit()
+                print(f"✅ Auto-created draft quotation {quotation_id} for attachment upload")
+        finally:
+            # Don't close the connection yet – we reuse it for the attachment insert
+            pass
+
         # Save file
+        upload_folder = os.path.join(app.root_path, 'attachments')
+        os.makedirs(upload_folder, exist_ok=True)
+
+        ext = file.filename.rsplit('.', 1)[1].lower()
+        unique_filename = f"{quotation_id}_{uuid.uuid4().hex}.{ext}"
+        file_path = os.path.join(upload_folder, unique_filename)
         file.save(file_path)
-        
-        # Create attachment record
-        attachment = {
-            'id': str(uuid.uuid4()),
-            'quotation_id': quotation_id,
-            'original_filename': file.filename,
-            'stored_filename': unique_filename,
-            'size': file_length,
-            'upload_date': datetime.now().isoformat()
-        }
-        
-        attachments.append(attachment)
-        
-        with open(metadata_file, 'w') as f:
-            json.dump(attachments, f, indent=2)
-        
+
+        # Insert into database (using the same connection)
+        cur.execute("""
+            INSERT INTO quotation_attachments (quotation_id, file_name, file_path, file_size)
+            VALUES (%s, %s, %s, %s)
+        """, (quotation_id, file.filename, unique_filename, file_size))
+        conn.commit()
+
+        # Retrieve new attachment id
+        cur.execute("""
+            SELECT attachment_id FROM quotation_attachments
+            WHERE quotation_id = %s AND file_path = %s
+            ORDER BY uploaded_at DESC LIMIT 1
+        """, (quotation_id, unique_filename))
+        row = cur.fetchone()
+        attachment_id = row[0] if row else None
+
+        cur.close()
+        conn.close()
+
         return jsonify({
             'success': True,
-            'attachment': attachment
+            'attachment': {
+                'id': attachment_id,
+                'original_filename': file.filename,
+                'size': file_size,
+                'upload_date': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            }
         })
-        
+
     except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
+        print(f"Upload error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
 @app.route('/get-attachments/<quotation_id>')
 def get_attachments(quotation_id):
     try:
-        metadata_file = os.path.join(ATTACHMENTS_FOLDER, 'metadata.json')
-        
-        try:
-            with open(metadata_file, 'r') as f:
-                all_attachments = json.load(f)
-        except FileNotFoundError:
-            all_attachments = []
-        
-        # Filter attachments for this quotation
-        attachments = [
-            {
-                'id': a['id'],
-                'original_filename': a['original_filename'],
-                'size': a['size'],
-                'upload_date': datetime.fromisoformat(a['upload_date']).strftime('%Y-%m-%d %H:%M:%S')
-            }
-            for a in all_attachments if a['quotation_id'] == quotation_id
-        ]
-        
-        return jsonify({
-            'success': True,
-            'attachments': attachments
-        })
-        
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute("""
+            SELECT attachment_id as id, file_name as original_filename,
+                   file_size as size, uploaded_at as upload_date
+            FROM quotation_attachments
+            WHERE quotation_id = %s
+            ORDER BY uploaded_at DESC
+        """, (quotation_id,))
+        attachments = cur.fetchall()
+        cur.close()
+        conn.close()
+        return jsonify({'success': True, 'attachments': attachments})
     except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/view-attachment/<attachment_id>')
 def view_attachment(attachment_id):
     try:
-        metadata_file = os.path.join(ATTACHMENTS_FOLDER, 'metadata.json')
-        
-        with open(metadata_file, 'r') as f:
-            attachments = json.load(f)
-        
-        attachment = next((a for a in attachments if a['id'] == attachment_id), None)
-        
-        if not attachment:
-            return jsonify({'success': False, 'error': 'Attachment not found'}), 404
-        
-        file_path = os.path.join(ATTACHMENTS_FOLDER, attachment['stored_filename'])
-        
-        return send_file(file_path, download_name=attachment['original_filename'], as_attachment=False)
-        
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT file_path, file_name FROM quotation_attachments WHERE attachment_id = %s", (attachment_id,))
+        row = cur.fetchone()
+        cur.close()
+        conn.close()
+        if not row:
+            return jsonify({'error': 'Attachment not found'}), 404
+        file_path = row[0]
+        original_name = row[1]
+        folder = os.path.join(app.root_path, 'attachments')
+        full_path = os.path.join(folder, file_path)
+        return send_file(full_path, as_attachment=False, download_name=original_name)
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/download-attachment/<attachment_id>')
 def download_attachment(attachment_id):
     try:
-        metadata_file = os.path.join(ATTACHMENTS_FOLDER, 'metadata.json')
-        
-        with open(metadata_file, 'r') as f:
-            attachments = json.load(f)
-        
-        attachment = next((a for a in attachments if a['id'] == attachment_id), None)
-        
-        if not attachment:
-            return jsonify({'success': False, 'error': 'Attachment not found'}), 404
-        
-        file_path = os.path.join(ATTACHMENTS_FOLDER, attachment['stored_filename'])
-        
-        return send_file(file_path, download_name=attachment['original_filename'], as_attachment=True)
-        
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT file_path, file_name FROM quotation_attachments WHERE attachment_id = %s", (attachment_id,))
+        row = cur.fetchone()
+        cur.close()
+        conn.close()
+        if not row:
+            return jsonify({'error': 'Attachment not found'}), 404
+        file_path = row[0]
+        original_name = row[1]
+        folder = os.path.join(app.root_path, 'attachments')
+        full_path = os.path.join(folder, file_path)
+        return send_file(full_path, as_attachment=True, download_name=original_name)
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
-
+        return jsonify({'error': str(e)}), 500
 @app.route('/delete-attachment/<attachment_id>', methods=['DELETE'])
 def delete_attachment(attachment_id):
     try:
-        metadata_file = os.path.join(ATTACHMENTS_FOLDER, 'metadata.json')
-        
-        with open(metadata_file, 'r') as f:
-            attachments = json.load(f)
-        
-        attachment = next((a for a in attachments if a['id'] == attachment_id), None)
-        
-        if not attachment:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT file_path FROM quotation_attachments WHERE attachment_id = %s", (attachment_id,))
+        row = cur.fetchone()
+        if not row:
             return jsonify({'success': False, 'error': 'Attachment not found'}), 404
-        
-        # Delete physical file
-        file_path = os.path.join(ATTACHMENTS_FOLDER, attachment['stored_filename'])
-        if os.path.exists(file_path):
-            os.remove(file_path)
-        
-        # Remove from metadata
-        attachments = [a for a in attachments if a['id'] != attachment_id]
-        
-        with open(metadata_file, 'w') as f:
-            json.dump(attachments, f, indent=2)
-        
+        file_path = row[0]
+        folder = os.path.join(app.root_path, 'attachments')
+        full_path = os.path.join(folder, file_path)
+        if os.path.exists(full_path):
+            os.remove(full_path)
+        cur.execute("DELETE FROM quotation_attachments WHERE attachment_id = %s", (attachment_id,))
+        conn.commit()
+        cur.close()
+        conn.close()
         return jsonify({'success': True, 'message': 'Attachment deleted'})
-        
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
-    #=============================================
-    # PDF GENERATION TABLAB
-    # =========================================
-    
 
 @app.route('/check-quotation/<quotation_id>')
 def check_quotation(quotation_id):
     try:
-        with open(QUOTATION_FILE, 'r') as f:
-            quotations = json.load(f)
-        
-        exists = any(q.get('quotation_id') == quotation_id for q in quotations)
-        
-        return jsonify({
-            'success': True,
-            'exists': exists,
-            'quotation_id': quotation_id
-        })
-    except FileNotFoundError:
-        return jsonify({
-            'success': True,
-            'exists': False,
-            'quotation_id': quotation_id
-        })
+        conn = get_db_connection()
+        cur = conn.cursor()
+        try:
+            cur.execute("SELECT 1 FROM quotations WHERE quotation_id = %s", (quotation_id,))
+            exists = cur.fetchone() is not None
+            return jsonify({'success': True, 'exists': exists, 'quotation_id': quotation_id})
+        finally:
+            cur.close()
+            conn.close()
     except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500       
-
-
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/debug-quotations')
 def debug_quotations():
     try:
-        with open(QUOTATION_FILE, 'r') as f:
-            quotations = json.load(f)
-        
-        return jsonify({
-            'success': True,
-            'count': len(quotations),
-            'quotation_ids': [q.get('quotation_id') for q in quotations],
-            'file_path': QUOTATION_FILE,
-            'file_exists': os.path.exists(QUOTATION_FILE)
-        })
-    except FileNotFoundError:
-        return jsonify({
-            'success': False,
-            'error': 'Quotation file not found',
-            'file_path': QUOTATION_FILE
-        })
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        try:
+            cur.execute("SELECT quotation_id FROM quotations")
+            ids = [r['quotation_id'] for r in cur.fetchall()]
+            return jsonify({
+                'success': True,
+                'count': len(ids),
+                'quotation_ids': ids,
+                'file_path': 'database (PostgreSQL)',
+                'file_exists': True
+            })
+        finally:
+            cur.close()
+            conn.close()
     except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        })
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+def delete_quotation_from_db(quotation_id):
+    """Delete quotation (cascade deletes items, taxes, comments, attachments, totals)"""
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("DELETE FROM quotations WHERE quotation_id = %s", (quotation_id,))
+        conn.commit()
+        return True
+    except Exception as e:
+        conn.rollback()
+        raise e
+    finally:
+        cur.close()
+        conn.close()
+
+@app.route('/delete-quotation/<quotation_id>', methods=['DELETE'])
+def delete_quotation(quotation_id):
+    try:
+        # Check status
+        conn = get_db_connection()
+        cur = conn.cursor()
+        try:
+            cur.execute("SELECT status FROM quotations WHERE quotation_id = %s", (quotation_id,))
+            row = cur.fetchone()
+            if not row:
+                return jsonify({'success': False, 'error': 'Quotation not found'}), 404
+            if row[0] != 'draft':
+                return jsonify({'success': False, 'error': 'Only draft quotations can be deleted'}), 403
+        finally:
+            cur.close()
+            conn.close()
+        delete_quotation_from_db(quotation_id)
+        # Also delete physical attachment files (already handled by ON DELETE CASCADE in DB, but files remain)
+        # Optionally clean up files – skip for brevity
+        return jsonify({'success': True, 'message': f'Quotation {quotation_id} deleted successfully'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/update-quotation-status', methods=['POST'])
+def update_quotation_status():
+    try:
+        data = request.json
+        quotation_id = data.get('quotation_id')
+        new_status = data.get('status')
+        status_date = data.get('status_date', datetime.now().isoformat())
+        rejection_reason = data.get('rejection_reason', '')
+        status_history = data.get('status_history', {})
+        if not quotation_id or not new_status:
+            return jsonify({'success': False, 'error': 'Missing required fields'}), 400
+        history_entry = {
+            'status': new_status,
+            'date': status_date,
+            'user': status_history.get('user', 'System'),
+            'notes': status_history.get('notes', f'Quotation {new_status}')
+        }
+        success = update_quotation_status_in_db(quotation_id, new_status, status_date, rejection_reason, history_entry)
+        if not success:
+            return jsonify({'success': False, 'error': 'Quotation not found'}), 404
+        return jsonify({'success': True, 'message': f'Quotation {quotation_id} updated to {new_status}'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 #=============================================
 # PDF GENERATION TABLAB
@@ -10858,8 +11339,6 @@ def generate_pdf(quotation_id):
         return jsonify({'success': False, 'error': str(e)}), 500
     
 
-
-
 # ===================================================
 # OTP GENERATION
 # ===================================================
@@ -11040,13 +11519,13 @@ def get_email_count(quotation_id, customer_email):
     return len(email_attempts.get(key, []))
 
 # ===================================================
-# SEND QUOTATION OTP EMAIL (signup uses send_otp_email above — do not shadow it)
+# SEND OTP EMAIL
 # ===================================================
 
-def send_quotation_otp_email(email, otp, quotation_id=None):
-    """Send OTP via email for quotation / email flow (not signup)."""
+def send_otp_email(email, otp, quotation_id=None):
+    """Send OTP via email"""
     try:
-        print(f"📧 Sending quotation OTP to {email}")
+        print(f"📧 Sending OTP to {email}")
         
         msg = MIMEMultipart()
         msg['Subject'] = f"Your OTP for Quotation {quotation_id}" if quotation_id else "Your OTP for Quotation"
@@ -11418,9 +11897,6 @@ def generate_quotation_pdf(quotation, quotation_id):
 from email.message import EmailMessage
 
 
-
-import json
-
 def get_quotation_data(quotation_id):
     """
     Fetch a quotation by ID from your JSON file.
@@ -11652,7 +12128,7 @@ def api_send_otp():
         }
         
         # Send OTP email
-        result = send_quotation_otp_email(email, otp, quotation_id)
+        result = send_otp_email(email, otp, quotation_id)
         
         if result:
             record_otp_attempt(email, quotation_id, True)
@@ -11758,7 +12234,7 @@ def api_resend_otp():
         }
         
         # Send OTP email
-        result = send_quotation_otp_email(email, otp, quotation_id)
+        result = send_otp_email(email, otp, quotation_id)
         
         if result:
             remaining = record_resend_attempt(email, quotation_id)
@@ -11817,136 +12293,12 @@ def test_smtp_connection():
 
 
 
-
-
-
-
-
-
 def find_quotation_by_id(quotations, quotation_id):
     """Find quotation by ID"""
     for i, q in enumerate(quotations):
         if q.get('quotation_id') == quotation_id:
             return i, q
     return None, None
-
-# ===================================================
-# UPDATE SINGLE QUOTATION STATUS
-# ===================================================
-
-@app.route('/update-quotation-status', methods=['POST'])
-def update_quotation_status():
-    """
-    Update the status of a single quotation in your existing JSON file
-    Expected JSON payload:
-    {
-        "quotation_id": "QA-0001",
-        "status": "expired",
-        "status_date": "2026-02-20T10:30:00.000Z",
-        "rejection_reason": "Auto-expired",
-        "status_history": {
-            "status": "expired",
-            "date": "2026-02-20T10:30:00.000Z",
-            "user": "System",
-            "notes": "Auto-expired"
-        }
-    }
-    """
-    try:
-        data = request.json
-        quotation_id = data.get('quotation_id')
-        new_status = data.get('status')
-        status_date = data.get('status_date', datetime.now().isoformat())
-        rejection_reason = data.get('rejection_reason', '')
-        status_history = data.get('status_history', {})
-        
-        # Validate required fields
-        if not quotation_id:
-            return jsonify({
-                'success': False,
-                'error': 'quotation_id is required',
-                'code': 400
-            }), 400
-            
-        if not new_status:
-            return jsonify({
-                'success': False,
-                'error': 'status is required',
-                'code': 400
-            }), 400
-        
-        # Load quotations from your existing JSON file
-        quotations = load_quotations()
-        
-        if not quotations:
-            return jsonify({
-                'success': False,
-                'error': 'No quotations found in file',
-                'code': 404
-            }), 404
-        
-        # Find the quotation
-        index, quotation = find_quotation_by_id(quotations, quotation_id)
-        
-        if index is None:
-            return jsonify({
-                'success': False,
-                'error': f'Quotation {quotation_id} not found',
-                'code': 404,
-                'quotation_id': quotation_id
-            }), 404
-        
-        # Store old status for logging
-        old_status = quotation.get('status', 'unknown')
-        
-        # Update status
-        quotations[index]['status'] = new_status
-        quotations[index]['status_date'] = status_date
-        quotations[index]['rejection_reason'] = rejection_reason
-        quotations[index]['last_updated'] = datetime.now().isoformat()
-        
-        # Update status history
-        if 'status_history' not in quotations[index]:
-            quotations[index]['status_history'] = []
-        elif quotations[index]['status_history'] is None:
-            quotations[index]['status_history'] = []
-        
-        # Add new history entry
-        new_history_entry = {
-            'status': new_status,
-            'date': status_date,
-            'user': status_history.get('user', 'System'),
-            'notes': status_history.get('notes', f'Quotation {new_status}')
-        }
-        quotations[index]['status_history'].append(new_history_entry)
-        
-        # Save back to JSON file
-        if save_quotations(quotations):
-            print(f"✅ Quotation {quotation_id} status updated from {old_status} to {new_status}")
-            
-            return jsonify({
-                'success': True,
-                'message': f'Quotation {quotation_id} updated to {new_status}',
-                'quotation_id': quotation_id,
-                'old_status': old_status,
-                'new_status': new_status,
-                'updated_at': status_date
-            })
-        else:
-            return jsonify({
-                'success': False,
-                'error': 'Failed to save to JSON file',
-                'code': 500
-            }), 500
-        
-    except Exception as e:
-        print(f"❌ Error updating quotation status: {str(e)}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-            'code': 500
-        }), 500
-
 
 
 # ===================================================
@@ -12235,97 +12587,117 @@ def test_pdf():
     except Exception as e:
         return f"Error: {str(e)}"
 
-@app.route('/delete-quotation/<quotation_id>', methods=['DELETE'])
-def delete_quotation(quotation_id):
-    """Delete a quotation (only allowed for draft status)"""
+
+# =========================================
+# BILL LOAD/SAVE HELPERS (DATABASE VERSION)
+# =========================================
+def fetch_one(query, params=None):
+    conn = get_db_connection()
+    
     try:
-        # Load quotations from JSON file
-        with open(QUOTATION_FILE, 'r') as f:
-            quotations = json.load(f)
-        
-        # Find the quotation
-        quotation_to_delete = None
-        for q in quotations:
-            if q.get('quotation_id') == quotation_id:
-                quotation_to_delete = q
-                break
-        
-        if not quotation_to_delete:
-            return jsonify({
-                'success': False,
-                'error': 'Quotation not found'
-            }), 404
-        
-        # Check if status is draft (only draft can be deleted)
-        if quotation_to_delete.get('status') != 'draft':
-            return jsonify({
-                'success': False,
-                'error': 'Only draft quotations can be deleted'
-            }), 403
-        
-        # Remove the quotation
-        quotations = [q for q in quotations if q.get('quotation_id') != quotation_id]
-        
-        # Save back to JSON file
-        with open(QUOTATION_FILE, 'w') as f:
-            json.dump(quotations, f, indent=2)
-        
-        # Also delete associated comments
-        try:
-            with open(COMMENTS_FILE, 'r') as f:
-                comments = json.load(f)
-            
-            if quotation_id in comments:
-                del comments[quotation_id]
-                
-                with open(COMMENTS_FILE, 'w') as f:
-                    json.dump(comments, f, indent=2)
-        except FileNotFoundError:
-            pass  # Comments file doesn't exist, ignore
-        
-        # Delete associated attachments
-        try:
-            metadata_file = os.path.join(ATTACHMENTS_FOLDER, 'metadata.json')
-            if os.path.exists(metadata_file):
-                with open(metadata_file, 'r') as f:
-                    attachments = json.load(f)
-                
-                # Filter out attachments for this quotation
-                attachments_to_keep = [a for a in attachments if a.get('quotation_id') != quotation_id]
-                
-                # Delete physical files
-                for a in attachments:
-                    if a.get('quotation_id') == quotation_id:
-                        file_path = os.path.join(ATTACHMENTS_FOLDER, a.get('stored_filename', ''))
-                        if os.path.exists(file_path):
-                            os.remove(file_path)
-                
-                # Save updated metadata
-                with open(metadata_file, 'w') as f:
-                    json.dump(attachments_to_keep, f, indent=2)
-        except FileNotFoundError:
-            pass  # Attachments folder doesn't exist, ignore
-        
-        return jsonify({
-            'success': True,
-            'message': f'Quotation {quotation_id} deleted successfully'
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(query, params)
+            return cur.fetchone()
+    finally:
+        conn.close()
+
+def fetch_all(query, params=None):
+    conn = get_db_connection()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(query, params)
+            return cur.fetchall()
+    finally:
+        conn.close()
+
+def execute_query(query, params=None):
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(query, params)
+            conn.commit()
+    finally:
+        conn.close()
+
+# =========================================
+# BILL LOAD/SAVE HELPERS (DATABASE VERSION)
+# =========================================
+
+def load_bills():
+    """Load all bills from database with their items."""
+    sql = """
+        SELECT
+            b.id,
+            b.created_at,
+            b.user_email AS user,
+            b.payment_mode,
+            b.invoice_total,
+            COALESCE(
+                (SELECT json_agg(
+                    json_build_object(
+                        'product_code', bi.product_code,
+                        'product_name', bi.product_name,
+                        'quantity', bi.quantity,
+                        'price', bi.price,
+                        'total', bi.total
+                    )
+                ) FROM bill_items bi WHERE bi.bill_id = b.id),
+                '[]'::json
+            ) AS items
+        FROM quick_bills b
+        ORDER BY b.id DESC
+    """
+    rows = fetch_all(sql)
+    bills = []
+    for row in rows:
+        bills.append({
+            "id": row["id"],
+            "created_at": row["created_at"].isoformat(timespec="seconds") if row["created_at"] else "",
+            "user": row["user"],
+            "items": row["items"],
+            "totals": {"invoice_total": float(row["invoice_total"]) if row["invoice_total"] else 0},
+            "payment": {"mode": row["payment_mode"] or ""}
         })
-        
-    except Exception as e:
-        print(f"Error deleting quotation: {str(e)}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
+    return bills
+def save_bills(bills):
+    """Replace all bills in database (full replace - for compatibility)."""
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM bill_items")
+            cur.execute("DELETE FROM quick_bills")
+            
+            for b in bills:
+                cur.execute("""
+                    INSERT INTO quick_bills (id, created_at, user_email, payment_mode, invoice_total)
+                    VALUES (%s, %s, %s, %s, %s)
+                """, (b["id"], b.get("created_at"), b.get("user"), b.get("payment", {}).get("mode"), b.get("totals", {}).get("invoice_total")))
+                
+                for item in b.get("items", []):
+                    quantity = item.get("quantity")
+                    if quantity is None or quantity == "":
+                        quantity = 1
+                    price = item.get("price") or 0
+                    total = item.get("total") or (quantity * price)
+                    
+                    cur.execute("""
+                        INSERT INTO bill_items
+                        (bill_id, product_code, product_name, quantity, price, total)
+                        VALUES (%s, %s, %s, %s, %s, %s)
+                    """, (b["id"], item.get("product_code"), item.get("product_name"), quantity, price, total))
+            conn.commit()
+    finally:
+        conn.close()
 
+def generate_bill_id(bills=None):
+    """Get next bill ID from sequence."""
+    row = fetch_one("SELECT nextval('quick_bills_id_seq') AS next_id")
+    return row["next_id"]
 
+# =========================================
+# EMAIL CHECK
+# =========================================
 
-
-
-
-
-
-# EMAIL CHECK (enquiry table)
 @app.route("/check-email", methods=["POST"])
 def check_emails():
     data = request.get_json() or {}
@@ -12338,6 +12710,10 @@ def check_emails():
         (email,),
     )
     return jsonify({"exists": bool(row)})
+
+# =========================================
+# QUICK BILLING PAGE
+# =========================================
 
 @app.route("/quick-billing")
 def quick_billing():
@@ -12360,10 +12736,43 @@ def quick_billing():
         user_name=user_name,
     )
 
+# =========================================
+# PRODUCTS ENDPOINT - UPDATED FOR YOUR SCHEMA
+# =========================================
+
 @app.route("/api/products/qb") 
 def api_products_qb():
-    products = load_products()
-    return jsonify({"success": True, "products": products})
+    """Fetch products from database using actual table schema."""
+    try:
+        rows = fetch_all("""
+            SELECT 
+                product_id,
+                product_name,
+                unit_price,
+                COALESCE(discount, 0) as discount,
+                tax_code,
+                tax_percent
+            FROM products 
+            WHERE status = 'Active'
+            ORDER BY product_id
+        """)
+        products = []
+        for row in rows:
+            products.append({
+                "code": row["product_id"],
+                "name": row["product_name"],
+                "price": float(row["unit_price"]) if row["unit_price"] else 0,
+                "discount": float(row["discount"]) if row["discount"] else 0,
+                "tax_code": row["tax_code"] or "NONE"
+            })
+        return jsonify({"success": True, "products": products})
+    except Exception as e:
+        print(f"❌ Error fetching products: {e}")
+        return jsonify({"success": False, "message": "Could not load products"}), 500
+
+# =========================================
+# DELETED ITEMS PAGE
+# =========================================
 
 @app.route("/quick-billing/deleted")
 def quick_billing_deleted():
@@ -12388,7 +12797,6 @@ def quick_billing_deleted():
         user_email=user_email,
         user_name=user_name,
     )
-
 
 @app.get("/removed-items")
 def removed_items_metadata():
@@ -12416,89 +12824,47 @@ def removed_items_metadata():
         }
     ), 200
 
-
-# ---------- Quick Billing: load/save helpers (used by API and save-quick-bill) ----------
-def load_bills():
-    """Read bills from bills.json; return list (empty if missing/invalid)."""
-    if not os.path.exists(BILLS_FILE):
-        return []
-    try:
-        with open(BILLS_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        return data if isinstance(data, list) else []
-    except Exception as e:
-        print(f"❌ Error reading {BILLS_FILE}: {e}")
-        return []
-
-
-def save_bills(bills):
-    """Write bills list to bills.json."""
-    if not isinstance(bills, list):
-        raise ValueError("bills must be a list")
-    with open(BILLS_FILE, "w", encoding="utf-8") as f:
-        json.dump(bills, f, indent=2, ensure_ascii=False)
-
-
-def generate_bill_id(bills):
-    """Return next numeric bill id (max existing id + 1, or 1 if empty)."""
-    if not bills:
-        return 1
-    ids = []
-    for b in bills:
-        bid = b.get("id")
-        if bid is not None:
-            try:
-                ids.append(int(bid))
-            except (TypeError, ValueError):
-                pass
-    return max(ids) + 1 if ids else 1
-
+# =========================================
+# HOLD BILL ENDPOINT (DATABASE VERSION)
+# =========================================
 
 @app.route("/api/hold-bill", methods=["GET", "POST", "DELETE"])
 def handle_hold_bill():
-    """
-    Temporary hold for a single quick-billing bill.
-    Data is stored in Hold-Billing.json for now.
-    """
+    """Store temporary hold bill in database."""
+    
     if request.method == "POST":
         data = request.get_json(silent=True) or {}
         try:
-            with open(HOLD_FILE, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=2, ensure_ascii=False)
+            execute_query("DELETE FROM hold_bill")
+            execute_query(
+                "INSERT INTO hold_bill (data) VALUES (%s)",
+                (json.dumps(data),)
+            )
             return jsonify({"status": "success"})
-        except Exception as e:  # pragma: no cover - defensive
+        except Exception as e:
             return jsonify({"status": "error", "message": str(e)}), 500
 
     if request.method == "GET":
         try:
-            if os.path.exists(HOLD_FILE):
-                with open(HOLD_FILE, "r", encoding="utf-8") as f:
-                    bill = json.load(f)
-                return jsonify({"held": True, "bill": bill})
+            row = fetch_one("SELECT data FROM hold_bill LIMIT 1")
+            if row:
+                return jsonify({"held": True, "bill": row["data"]})
             return jsonify({"held": False})
-        except Exception as e:  # pragma: no cover - defensive
+        except Exception as e:
             return jsonify({"status": "error", "message": str(e)}), 500
 
     # DELETE
     try:
-        if os.path.exists(HOLD_FILE):
-            os.remove(HOLD_FILE)
+        execute_query("DELETE FROM hold_bill")
         return jsonify({"status": "success"})
-    except Exception as e:  # pragma: no cover - defensive
+    except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-
+# =========================================
+# SAVE QUICK BILL ENDPOINT (DATABASE VERSION)
+# =========================================
 @app.route("/api/save-quick-bill", methods=["POST"])
 def save_quick_bill():
-    """
-    Save a quick billing bill to bills.json.
-    The frontend sends a payload like:
-    {
-        "items": [...],
-        "totals": { "invoice_total": number },
-        "payment": { "mode": "Cash" | "UPI" | "Card" | "Multiple" | "-" }
-    }
-    """
     try:
         data = request.get_json(silent=True) or {}
         items = data.get("items") or []
@@ -12506,101 +12872,132 @@ def save_quick_bill():
         payment = data.get("payment") or {}
 
         if not items:
-            return (
-                jsonify({"success": False, "message": "No items to save"}),
-                400,
-            )
+            return jsonify({"success": False, "message": "No items to save"}), 400
 
-        bills = load_bills()
-        bill_id = generate_bill_id(bills)
+        user_email = session.get("user") or ""
 
-        bill_entry = {
-            "id": bill_id,
-            "created_at": datetime.now().isoformat(timespec="seconds"),
-            "user": session.get("user") or "",
-            "items": items,
-            "totals": totals,
-            "payment": payment,
-        }
-
-        bills.append(bill_entry)
-
+        conn = get_db_connection()
         try:
-            save_bills(bills)
-        except Exception as e:
-            print(f"❌ Error writing bills.json: {e}")
-            return (
-                jsonify(
-                    {"success": False, "message": "Could not save bill to file"}
-                ),
-                500,
-            )
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO quick_bills (created_at, user_email, payment_mode, invoice_total)
+                    VALUES (NOW(), %s, %s, %s)
+                    RETURNING id
+                """, (user_email, payment.get("mode"), totals.get("invoice_total")))
+                bill_id = cur.fetchone()[0]
+
+                for item in items:   # note: there was a duplicate loop in your original, fix that too
+                    quantity = item.get("quantity") or item.get("qty")
+                    if quantity is None or quantity == "":
+                        quantity = 1
+                    price = item.get("price") or 0
+                    total = item.get("total") or (quantity * price)
+
+                    cur.execute("""
+                        INSERT INTO bill_items
+                        (bill_id, product_code, product_name, quantity, price, total)
+                        VALUES (%s, %s, %s, %s, %s, %s)
+                    """, (bill_id, item.get("product_code"), item.get("product_name"), quantity, price, total))
+                conn.commit()
+        finally:
+            conn.close()
 
         return jsonify({"success": True, "billId": bill_id}), 201
-
-    except Exception as e:  # pragma: no cover - defensive
+    except Exception as e:
         print(f"❌ Unexpected error in save_quick_bill: {e}")
-        return (
-            jsonify(
-                {"success": False, "message": "Server error while saving bill"}
-            ),
-            500,
-        )
-
-
+        return jsonify({"success": False, "message": "Server error while saving bill"}), 500
 # =========================================
-# Quick Billing REST API (same pattern as /api/products, /api/customer)
+# QUICK BILLING REST API (DATABASE VERSION)
 # =========================================
+
+def _require_login_json():
+    """Helper to check login for JSON endpoints."""
+    user_email = session.get("user")
+    if not user_email:
+        return None, jsonify({"success": False, "message": "Session expired"}), 401
+    return user_email, None, None
 
 @app.route("/api/quick-billing", methods=["GET"])
 def api_quick_billing_list():
-    """
-    GET /api/quick-billing
-    List all quick bills with optional filters and pagination.
-    Query params: q (search), page, page_size, user, date_from, date_to.
-    Requires login.
-    """
+    """List all quick bills with filters and pagination."""
     user_email, resp, status = _require_login_json()
     if resp is not None:
         return resp, status
 
-    bills = load_bills()
-
-    q = (request.args.get("q") or "").strip().lower()
+    conditions = []
+    params = []
+    
+    q = (request.args.get("q") or "").strip()
+    if q:
+        conditions.append("(b.id::text ILIKE %s OR b.user_email ILIKE %s OR b.created_at::text ILIKE %s)")
+        like = f"%{q}%"
+        params.extend([like, like, like])
+    
     user_filter = (request.args.get("user") or "").strip()
+    if user_filter:
+        conditions.append("b.user_email ILIKE %s")
+        params.append(f"%{user_filter}%")
+    
     date_from = (request.args.get("date_from") or "").strip()
+    if date_from:
+        conditions.append("b.created_at >= %s")
+        params.append(date_from)
+    
     date_to = (request.args.get("date_to") or "").strip()
+    if date_to:
+        conditions.append("b.created_at <= %s")
+        params.append(date_to)
+    
+    where_clause = " AND ".join(conditions) if conditions else "1=1"
+    
+    count_sql = f"SELECT COUNT(*) FROM quick_bills b WHERE {where_clause}"
+    total_items = fetch_one(count_sql, params)["count"]
+    
     try:
         page = max(1, int(request.args.get("page") or 1))
         page_size = min(1000, max(1, int(request.args.get("page_size") or 10)))
     except (TypeError, ValueError):
         return jsonify({"success": False, "message": "Invalid page or page_size"}), 400
-
-    def match(b):
-        if q:
-            hay = " ".join([
-                str(b.get("id", "")),
-                str(b.get("user", "")),
-                (b.get("created_at") or ""),
-            ]).lower()
-            if q not in hay:
-                return False
-        if user_filter and (b.get("user") or "").strip().lower() != user_filter.lower():
-            return False
-        created = b.get("created_at") or ""
-        if date_from and created < date_from:
-            return False
-        if date_to and created > date_to:
-            return False
-        return True
-
-    filtered = [b for b in bills if match(b)]
-    total_items = len(filtered)
+    
+    offset = (page - 1) * page_size
     total_pages = max(1, (total_items + page_size - 1) // page_size)
     page = min(page, total_pages)
-    start = (page - 1) * page_size
-    items = filtered[start : start + page_size]
-
+    
+    sql = f"""
+        SELECT
+            b.id, b.created_at, b.user_email AS user,
+            b.payment_mode, b.invoice_total,
+            COALESCE(
+                (SELECT json_agg(
+                    json_build_object(
+                        'product_code', bi.product_code,
+                        'product_name', bi.product_name,
+                        'quantity', bi.quantity,
+                        'price', bi.price,
+                        'total', bi.total
+                    )
+                ) FROM bill_items bi WHERE bi.bill_id = b.id),
+                '[]'::json
+            ) AS items
+        FROM quick_bills b
+        WHERE {where_clause}
+        ORDER BY b.id DESC
+        LIMIT %s OFFSET %s
+    """
+    params_page = params + [page_size, offset]
+    rows = fetch_all(sql, params_page)
+    
+    items = []
+    for row in rows:
+        items.append({
+            "id": row["id"],
+            "created_at": row["created_at"].isoformat(timespec="seconds") if row["created_at"] else "",
+            "user": row["user"],
+            "items": row["items"],
+            "totals": {"invoice_total": float(row["invoice_total"]) if row["invoice_total"] else 0},
+            "payment": {"mode": row["payment_mode"] or ""}
+        })
+    
     return jsonify({
         "success": True,
         "data": {
@@ -12611,31 +13008,49 @@ def api_quick_billing_list():
         }
     }), 200
 
-
 @app.route("/api/quick-billing/<int:bill_id>", methods=["GET"])
 def api_quick_billing_get(bill_id):
-    """
-    GET /api/quick-billing/<bill_id>
-    Return a single bill by id. Requires login.
-    """
+    """Return a single bill by id."""
     user_email, resp, status = _require_login_json()
     if resp is not None:
         return resp, status
 
-    bills = load_bills()
-    bill = next((b for b in bills if b.get("id") == bill_id), None)
-    if not bill:
+    sql = """
+        SELECT
+            b.id, b.created_at, b.user_email AS user,
+            b.payment_mode, b.invoice_total,
+            COALESCE(
+                (SELECT json_agg(
+                    json_build_object(
+                        'product_code', bi.product_code,
+                        'product_name', bi.product_name,
+                        'quantity', bi.quantity,
+                        'price', bi.price,
+                        'total', bi.total
+                    )
+                ) FROM bill_items bi WHERE bi.bill_id = b.id),
+                '[]'::json
+            ) AS items
+        FROM quick_bills b
+        WHERE b.id = %s
+    """
+    row = fetch_one(sql, (bill_id,))
+    if not row:
         return jsonify({"success": False, "message": "Bill not found"}), 404
-    return jsonify({"success": True, "data": bill}), 200
 
+    bill = {
+        "id": row["id"],
+        "created_at": row["created_at"].isoformat(timespec="seconds") if row["created_at"] else "",
+        "user": row["user"],
+        "items": row["items"],
+        "totals": {"invoice_total": float(row["invoice_total"]) if row["invoice_total"] else 0},
+        "payment": {"mode": row["payment_mode"] or ""}
+    }
+    return jsonify({"success": True, "data": bill}), 200
 
 @app.route("/api/quick-billing", methods=["POST"])
 def api_quick_billing_create():
-    """
-    POST /api/quick-billing
-    Create a new quick bill. Body: { "items": [...], "totals": {}, "payment": {} }.
-    Requires login. Same behavior as /api/save-quick-bill but returns full bill and follows REST naming.
-    """
+    """Create a new quick bill."""
     user_email, resp, status = _require_login_json()
     if resp is not None:
         return resp, status
@@ -12651,37 +13066,56 @@ def api_quick_billing_create():
     if not items:
         return jsonify({"success": False, "message": "At least one item is required"}), 400
 
-    bills = load_bills()
-    bill_id = generate_bill_id(bills)
-    bill_entry = {
-        "id": bill_id,
-        "created_at": datetime.now().isoformat(timespec="seconds"),
-        "user": session.get("user") or "",
-        "items": items,
-        "totals": totals,
-        "payment": payment,
-    }
-    bills.append(bill_entry)
     try:
-        save_bills(bills)
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO quick_bills (created_at, user_email, payment_mode, invoice_total)
+                    VALUES (NOW(), %s, %s, %s)
+                    RETURNING id, created_at
+                """, (session.get("user") or "", payment.get("mode"), totals.get("invoice_total")))
+                bill_id, created_at = cur.fetchone()
+
+                for item in items:
+                    quantity = item.get("quantity") or 1
+                    price = item.get("price") or 0
+                    total = item.get("total") or (quantity * price)
+                    
+                    cur.execute("""
+                        INSERT INTO bill_items
+                        (bill_id, product_code, product_name, quantity, price, total)
+                        VALUES (%s, %s, %s, %s, %s, %s)
+                    """, (
+                        bill_id,
+                        item.get("product_code"),
+                        item.get("product_name"),
+                        quantity,
+                        price,
+                        total
+                    ))
+                conn.commit()
+
+        bill_entry = {
+            "id": bill_id,
+            "created_at": created_at.isoformat(timespec="seconds"),
+            "user": session.get("user") or "",
+            "items": items,
+            "totals": totals,
+            "payment": payment,
+        }
+        return jsonify({
+            "success": True,
+            "message": "Bill created successfully",
+            "data": bill_entry,
+        }), 201
+
     except Exception as e:
-        print(f"❌ Error writing bills: {e}")
+        print(f"❌ Error creating bill: {e}")
         return jsonify({"success": False, "message": "Could not save bill"}), 500
-
-    return jsonify({
-        "success": True,
-        "message": "Bill created successfully",
-        "data": bill_entry,
-    }), 201
-
 
 @app.route("/api/quick-billing/<int:bill_id>", methods=["PUT"])
 def api_quick_billing_update(bill_id):
-    """
-    PUT /api/quick-billing/<bill_id>
-    Update an existing bill. Body can include items, totals, payment (partial update supported).
-    Requires login.
-    """
+    """Update an existing bill."""
     user_email, resp, status = _require_login_json()
     if resp is not None:
         return resp, status
@@ -12690,79 +13124,79 @@ def api_quick_billing_update(bill_id):
         return jsonify({"success": False, "message": "Content-Type must be application/json"}), 400
 
     data = request.get_json(silent=True) or {}
-    bills = load_bills()
-    idx = next((i for i, b in enumerate(bills) if b.get("id") == bill_id), None)
-    if idx is None:
-        return jsonify({"success": False, "message": "Bill not found"}), 404
-
-    bill = bills[idx]
-    if "items" in data and data["items"] is not None:
-        bill["items"] = data["items"]
-    if "totals" in data and data["totals"] is not None:
-        bill["totals"] = data["totals"]
-    if "payment" in data and data["payment"] is not None:
-        bill["payment"] = data["payment"]
-    bill["updated_at"] = datetime.now().isoformat(timespec="seconds")
+    items = data.get("items")
+    totals = data.get("totals")
+    payment = data.get("payment")
 
     try:
-        save_bills(bills)
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1 FROM quick_bills WHERE id = %s", (bill_id,))
+                if not cur.fetchone():
+                    return jsonify({"success": False, "message": "Bill not found"}), 404
+
+                if totals is not None or payment is not None:
+                    cur.execute("""
+                        UPDATE quick_bills
+                        SET payment_mode = COALESCE(%s, payment_mode),
+                            invoice_total = COALESCE(%s, invoice_total)
+                        WHERE id = %s
+                    """, (
+                        payment.get("mode") if payment else None,
+                        totals.get("invoice_total") if totals else None,
+                        bill_id
+                    ))
+
+                if items is not None:
+                    cur.execute("DELETE FROM bill_items WHERE bill_id = %s", (bill_id,))
+                    for item in items:
+                        quantity = item.get("quantity") or 1
+                        price = item.get("price") or 0
+                        total = item.get("total") or (quantity * price)
+                        
+                        cur.execute("""
+                            INSERT INTO bill_items
+                            (bill_id, product_code, product_name, quantity, price, total)
+                            VALUES (%s, %s, %s, %s, %s, %s)
+                        """, (
+                            bill_id,
+                            item.get("product_code"),
+                            item.get("product_name"),
+                            quantity,
+                            price,
+                            total
+                        ))
+                conn.commit()
+
+        return api_quick_billing_get(bill_id)
+
     except Exception as e:
-        print(f"❌ Error writing bills: {e}")
+        print(f"❌ Error updating bill {bill_id}: {e}")
         return jsonify({"success": False, "message": "Could not update bill"}), 500
-
-    return jsonify({"success": True, "message": "Bill updated", "data": bill}), 200
-
 
 @app.route("/api/quick-billing/<int:bill_id>", methods=["DELETE"])
 def api_quick_billing_delete(bill_id):
-    """
-    DELETE /api/quick-billing/<bill_id>
-    Remove a bill. Requires login.
-    """
+    """Remove a bill."""
     user_email, resp, status = _require_login_json()
     if resp is not None:
         return resp, status
 
-    bills = load_bills()
-    new_list = [b for b in bills if b.get("id") != bill_id]
-    if len(new_list) == len(bills):
-        return jsonify({"success": False, "message": "Bill not found"}), 404
-
     try:
-        save_bills(new_list)
+        execute_query("DELETE FROM quick_bills WHERE id = %s", (bill_id,))
+        return jsonify({"success": True, "message": "Bill deleted successfully"}), 200
     except Exception as e:
-        print(f"❌ Error writing bills: {e}")
+        print(f"❌ Error deleting bill {bill_id}: {e}")
         return jsonify({"success": False, "message": "Could not delete bill"}), 500
-
-    return jsonify({"success": True, "message": "Bill deleted successfully"}), 200
-
 
 @app.route("/api/quick-billing/new-id", methods=["GET"])
 def api_quick_billing_new_id():
-    """
-    GET /api/quick-billing/new-id
-    Return the next bill id (for UI use). Requires login.
-    """
+    """Return the next bill id for UI use."""
     user_email, resp, status = _require_login_json()
     if resp is not None:
         return resp, status
-    bills = load_bills()
-    next_id = generate_bill_id(bills)
-    return jsonify({"billId": next_id}), 200
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    
+    row = fetch_one("SELECT nextval('quick_bills_id_seq') AS next_id")
+    return jsonify({"billId": row["next_id"]}), 200
 
 
 
@@ -13245,7 +13679,8 @@ def create_sales_order():
 
 @app.get("/api/sales-orders/all")
 def api_sales_orders_all():
-    orders = load_sales_orders()
+    conn = get_db_connection()
+    cur = conn.cursor()
     q = (request.args.get("q") or "").strip().lower()
     status = (request.args.get("status") or "").strip().lower()
     order_type = (request.args.get("order_type") or "").strip().lower()
@@ -13263,36 +13698,102 @@ def api_sales_orders_all():
         page_size = 10
     page_size = min(max(page_size, 1), 100)
 
-    def _norm(v):
-        return str(v or "").strip().lower()
+    where_parts = []
+    params = []
 
-    statuses = sorted({str(o.get("status") or "").strip() for o in orders if str(o.get("status") or "").strip()})
-    types = sorted({str(o.get("order_type") or "").strip() for o in orders if str(o.get("order_type") or "").strip()})
-    reps = sorted({str(o.get("sales_rep") or "").strip() for o in orders if str(o.get("sales_rep") or "").strip()})
+    if q:
+        where_parts.append(
+            """
+            (
+                LOWER(so.so_id) LIKE %s OR
+                LOWER(COALESCE(so.customer_name, c.name, '')) LIKE %s OR
+                LOWER(COALESCE(so.sales_rep, '')) LIKE %s
+            )
+            """
+        )
+        like = f"%{q}%"
+        params.extend([like, like, like])
+    if status:
+        where_parts.append("LOWER(COALESCE(so.status, '')) = %s")
+        params.append(status)
+    if order_type:
+        where_parts.append("LOWER(COALESCE(so.order_type, '')) = %s")
+        params.append(order_type)
+    if sales_rep:
+        where_parts.append("LOWER(COALESCE(so.sales_rep, '')) = %s")
+        params.append(sales_rep)
 
-    filtered = []
-    for o in orders:
-        so_id = str(o.get("so_id") or o.get("soId") or o.get("sales_order_id") or o.get("id") or "")
-        if q and q not in so_id.lower():
-            continue
-        if status and _norm(o.get("status")) != status:
-            continue
-        if order_type and _norm(o.get("order_type") or o.get("orderType")) != order_type:
-            continue
-        if sales_rep and _norm(o.get("sales_rep") or o.get("salesRep")) != sales_rep:
-            continue
-        filtered.append(o)
+    where_sql = f"WHERE {' AND '.join(where_parts)}" if where_parts else ""
 
-    total = len(filtered)
+    cur.execute(
+        f"""
+        SELECT COUNT(*)
+        FROM sales_orders so
+        LEFT JOIN customers c ON c.customer_id = so.customer_id
+        {where_sql}
+        """,
+        tuple(params),
+    )
+    total = int((cur.fetchone() or [0])[0] or 0)
+
+    total_pages = max(1, (total + page_size - 1) // page_size) if use_pagination else 1
+    page = max(1, min(page, total_pages))
+    limit_offset_sql = ""
+    query_params = list(params)
     if use_pagination:
-        total_pages = max(1, (total + page_size - 1) // page_size)
-        page = max(1, min(page, total_pages))
-        start = (page - 1) * page_size
-        page_items = filtered[start : start + page_size]
-    else:
-        total_pages = 1
-        page = 1
-        page_items = filtered
+        limit_offset_sql = "LIMIT %s OFFSET %s"
+        query_params.extend([page_size, (page - 1) * page_size])
+
+    cur.execute(
+        f"""
+        SELECT
+            so.so_id,
+            so.order_date,
+            so.sales_rep,
+            so.order_type,
+            so.status,
+            so.stock_status,
+            so.customer_id,
+            COALESCE(so.customer_name, c.name, '') AS customer_name,
+            so.grand_total,
+            so.created_at,
+            so.updated_at
+        FROM sales_orders so
+        LEFT JOIN customers c ON c.customer_id = so.customer_id
+        {where_sql}
+        ORDER BY so.created_at DESC, so.so_id DESC
+        {limit_offset_sql}
+        """,
+        tuple(query_params),
+    )
+    rows = cur.fetchall()
+    page_items = []
+    for r in rows:
+        page_items.append(
+            {
+                "so_id": r[0],
+                "order_date": str(r[1]) if r[1] else "",
+                "sales_rep": r[2] or "",
+                "order_type": r[3] or "",
+                "status": r[4] or "",
+                "stock_status": r[5] or "",
+                "customer_id": r[6] or "",
+                "customer_name": r[7] or "",
+                "grand_total": float(r[8] or 0),
+                "created_at": r[9].isoformat() if r[9] and hasattr(r[9], "isoformat") else "",
+                "updated_at": r[10].isoformat() if r[10] and hasattr(r[10], "isoformat") else "",
+            }
+        )
+
+    cur.execute("SELECT DISTINCT status FROM sales_orders WHERE status IS NOT NULL AND status <> '' ORDER BY status")
+    statuses = [r[0] for r in (cur.fetchall() or []) if r and r[0]]
+    cur.execute("SELECT DISTINCT order_type FROM sales_orders WHERE order_type IS NOT NULL AND order_type <> '' ORDER BY order_type")
+    types = [r[0] for r in (cur.fetchall() or []) if r and r[0]]
+    cur.execute("SELECT DISTINCT sales_rep FROM sales_orders WHERE sales_rep IS NOT NULL AND sales_rep <> '' ORDER BY sales_rep")
+    reps = [r[0] for r in (cur.fetchall() or []) if r and r[0]]
+
+    cur.close()
+    conn.close()
 
     return jsonify({
         "orders": page_items,
@@ -19533,6 +20034,12 @@ def deliverynote_return_new():
         user_email=user_email,
         user_name=user_name,
     )
+
+
+@app.route("/delivery-return/create/<dn_id>")
+def delivery_return_create_compat(dn_id):
+    """Backward-compatible redirect for old Delivery Return links."""
+    return redirect(url_for("deliverynote_return_new", dn_id=dn_id))
 
 # =========================================================
 # API: GET DELIVERY NOTE BY ID (PostgreSQL — used by DNR autofill ?dn_id=)

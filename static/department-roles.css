@@ -268,8 +268,7 @@
 /* hover */
 .department-page .dept-table tbody tr:hover td {
   background: #e3bdbd;
-  transform: scale(1.01);
-  transition: 0.25s ease;
+  transition: background 0.25s ease;
 }
 
 /* -----------------------------------------
@@ -312,6 +311,19 @@
   color: white;
   cursor: pointer;
   font-weight: 600;
+  transition: 0.25s ease;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+}
+
+.department-page .edit-btn:hover,
+.department-page .delete-btn:hover {
+  transform: translateY(-3px);
+  background-color: #4a1f1a;
+  color: beige;
 }
 
 /* Disabled Edit button (non-admin) */
@@ -431,10 +443,10 @@
    FOOTER / PAGINATION
 ------------------------------------------ */
 .department-page .table-footer {
-  width: 95%;
+  width: 100%;
   background: #f3f3f3;
   border-top: 1px solid #e0e0e0;
-  padding: 8px 18px;
+  padding: 12px 14px;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -450,7 +462,9 @@
 .department-page .pagination-controls {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
+  margin-left: auto;
+  margin-right: 20px;
 }
 
 .department-page .pager-btn {
@@ -471,6 +485,16 @@
 
 .department-page .pager-btn:disabled {
   opacity: 0.5;
+}
+
+.department-page .page-info .page-num {
+  font-size: 14px;
+  font-weight: 700;
+  color: #7a1d1d;
+}
+
+.department-page .page-info {
+  color: #7a1d1d !important;
 }
 
 /* -----------------------------------------

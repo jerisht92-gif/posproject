@@ -50,21 +50,14 @@ document.addEventListener("DOMContentLoaded", () => {
     window.location.href = `/deliverynote_return/new?dnr_id=${encodeURIComponent(dnrId)}&mode=${encodeURIComponent(mode)}`;
   }
 
-  function goNewInvoiceReturnFromDnr(dnrId) {
-    window.location.href = `/new-invoice-return?from_dnr=${encodeURIComponent(dnrId)}`;
-  }
-
   function buildDnrFlyMenu(row, anchorBtn) {
     const dnrId = row.dnrId;
     const st = norm(row.status);
 
     const isDraft = st === "draft";
-    const isSubmitted = st === "submitted";
 
     let firstLabel = isDraft ? "Edit details" : "View details";
     let firstMode = isDraft ? "edit" : "view";
-
-    const canGenerateInvoiceReturn = isSubmitted;
 
     removeDnrFly();
     dnrFlyEl = document.createElement("div");
@@ -82,14 +75,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
     dnrFlyEl.appendChild(
       mkItem(firstLabel, () => goDnrDetailPage(dnrId, firstMode), false)
-    );
-
-    dnrFlyEl.appendChild(
-      mkItem(
-        "Generate Invoice Return",
-        () => goNewInvoiceReturnFromDnr(dnrId),
-        !canGenerateInvoiceReturn
-      )
     );
 
     dnrFlyEl.addEventListener("mouseenter", keepDnrFlyOpen);

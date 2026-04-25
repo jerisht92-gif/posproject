@@ -1549,7 +1549,7 @@ function formatMoney(value) {
   returnBtn?.addEventListener("click", () => {
     const id = dnId?.value || dnIdView?.value || "";
     if (!id) return showToast("Delivery Note ID not found", "error");
-    window.location.href = `/delivery-return/create/${encodeURIComponent(id)}`;
+    window.location.href = `/deliverynote_return/new?dn_id=${encodeURIComponent(id)}`;
   });
 
   deliveryStatusEl?.addEventListener("change", () => {

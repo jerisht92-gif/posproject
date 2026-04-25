@@ -104,6 +104,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // ---------- REGEX RULES ----------
   const nameRegex      = /^[A-Za-z\s]{1,40}$/;
+  const lastNameRegex  = /^[A-Za-z\s]{1,30}$/;
   const emailRegex =
     /^[A-Za-z0-9._%+-]{3,40}@(gmail\.com|yahoo\.com|yahoo\.co\.in|outlook\.com|hotmail\.com|thestackly\.com|stackly\.in)$/i;
   const empIdRegex     = /^[A-Za-z0-9\-]{1,20}$/;      // letters, numbers, '-', max 20
@@ -191,7 +192,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // Check Last Name
     const ln = lastName.value.trim();
-    const lastNameValid = ln && ln.length >= 3 && nameRegex.test(ln);
+    const lastNameValid = ln && ln.length >= 1 && lastNameRegex.test(ln);
 
     // Check Email (if field exists)
     let emailValid = true;
@@ -274,7 +275,7 @@ document.addEventListener("DOMContentLoaded", () => {
   //          LIVE INPUT RESTRICTIONS + CLEAR
   // ==================================================
 
-  // First / Last name – only letters & spaces, max 40
+  // First / Last name – only letters & spaces
   firstName.addEventListener("input", () => {
     firstName.value = firstName.value
       .replace(/[^A-Za-z\s]/g, "")
@@ -298,15 +299,15 @@ document.addEventListener("DOMContentLoaded", () => {
     lastName.value = lastName.value
       .replace(/[^A-Za-z\s]/g, "")
       .replace(/\s{2,}/g, " ")
-      .slice(0, 40);
+      .slice(0, 30);
 
     const v = lastName.value.trim();
     if (!v) {
       setFieldError(lastName, "Last Name is required.");
-    } else if (v.length < 3) {
-      setFieldError(lastName, "Minimum 3 Letters Required");
-    } else if (!nameRegex.test(v)) {
-      setFieldError(lastName, "Last Name should contain only letters (max 40).");
+    } else if (v.length < 1) {
+      setFieldError(lastName, "Minimum 1 Letters Required");
+    } else if (!lastNameRegex.test(v)) {
+      setFieldError(lastName, "Last Name should contain only letters (1-30).");
     } else {
       setFieldError(lastName, "");
     }
@@ -573,12 +574,12 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!ln) {
       hasError = true;
       setFieldError(lastName, "Last Name is required.");
-    } else if (ln.length < 3) {
+    } else if (ln.length < 1) {
       hasError = true;
-      setFieldError(lastName, "Minimum 3 Letters Required");
-    } else if (!nameRegex.test(ln)) {
+      setFieldError(lastName, "Minimum 1 Letters Required");
+    } else if (!lastNameRegex.test(ln)) {
       hasError = true;
-      setFieldError(lastName, "Last Name should contain only letters (max 40).");
+      setFieldError(lastName, "Last Name should contain only letters (1-30).");
     }
 
     // Email (only if field exists – Admin)

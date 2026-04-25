@@ -277,7 +277,7 @@ input[type="checkbox"] {
   box-sizing: border-box;
   transition: 0.2s ease;
   outline: none;
-  resize: vertical;
+  resize: none;
   min-height: 70px;
 }
 
