@@ -1,177 +1,156 @@
-/* ==========================
-   GLOBAL RESET
-========================== */
+/* =========================
+   TOKENS + GLOBAL
+========================= */
+:root {
+  --bg-page: #f7f1f3;
+  --card-bg: #ffffff;
+  --text-primary: #1c1c1c;
+  --text-secondary: #5a5a5a;
+  --maroon: #8b1538;
+  --maroon-dark: #6e102c;
+  --maroon-soft: rgba(139, 21, 56, 0.12);
+  --error: #a62148;
+  --placeholder: #9ca3a8;
+  --input-radius: 12px;
+  --card-radius: 30px;
+}
+
 *,
 *::before,
 *::after {
   box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  font-family: "Inter", "Segoe UI", system-ui, sans-serif;
 }
 
-/* ==========================
-   GLOBAL BODY / BACKGROUND
-========================== */
 html,
 body {
   width: 100%;
   min-height: 100vh;
-  margin: 0;
-  padding: 0;
-  overflow-x: hidden;
 }
 
 body {
-  font-family: "Poppins", sans-serif;
-  color: #fff;
-  background: #0a0414;
+  overflow-x: hidden;
+  color: var(--text-primary);
+  background: var(--bg-page);
 }
 
-/* ==========================
-   ANIMATED BACKGROUND
-========================== */
-.animated-bg {
+/* =========================
+   WAVE BACKGROUND (same style as login)
+========================= */
+.wave-container {
   position: fixed;
   inset: 0;
-  background: radial-gradient(circle at 25% 25%, #1a0b2e, #090212 85%);
-  overflow: hidden;
   z-index: -1;
-  perspective: 1000px;
-}
-
-.gradient-layer {
-  position: absolute;
-  width: 250%;
-  height: 250%;
-  background: linear-gradient(120deg, #ff007f, #ff6600, #cc00ff, #ffcc00);
-  filter: blur(200px);
-  animation: gradientMove 18s infinite alternate ease-in-out;
-  opacity: 0.65;
-}
-
-@keyframes gradientMove {
-  0% { transform: translate(-20%, -20%) rotate(0deg); }
-  100% { transform: translate(20%, 20%) rotate(360deg); }
+  pointer-events: none;
 }
 
 .wave {
   position: absolute;
-  bottom: 0;
-  left: -50%;
-  width: 250%;
-  height: 250px;
-  background: rgba(255, 0, 127, 0.25);
-  border-radius: 100%;
-  filter: blur(160px);
-  animation: waveMotion 12s linear infinite;
-  transform-origin: center;
+  width: 500px;
+  height: 280px;
+  animation: floatWave 6s ease-in-out infinite;
 }
 
-.wave2 {
-  background: rgba(255, 165, 0, 0.25);
-  animation-delay: 3s;
-  animation-duration: 14s;
+.wave::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: 0.25;
+  background: white;
+  mix-blend-mode: soft-light;
+  border-radius: inherit;
 }
 
-.wave3 {
-  background: rgba(204, 0, 255, 0.25);
-  animation-delay: 6s;
-  animation-duration: 18s;
+.wave-top {
+  top: -28px;
+  left: -42px;
+  filter: drop-shadow(0 10px 20px rgba(123, 30, 43, 0.3));
 }
 
-@keyframes waveMotion {
-  0%   { transform: rotateX(20deg) rotateZ(0deg) translateY(0); }
-  50%  { transform: rotateX(20deg) rotateZ(180deg) translateY(-80px); }
-  100% { transform: rotateX(20deg) rotateZ(360deg) translateY(0); }
+.wave-bottom {
+  bottom: -32px;
+  right: -42px;
+  animation-delay: 1s;
+  filter: drop-shadow(0 -10px 20px rgba(123, 30, 43, 0.3));
 }
 
-/* ==========================
-   MAIN LAYOUT
-========================== */
+.wave-top path {
+  fill: url(#gradientWaveSignup);
+}
+
+.wave-bottom path {
+  fill: url(#gradientWaveSignupBottom);
+}
+
+@keyframes floatWave {
+  0%,
+  100% { transform: translateY(0px) scale(1); }
+  50% { transform: translateY(-12px) scale(1.03); }
+}
+
+.wave path {
+  animation: gradientMove 8s ease infinite;
+}
+
+@keyframes gradientMove {
+  0% { filter: hue-rotate(0deg); }
+  50% { filter: hue-rotate(20deg); }
+  100% { filter: hue-rotate(0deg); }
+}
+
+/* =========================
+   MAIN LAYOUT + CARD
+========================= */
 .signup-container {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  width: min(1200px, 100% - 48px);
-  margin: 0 auto;
-  height: 100vh;          /* 👈 fills screen on desktop */
+  justify-content: center;
+  width: 100%;
+  min-height: 100vh;
+  padding: 36px 20px;
 }
 
-/* LEFT SECTION (TEXT) */
-.left-section {
-  flex: 1;
-  padding: 24px;
-
-  /* 👇 center the heading + text inside the left half */
-  display: flex;
-  flex-direction: column;
-  justify-content: center;   /* vertical center */
-  align-items: center;   /* keep left alignment */
-  text-align: left;
-}
-
-.left-section h1 {
-  font-size: 40px;
-  margin-bottom: 8px;
-  background: linear-gradient(90deg, #ff007f, #ff6600, #ffcc00);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  text-shadow: 0 0 25px rgba(255, 102, 0, 0.6);
-}
-
-.left-section p {
-  font-size: 15px;
-  color: #f3e6ff;
-  opacity: 0.95;
-}
-
-/* ==========================
-   SIGNUP CARD + LOGO
-========================== */
 .right-section {
-  flex: 0 0 auto;
+  width: 100%;
   display: flex;
   justify-content: center;
-  align-items: center;
 }
 
 .signup-box {
-  background: rgba(255, 255, 255, 0.08);
-  -webkit-backdrop-filter: blur(25px);
-  backdrop-filter: blur(25px);
-  padding: 16px 18px;
-  border-radius: 20px;
-  width: 320px;
-  box-shadow: 0 0 70px rgba(255, 0, 127, 0.3);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  transition: transform 0.4s ease, box-shadow 0.4s ease;
-}
-
-.signup-box:hover {
-  transform: scale(1.02);
-  box-shadow: 0 0 90px rgba(255, 102, 0, 0.6);
+  background: var(--card-bg);
+  width: 100%;
+  max-width: 500px;
+  padding: 34px 30px 28px;
+  border-radius: var(--card-radius);
+  border: 1px solid rgba(200, 130, 150, 0.35);
+  box-shadow: 0 4px 6px rgba(80, 20, 40, 0.04), 0 22px 50px rgba(100, 25, 50, 0.1);
 }
 
 .image1 {
   text-align: center;
-  margin-bottom: 4px;
+  margin-bottom: 14px;
 }
 
 .stackly-logo {
-  width: 90px;
+  width: 150px;
   height: auto;
-  margin-top: 2px;
-  filter: brightness(2) drop-shadow(0 0 35px #0066ff);
-  transform: perspective(700px) rotateY(10deg);
-  animation: floatLogo 5s ease-in-out infinite;
 }
 
-@keyframes floatLogo {
-  0%, 100% {
-    transform: perspective(700px) rotateY(10deg) translateY(0);
-  }
-  50% {
-    transform: perspective(700px) rotateY(-10deg) translateY(-10px);
-  }
+.signup-title {
+  text-align: center;
+  color: var(--maroon);
+  font-size: 2rem;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.signup-subtitle {
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+  margin-bottom: 18px;
 }
 
 /* ==========================
@@ -179,42 +158,57 @@ body {
 ========================== */
 #statusMsg {
   text-align: center;
-  font-weight: 600;
-  color: #ffcccc;
-  margin: 6px 0 10px;
+  font-weight: 500;
+  color: var(--maroon-dark);
+  margin: 0 0 12px;
   font-size: 13px;
+  background: #f9eaef;
+  border: 1px solid #e4c0cd;
+  border-radius: var(--input-radius);
+  padding: 10px;
+  display: none;
+}
+
+#statusMsg:not(:empty) {
+  display: block;
 }
 
 /* ==========================
    FORM FIELDS
 ========================== */
 .input-group {
-  margin-bottom: 6px;
+  margin-bottom: 10px;
 }
 
 .input-group label {
   display: block;
-  margin-bottom: 2px;
-  font-weight: 500;
-  color: #ff6600;
-  text-shadow: 0 0 8px rgba(255, 102, 0, 0.7);
-  font-size: 13px;
+  margin-bottom: 6px;
+  font-weight: 600;
+  color: var(--maroon);
+  font-size: 0.85rem;
 }
 
 .input-group input {
   width: 100%;
-  padding: 6px;
-  border: none;
+  padding: 11px 12px;
+  border: 1px solid #b7768f;
   outline: none;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.2);
-  color: #fff;
-  box-shadow: inset 0 0 10px rgba(255, 255, 255, 0.15);
-  font-size: 13px;
+  border-radius: var(--input-radius);
+  background: #fff;
+  color: var(--text-primary);
+  font-size: 0.92rem;
 }
 
 .input-group input::placeholder {
-  color: #ddd;
+  color: var(--placeholder);
+}
+
+.input-group input:focus,
+#countryCode:focus,
+.otp-btn:focus,
+.otp-btn1:focus {
+  border-color: var(--maroon);
+  box-shadow: 0 0 0 3px var(--maroon-soft);
 }
 
 /* Phone + country code */
@@ -225,23 +219,14 @@ body {
 }
 
 #countryCode {
-  padding: 6px 10px;
-  border-radius: 6px;
-  border: 1px solid #ccc;
-  background-color: #f9f9f9;
-  font-size: 12px;
+  padding: 11px 10px;
+  border-radius: var(--input-radius);
+  border: 1px solid #b7768f;
+  background-color: #fff;
+  font-size: 0.9rem;
   cursor: pointer;
   outline: none;
-  transition: border-color 0.3s ease;
   color: #111;
-}
-
-#countryCode:hover {
-  border-color: #4b9cff;
-}
-
-#countryCode:focus {
-  border-color: #007bff;
 }
 
 /* Email + OTP row */
@@ -258,15 +243,16 @@ body {
 /* OTP buttons */
 .otp-btn,
 .otp-btn1 {
-  background-color: #007bff;
+  background-color: var(--maroon);
   color: #fff;
   border: none;
-  padding: 5px 8px;
-  border-radius: 6px;
+  padding: 10px 10px;
+  border-radius: var(--input-radius);
   cursor: pointer;
-  font-size: 11px;
-  transition: background-color 0.3s ease;
+  font-size: 0.8rem;
+  transition: background-color 0.2s ease;
   white-space: nowrap;
+  font-weight: 600;
 }
 
 .otp-btn1 {
@@ -275,12 +261,12 @@ body {
 
 .otp-btn:hover,
 .otp-btn1:hover {
-  background-color: #0056b3;
+  background-color: var(--maroon-dark);
 }
 
 /* Caps Lock warning */
 .caps-warning {
-  color: #ffcc00;
+  color: #8f1e43;
   font-size: 11px;
   margin-top: 2px;
   display: none;   /* JS will change to block */
@@ -291,10 +277,18 @@ body {
   position: relative;
   display: flex;
   align-items: center;
+  border: 1px solid #b7768f;
+  border-radius: var(--input-radius);
+  overflow: hidden;
 }
 
 .password-container input {
   flex: 1;
+  border: none;
+  border-radius: 0;
+  padding-right: 42px;
+  padding-left: 12px;
+  box-shadow: none;
   padding-right: 38px; /* space for eye icon */
 }
 
@@ -308,6 +302,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
+  color: var(--maroon);
 }
 
 .eye-btn svg {
@@ -317,13 +312,13 @@ body {
 
 /* Error style for inputs (from JS) */
 input {
-  border: 1px solid #ccc;
+  border: 1px solid #b7768f;
   transition: border-color 0.2s ease;
   width: 100%;
 }
 
 input:valid {
-  border-color: green;
+  border-color: #4a9b66;
 }
 
 input.error {
@@ -340,14 +335,15 @@ input.error::placeholder {
    FOOTER + BUTTON
 ========================== */
 .footer-text {
-  margin: 10px 0 6px;
+  margin: 14px 0 10px;
   text-align: center;
-  color: #ccc;
-  font-size: 11px;
+  color: #6b6b6b;
+  font-size: 0.95rem;
 }
 
 .footer-text a {
-  color: #ffcc66;
+  color: var(--maroon);
+  font-weight: 700;
   text-decoration: none;
 }
 
@@ -357,23 +353,23 @@ input.error::placeholder {
 
 .signup-btn {
   width: 100%;
-  padding: 9px;
-  background: linear-gradient(90deg, #ff007f, #ff6600, #ffcc00);
+  padding: 12px;
+  background: var(--maroon);
   border: none;
-  border-radius: 10px;
+  border-radius: var(--input-radius);
   cursor: pointer;
-  color: #000;
-  font-weight: 700;
-  font-size: 14px;
-  letter-spacing: 0.4px;
-  transition: 0.3s;
+  color: #fff;
+  font-weight: 600;
+  font-size: 1rem;
+  letter-spacing: 0.02em;
+  transition: background 0.2s, transform 0.2s, box-shadow 0.2s;
 }
 
 .signup-btn:hover {
-  transform: scale(1.04);
-  background: linear-gradient(90deg, #ff6600, #ff007f, #ffcc00);
+  transform: translateY(-1px);
+  background: var(--maroon-dark);
   color: #fff;
-  box-shadow: 0 0 40px rgba(255, 102, 0, 0.8);
+  box-shadow: 0 4px 14px rgba(110, 16, 44, 0.28);
 }
 
 .signup-btn:disabled {
@@ -392,218 +388,34 @@ input.error::placeholder {
 }
 
 /* ==========================
-   DESKTOP – ONE SCREEN
-========================== */
-@media (min-width: 1024px) {
-
-  /* Reduce left section height */
-  .left-section h1 {
-    font-size: 32px !important;
-    margin-bottom: 4px !important;
-  }
-
-  .left-section p {
-    font-size: 13px !important;
-    margin-bottom: 0 !important;
-  }
-
-  /* Shrink signup card */
-  .signup-box {
-    transform: none !important;
-    padding: 12px 14px !important;
-    width: 300px !important;
-    border-radius: 16px !important;
-  }
-
-  .input-group {
-    margin-bottom: 2px !important;   /* reduce vertical gap */
-  }
-
-  .input-group label {
-    font-size: 12px !important;
-  }
-
-  .input-group input {
-    padding: 5px !important;
-    font-size: 12px !important;
-  }
-
-  /* OTP buttons */
-  .otp-btn,
-  .otp-btn1 {
-    padding: 4px 6px !important;
-    font-size: 10px !important;
-  }
-
-  /* Eye icons smaller */
-  .eye-btn svg {
-    width: 16px !important;
-    height: 16px !important;
-  }
-
-  /* Footer + Sign Up button */
-  .footer-text {
-    font-size: 10px !important;
-    margin: 4px 0 !important;
-  }
-
-  .signup-btn {
-    padding: 7px !important;
-    font-size: 13px !important;
-    margin-top: 4px !important;
-  }
-}
-
-.right-section {
-    position: relative;
-    left: -80px;     /* 👈 move left by 80px (adjust as needed) */
-  }
-
-
-/* ==========================
-   TABLETS
-========================== */
-@media (min-width: 768px) and (max-width: 1023px) {
-  body {
-    overflow-y: auto;
-  }
-
-  .signup-container {
-    height: auto;
-    min-height: 100vh;
-    flex-direction: row;
-    gap: 24px;
-  }
-
-  .left-section {
-    padding: 32px 16px;
-    text-align: center;
-  }
-
-  .left-section h1 {
-    font-size: 32px;
-  }
-
-  .left-section p {
-    font-size: 14px;
-  }
-
-  .signup-box {
-    width: 340px;
-  }
-}
-
-/* ==========================
-   MOBILE (≤ 767px)
+   RESPONSIVE
 ========================== */
 @media (max-width: 767px) {
-
-  html,
-  body {
-    height: auto;
-    overflow-y: auto;
-  }
-
   .signup-container {
-    flex-direction: column;
-    justify-content: flex-start;
-    align-items: center;
-    width: 100%;
-    min-height: 100vh;
-    padding: 12px 10px 20px;
-  }
-
-  .left-section {
-    padding: 0;
-    margin-bottom: 8px;
-    text-align: center;
-  }
-
-  .left-section h1 {
-    font-size: 1.6rem;
-    margin-bottom: 4px;
-  }
-
-  .left-section p {
-    display: none; /* save vertical space */
-  }
-
-  /* 🔹 IMPORTANT: reset desktop shift on mobile */
-  .right-section {
-    position: static;      /* cancel left:-80px etc */
-    left: auto;
-    transform: none;
-    width: 100%;
-    display: flex;
-    justify-content: center;
+    padding: 22px 14px;
   }
 
   .signup-box {
-    width: calc(100% - 24px);
-    max-width: 360px;
-    padding: 14px 14px;
-    border-radius: 18px;
+    padding: 24px 18px 22px;
   }
 
   .stackly-logo {
-    width: 80px;
-  }
-
-  .input-group {
-    margin-bottom: 4px;
-  }
-
-  .input-group label {
-    font-size: 13px;
-  }
-
-  .input-group input {
-    font-size: 13px;
-    padding: 6px;
+    width: 128px;
   }
 
   .otp-btn,
   .otp-btn1 {
-    font-size: 11px;
-    padding: 5px 7px;
+    font-size: 0.72rem;
+    padding: 9px 8px;
   }
 
   .signup-btn {
-    font-size: 13px;
-    padding: 8px;
+    font-size: 0.95rem;
   }
 
-  .footer-text {
-    font-size: 11px;
-    margin-top: 6px;
-  }
-}
-
-/* ==========================
-   EXTRA SMALL PHONES (≤ 360px)
-========================== */
-@media (max-width: 360px) {
-  .signup-container {
-    padding: 14px 10px 24px;
-  }
-
-  .signup-box {
-    padding: 16px 12px;
-    width: calc(100% - 24px);
-  }
-
-  .stackly-logo {
-    width: 70px !important;
-  }
-
-  .input-group input {
-    font-size: 12px;
-  }
-
-  .otp-btn,
-  .otp-btn1,
-  .signup-btn {
-    font-size: 12px;
+  .wave {
+    width: 360px;
+    height: 220px;
   }
 }
 

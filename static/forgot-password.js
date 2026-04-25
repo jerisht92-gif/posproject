@@ -46,7 +46,7 @@ sendBtn.addEventListener("click", () => {
 
   if (statusEl) {
     statusEl.textContent = "Checking email...";
-    statusEl.style.color = "#ffd966";
+    statusEl.style.color = "#8f1e43";
   }
 
   // 2️⃣ Ask backend if email is registered
@@ -68,7 +68,7 @@ sendBtn.addEventListener("click", () => {
     .catch(() => {
       if (statusEl) {
         statusEl.textContent = "Network error. Please try again.";
-        statusEl.style.color = "#ffffff";
+        statusEl.style.color = "#6e102c";
       }
     });
 });

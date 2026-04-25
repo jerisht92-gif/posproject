@@ -4,32 +4,46 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Sign Up - POS</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="{{ url_for('static', filename='signup.css') }}">
   <script src="https://unpkg.com/lucide@latest"></script>
   {% include '_stackly_config_scripts.html' %}
   <script src="{{ url_for('static', filename='signup.js') }}" defer></script>
 </head>
 <body>
-  <div class="animated-bg">
-    <div class="gradient-layer"></div>
-    <div class="wave"></div>
-    <div class="wave wave2"></div>
-    <div class="wave wave3"></div>
+  <div class="wave-container" aria-hidden="true">
+    <svg class="wave wave-top" viewBox="0 0 600 300" preserveAspectRatio="none">
+      <defs>
+        <linearGradient id="gradientWaveSignup" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stop-color="#7B1E2B" />
+          <stop offset="50%" stop-color="#A52A2A" />
+          <stop offset="100%" stop-color="#7B1E2B" />
+        </linearGradient>
+      </defs>
+      <path d="M0,0 C150,200 450,0 600,150 L600,0 Z"></path>
+    </svg>
+    <svg class="wave wave-bottom" viewBox="0 0 600 300" preserveAspectRatio="none">
+      <defs>
+        <linearGradient id="gradientWaveSignupBottom" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stop-color="#7B1E2B" />
+          <stop offset="50%" stop-color="#A52A2A" />
+          <stop offset="100%" stop-color="#7B1E2B" />
+        </linearGradient>
+      </defs>
+      <path d="M0,150 C150,300 450,100 600,300 L0,300 Z"></path>
+    </svg>
   </div>
 
   <div class="signup-container">
-    <div class="left-section">
-      <h1>Create an Account</h1>
-      <p>Turn ideas into action—stay organized, stay ahead.</p>
-    </div>
-
     <div class="right-section">
       <div class="signup-box">
         <div class="image1">
-          <!-- <img src="images/stack-img.webp" alt="Stackly Logo" class="stackly-logo" /> -->
-          <img src="../static/images/stack-img.webp" alt="Stackly Logo" class="stackly-logo" />
-
+          <img src="{{ url_for('static', filename='images/stack-img.webp') }}" alt="Stackly Logo" class="stackly-logo" />
         </div>
+      <h1 class="signup-title">Create an Account</h1>
+      <p class="signup-subtitle">Turn ideas into action - stay organized, stay ahead.</p>
       <!-- ERROR MESSAGE BELOW LOGO -->
       <p id="statusMsg" class="error-box"></p>
 
@@ -105,7 +119,7 @@
             required disabled />
               <button type="button" id="togglePassword" class="eye-btn" tabindex="-1">
                 <!-- 👁️ Eye icon SVG -->
-                <svg id="eyeIcon" xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="gray" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <svg id="eyeIcon" xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
                   <circle cx="12" cy="12" r="3"></circle>
                 </svg>
@@ -134,7 +148,7 @@
             <!-- 👁️ Toggle for Confirm Password -->
             <button type="button" id="toggleConfirmPassword" class="eye-btn" tabindex="-1">
               <svg id="eyeConfirmIcon" xmlns="http://www.w3.org/2000/svg" width="22" height="22"
-                viewBox="0 0 24 24" fill="none" stroke="gray" stroke-width="2"
+                viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                 stroke-linecap="round" stroke-linejoin="round">
                 <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
                 <circle cx="12" cy="12" r="3"></circle>
@@ -152,6 +166,8 @@
         <!-- SIGN UP BUTTON -->
         <button type="submit" id="signupBtn" class="signup-btn">Sign Up</button>
         </form>
-        <script src="{{ url_for('static', filename='signup.js') }}" defer></script>
-        </body>
-        </html> 
+      </div>
+    </div>
+  </div>
+</body>
+</html>

@@ -85,13 +85,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
   if (message === "session_expired") {
     loginErrorMsg.textContent = "⏰ Session expired! Please log in again.";
-    loginErrorMsg.style.color = "orange";
+    loginErrorMsg.style.color = "#8f1e43";
   } else if (message === "logged_out") {
     loginErrorMsg.textContent = "✅ You have been logged out successfully.";
-    loginErrorMsg.style.color = "white";
+    loginErrorMsg.style.color = "#5f1730";
   } else if (message === "invalid") {
     loginErrorMsg.textContent = "❌ Invalid email or password.";
-    loginErrorMsg.style.color = "white";
+    loginErrorMsg.style.color = "#a62148";
   }
 
   // =====================================================
@@ -99,7 +99,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // =====================================================
   if (localStorage.getItem("signupSuccess") === "true") {
     loginErrorMsg.textContent = "✅ Signup successful! Please log in.";
-    loginErrorMsg.style.color = "white";
+    loginErrorMsg.style.color = "#5f1730";
     localStorage.removeItem("signupSuccess");
   }
 
@@ -120,11 +120,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (!emailVal) {
       emailError.textContent = "Email is required";
-      emailError.style.color = "white";
+      emailError.style.color = "#a62148";
     } else if (!emailRegex.test(emailVal)) {
       // ✅ UPDATED message
       emailError.textContent = "Enter a valid email address (example@company.com)";
-      emailError.style.color = "white";
+      emailError.style.color = "#a62148";
     }
     
     updateLoginButtonState();
@@ -135,7 +135,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // =====================================================
   const capsWarning = document.createElement("div");
   capsWarning.id = "capsWarning";
-  capsWarning.style.color     = "yellow";
+  capsWarning.style.color     = "#8f1e43";
   capsWarning.style.fontSize  = "12px";
   capsWarning.style.marginTop = "5px";
 
@@ -162,7 +162,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const passwordVal = passwordInput.value.trim();
 
     passwordError.textContent = "";
-    passwordError.style.color = "white";
+    passwordError.style.color = "#a62148";
 
     if (!passwordVal) {
       passwordError.textContent = "Password is required";
@@ -234,8 +234,7 @@ document.addEventListener("DOMContentLoaded", () => {
       `;
     }
 
-    // Always keep stroke same colour (dark gray/black)
-    eyeIcon.setAttribute("stroke", "#555");
+    eyeIcon.setAttribute("stroke", "currentColor");
   });
 
   // =====================================================
@@ -282,18 +281,18 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (!emailVal) {
       emailError.textContent = "Email is required";
-      emailError.style.color = "white";
+      emailError.style.color = "#a62148";
       hasError = true;
     } else if (!emailRegex.test(emailVal)) {
       // ✅ UPDATED message
       emailError.textContent = "Enter a valid email address (example@company.com)";
-      emailError.style.color = "white";
+      emailError.style.color = "#a62148";
       hasError = true;
     }
 
     if (!passwordVal) {
       passwordError.textContent = "Password is required";
-      passwordError.style.color = "white";
+      passwordError.style.color = "#a62148";
       hasError = true;
     }
 
@@ -359,10 +358,10 @@ document.addEventListener("DOMContentLoaded", () => {
   // =====================================================
   function showMessage(msg, type) {
     loginErrorMsg.textContent = msg;
-    if (type === "error") loginErrorMsg.style.color = "white";
-    else if (type === "success") loginErrorMsg.style.color = "#00ff99";
-    else if (type === "lock") loginErrorMsg.style.color = "#ffd11a";
-    else loginErrorMsg.style.color = "#fff";
+    if (type === "error") loginErrorMsg.style.color = "#a62148";
+    else if (type === "success") loginErrorMsg.style.color = "#1f7a4a";
+    else if (type === "lock") loginErrorMsg.style.color = "#8f1e43";
+    else loginErrorMsg.style.color = "#5f1730";
   }
 
   function startLockCountdown(msg) {

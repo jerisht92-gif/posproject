@@ -6294,9 +6294,92 @@ def save_product():
                     message=f"A product with the same combination (Name: '{product.get('product_name')}', Type: '{product.get('type')}', Category: '{product.get('category')}', Status: '{product.get('status')}', Stock Level: {new_stock_level}, Price: {new_price}) already exists."
                 ), 409
         
-        # -------------------- SAVE TO JSON -----------------------------
-        products.append(product)
-        save_products(products)
+        # -------------------- SAVE TO DB (single-row insert) -----------------------------
+        tax_code = product.get("tax_code", "")
+        tax_percent = None
+        if tax_code:
+            m = re.search(r"\((\d+(?:\.\d+)?)%\)", str(tax_code))
+            if m:
+                try:
+                    tax_percent = float(m.group(1))
+                except ValueError:
+                    tax_percent = None
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+        try:
+            cur.execute(
+                """
+                INSERT INTO products (
+                    product_id, product_name, product_type, category_name,
+                    unit_price, discount, description, sub_category,
+                    quantity, stock_level, reorder_level,
+                    weight, specifications, related_products,
+                    status, product_usage, image,
+                    tax_code, tax_percent, tax_description,
+                    uom_name, uom_items, uom_description,
+                    warehouse_name, warehouse_location, warehouse_manager,
+                    warehouse_contact, warehouse_notes,
+                    size, color,
+                    supplier_name, supplier_contact, supplier_phone,
+                    supplier_email, supplier_address
+                ) VALUES (
+                    %s, %s, %s, %s,
+                    %s, %s, %s, %s,
+                    %s, %s, %s,
+                    %s, %s, %s,
+                    %s, %s, %s,
+                    %s, %s, %s,
+                    %s, %s, %s,
+                    %s, %s, %s,
+                    %s, %s,
+                    %s, %s,
+                    %s, %s, %s,
+                    %s, %s
+                )
+                """,
+                (
+                    product.get("product_id"),
+                    product.get("product_name"),
+                    product.get("type", ""),
+                    product.get("category", ""),
+                    to_float(form.get("unit_price")),
+                    to_float(form.get("discount")),
+                    product.get("description", ""),
+                    product.get("sub_category", ""),
+                    to_int(form.get("quantity")),
+                    to_int(form.get("stock_level")),
+                    to_int(form.get("reorder_level")),
+                    product.get("weight", ""),
+                    product.get("specifications", ""),
+                    product.get("related_products", ""),
+                    (product.get("status") or "Active").strip(),
+                    product.get("product_usage", ""),
+                    product.get("image", ""),
+                    tax_code,
+                    tax_percent,
+                    "",
+                    product.get("uom", ""),
+                    0,
+                    "",
+                    product.get("warehouse", ""),
+                    "",
+                    "",
+                    "",
+                    "",
+                    product.get("size", ""),
+                    product.get("color", ""),
+                    product.get("supplier", ""),
+                    "",
+                    "",
+                    "",
+                    "",
+                ),
+            )
+            conn.commit()
+        finally:
+            cur.close()
+            conn.close()
 
         return jsonify(success=True, product_id=product_id)
 

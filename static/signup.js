@@ -61,7 +61,7 @@ function showError(input, message) {
   if (!err) {
     err = document.createElement("small");
     err.classList.add("error-msg");
-    err.style.color = "white";
+    err.style.color = "#a62148";
     parent.appendChild(err);
   }
 
@@ -302,7 +302,7 @@ sendOtpBtn.onclick = function () {
   // 🔒 double-check before sending
   if (!validateEmail()) {
     statusMsg.textContent = "⚠️ Please enter a valid email address.";
-    statusMsg.style.color = "orange";
+    statusMsg.style.color = "#8f1e43";
     return;
   }
 
@@ -311,34 +311,34 @@ sendOtpBtn.onclick = function () {
   // Prevent resend if OTP already verified
   if (otpVerified) {
     statusMsg.textContent = "✅ OTP already verified. No need to resend.";
-    statusMsg.style.color = "lightgreen";
+    statusMsg.style.color = "#1f7a4a";
     return;
   }
 
   // Prevent resend during cooldown
   if (otpCooldownActive) {
     statusMsg.textContent = "⏳ Please wait before requesting another OTP.";
-    statusMsg.style.color = "orange";
+    statusMsg.style.color = "#8f1e43";
     return;
   }
 
   // Limit attempts
   if (otpAttempts >= maxOtpAttempts) {
     statusMsg.textContent = "❌ Too many OTP requests. Try again later.";
-    statusMsg.style.color = "white";
+    statusMsg.style.color = "#6e102c";
     sendOtpBtn.disabled = true;
     return;
   }
 
   if (!email) {
     statusMsg.textContent = "⚠️ Please enter your email first!";
-    statusMsg.style.color = "orange";
+    statusMsg.style.color = "#8f1e43";
     return;
   }
 
   otpAttempts++;
   statusMsg.textContent = "Sending OTP...";
-  statusMsg.style.color = "white";
+  statusMsg.style.color = "#6e102c";
   sendOtpBtn.disabled = true;
 
   // Start cooldown
@@ -379,19 +379,19 @@ sendOtpBtn.onclick = function () {
         otpInput.disabled = false;
         verifyOtpBtn.disabled = false;
         confirmPasswordInput.disabled = false;
-        statusMsg.style.color = "lightgreen";
+        statusMsg.style.color = "#1f7a4a";
         // ⭐ Move cursor to OTP field
         setTimeout(() => {
           if (otpInput) otpInput.focus();
         }, 100);
       } else {
-        statusMsg.style.color = "white";
+        statusMsg.style.color = "#6e102c";
       }
     })
      
     .catch(() => {
       statusMsg.textContent = "❌ Error sending OTP!";
-      statusMsg.style.color = "white";
+      statusMsg.style.color = "#6e102c";
     });
 };
 
@@ -410,12 +410,12 @@ verifyOtpBtn.onclick = function () {
 
   if (!otp) {
     statusMsg.textContent = "⚠️ Enter OTP to verify!";
-    statusMsg.style.color = "orange";
+    statusMsg.style.color = "#8f1e43";
     return;
   }
 
   statusMsg.textContent = "Verifying OTP...";
-  statusMsg.style.color = "white";
+  statusMsg.style.color = "#6e102c";
 
   fetch("/verify_otp", {
     method: "POST",
@@ -432,7 +432,7 @@ verifyOtpBtn.onclick = function () {
         passwordInput.disabled = false;
         sendOtpBtn.disabled = true;
         sendOtpBtn.textContent = "OTP Verified";
-        statusMsg.style.color = "lightgreen";
+        statusMsg.style.color = "#1f7a4a";
 
         if (cooldownTimer) {
           clearInterval(cooldownTimer);
@@ -442,12 +442,12 @@ verifyOtpBtn.onclick = function () {
         // Update signup button state after OTP verification
         updateSignupButtonState();
       } else {
-        statusMsg.style.color = "white";
+        statusMsg.style.color = "#6e102c";
       }
     })
     .catch(() => {
       statusMsg.textContent = "❌ Verification failed!";
-      statusMsg.style.color = "white";
+      statusMsg.style.color = "#6e102c";
     });
 };
 
@@ -552,7 +552,7 @@ signupForm.addEventListener("submit", async (e) => {
 
   if (!validFirstName || !validLastName || !validPhone || !validEmail || !validPass || !validConfirm) {
     statusMsg.textContent = "❌ Please Fill all the fields .";
-    statusMsg.style.color = "white";
+    statusMsg.style.color = "#6e102c";
     
     // Re-enable button on validation error
     if (signupBtn) {
@@ -586,7 +586,7 @@ signupForm.addEventListener("submit", async (e) => {
     if (res.status === 409) {
       // User exists / validation failed
       statusMsg.textContent = data.message;
-      statusMsg.style.color = "orange";
+      statusMsg.style.color = "#8f1e43";
 
       signupForm.reset();
       sendOtpBtn.textContent = "Send OTP";
@@ -607,7 +607,7 @@ signupForm.addEventListener("submit", async (e) => {
 
     if (!res.ok) {
       statusMsg.textContent = data.message || "❌ Signup failed!";
-      statusMsg.style.color = "white";
+      statusMsg.style.color = "#6e102c";
       
       // Re-enable button on error
       if (signupBtn) {
@@ -620,7 +620,7 @@ signupForm.addEventListener("submit", async (e) => {
 
     // Signup success
     statusMsg.textContent = data.message;
-    statusMsg.style.color = "lightgreen";
+    statusMsg.style.color = "#1f7a4a";
     signupForm.reset();
     otpInput.disabled = true;
     verifyOtpBtn.disabled = true;
@@ -632,7 +632,7 @@ signupForm.addEventListener("submit", async (e) => {
     }, 1000);
   } catch (err) {
     statusMsg.textContent = "❌ Server error. Try again later.";
-    statusMsg.style.color = "white";
+    statusMsg.style.color = "#6e102c";
     
     // Re-enable button on error
     if (signupBtn) {
@@ -652,12 +652,12 @@ async function verifyOtp() {
 
   if (!otp) {
     statusMsg.textContent = "⚠️ Enter OTP to verify!";
-    statusMsg.style.color = "orange";
+    statusMsg.style.color = "#8f1e43";
     return;
   }
 
   statusMsg.textContent = "Verifying OTP...";
-  statusMsg.style.color = "white";
+  statusMsg.style.color = "#6e102c";
 
   try {
     const res = await fetch(`${API_BASE}/verify_otp`, {
@@ -673,7 +673,7 @@ async function verifyOtp() {
       verifyOtpBtn.disabled = true;
       otpInput.disabled = true;
       passwordInput.disabled = false;
-      statusMsg.style.color = "lightgreen";
+      statusMsg.style.color = "#1f7a4a";
 
       // Send welcome email once
       if (!welcomeSent) {
@@ -693,11 +693,11 @@ async function verifyOtp() {
         }
       }
     } else {
-      statusMsg.style.color = "white";
+      statusMsg.style.color = "#6e102c";
     }
   } catch (err) {
     statusMsg.textContent = "❌ Verification failed!";
-    statusMsg.style.color = "white";
+    statusMsg.style.color = "#6e102c";
     console.error(err);
   }
 }

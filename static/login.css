@@ -1,316 +1,416 @@
 /* =========================
-   GLOBAL RESET & BODY
+   DESIGN TOKENS
+========================= */
+:root {
+  --bg-page: #f7f1f3;
+  --card-bg: #ffffff;
+  --text-primary: #1c1c1c;
+  --text-secondary: #5a5a5a;
+  --text-muted: #6b6b6b;
+  --maroon: #8b1538;
+  --maroon-dark: #6e102c;
+  --maroon-border: #c25a7a;
+  --maroon-soft: rgba(139, 21, 56, 0.12);
+  --error: #a62148;
+  --placeholder: #9ca3a8;
+  /* Rounded corners aligned with mock: card large; fields + button medium */
+  --input-radius: 12px;
+  --card-radius: 30px;
+  --checkbox-radius: 2px;
+}
+
+/* =========================
+   GLOBAL
 ========================= */
 * {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
-  font-family: "Poppins", sans-serif;
+  font-family: "Inter", "Segoe UI", system-ui, sans-serif;
 }
 
 body {
+  min-height: 100vh;
   height: 100vh;
   overflow: hidden;
-  color: #fff;
-  background: #0a0414;
+  color: var(--text-primary);
+  background: var(--bg-page);
 }
 
 /* =========================
-   ANIMATED BACKGROUND
+   ANIMATED GRADIENT WAVES
 ========================= */
-.animated-bg {
+.wave-container {
   position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: radial-gradient(circle at 25% 25%, #1a0b2e, #090212 85%);
-  overflow: hidden;
+  inset: 0;
   z-index: -1;
-  perspective: 1000px;
-  pointer-events: none !important; /* 🚀 FIX: don't block clicks */
+  pointer-events: none;
 }
 
-.gradient-layer {
+/* COMMON WAVE */
+.wave {
   position: absolute;
-  width: 250%;
-  height: 250%;
-  background: linear-gradient(120deg, #ff007f, #ff6600, #cc00ff, #ffcc00);
-  filter: blur(180px);
-  animation: gradientMove 16s infinite alternate ease-in-out;
-  opacity: 0.5;
-  pointer-events: none !important;
+  width: 500px;
+  height: 280px;
+  animation: floatWave 6s ease-in-out infinite;
+}
+
+.wave::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: 0.25;
+  background: white;
+  mix-blend-mode: soft-light;
+  border-radius: inherit;
+}
+
+/* TOP LEFT */
+.wave-top {
+  top: 0;
+  left: 0;
+  filter: drop-shadow(0 10px 20px rgba(123, 30, 43, 0.3));
+}
+
+/* BOTTOM RIGHT */
+.wave-bottom {
+  bottom: 0;
+  right: 0;
+  animation-delay: 1s;
+  filter: drop-shadow(0 -10px 20px rgba(123, 30, 43, 0.3));
+}
+
+/* GRADIENT ANIMATION */
+.wave-top path {
+  fill: url(#gradientWave);
+}
+
+.wave-bottom path {
+  fill: url(#gradientWaveBottom);
+}
+
+/* FLOATING MOTION */
+@keyframes floatWave {
+  0%,
+  100% {
+    transform: translateY(0px) scale(1);
+  }
+  50% {
+    transform: translateY(-12px) scale(1.03);
+  }
+}
+
+/* Animate gradient tone */
+.wave path {
+  animation: gradientMove 8s ease infinite;
 }
 
 @keyframes gradientMove {
   0% {
-    transform: translate(-20%, -20%) rotate(0deg);
+    filter: hue-rotate(0deg);
+  }
+  50% {
+    filter: hue-rotate(20deg);
   }
   100% {
-    transform: translate(20%, 20%) rotate(360deg);
-  }
-}
-
-.wave {
-  position: absolute;
-  bottom: 0;
-  left: -50%;
-  width: 250%;
-  height: 250px;
-  background: rgba(255, 0, 127, 0.2);
-  border-radius: 100%;
-  filter: blur(140px);
-  animation: waveMotion 14s linear infinite;
-  transform-origin: center;
-  pointer-events: none !important;
-}
-
-.wave2 {
-  background: rgba(255, 165, 0, 0.2);
-  animation-delay: 3s;
-}
-
-.wave3 {
-  background: rgba(204, 0, 255, 0.2);
-  animation-delay: 6s;
-}
-
-@keyframes waveMotion {
-  0% {
-    transform: rotateX(20deg) rotateZ(0deg);
-  }
-  100% {
-    transform: rotateX(20deg) rotateZ(360deg);
+    filter: hue-rotate(0deg);
   }
 }
 
 /* =========================
-   MAIN LAYOUT CONTAINER
+   LAYOUT
 ========================= */
 .login-container {
   display: flex;
   align-items: center;
   justify-content: center;
+  min-height: 100vh;
   height: 100vh;
-  width: 90%;
-  margin: auto;
+  width: 100%;
+  margin: 0 auto;
   position: relative;
-  z-index: 10; /* 🧩 FIX: clickable above animation */
+  z-index: 1;
+  padding: 20px 18px;
 }
 
-/* =========================
-   LEFT SECTION (TEXT)
-========================= */
 .left-section {
-  flex: 1;
-  text-align: center;
-  padding: 40px;
+  display: none;
 }
 
-.left-section h1 {
-  font-size: 3rem;
-  margin-bottom: 10px;
-  background: linear-gradient(90deg, #ff007f, #ff6600, #ffcc00);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  -webkit-text-fill-color: transparent;
-  text-shadow: 0 0 20px rgba(255, 102, 0, 0.6);
-}
-
-.left-section p {
-  font-size: 1.1rem;
-  opacity: 0.9;
-  color: #f3e6ff;
-}
-
-/* =========================
-   RIGHT SECTION (FORM WRAP)
-========================= */
 .right-section {
-  flex: 1;
   display: flex;
   justify-content: center;
   align-items: center;
+  width: 100%;
 }
 
 /* =========================
-   LOGIN CARD / BOX
+   LOGIN CARD
 ========================= */
 .login-box {
-  background: rgba(255, 255, 255, 0.08);
-  -webkit-backdrop-filter: blur(25px);
-  backdrop-filter: blur(25px);
-  padding: 40px;
-  border-radius: 20px;
-  width: 360px;
-  box-shadow: 0 0 70px rgba(255, 0, 127, 0.3);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  transition: all 0.5s ease;
+  background: var(--card-bg);
+  padding: 40px 36px 36px;
+  border-radius: var(--card-radius);
+  width: 100%;
+  max-width: 460px;
+  box-shadow: 0 4px 6px rgba(80, 20, 40, 0.04), 0 22px 50px rgba(100, 25, 50, 0.1);
+  border: 1px solid rgba(200, 130, 150, 0.35);
   position: relative;
-  z-index: 20; /* 🧩 Ensure form elements are always on top */
-}
-
-.login-box:hover {
-  transform: scale(1.06);
-  box-shadow: 0 0 90px rgba(255, 102, 0, 0.5);
+  z-index: 2;
+  /* Crisp outer corners: clip inner content to the same curve as border-radius */
+  overflow: hidden;
+  background-clip: padding-box;
 }
 
 /* =========================
-   LOGO
+   LOGO & TITLES
 ========================= */
 .image1 {
   text-align: center;
-  margin-bottom: 20px;
-}
-
-.stackly-logo {
-  width: 120px;
-  height: auto;
-  filter: brightness(1.8) drop-shadow(0 0 25px #0066ff);
-  animation: floatLogo 5s ease-in-out infinite;
-}
-
-@keyframes floatLogo {
-  0%, 100% {
-    transform: translateY(0);
-  }
-  50% {
-    transform: translateY(-10px);
-  }
-}
-
-/* =========================
-   INPUT GROUPS – EMAIL
-========================= */
-.input-group {
   margin-bottom: 18px;
 }
 
-.input-group label {
-  display: block;
-  margin-bottom: 6px;
-  font-weight: 500;
-  color: #ff6600;
-  text-shadow: 0 0 8px rgba(255, 102, 0, 0.7);
+.stackly-logo {
+  width: 150px;
+  height: auto;
+  display: inline-block;
+  vertical-align: middle;
 }
 
-.input-group input {
-  width: 100%;
-  padding: 10px;
-  border: none;
-  outline: none;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.2);
-  color: #fff;
-  box-shadow: inset 0 0 10px rgba(255, 255, 255, 0.15);
-  position: relative;
-  z-index: 25;
+.login-title {
+  text-align: center;
+  font-size: 1.75rem;
+  line-height: 1.2;
+  color: var(--maroon);
+  margin-bottom: 8px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
 }
 
-.input-group input::placeholder {
-  color: #ddd;
-}
-
-/* Error message under input fields */
-.error {
-  display: block;
-  color: #ff3b3b;
-  font-size: 0.8rem;
-  margin-top: 4px;
+.login-subtitle {
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  line-height: 1.5;
+  margin: 0 auto 24px;
+  max-width: 32em;
+  font-weight: 400;
 }
 
 /* =========================
-   PASSWORD FIELD + EYE ICON
+   INPUTS WITH LEFT ICONS
 ========================= */
-.password-container {
-  position: relative;
-  display: flex;
-  align-items: center;
+.input-group {
+  margin-bottom: 16px;
 }
 
+.input-group label,
 .password-group label {
   display: block;
   margin-bottom: 6px;
-  font-weight: 500;
-  color: #ff6600;
-  text-shadow: 0 0 8px rgba(255, 102, 0, 0.7);
+  font-weight: 600;
+  font-size: 0.8125rem;
+  color: var(--maroon);
+}
+
+.input-with-icon,
+.password-container {
+  position: relative;
+  display: block;
+  border: 1px solid var(--maroon);
+  border-radius: var(--input-radius);
+  background: #fff;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  /* Single smooth curve: children cannot paint square “inner” corners */
+  overflow: hidden;
+  background-clip: padding-box;
+  min-height: 48px;
+}
+
+.input-with-icon:focus-within,
+.password-container:focus-within {
+  border-color: var(--maroon);
+  box-shadow: 0 0 0 3px var(--maroon-soft);
+}
+
+.input-icon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--maroon);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.input-icon--lock {
+  z-index: 1;
+}
+
+.input-with-icon input {
+  width: 100%;
+  height: 100%;
+  min-height: 46px;
+  padding: 12px 14px 12px 42px;
+  border: 0;
+  outline: none;
+  border-radius: 0;
+  -webkit-appearance: none;
+  appearance: none;
+  background: #fff;
+  color: var(--text-primary);
+  font-size: 0.9375rem;
+  /* Edge/iOS: avoid system chrome fighting our wrapper radius */
+  background-clip: padding-box;
+}
+
+.input-with-icon input::placeholder {
+  color: var(--placeholder);
+}
+
+.password-group {
+  margin-bottom: 8px;
 }
 
 .password-container input {
-  padding: 10px;
-  flex: 1;
-  padding-right: 40px; /* make room for the eye icon */
-  border: none;
+  width: 100%;
+  min-height: 46px;
+  padding: 12px 46px 12px 42px;
+  border: 0;
   outline: none;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.2);
-  color: white;
-  box-shadow: inset 0 0 10px rgba(255, 255, 255, 0.15);
+  border-radius: 0;
+  -webkit-appearance: none;
+  appearance: none;
+  background: #fff;
+  color: var(--text-primary);
+  font-size: 0.9375rem;
+  background-clip: padding-box;
 }
 
 .password-container input::placeholder {
-  color: #ddd;
+  color: var(--placeholder);
+}
+
+.error {
+  display: block;
+  color: var(--error);
+  font-size: 0.75rem;
+  margin-top: 5px;
 }
 
 .eye-btn {
   position: absolute;
-  right: 12px;
+  right: 10px;
   top: 50%;
   transform: translateY(-50%);
   border: none;
   background: none;
   cursor: pointer;
-  padding: 0;
+  padding: 4px;
+  color: var(--maroon);
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .eye-icon {
-  width: 22px;
-  height: 22px;
-  stroke: #555 !important; /* gray/black */
-}
-
-.eye-btn svg {
-  pointer-events: none;    /* 🟢 clicks go to the button, not the SVG path */
+  width: 20px;
+  height: 20px;
+  stroke: currentColor;
 }
 
 .eye-btn:focus {
   outline: none;
 }
 
+.eye-btn:focus-visible {
+  border-radius: 4px;
+  box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--maroon);
+}
+
+.eye-btn svg {
+  pointer-events: none;
+}
+
 /* =========================
-   REMEMBER ME + FORGOT LINK
+   REMEMBER + FORGOT
 ========================= */
 .me-link {
   display: flex;
-  justify-content: space-around;
-  padding-top: 10px;
-  /* margin-top:5px; */
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 4px;
+  margin-bottom: 4px;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .remember-me {
-  margin-bottom: 5px;
-  margin-right: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.remember-me input[type="checkbox"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 17px;
+  height: 17px;
+  border: 1.5px solid var(--maroon);
+  border-radius: var(--checkbox-radius);
+  background: #fff;
+  cursor: pointer;
+  flex-shrink: 0;
+  position: relative;
+  vertical-align: middle;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.remember-me input[type="checkbox"]:hover {
+  border-color: var(--maroon-dark);
+}
+
+.remember-me input[type="checkbox"]:checked {
+  background: var(--maroon);
+  border-color: var(--maroon);
+}
+
+.remember-me input[type="checkbox"]:checked::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 1px;
+  width: 5px;
+  height: 9px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
 }
 
 .remember-me label {
-  color: #ff6600;
-  /* cursor: pointer; */
-  font-size: 13px;
-  text-decoration: none;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  font-weight: 400;
+  margin: 0;
+  cursor: pointer;
+  user-select: none;
 }
 
 .forgot-link {
   text-align: right;
-  /* margin-bottom: 18px; */
-  margin-left: 12px;
+  margin-left: auto;
 }
 
 .forgot-link span a {
-  color: #ff6600;
+  color: var(--maroon);
   cursor: pointer;
-  font-size: 13px;
+  font-size: 0.875rem;
   text-decoration: none;
+  font-weight: 500;
 }
 
 .forgot-link span a:hover {
@@ -318,92 +418,95 @@ body {
 }
 
 /* =========================
-   LOGIN BUTTON
+   SIGN-UP + BUTTON
 ========================= */
+.footer-text {
+  margin: 20px 0 18px;
+  text-align: center;
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.footer-text__muted {
+  color: var(--text-secondary);
+  margin-right: 4px;
+}
+
+.footer-text__cta {
+  color: var(--maroon);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.footer-text__cta:hover {
+  text-decoration: underline;
+}
+
 .login-btn {
   width: 100%;
-  padding: 8px;
-  background: linear-gradient(90deg, #ff007f, #ff6600, #ffcc00);
+  padding: 12px 16px;
+  background: var(--maroon);
   border: none;
-  border-radius: 10px;
+  border-radius: var(--input-radius);
+  /* Match field corners (same as mock: button radius ≈ input radius) */
+  overflow: hidden;
   cursor: pointer;
-  color: #000;
-  font-weight: 700;
-  font-size: 17px;
-  transition: 0.3s;
+  color: #fff;
+  font-weight: 600;
+  font-size: 1rem;
+  letter-spacing: 0.02em;
+  transition: background 0.2s, transform 0.2s, box-shadow 0.2s;
   position: relative;
-  z-index: 25;
+  z-index: 3;
+  box-shadow: 0 2px 4px rgba(90, 20, 40, 0.12);
 }
 
 .login-btn:hover {
-  transform: scale(1.08);
+  background: var(--maroon-dark);
   color: #fff;
-  box-shadow: 0 0 40px rgba(255, 102, 0, 0.8);
+  box-shadow: 0 4px 14px rgba(110, 16, 44, 0.28);
+  transform: translateY(-1px);
 }
 
 .login-btn:disabled {
-  background: #cccccc;
-  color: #666666;
+  background: #c9c0c3;
+  color: #5f5f5f;
   cursor: not-allowed;
   transform: none;
   box-shadow: none;
 }
 
 .login-btn:disabled:hover {
-  transform: none;
+  background: #c9c0c3;
   box-shadow: none;
-  background: #cccccc;
-  color: #666666;
 }
 
 /* =========================
-   FOOTER TEXT (SIGNUP LINK)
-========================= */
-.footer-text {
-  margin: 12px;
-  text-align: center;
-  color: #ccc;
-  position: relative;
-  z-index: 25;
-  font-size: 14px;
-}
-
-.footer-text a {
-  color: #ff6600;
-  text-decoration: none;
-}
-
-.footer-text a:hover {
-  text-decoration: underline;
-}
-
-.signup-link {
-  color: #ff6600;
-  cursor: pointer;
-  font-weight: 600;
-}
-
-.signup-link:hover {
-  text-decoration: underline;
-}
-
-/* =========================
-   LOGIN ERROR MESSAGE
+   LOGIN ALERT
 ========================= */
 .login-error {
   text-align: center;
-  font-weight: bold;
-  color: red;
-  margin-bottom: 10px;
-  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--maroon-dark);
+  margin-bottom: 14px;
+  font-size: 0.875rem;
   animation: fadeIn 0.4s ease;
-  text-shadow: 0 0 8px rgba(255, 0, 0, 0.3);
+  background: #f9eaef;
+  border: 1px solid #e4c0cd;
+  padding: 10px 12px;
+  border-radius: var(--input-radius);
+  display: none;
+  overflow: hidden;
+}
+
+.login-error:not(:empty) {
+  display: block;
 }
 
 @keyframes fadeIn {
   from {
     opacity: 0;
-    transform: translateY(-5px);
+    transform: translateY(-4px);
   }
   to {
     opacity: 1;
@@ -412,109 +515,7 @@ body {
 }
 
 /* =========================
-   RESPONSIVE DESIGN
-========================= */
-
-/* 900px – stack layout, shrink box */
-@media (max-width: 900px) {
-  .login-container {
-    flex-direction: column;
-    padding: 40px 20px;
-  }
-
-  .left-section {
-    padding: 0;
-    margin-bottom: 20px;
-    /* margin-right: 40px; */
-  }
-
-  .left-section h1 {
-    font-size: 2.2rem;
-  }
-
-  .login-box {
-    width: 100%;
-    max-width: 340px;
-  }
-}
-
-/* 768px – allow vertical scroll, adjust paddings */
-@media (max-width: 768px) {
-  body {
-    overflow-y: auto;
-    height: auto;
-  }
-
-  .login-container {
-    flex-direction: column;
-    height: auto;
-    padding: 30px 15px;
-  }
-
-  .left-section {
-    text-align: center;
-    padding: 10px;
-  }
-
-  .left-section h1 {
-    font-size: 1.8rem;
-    line-height: 1.2;
-  }
-
-  .left-section p {
-    font-size: 1rem;
-  }
-
-  .login-box {
-    width: 100%;
-    max-width: 320px;
-    padding: 25px;
-  }
-
-  .input-group input,
-  .password-container input {
-    font-size: 0.95rem;
-    padding: 9px;
-  }
-
-  .footer-text {
-    font-size: 0.85rem;
-  }
-}
-
-/* 480px – extra small phones */
-@media (max-width: 480px) {
-  .login-box {
-    padding: 20px;
-    border-radius: 14px;
-    box-shadow: 0 0 40px rgba(255, 102, 0, 0.4);
-  }
-
-  .left-section h1 {
-    font-size: 1.5rem;
-  }
-
-  .stackly-logo {
-    width: 90px;
-  }
-
-  .input-group label {
-    font-size: 0.9rem;
-  }
-
-  .login-btn {
-    font-size: 0.95rem;
-    padding: 9px;
-  }
-
-  .forgot-link span a,
-  .remember-me label {
-    font-size: 0.8rem;
-  }
-}
-
-/* =========================
-   ERROR TOAST (match Sales / Quotation)
+   ERROR TOAST (app notifications)
 ========================= */
 .success-notification,
 .error-notification {
@@ -559,8 +560,63 @@ body {
   flex-shrink: 0;
 }
 
-/* 🔒 Hide browser's default password eye (Edge) */
 input[type="password"]::-ms-reveal,
 input[type="password"]::-ms-clear {
   display: none;
+}
+
+/* =========================
+   RESPONSIVE
+========================= */
+@media (max-width: 900px) {
+  .login-box {
+    max-width: 420px;
+    padding: 32px 24px 28px;
+  }
+
+  .login-title {
+    font-size: 1.5rem;
+  }
+}
+
+@media (max-width: 768px) {
+  body {
+    overflow-y: auto;
+    height: auto;
+  }
+
+  .login-container {
+    min-height: 100vh;
+    height: auto;
+    padding: 20px 14px;
+  }
+
+  .login-box {
+    max-width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  .login-box {
+    padding: 24px 18px 22px;
+  }
+
+  .stackly-logo {
+    width: 128px;
+  }
+
+  .login-title {
+    font-size: 1.35rem;
+  }
+
+  .me-link {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .forgot-link {
+    width: 100%;
+    text-align: left;
+    margin-left: 0;
+  }
 }

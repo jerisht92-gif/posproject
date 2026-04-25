@@ -4,55 +4,85 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Login - POS</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="{{ url_for('static', filename='login.css') }}">
-    
-
 </head>
 <body>
+  <div class="wave-container" aria-hidden="true">
+    <!-- TOP LEFT -->
+    <svg class="wave wave-top" viewBox="0 0 600 300" preserveAspectRatio="none">
+      <defs>
+        <linearGradient id="gradientWave" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stop-color="#7B1E2B" />
+          <stop offset="50%" stop-color="#A52A2A" />
+          <stop offset="100%" stop-color="#7B1E2B" />
+        </linearGradient>
+      </defs>
+      <path d="M0,0 C150,200 450,0 600,150 L600,0 Z"></path>
+    </svg>
 
-  <div class="animated-bg">
-    <div class="gradient-layer"></div>
-    <div class="wave"></div>
-    <div class="wave wave2"></div>
-    <div class="wave wave3"></div>
+    <!-- BOTTOM RIGHT -->
+    <svg class="wave wave-bottom" viewBox="0 0 600 300" preserveAspectRatio="none">
+      <defs>
+        <linearGradient id="gradientWaveBottom" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stop-color="#7B1E2B" />
+          <stop offset="50%" stop-color="#A52A2A" />
+          <stop offset="100%" stop-color="#7B1E2B" />
+        </linearGradient>
+      </defs>
+      <path d="M0,150 C150,300 450,100 600,300 L0,300 Z"></path>
+    </svg>
   </div>
 
   <div class="login-container">
-    <div class="left-section">
-      <h1>Welcome Back</h1>
-      <p>Log in to continue your journey of innovation and success.</p>
-    </div>
-
     <div class="right-section">
       <div class="login-box">
         <div class="image1">
-          <img src="../static/images/stack-img.webp" alt="Logo" class="stackly-logo">
+          <img src="{{ url_for('static', filename='images/stack-img.webp') }}" alt="Stackly" class="stackly-logo">
         </div>
+        <h1 class="login-title">Welcome Back</h1>
+        <p class="login-subtitle">Log in to continue your journey of innovation and success.</p>
 
         <!-- Login error under logo -->
         <div id="loginErrorMsg" class="login-error"></div>
         <form id="loginForm" autocomplete="off"   novalidate>
           <div class="input-group">
             <label for="email">Email Address</label>
-            <input
-              type="email"
-              id="email"
-              placeholder="Enter your email"
-              autocomplete="username"
-              autofocus
-              maxlength="30"
-            />
+            <div class="input-with-icon">
+              <span class="input-icon" aria-hidden="true">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
+                  <path d="m22 6-10 7L2 6" />
+                </svg>
+              </span>
+              <input
+                type="email"
+                id="email"
+                placeholder="Enter your email"
+                autocomplete="username"
+                autofocus
+                maxlength="30"
+              />
+            </div>
             <small class="error" id="emailError"></small>
           </div>
         <div class="password-group">
           <label for="password">Password</label>
           <div class="password-container">
+            <span class="input-icon input-icon--lock" aria-hidden="true">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+              </svg>
+            </span>
             <input type="password" id="password" name="password"
                   placeholder="Enter your password"
                   maxlength="20" autocomplete="current-password" required />
             <button type="button" id="togglePassword" class="eye-btn" aria-label="Show or hide password">
               <svg id="eyeIcon" class="eye-icon" xmlns="http://www.w3.org/2000/svg" width="22" height="22"
-                  viewBox="0 0 24 24" fill="none" stroke="gray" stroke-width="2"
+                  viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                   stroke-linecap="round" stroke-linejoin="round">
                 <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
                 <circle cx="12" cy="12" r="3"></circle>
@@ -61,7 +91,7 @@
           </div>
           <small class="error" id="passwordError"></small>
           </div>
-          <div  class="me-link">
+          <div class="me-link">
 
             <div class="remember-me">
               <input type="checkbox" id="rememberMe" name="rememberMe">
@@ -74,9 +104,9 @@
           </div>
           </div>
           <div class="footer-text">
-            <!-- Already have an account? <a href="{{ url_for('login') }}">Log In</a> -->
-            Don't have an account? <a  id="signupLink"  href="{{ url_for('home') }}">Sign Up</a>
-          </div>         
+            <span class="footer-text__muted">Don't have an account?</span>
+            <a id="signupLink" class="footer-text__cta" href="{{ url_for('home') }}">Sign Up</a>
+          </div>
           <button type="submit" class="login-btn" id="loginBtn">Log In</button>
         </form>
       </div>
