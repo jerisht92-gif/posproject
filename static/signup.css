@@ -48,8 +48,8 @@ body {
 
 .wave {
   position: absolute;
-  width: 500px;
-  height: 280px;
+  width: clamp(420px, 34vw, 500px);
+  height: clamp(230px, 22vw, 280px);
   animation: floatWave 6s ease-in-out infinite;
 }
 
@@ -64,14 +64,14 @@ body {
 }
 
 .wave-top {
-  top: -28px;
-  left: -42px;
+  top: clamp(-38px, -3.3vw, -22px);
+  left: clamp(-56px, -4.6vw, -28px);
   filter: drop-shadow(0 10px 20px rgba(123, 30, 43, 0.3));
 }
 
 .wave-bottom {
-  bottom: -32px;
-  right: -42px;
+  bottom: clamp(-38px, -3.3vw, -22px);
+  right: clamp(-56px, -4.6vw, -28px);
   animation-delay: 1s;
   filter: drop-shadow(0 -10px 20px rgba(123, 30, 43, 0.3));
 }
@@ -414,8 +414,8 @@ input.error::placeholder {
   }
 
   .wave {
-    width: 360px;
-    height: 220px;
+    width: 340px;
+    height: 210px;
   }
 }
 
