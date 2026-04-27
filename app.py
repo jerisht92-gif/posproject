@@ -14127,6 +14127,8 @@ def get_sales_products():
     try:
         conn = get_db_connection()
         cur = conn.cursor()
+
+        # Get available columns
         cur.execute("""
             SELECT column_name
             FROM information_schema.columns
@@ -14134,13 +14136,17 @@ def get_sales_products():
         """)
         available_cols = {r[0] for r in (cur.fetchall() or [])}
 
+        # Dynamic column mapping (NO CHANGE)
         name_col = "product_name" if "product_name" in available_cols else ("name" if "name" in available_cols else None)
+
         price_col = (
             "price" if "price" in available_cols else
             ("unit_price" if "unit_price" in available_cols else
              ("selling_price" if "selling_price" in available_cols else None))
         )
+
         uom_col = "uom" if "uom" in available_cols else ("uom_name" if "uom_name" in available_cols else None)
+
         stock_col = (
             "stock_level" if "stock_level" in available_cols else
             ("available_stock" if "available_stock" in available_cols else
@@ -14150,19 +14156,37 @@ def get_sales_products():
                 ("opening_stock" if "opening_stock" in available_cols else None)))))
         )
 
+        # 🟢 NEW: check tax & discount columns safely
+        discount_col = "discount" if "discount" in available_cols else None
+        tax_percent_col = "tax_percent" if "tax_percent" in available_cols else None
+
         if "product_id" not in available_cols:
             return jsonify({"success": True, "products": []})
 
+        # Expressions
         name_expr = name_col if name_col else "''"
         price_expr = price_col if price_col else "0"
         uom_expr = uom_col if uom_col else "''"
         stock_expr = stock_col if stock_col else "0"
 
+        # 🟢 NEW expressions
+        discount_expr = f"COALESCE({discount_col}, 0)" if discount_col else "0"
+        tax_expr = f"COALESCE({tax_percent_col}, 0)" if tax_percent_col else "0"
+
+        # 🟢 UPDATED QUERY
         cur.execute(f"""
-            SELECT product_id, {name_expr} AS product_name, {price_expr} AS price, {uom_expr} AS uom, {stock_expr} AS stock_level
+            SELECT 
+                product_id,
+                {name_expr} AS product_name,
+                {price_expr} AS price,
+                {uom_expr} AS uom,
+                {stock_expr} AS stock_level,
+                {discount_expr} AS discount,
+                {tax_expr} AS tax_percent
             FROM products
             ORDER BY product_id
         """)
+
         rows = cur.fetchall()
 
         products = []
@@ -14170,12 +14194,17 @@ def get_sales_products():
             pid = str(r[0] or "").strip()
             if not pid:
                 continue
+
             products.append({
                 "product_id": pid,
-                "product_name": (r[1] or "").strip() if isinstance(r[1], str) else (str(r[1] or "").strip()),
+                "product_name": (r[1] or "").strip() if isinstance(r[1], str) else str(r[1] or "").strip(),
                 "price": float(r[2] or 0),
-                "uom": (r[3] or "").strip() if isinstance(r[3], str) else (str(r[3] or "").strip()),
+                "uom": (r[3] or "").strip() if isinstance(r[3], str) else str(r[3] or "").strip(),
                 "stock_level": float(r[4] or 0),
+
+                # 🟢 NEW FIELDS
+                "discount": float(r[5] or 0),
+                "tax_percent": float(r[6] or 0),
             })
 
         cur.close()
@@ -14203,7 +14232,6 @@ def get_sales_products():
             "success": False,
             "message": str(e)
         }), 500
-
 
 # =========================================
 # SALES ORDER - PDF

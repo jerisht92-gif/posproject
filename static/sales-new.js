@@ -503,13 +503,17 @@ function applyProductToRow(row, productId) {
 
   const uomVal = String(p.uom || p.unit || "Nos");
 
-  let taxPct = 0;
-  const m = String(p.tax_code || "").match(/(\d+(?:\.\d+)?)\s*%/);
-  if (m) taxPct = Number(m[1]) || 0;
+  let taxPct = Number(p.tax_percent || 0);
+
+  // fallback if tax_percent not available
+  if (!taxPct) {
+    const m = String(p.tax_code || "").match(/(\d+(?:\.\d+)?)/);
+    if (m) taxPct = Number(m[1]) || 0;
+  }
 
   const defaultDisc = Number(p.discount ?? 0);
 
-  if (discInput && (!discInput.value || Number(discInput.value) === 0)) {
+  if (discInput) {
     discInput.value = defaultDisc;
   }
 
