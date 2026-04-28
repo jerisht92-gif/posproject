@@ -252,8 +252,8 @@
         <div><span>Rounding Adjustment</span><span>0.00</span></div>
         <div><span>Amount Paid</span><span>
             <input type="number" id="amountPaid" name="amount_paid" class="amount_paid" value="0" min="0" step="1"
-              maxlength="5"
-              style="width: 80px; padding: 5px; border-radius: 4px; text-align: right;background-color: #d18a84;">
+              maxlength="5" inputmode="numeric" pattern="[0-9]*" autocomplete="off"
+              >
           </span></div>
         <div class="grand-total"><span>Grand Total</span><span>0.00</span></div>
         <div class="grand-total" style="border-top: 2px solid #a12828;"><span>Balance Due</span><span>0.00</span></div>
@@ -342,6 +342,18 @@
   </form>
   <!-- ========== FORM ENDS HERE ========== -->
 </div> <!-- /.modal -->
+
+<!-- Delete Attachment Confirmation Modal -->
+<div id="deleteFileModal" class="reject-modal-overlay" style="display:none;">
+  <div class="reject-modal">
+    <h3 class="reject-title">Delete File</h3>
+    <p class="reject-text">Are you sure want to delete this file ?</p>
+    <div class="reject-actions">
+      <button type="button" id="deleteFileCancelBtn" class="reject-btn cancel">Cancel</button>
+      <button type="button" id="deleteFileConfirmBtn" class="reject-btn delete">Delete</button>
+    </div>
+  </div>
+</div>
 
 <!-- Email Modal -->
 <div id="emailModal" class="email-modal" style="display: none;">

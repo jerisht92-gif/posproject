@@ -7,24 +7,67 @@
 function showToast(message, type = 'info') {
     console.log(`Toast (${type}): ${message}`);
 
-    let className = '';
-    if (type === 'success') className = 'success-notification';
-    else if (type === 'error' || type === 'warning') className = 'error-notification';
-    else return;
+    if (type !== 'success' && type !== 'error' && type !== 'warning') return;
 
     const toast = document.createElement('div');
-    toast.className = className;
-    toast.textContent = message;
+    toast.className = type === 'success' ? 'success-notification' : 'error-notification';
+    const icon = document.createElement('span');
+    icon.textContent = type === 'success' ? '✓' : '✕';
+    icon.style.fontSize = '18px';
+    icon.style.fontWeight = '700';
+    icon.style.lineHeight = '1';
+
+    const text = document.createElement('span');
+    text.textContent = message;
+
+    toast.appendChild(icon);
+    toast.appendChild(text);
+
+    // Inline fallback so toast is visible even if page CSS lacks toast classes.
+    const isError = type === 'error' || type === 'warning';
+    toast.style.position = 'fixed';
+    toast.style.top = '20px';
+    toast.style.left = '50%';
+    toast.style.transform = 'translateX(-50%) translateY(-100px)';
+    toast.style.padding = '14px 28px';
+    toast.style.borderRadius = '10px';
+    toast.style.fontSize = '15px';
+    toast.style.fontWeight = '600';
+    toast.style.zIndex = '10000';
+    toast.style.opacity = '0';
+    toast.style.transition = 'all 0.35s ease';
+    toast.style.pointerEvents = 'none';
+    toast.style.whiteSpace = 'nowrap';
+    toast.style.display = 'flex';
+    toast.style.alignItems = 'center';
+    toast.style.gap = '8px';
+    toast.style.background = isError
+        ? 'linear-gradient(135deg, #ffe6e6, #ffc2c2)'
+        : 'linear-gradient(135deg, #fff4f4, #ffe8e8)';
+    toast.style.color = '#a12828';
+    toast.style.border = '1.5px solid #a12828';
+    toast.style.boxShadow = isError
+        ? '0 8px 24px rgba(161, 40, 40, 0.35)'
+        : '0 8px 24px rgba(161, 40, 40, 0.25)';
 
     document.body.appendChild(toast);
-    setTimeout(() => toast.classList.add('show'), 10);
+    setTimeout(() => {
+        toast.classList.add('show');
+        toast.style.opacity = '1';
+        toast.style.transform = 'translateX(-50%) translateY(0)';
+    }, 10);
     setTimeout(() => {
         toast.classList.remove('show');
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateX(-50%) translateY(-100px)';
         setTimeout(() => toast.remove(), 400);
     }, 3000);
 }
 
 document.addEventListener("DOMContentLoaded", () => {
+    const INVOICE_INVALID_DATE_MSG = "Invalid date. Use format YYYY-MM-DD (e.g. 2026-03-09).";
+    const INVOICE_DATE_RANGE_ERROR = "Invoice From date cannot be later than Invoice To date";
+
     // DOM elements with null checks
     const invoiceStatusFilter = document.getElementById("invoiceStatus");
     const paymentStatusFilter = document.getElementById("paymentStatus");
@@ -61,26 +104,92 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
+    function normalizeDateKey(value) {
+        if (!value) return null;
+        // yyyy-mm-dd (native date input value)
+        if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+        // dd-mm-yyyy (defensive fallback)
+        if (/^\d{2}-\d{2}-\d{4}$/.test(value)) {
+            const [dd, mm, yyyy] = value.split("-");
+            return `${yyyy}-${mm}-${dd}`;
+        }
+        // Last fallback for unexpected values
+        const d = new Date(value);
+        if (Number.isNaN(d.getTime())) return null;
+        return d.toISOString().slice(0, 10);
+    }
+
+    function isValidListDateString(value) {
+        if (!value || typeof value !== "string") return false;
+        const trimmed = value.trim();
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return false;
+        const parts = trimmed.split("-");
+        const y = parseInt(parts[0], 10);
+        const m = parseInt(parts[1], 10) - 1;
+        const d = parseInt(parts[2], 10);
+        if (y < 1900 || y > 2100) return false;
+        const date = new Date(y, m, d);
+        return (
+            date.getFullYear() === y &&
+            date.getMonth() === m &&
+            date.getDate() === d
+        );
+    }
+
+    function hasInvalidDateRange(fromValue, toValue) {
+        const from = normalizeDateKey(fromValue);
+        const to = normalizeDateKey(toValue);
+        if (!from || !to) return false;
+        return to < from;
+    }
+
     // =========================================
     // DATE VALIDATION FUNCTION
     // =========================================
-    function validateDates() {
-        if (!fromDateInput || !toDateInput) return true;
-        
-        const fromDate = fromDateInput.value;
-        const toDate = toDateInput.value;
-        
-        if (fromDate && toDate && toDate < fromDate) {
-            alert('⚠️ "To Date" cannot be earlier than "From Date". Clearing "To Date" field.');
-            
-            if (typeof showToast === 'function') {
-                showToast('⚠️ "To Date" cannot be earlier than "From Date". Clearing "To Date" field.', 'warning');
-            }
-            
-            toDateInput.value = '';
-            return false;
+    function handleFromDateFilter() {
+        const fd = fromDateInput?.value?.trim() || "";
+        if (fd && !isValidListDateString(fd)) {
+            showToast(INVOICE_INVALID_DATE_MSG, "error");
+            if (fromDateInput) fromDateInput.value = "";
+            applyFilters();
+            return;
         }
-        return true;
+        const td = toDateInput?.value?.trim() || "";
+        if (td && !isValidListDateString(td)) {
+            showToast(INVOICE_INVALID_DATE_MSG, "error");
+            if (toDateInput) toDateInput.value = "";
+            applyFilters();
+            return;
+        }
+
+        if (hasInvalidDateRange(fd, td)) {
+            showToast(INVOICE_DATE_RANGE_ERROR, "error");
+            if (fromDateInput) fromDateInput.value = "";
+        }
+        applyFilters();
+    }
+
+    function handleToDateFilter() {
+        const td = toDateInput?.value?.trim() || "";
+        if (td && !isValidListDateString(td)) {
+            showToast(INVOICE_INVALID_DATE_MSG, "error");
+            if (toDateInput) toDateInput.value = "";
+            applyFilters();
+            return;
+        }
+        const fd = fromDateInput?.value?.trim() || "";
+        if (fd && !isValidListDateString(fd)) {
+            showToast(INVOICE_INVALID_DATE_MSG, "error");
+            if (fromDateInput) fromDateInput.value = "";
+            applyFilters();
+            return;
+        }
+
+        if (hasInvalidDateRange(fd, td)) {
+            showToast(INVOICE_DATE_RANGE_ERROR, "error");
+            if (toDateInput) toDateInput.value = "";
+        }
+        applyFilters();
     }
 
     // =========================================
@@ -117,13 +226,18 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     function handleMenuClick(e) {
+        e.preventDefault();
         e.stopPropagation();
+        const button = e.currentTarget;
+        const dropdown = button ? button.nextElementSibling : null;
+        const shouldOpen = dropdown && dropdown.style.display !== "block";
         document.querySelectorAll(".dropdown").forEach(d => d.style.display = "none");
-        const dropdown = e.target.nextElementSibling;
-        if (dropdown) dropdown.style.display = "block";
+        if (dropdown) dropdown.style.display = shouldOpen ? "block" : "none";
     }
 
-    document.addEventListener("click", () => {
+    document.addEventListener("click", (e) => {
+        // Do not auto-close when user interacts inside action menu.
+        if (e.target.closest(".menu-container")) return;
         document.querySelectorAll(".dropdown").forEach(d => d.style.display = "none");
     });
 
@@ -156,6 +270,7 @@ document.addEventListener("DOMContentLoaded", () => {
             const displayStatus = getDisplayStatus(invoice);
             
             const row = tbody.insertRow();
+            row.dataset.kind = "invoice-row";
 
             // Column 0: Checkbox (Mark)
             const chkCell = row.insertCell(0);
@@ -204,12 +319,12 @@ document.addEventListener("DOMContentLoaded", () => {
             
             actionCell.innerHTML = `
                 <div class="menu-container">
-                    <button class="menu-btn dn-act-dots">⋮</button>
+                    <button class="menu-btn dn-act-dots" type="button" aria-label="Open actions">⋮</button>
                     <div class="dropdown dn-act-fly" style="display: none;">
-                        <div class="dn-act-item">
+                        <div class="dn-act-item" data-href="/new-invoice?invoice_id=${invoice.invoice_id}">
                             <a href="/new-invoice?invoice_id=${invoice.invoice_id}" style="text-decoration:none; color: #111;">${detailsText}</a>
                         </div>
-                        <div class="dn-act-item ${disabledClass}" ${disabledAttr}>
+                        <div class="dn-act-item ${disabledClass}" ${disabledAttr} data-href="/generate-invoice-return/${invoice.invoice_id}">
                             <a href="/generate-invoice-return/${invoice.invoice_id}" style="text-decoration:none; color: #111;">generate invoice return</a>
                         </div>
                     </div>
@@ -232,7 +347,21 @@ document.addEventListener("DOMContentLoaded", () => {
         const isChecked = e.target.checked;
         document.querySelectorAll(".invoice-checkbox").forEach(chk => {
             chk.checked = isChecked;
+            const row = chk.closest("tr");
+            if (row) row.classList.toggle("row-selected", isChecked);
         });
+    }
+
+    function updateSelectAllState() {
+        const selectAll = document.getElementById("selectAll");
+        if (!selectAll) return;
+        const checkboxes = document.querySelectorAll(".invoice-checkbox");
+        if (!checkboxes.length) {
+            selectAll.checked = false;
+            return;
+        }
+        const checkedCount = Array.from(checkboxes).filter(chk => chk.checked).length;
+        selectAll.checked = checkedCount === checkboxes.length;
     }
 
     // --------------------------------------------------
@@ -301,19 +430,9 @@ document.addEventListener("DOMContentLoaded", () => {
         const fromDate = fromDateInput.value;
         const toDate = toDateInput.value;
 
-        // Validate date range
-        if (fromDate && toDate && toDate < fromDate) {
-            alert("To date cannot be earlier than From date");
-            if (toDateInput) {
-                toDateInput.value = "";
-                toDateInput.focus();
-            }
-            return;
-        }
-
         if (statusVal === 'send') statusVal = 'send';
 
-        const allRows = document.querySelectorAll("#invoiceTableBody tr");
+        const allRows = document.querySelectorAll('#invoiceTableBody tr[data-kind="invoice-row"]');
         filteredRows = [];
 
         allRows.forEach(row => {
@@ -340,12 +459,25 @@ document.addEventListener("DOMContentLoaded", () => {
     // Render current page of the filtered rows
     // --------------------------------------------------
     function renderTable() {
+        const tbody = document.getElementById("invoiceTableBody");
+        if (!tbody) return;
+
+        // Remove previous empty-state row before repainting
+        const existingNoDataRow = tbody.querySelector('tr[data-kind="no-data"]');
+        if (existingNoDataRow) existingNoDataRow.remove();
+
         // Hide all rows first
-        const allRows = document.querySelectorAll("#invoiceTableBody tr");
+        const allRows = document.querySelectorAll('#invoiceTableBody tr[data-kind="invoice-row"]');
         allRows.forEach(row => row.style.display = "none");
 
         // Check if there are any filtered rows
         if (filteredRows.length === 0) {
+            const noDataRow = tbody.insertRow();
+            noDataRow.dataset.kind = "no-data";
+            const cell = noDataRow.insertCell(0);
+            cell.colSpan = 9;
+            cell.className = "dn-empty";
+            cell.textContent = "No invoices found";
             updatePagerUI();
             return;
         }
@@ -358,6 +490,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         // Update pagination
         updatePagerUI();
+        updateSelectAllState();
     }
 
     // --------------------------------------------------
@@ -460,17 +593,13 @@ document.addEventListener("DOMContentLoaded", () => {
     if (searchInput) searchInput.addEventListener("input", applyFilters);
     
     if (fromDateInput) {
-        fromDateInput.addEventListener("change", () => {
-            validateDates();
-            applyFilters();
-        });
+        fromDateInput.addEventListener("change", handleFromDateFilter);
+        fromDateInput.addEventListener("blur", handleFromDateFilter);
     }
     
     if (toDateInput) {
-        toDateInput.addEventListener("change", () => {
-            validateDates();
-            applyFilters();
-        });
+        toDateInput.addEventListener("change", handleToDateFilter);
+        toDateInput.addEventListener("blur", handleToDateFilter);
     }
 
     if (clearFilterBtn) {
@@ -489,6 +618,26 @@ document.addEventListener("DOMContentLoaded", () => {
             window.location.href = "/new-invoice";
         });
     }
+
+    // Keep row highlighting + mark-all state in sync
+    document.addEventListener("change", (e) => {
+        if (!e.target.classList.contains("invoice-checkbox")) return;
+        const row = e.target.closest("tr");
+        if (row) row.classList.toggle("row-selected", e.target.checked);
+        updateSelectAllState();
+    });
+
+    // Make full dropdown action row clickable on first click.
+    document.addEventListener("click", (e) => {
+        const item = e.target.closest(".dn-act-item");
+        if (!item) return;
+        if (item.classList.contains("dn-act-item-disabled")) return;
+        const href = item.getAttribute("data-href");
+        if (!href) return;
+        e.preventDefault();
+        e.stopPropagation();
+        window.location.href = href;
+    });
 
     // Initialize button states
     setBtnDisabled(prevBtn, true);

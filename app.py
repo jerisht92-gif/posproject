@@ -13547,7 +13547,8 @@ def sales_order_new():
         so_id=so_id,
         customers=customers,
         sales_reps=sales_reps,
-        user_name=user_name
+        user_name=user_name,
+        page="sales_order"
     )
 
 
@@ -13712,6 +13713,44 @@ def api_sales_orders_list():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+    finally:
+        cur.close()
+        conn.close()
+
+@app.get("/api/sales-orders/available")
+def api_sales_orders_available():
+    """Sales Orders available for invoice creation.
+    Excludes SOs already referenced by other invoices.
+    If invoice_id is provided, keeps that invoice's SO available for edit mode.
+    """
+    invoice_id = (request.args.get("invoice_id") or "").strip() or None
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            SELECT
+                so.so_id,
+                COALESCE(c.name, so.customer_name, '') AS customer_name
+            FROM sales_orders so
+            LEFT JOIN customers c
+              ON so.customer_id = c.customer_id
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM invoices i
+                WHERE i.sale_order_ref = so.so_id
+                  AND (%s IS NULL OR i.invoice_id <> %s)
+            )
+            ORDER BY so.created_at DESC
+            """,
+            (invoice_id, invoice_id),
+        )
+        rows = cur.fetchall()
+        orders = [{"so_id": r[0], "customer_name": r[1]} for r in rows]
+        return jsonify({"success": True, "orders": orders})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
     finally:
         cur.close()
         conn.close()
@@ -17191,14 +17230,28 @@ def generate_invoice_id():
 # =========================
 @app.route("/new-invoice")
 def new_invoice():
+    current_invoice_id = (request.args.get("invoice_id") or "").strip() or None
     conn = get_db_connection()
     cur = conn.cursor()
 
-    cur.execute("""
-        SELECT so_id, customer_name 
-        FROM sales_orders 
-        ORDER BY so_id DESC
-    """)
+    cur.execute(
+        """
+        SELECT
+            so.so_id,
+            COALESCE(c.name, so.customer_name, '') AS customer_name
+        FROM sales_orders so
+        LEFT JOIN customers c
+          ON so.customer_id = c.customer_id
+        WHERE NOT EXISTS (
+            SELECT 1
+            FROM invoices i
+            WHERE i.sale_order_ref = so.so_id
+              AND (%s IS NULL OR i.invoice_id <> %s)
+        )
+        ORDER BY so.so_id DESC
+        """,
+        (current_invoice_id, current_invoice_id),
+    )
 
     rows = cur.fetchall()
 

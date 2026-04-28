@@ -123,6 +123,11 @@
   color: #8d1f1f;
 }
 
+.dn-clear-link:hover{
+  color: #a12828;
+  text-decoration: underline;
+}
+
 
 /* =========================================================
    FILTER SECTION
@@ -159,13 +164,32 @@
 .dn-select{
   width: 100%;
   height: 30px;
-  padding: 0 16px;
-  border: 2px solid #ead0d0;
-  border-radius: 18px;
-  background: #fff;
+  padding: 6px 12px;
+  border-radius: 10px;
+  border: 1px solid #e7b7b5;
+  background-color: #fff5f5;
   outline: none;
   white-space: nowrap;
   font-size: 13px;
+  color: #000;
+  box-sizing: border-box;
+  cursor: pointer;
+  transition: 0.2s ease;
+}
+
+.dn-select:hover{
+  background-color: #f5d4d4;
+  border-color: #b9473e;
+}
+
+.dn-select:focus{
+  background-color: #fff5f5;
+  border-color: #a12828;
+}
+
+.dn-select option{
+  background-color: #d7aaaa;
+  color: #000;
 }
 
 .dn-date-wrap{
@@ -300,6 +324,10 @@
 }
 
 .dn-table tbody tr:hover td{
+  background: #e3bdbd;
+}
+
+.dn-table tbody tr.row-selected td{
   background: #e3bdbd;
 }
 

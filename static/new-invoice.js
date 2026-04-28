@@ -45,6 +45,21 @@ function filterInvoiceTags() {
   });
 }
 
+// Close Invoice Tags dropdown when clicking outside
+if (!window.__invoiceTagsOutsideCloseBound) {
+  document.addEventListener("click", (e) => {
+    const dropdown = document.getElementById("invoiceTagsDropdown");
+    if (!dropdown) return;
+
+    const clickedTrigger = e.target.closest("#invoiceTagsSelected");
+    const clickedInsideDropdown = e.target.closest("#invoiceTagsDropdown");
+    if (clickedTrigger || clickedInsideDropdown) return;
+
+    dropdown.style.display = "none";
+  });
+  window.__invoiceTagsOutsideCloseBound = true;
+}
+
 // =========================================
 // STATUS BADGE COLOR FUNCTION
 // =========================================
@@ -94,8 +109,12 @@ function updateStatusBadgeColor(status, invoiceId) {
 // =========================================
 // Sale Order Reference custom dropdown
 // =========================================
+function isInvoiceEditDetailsMode() {
+    return !!new URLSearchParams(window.location.search).get('invoice_id');
+}
+
 function toggleSaleOrderDropdown() {
-        if (!window.isEditable) return;  // 👈 add this line
+        if (!window.isEditable || isInvoiceEditDetailsMode()) return;
 
     const dropdown = document.getElementById('saleOrderDropdown');
     const isVisible = dropdown.style.display === 'block';
@@ -115,7 +134,7 @@ function filterSaleOrders() {
 }
 
 function selectSaleOrder(element) {
-    if (!window.isEditable) return;  // 👈 add this line
+    if (!window.isEditable || isInvoiceEditDetailsMode()) return;
     const selectedValue = element.getAttribute('data-value');
     const selectedText = element.textContent.trim();
 
@@ -638,6 +657,8 @@ function loadAttachmentsForInvoice(invoiceId) {
         });
 }
 
+let pendingDeleteAttachmentId = null;
+
 function renderAttachments(files) {
     console.log("📎 Rendering attachments:", files);
     const filesList = document.getElementById('filesList');
@@ -692,7 +713,7 @@ function renderAttachments(files) {
             <div class="file-actions">
                 <button type="button" class="btn-action btn-view" onclick="viewAttachment('${file.id}')" title="View"><i class="fa-regular fa-eye"></i></button>
                 <button type="button" class="btn-action btn-download" onclick="downloadAttachment('${file.id}')" title="Download"><i class="fa-solid fa-cloud-arrow-down"></i></button>
-                <button type="button" class="btn-action btn-delete" onclick="deleteAttachment('${file.id}')" title="Delete"><i class="fa-solid fa-trash-can"></i></button>
+                <button type="button" class="btn-action btn-delete" onclick="openDeleteFileModal('${file.id}')" title="Delete"><i class="fa-solid fa-trash-can"></i></button>
             </div>
         </div>`;
     });
@@ -743,7 +764,6 @@ window.downloadAttachment = function(id) {
 };
 
 window.deleteAttachment = async function(id) {
-    if (!confirm('Are you sure you want to delete this file?')) return;
     const invoiceId = document.getElementById('invoiceId').value;
     try {
         const response = await fetch(`/api/invoice/${invoiceId}/attachments/${id}`, { method: 'DELETE' });
@@ -758,7 +778,7 @@ window.deleteAttachment = async function(id) {
             }
             const invoiceIdElem = document.getElementById('invoiceId')?.value;
             if (invoiceIdElem) loadAttachmentsForInvoice(invoiceIdElem);
-            showToast('✅ File deleted successfully', 'success');
+            showToast('File deleted successfully', 'success');
         } else {
             showToast('Delete failed: ' + (data.error || 'Unknown error'), 'error');
         }
@@ -767,6 +787,40 @@ window.deleteAttachment = async function(id) {
         showToast('Delete failed. Please try again.', 'error');
     }
 };
+
+window.openDeleteFileModal = function(id) {
+    pendingDeleteAttachmentId = id;
+    const modal = document.getElementById('deleteFileModal');
+    if (!modal) return;
+    modal.style.display = 'flex';
+};
+
+function closeDeleteFileModal() {
+    const modal = document.getElementById('deleteFileModal');
+    if (modal) modal.style.display = 'none';
+    pendingDeleteAttachmentId = null;
+}
+
+if (!window.__invoiceDeleteFileModalBound) {
+    const deleteFileCancelBtn = document.getElementById('deleteFileCancelBtn');
+    const deleteFileConfirmBtn = document.getElementById('deleteFileConfirmBtn');
+    const deleteFileModal = document.getElementById('deleteFileModal');
+
+    deleteFileCancelBtn?.addEventListener('click', closeDeleteFileModal);
+
+    deleteFileConfirmBtn?.addEventListener('click', async () => {
+        if (pendingDeleteAttachmentId) {
+            await window.deleteAttachment(pendingDeleteAttachmentId);
+        }
+        closeDeleteFileModal();
+    });
+
+    deleteFileModal?.addEventListener('click', (e) => {
+        if (e.target === deleteFileModal) closeDeleteFileModal();
+    });
+
+    window.__invoiceDeleteFileModalBound = true;
+}
 
 // ===================================================
 // AUTO-FILL INVOICE FROM SALES ORDER
@@ -1067,6 +1121,24 @@ function initializePaymentTracking() {
     const grandTotalElement = document.querySelector('.grand-total span:last-child');
     const hiddenAmtPaid = document.getElementById('amtPaid');
     if (!amountPaidInput || !grandTotalElement) return;
+
+    // Allow digits only in Amount Paid (no e, +, -, .)
+    function sanitizeAmountPaidValue() {
+        const cleaned = (amountPaidInput.value || '').replace(/[^\d]/g, '');
+        if (amountPaidInput.value !== cleaned) {
+            amountPaidInput.value = cleaned;
+        }
+    }
+
+    amountPaidInput.addEventListener('keydown', (e) => {
+        const blockedKeys = ['e', 'E', '+', '-', '.'];
+        if (blockedKeys.includes(e.key)) e.preventDefault();
+    });
+    amountPaidInput.addEventListener('input', sanitizeAmountPaidValue);
+    amountPaidInput.addEventListener('paste', () => {
+        setTimeout(sanitizeAmountPaidValue, 0);
+    });
+
     if (hiddenAmtPaid) {
         amountPaidInput.addEventListener('input', function() { hiddenAmtPaid.value = this.value; });
         hiddenAmtPaid.value = amountPaidInput.value;
@@ -1329,7 +1401,8 @@ function makeFormReadOnly() {
     if (!form) return;
     const elements = form.querySelectorAll('input:not([type="hidden"]), select, textarea');
     elements.forEach(el => {
-if (el.id === 'contactPerson' || el.id === 'amountPaid') return;        el.disabled = true;
+        if (el.id === 'amountPaid') return;
+        el.disabled = true;
         el.readOnly = true;
     });
     const addItemBtn = document.querySelector('.add-item-btn');
@@ -1384,7 +1457,15 @@ function clearPaymentDetails() {
 function loadSaleOrders() {
     const list = document.getElementById('saleOrderList');
     if (!list) return;
-    fetch('/api/sales-orders')
+
+    const params = new URLSearchParams(window.location.search);
+    const invoiceId = (params.get('invoice_id') || '').trim();
+    let url = '/api/sales-orders/available';
+    if (invoiceId) {
+        url += `?invoice_id=${encodeURIComponent(invoiceId)}`;
+    }
+
+    fetch(url)
         .then(res => res.json())
         .then(data => {
             if (!data.success) return;
@@ -1681,7 +1762,7 @@ async function loadInvoiceData(invoiceId) {
 // Enable contact person if the invoice already has a sales order reference
 if (inv.sale_order_ref && inv.sale_order_ref !== '') {
     const cp = document.getElementById('contactPerson');
-    if (cp) {
+    if (cp && window.isEditable) {
         cp.disabled = false;
         cp.readOnly = false;
     }
@@ -1707,6 +1788,15 @@ if (inv.sale_order_ref && inv.sale_order_ref !== '') {
         if (soSelected) {
             soSelected.textContent = inv.sale_order_ref || 'Select Sales Order';
         }
+        if (invoiceIdParam) {
+            const soSelectedEl = document.getElementById('saleOrderSelected');
+            const soDropdownEl = document.getElementById('saleOrderDropdown');
+            if (soSelectedEl) {
+                soSelectedEl.classList.add('so-ref-readonly');
+                soSelectedEl.setAttribute('aria-disabled', 'true');
+            }
+            if (soDropdownEl) soDropdownEl.style.display = 'none';
+        }
 
         // Payment Terms
        if (inv.payment_terms) {
@@ -1728,6 +1818,15 @@ if (inv.sale_order_ref && inv.sale_order_ref !== '') {
         const currentStatus = displayStatus.toLowerCase();
         window.isEditable = currentStatus === 'draft';
         console.log("📌 Current status:", displayStatus, " | Editable:", window.isEditable);
+
+        // Existing invoice screen should not allow manual edits to Customer Name.
+        // Keep this field locked consistently in view/details flows.
+        const customerNameInput = document.getElementById('customerName');
+        if (customerNameInput && invoiceIdParam) {
+            customerNameInput.readOnly = true;
+            customerNameInput.disabled = true;
+            customerNameInput.setAttribute('readonly', 'readonly');
+        }
 
         updateStatusBadge({ status: displayStatus, due_date: inv.due_date, payment_status: inv.payment_status });
         if (displayStatus === 'Overdue') showOverdueWarning(inv.due_date);
@@ -2182,15 +2281,8 @@ if (invoiceIdParam) {
         }
 
         if (balanceDue > 0) {
-            // Balance due > 0: just focus the Amount Paid field (no payment ref prompt)
-            const userConfirmed = confirm(`Balance due is ${balanceDue.toFixed(2)}.\nClick OK to enter the payment amount.`);
-            if (userConfirmed) {
-                const amountPaidInput = document.getElementById('amountPaid');
-                if (amountPaidInput) {
-                    amountPaidInput.focus();
-                    amountPaidInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                }
-            }
+            // Balance due > 0: show toast only (no browser dialog)
+            showToast(`Balance due is ${balanceDue.toFixed(2)}`, 'error');
         } else {
             // Balance due == 0: check payment ref first, then submit
             if (!checkAndSetPaymentRef()) return;
