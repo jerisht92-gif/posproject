@@ -328,7 +328,7 @@ function loadDnStatusFilterOptions() {
       allRows = Array.isArray(data)
         ? data.map((x) => ({
             dn_id: x.dn_id || "",
-            so_ref: x.so_ref || "",
+            so_ref: x.sale_order_ref || x.so_ref || x.so_id || "",
             customer_name: x.customer_name || "",
             delivery_type: x.delivery_type || "regular",
             delivery_date: x.delivery_date || "",

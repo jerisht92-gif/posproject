@@ -1720,16 +1720,15 @@ async function sendDnrEmail() {
     return;
   }
 
-  const res = await fetch(`/api/delivery-note-returns/${encodeURIComponent(id)}/email`, {
-    method: "POST",
-  });
+  // Match DN/SO behavior: show success toast immediately, send in background.
+  showToast("Email sent successfully", "success");
 
-  const data = await readDnrApiJson(res);
-
-  if (data.success) {
-    showToast("Email sent successfully", "success");
-  } else {
-    showToast(data.message || "Email failed", "error");
+  try {
+    await fetch(`/api/delivery-note-returns/${encodeURIComponent(id)}/email`, {
+      method: "POST",
+    });
+  } catch (err) {
+    console.error(err);
   }
 
 }

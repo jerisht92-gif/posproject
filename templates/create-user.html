@@ -160,9 +160,21 @@
 {% endblock %}
 
 {% block extra_js %}
+<script id="createUserConfig" type="application/json">
+  {{ {"initialDepartments": (departments or []), "initialRoles": (roles or [])} | tojson | safe }}
+</script>
 <script>
-  window.initialDepartments = {{ (departments or []) | tojson | safe }};
-  window.initialRoles = {{ (roles or []) | tojson | safe }};
+  (function () {
+    const cfgEl = document.getElementById("createUserConfig");
+    let cfg = {};
+    try {
+      cfg = cfgEl ? JSON.parse(cfgEl.textContent || "{}") : {};
+    } catch (_e) {
+      cfg = {};
+    }
+    window.initialDepartments = Array.isArray(cfg.initialDepartments) ? cfg.initialDepartments : [];
+    window.initialRoles = Array.isArray(cfg.initialRoles) ? cfg.initialRoles : [];
+  })();
 </script>
 <script src="{{ url_for('static', filename='create-user.js') }}"></script>
 {% endblock %}

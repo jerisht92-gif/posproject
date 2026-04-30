@@ -1,7 +1,7 @@
 {% extends "menu.html" %}
 
 {% block extra_css %}
-<link rel="stylesheet" href="{{ url_for('static', filename='deliverynote-return.css') }}?v=11">
+<link rel="stylesheet" href="{{ url_for('static', filename='deliverynote-return.css') }}?v=12">
 
 {% endblock %}
 
@@ -83,7 +83,6 @@
       <table class="dnr-table">
         <thead>
           <tr>
-            <th class="dnr-heading dnr-col-mark">Mark</th>
             <th class="dnr-heading dnr-col-id">DNR ID</th>
             <th class="dnr-heading dnr-col-ref">Invoice Return Ref.</th>
             <th class="dnr-heading dnr-col-cust">Customer Name</th>
@@ -127,5 +126,5 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="{{ url_for('static', filename='deliverynote-return.js') }}?v=12" defer></script>
+<script src="{{ url_for('static', filename='deliverynote-return.js') }}?v=13" defer></script>
 {% endblock %}

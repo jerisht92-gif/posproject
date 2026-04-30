@@ -254,9 +254,6 @@ document.addEventListener("DOMContentLoaded", () => {
       const status = String(getField(r, "status", "dnr_status")).trim();
       const tr = document.createElement("tr");
       tr.innerHTML = `
-        <td class="dnr-col-mark">
-          <input class="dnr-markbox" type="checkbox" data-id="${esc(dnrId)}">
-        </td>
         <td class="dnr-col-id">${esc(dnrId)}</td>
         <td class="dnr-col-ref">${esc(invRef)}</td>
         <td class="dnr-col-cust">${esc(custName)}</td>
@@ -265,7 +262,7 @@ document.addEventListener("DOMContentLoaded", () => {
           <span class="${statusClass(status)}">${esc(status || "-")}</span>
         </td>
         <td class="dnr-col-action dnr-td-action">
-          <button type="button" class="dnr-act-dots" title="Actions">⋮</button>
+          <button type="button" class="dnr-act-dots">⋮</button>
         </td>`;
       tbody.appendChild(tr);
       const dots = tr.querySelector(".dnr-act-dots");

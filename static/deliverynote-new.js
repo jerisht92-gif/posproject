@@ -843,20 +843,20 @@ function formatMoney(value) {
   /* =========================================================
      LINE ITEMS — product dropdown 
   ========================================================== */
-  // function buildDnProductOptions() {
-  //   if (!window.DN_PRODUCTS || !window.DN_PRODUCTS.length) {
-  //     return `<option value="">No products</option>`;
-  //   }
-  //   const opts = window.DN_PRODUCTS.map((p) => {
-  //     const pid = String(
-  //       p.product_id || p.id || p.code || p.product_code || p.sku || ""
-  //     ).trim();
-  //     const name = String(p.product_name || p.name || p.title || "").trim();
-  //     if (!pid) return "";
-  //     return `<option value="${pid}">${name ? `${name} (${pid})` : pid}</option>`;
-  //   }).join("");
-  //   return `<option value="">Select Product</option>${opts}`;
-  // }
+  function buildDnProductOptions() {
+    if (!window.DN_PRODUCTS || !window.DN_PRODUCTS.length) {
+      return `<option value="">No products</option>`;
+    }
+    const opts = window.DN_PRODUCTS.map((p) => {
+      const pid = String(
+        p.product_id || p.id || p.code || p.product_code || p.sku || ""
+      ).trim();
+      const name = String(p.product_name || p.name || p.title || "").trim();
+      if (!pid) return "";
+      return `<option value="${pid}">${name ? `${name} (${pid})` : pid}</option>`;
+    }).join("");
+    return `<option value="">Select Product</option>${opts}`;
+  }
 
   async function loadDnProducts() {
     try {
@@ -1275,7 +1275,7 @@ function formatMoney(value) {
     const payload = {
       dn_id: dnId?.value || dnIdView?.value || "",
       delivery_date: dnDate?.value || "",
-      so_ref: soRefSel?.value || "",
+      sale_order_ref: soRefSel?.value || "",
       customer_name: custNameEl?.value || "",
       delivery_type: dnTypeEl?.value || "",
       destination_address: destAddrEl?.value || "",

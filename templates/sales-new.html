@@ -413,21 +413,23 @@
          FOOTER ACTIONS
     ========================================== -->
     <div class="action-bar">
-      <button type="button" class="btn cancel-order" onclick="cancelOrder()">Cancel Order</button>
+      <div class="footer-icon-bar">
+        <button type="button" class="footer-item pdf" id="pdfBtn" title="Download PDF" onclick="openSoPdf()">
+          <i class="fa-solid fa-file-pdf"></i>
+          <span>PDF</span>
+        </button>
+        <button type="button" class="footer-item email" id="emailBtn" onclick="sendSalesOrderEmail()">
+          <i class="fa-regular fa-envelope"></i>
+          <span>Email</span>
+        </button>
+      </div>
 
       <div class="right-actions">
         <button class="btn cancel" type="button" onclick="goBack()">Cancel</button>
         <button class="btn btn-outline" type="button" onclick="saveDraft()">Save Draft</button>
         <button id="submitBtn" type="button" disabled>Submit</button>
         <button id="generatePOBtn" class="btn primary" type="button" onclick="generatePO()">Generate (PO)</button>
-
-        <button type="button" class="btn-icon" id="pdfBtn" title="Download PDF" onclick="openSoPdf()">
-          📄
-        </button>
-
-        <button type="button" class="btn-icon" id="emailBtn" title="Send Mail" onclick="sendSalesOrderEmail()">
-          ✉
-        </button>
+        <button type="button" class="btn cancel-order" onclick="cancelOrder()">Cancel Sales Order</button>
       </div>
     </div>
 

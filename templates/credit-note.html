@@ -1,0 +1,131 @@
+{% extends "menu.html" %}
+{% block title %}Credit Note{% endblock %}
+
+{% block extra_css %}
+<style>
+  .credit-list-page {
+    min-height: 100vh;
+    padding: 20px;
+    background: #f6f1f1;
+    font-family: "Poppins", sans-serif;
+    color: #4a1f1a;
+  }
+  .credit-list-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 14px;
+  }
+  .credit-list-title {
+    margin: 0;
+    font-size: 28px;
+    font-weight: 600;
+    color: #a12828;
+    text-shadow: 1px 1px 2px #d8b7b7;
+  }
+  .credit-new-btn {
+    background: linear-gradient(#a12828, #8c1f1f);
+    color: #fff;
+    border: none;
+    padding: 10px 18px;
+    border-radius: 10px;
+    font-size: 14px;
+    cursor: pointer;
+    box-shadow: 0 5px 0 #6d1717;
+  }
+  .credit-list-card {
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.12);
+    padding: 18px;
+  }
+  .credit-list-table-wrap {
+    overflow-x: auto;
+  }
+  .credit-list-table {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 900px;
+  }
+  .credit-list-table th,
+  .credit-list-table td {
+    padding: 12px 10px;
+    border-bottom: 1px solid #eee3e3;
+    text-align: left;
+    font-size: 13px;
+  }
+  .credit-list-table thead th {
+    color: #3c2b2b;
+    font-weight: 700;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="credit-list-page">
+  <div class="credit-list-head">
+    <h2 class="credit-list-title">Credit Note</h2>
+    <button type="button" class="credit-new-btn" id="newCreditBtn">New Credit Note</button>
+  </div>
+
+  <div class="credit-list-card">
+    <div class="credit-list-table-wrap">
+      <table class="credit-list-table">
+        <thead>
+          <tr>
+            <th>Credit Note ID</th>
+            <th>Invoice Ref ID</th>
+            <th>Customer Name</th>
+            <th>Date</th>
+            <th>Status</th>
+            <th>Payment Status</th>
+          </tr>
+        </thead>
+        <tbody id="creditListBody">
+          <tr><td colspan="6">Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  document.addEventListener("DOMContentLoaded", async () => {
+    const newBtn = document.getElementById("newCreditBtn");
+    if (newBtn) {
+      newBtn.addEventListener("click", () => {
+        window.location.href = "{{ url_for('new_credit_note') }}";
+      });
+    }
+
+    const tbody = document.getElementById("creditListBody");
+    if (!tbody) return;
+
+    try {
+      const res = await fetch("/api/credit-notes");
+      const data = await res.json();
+      const items = Array.isArray(data?.items) ? data.items : [];
+
+      if (!items.length) {
+        tbody.innerHTML = "<tr><td colspan='6'>No credit notes found</td></tr>";
+        return;
+      }
+
+      tbody.innerHTML = items.map((r) => `
+        <tr>
+          <td>${r.crn_id || r.credit_note_id || ""}</td>
+          <td>${r.invoice_ref_id || r.invoice_id || ""}</td>
+          <td>${r.customer_name || ""}</td>
+          <td>${r.credit_note_date || r.note_date || ""}</td>
+          <td>${r.status || "Draft"}</td>
+          <td>${r.payment_status || "Unpaid"}</td>
+        </tr>
+      `).join("");
+    } catch (e) {
+      tbody.innerHTML = "<tr><td colspan='6'>Failed to load credit notes</td></tr>";
+    }
+  });
+</script>
+{% endblock %}

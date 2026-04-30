@@ -1,0 +1,231 @@
+
+{% extends "menu.html" %}
+{% block title %}New Credit Note{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='credit-new.css') }}?v=3">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+{% endblock %}
+
+{% block content %}
+<div class="cn-page">
+
+  <div class="cn-top">
+    <h2 class="cn-title">Credit Note</h2>
+    <span id="cnStatusPill" class="cn-status-pill" style="display:none;"></span>
+  </div>
+
+  <div class="cn-card">
+
+    <section class="cn-section">
+      <div class="cn-grid">
+        <div class="cn-field">
+          <label>Credit Note ID</label>
+          <input id="cnId" type="text" placeholder="Auto Generate" readonly>
+        </div>
+        <div class="cn-field">
+          <label>Credit Note Date</label>
+          <input id="cnDate" type="date" title="Credit Note Date">
+        </div>
+      </div>
+      <div class="cn-grid">
+        <div class="cn-field">
+          <label>Invoice Reference ID</label>
+          <select id="cnInvoiceRef" title="Invoice Reference ID">
+            <option value="">Select Invoice Ref. ID</option>
+          </select>
+        </div>
+        <div class="cn-field">
+          <label>Created By</label>
+          <input id="cnCreatedBy" type="text" placeholder="Enter name">
+        </div>
+      </div>
+      <div class="cn-grid">
+        <div class="cn-field">
+          <label>Branch / Location</label>
+          <select id="cnBranch" title="Branch / Location">
+            <option value="" selected>Select Branch</option>
+            <option value="Branch 1">Branch 1</option>
+            <option value="Branch 2">Branch 2</option>
+            <option value="Branch 3">Branch 3</option>
+          </select>
+        </div>
+        <div class="cn-field">
+          <label>Currency</label>
+          <input id="cnCurrency" type="text" value="INR" title="Currency" readonly>
+        </div>
+      </div>
+    </section>
+
+    <section class="cn-section">
+      <h3>Customer &amp; Invoice Details</h3>
+      <div class="cn-grid">
+        <div class="cn-field">
+          <label>Customer Name</label>
+          <input id="cnCustomerName" type="text" placeholder="Select Customer" readonly>
+        </div>
+        <div class="cn-field">
+          <label>Customer ID</label>
+          <input id="cnCustomerId" type="text" placeholder="Auto Generate" readonly>
+        </div>
+      </div>
+      <div class="cn-grid">
+        <div class="cn-field">
+          <label>Billing Address</label>
+          <input id="cnBillingAddress" type="text" placeholder="Enter Billing address">
+        </div>
+        <div class="cn-field">
+          <label>Phone Number</label>
+          <input id="cnPhone" type="text" placeholder="Enter Phone Number" readonly>
+        </div>
+      </div>
+      <div class="cn-grid">
+        <div class="cn-field">
+          <label>Invoice Date</label>
+          <input id="cnInvoiceDate" type="date" title="Invoice Date" readonly>
+        </div>
+        <div class="cn-field">
+          <label>Due Date</label>
+          <input id="cnDueDate" type="date" title="Due Date" readonly>
+        </div>
+      </div>
+      <div class="cn-grid">
+        <div class="cn-field">
+          <label>Payment Terms</label>
+          <select id="cnPaymentTerms" title="Payment Terms">
+            <option value="" selected>Select Payment</option>
+            <option value="Net 15">Net 15</option>
+            <option value="Net 30">Net 30</option>
+            <option value="Net 45">Net 45</option>
+            <option value="Due on Receipt">Due on Receipt</option>
+          </select>
+        </div>
+        <div class="cn-field">
+          <label>Invoice Status</label>
+          <input id="cnInvoiceStatus" type="text" placeholder="Enter Invoice Status" readonly>
+        </div>
+      </div>
+      <div class="cn-grid">
+        <div class="cn-field">
+          <label>Payment Status</label>
+          <input id="cnPaymentStatus" type="text" placeholder="Enter payment status" readonly>
+        </div>
+        <div class="cn-field">
+          <label>Invoice Total</label>
+          <input id="cnInvoiceTotal" type="text" placeholder="Enter Invoice Total" readonly>
+        </div>
+      </div>
+    </section>
+
+    <section class="cn-section">
+      <h3>Returned Line Items</h3>
+      <div class="cn-table-wrap">
+        <table class="cn-table" id="cnItemsTable">
+          <thead>
+            <tr>
+              <th>S.No</th>
+              <th>Product name</th>
+              <th>Product ID</th>
+              <th>Returned Qty</th>
+              <th>UOM</th>
+              <th>Return Reason</th>
+              <th>Unit Price</th>
+              <th>Tax (%)</th>
+              <th>Discount (%)</th>
+              <th>Total</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="cnItemsBody">
+            <tr><td colspan="11" class="cn-empty">No returned items</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="cn-section">
+      <h3>Payment &amp; Refund Details</h3>
+      <div class="cn-split">
+        <div class="cn-box">
+          <div class="cn-row"><span>Invoice Total :</span><strong id="invoice_total_display">0</strong></div>
+          <div class="cn-row"><span>Amount Paid by Customer :</span><input id="cnAmountPaid" type="number" min="0" step="0.01" placeholder="0.00"></div>
+          <div class="cn-row"><span>Balance Due by Customer :</span><strong id="cnBalanceDue">0</strong></div>
+          <div class="cn-row"><span>Invoice Return Amount :</span><strong id="cnInvoiceReturnAmount">0</strong></div>
+          <div class="cn-row"><span>Balance to Refund :</span><strong id="cnBalanceToRefund">0</strong></div>
+        </div>
+        <div class="cn-box">
+          <div class="cn-row"><span>Refund Mode :</span><select id="cnRefundMode"><option value="">None</option><option value="cash">Cash</option><option value="bank">Bank</option><option value="upi">UPI</option></select></div>
+          <div class="cn-row"><span>Refund Paid :</span><input id="cnRefundPaid" type="number" min="0" step="0.01" placeholder="0.00"></div>
+          <div class="cn-row"><span>Refund Date :</span><input id="cnRefundDate" type="date"></div>
+          <div class="cn-row"><span>Adjusted Invoice Reference :</span><input id="cnAdjustedInvoiceRef" type="text" placeholder="Not yet adjusted"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="cn-section">
+      <div class="cn-tabs">
+        <button type="button" class="cn-tab active" data-tab="comments">Comments</button>
+        <button type="button" class="cn-tab" data-tab="history">History</button>
+        <button type="button" class="cn-tab" data-tab="attachments">Attachments</button>
+      </div>
+      <div class="cn-panel" id="cnCommentsPanel">
+        <label class="cn-comment-label" for="cnCommentInput">Add Comment</label>
+        <textarea id="cnCommentInput" placeholder="Enter your comment"></textarea>
+        <div class="cn-comment-actions">
+          <button type="button" class="cn-comment-add-btn" id="cnAddCommentBtn" disabled>Add New</button>
+        </div>
+        <div id="cnCommentList"></div>
+        <div id="cnCommentEmpty" class="cn-empty">No comments yet</div>
+      </div>
+      <div class="cn-panel hidden" id="cnHistoryPanel">
+        <div id="cnHistoryList" class="cn-empty">No history</div>
+      </div>
+      <div class="cn-panel hidden" id="cnAttachmentsPanel">
+        <div class="cn-empty">Attachments coming soon</div>
+      </div>
+    </section>
+
+  <!-- Footer kept inside cn-card so it stays within white box -->
+  <div class="modal-footer">
+    <div class="footer-icon-bar">
+      <div class="footer-item pdf" id="cnPdfAction">
+        <i class="fa-solid fa-file-pdf"></i>
+        <span>PDF</span>
+      </div>
+      <div class="footer-item email" id="cnEmailAction">
+        <i class="fa-regular fa-envelope"></i>
+        <span>Email</span>
+      </div>
+    </div>
+    <div class="modal-footer-button">
+      <button type="button" class="btn-discard" id="cnCancelBtn" onclick="window.location.href='/credit-note'">Cancel</button>
+      <button type="button" class="btn-draft" id="cnSaveDraftBtn">Save Draft</button>
+      <button type="button" class="btn-save" id="cnMarkPaidBtn">Mark as Paid</button>
+      <button type="button" class="btn-discard" id="cnDeleteBtn">Delete Credit Note</button>
+    </div>
+  </div>
+
+  </div><!-- /.cn-card -->
+
+</div><!-- /.cn-page.modal -->
+
+<!-- Email Modal -->
+<div id="cnEmailModal" class="email-modal" style="display: none;">
+  <div class="email-modal-content">
+    <h3>Send Credit Note via Email</h3>
+    <div class="email-modal-body">
+      <label for="cnRecipientEmail">Email</label>
+      <input type="email" id="cnRecipientEmail" placeholder="customer@example.com" required>
+      <div class="email-modal-actions">
+        <button id="cnSendEmailBtn" class="btn-save">Send</button>
+        <button id="cnCancelEmailBtn" class="btn-discard">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script id="credit-inline-config" type="application/json">{{ {"creditId": credit_id, "mode": mode, "userName": user_name}|tojson }}</script>
+<script src="{{ url_for('static', filename='credit-new-clean.js') }}?v=8" defer></script>
+{% endblock %}

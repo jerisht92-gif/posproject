@@ -7081,7 +7081,7 @@ def api_get_customer(customer_id):
     """
     GET /api/customer/<customer_id>
     
-    Returns a single customer by ID (same pattern as /api/products/<product_id>)
+    Returns a single customer by ID )
     """
     try:
        
@@ -7548,7 +7548,7 @@ def upload_customer_file():
 
 
 
-    # Normalize Customer IDs for comparison (same pattern as product import)
+    # Normalize Customer IDs for comparison 
     existing_customer_ids = {str(c.get("customer_id", "")).strip().lower() for c in existing_customers if c.get("customer_id")}
     
     # Track Customer IDs for uniqueness validation within uploaded file
@@ -7769,7 +7769,7 @@ def upload_customer_file():
             elif len(email_str) > 50:
                 errors.append("Email must not exceed 50 characters")
             else:
-                # Check for duplicate Email in uploaded file (same pattern as Product ID uniqueness)
+                # Check for duplicate Email in uploaded file 
                 if email_str in seen_emails:
                     first_row = seen_emails[email_str]
                     errors.append(f"Duplicate Email: Email already exists in row {first_row}")
@@ -14729,20 +14729,14 @@ def sales_order_email(so_id):
         currency = so.get("currency", "INR")
 
         subject = f"Sales Order {so_no} from Stackly"
-        body = f"""
-Dear {customer_name},
-
-Greetings from Stackly.
-
-Please find attached the Sales Order document.
-
-Sales Order No : {so_no}
-Order Date     : {order_date}
-Grand Total    : {currency} {grand_total}
-
-Thanks & Regards,
-Stackly Team
-""".strip()
+        body = (
+            f"Dear {customer_name},\n\n"
+            f"Please find attached the sales order ({so_no}).\n"
+            "The details have been prepared as per the information provided.\n\n"
+            "Please let us know if you have any questions.\n\n"
+            "Regards,\n"
+            "Stackly Team"
+        )
 
         msg = EmailMessage()
         msg["Subject"] = subject
@@ -15168,6 +15162,8 @@ def api_delivery_notes():
         record["shipping_address"] = ""
 
     # INSERT header
+    # Keep FK valid: empty SO ref should be stored as NULL, not "".
+    so_ref = (record.get("sale_order_ref") or "").strip() or None
     cur.execute("""
     INSERT INTO delivery_notes (
         dn_id, so_id, customer_name, destination_address,
@@ -15177,7 +15173,7 @@ def api_delivery_notes():
     ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
     """, (
         record["dn_id"],
-        record["sale_order_ref"],   # IMPORTANT mapping
+        so_ref,   # IMPORTANT mapping
         record["customer_name"],
         record["destination_address"],
         record["delivery_date"],
@@ -15191,14 +15187,21 @@ def api_delivery_notes():
     ))
 
     # INSERT items
+    # Some historical SO rows can reference product IDs that no longer exist in products.
+    # To avoid hard-failing the whole DN save on FK, store product_id as NULL in that case.
+    cur.execute("SELECT product_id FROM products")
+    valid_product_ids = {str(r[0]).strip() for r in cur.fetchall() if r and r[0]}
+
     for it in record["items"]:
+        raw_pid = str(it.get("product_id") or "").strip()
+        safe_pid = raw_pid if raw_pid and raw_pid in valid_product_ids else None
         cur.execute("""
         INSERT INTO delivery_note_items (
             dn_id, product_id, product_name, qty, uom, serial_no
         ) VALUES (%s,%s,%s,%s,%s,%s)
         """, (
             record["dn_id"],
-            it.get("product_id"),
+            safe_pid,
             it.get("product_name"),
             it.get("qty"),
             it.get("uom"),
@@ -15280,6 +15283,7 @@ def api_delivery_note_one(dn_id):
     payload = request.get_json(force=True) or {}
 
     # UPDATE HEADER
+    so_ref = (payload.get("sale_order_ref") or "").strip() or None
     cur.execute("""
     UPDATE delivery_notes SET
     delivery_date=%s,
@@ -15297,7 +15301,7 @@ def api_delivery_note_one(dn_id):
     WHERE dn_id=%s
     """, (
         payload.get("delivery_date"),
-        payload.get("sale_order_ref"),
+        so_ref,
         payload.get("customer_name"),
         payload.get("delivery_type"),
         payload.get("destination_address"),
@@ -15484,7 +15488,14 @@ def email_delivery_note(dn_id):
     ok = send_email_with_attachments(
         to_email=customer_email,
         subject=f"Delivery Note {dn_id}",
-        body=f"Dear {dn.get('customer_name','Customer')},\n\nPlease find attached Delivery Note {dn_id}.\n\nRegards,\nStackly POS",
+        body=(
+            f"Dear {dn.get('customer_name', 'Customer')},\n\n"
+            f"Please find attached the delivery note ({dn_id}) issued against your sales order {dn.get('sale_order_ref') or dn.get('so_id') or ''}.\n"
+            "The delivery details have been processed as per the information provided.\n\n"
+            "Please let us know if you have any questions.\n\n"
+            "Regards,\n"
+            "Stackly Team"
+        ),
         from_email=EMAIL_ADDRESS,
         password=EMAIL_PASSWORD,
         attachments=[
@@ -20455,7 +20466,7 @@ def get_dnr_by_id_api(dnr_id):
     # Same shape as GET /api/delivery-notes/<dn_id> (success + data).
     return jsonify({"success": True, "data": payload})
 # =========================================
-# DELIVERY NOTE RETURN PDF (same layout pattern as generate_delivery_note_pdf_bytes)
+# DELIVERY NOTE RETURN PDF 
 # =========================================
 def generate_delivery_note_return_pdf_bytes(dnr):
     buffer = io.BytesIO()
@@ -20570,7 +20581,7 @@ def generate_delivery_note_return_pdf_bytes(dnr):
         except Exception:
             return default
 
-    # COMPANY HEADER (same as Delivery Note PDF)
+    # COMPANY HEADER 
     elements.append(Paragraph("STACKLY", company_style))
     elements.append(
         Paragraph(
@@ -20804,7 +20815,14 @@ def email_delivery_note_return(dnr_id):
     ok = send_email_with_attachments(
         to_email=customer_email,
         subject=f"Delivery Note Return {dnr_id}",
-        body=f"Dear {dnr.get('customer_name','')},\n\nPlease find attached Delivery Note Return {dnr_id}.",
+        body=(
+            f"Dear {dnr.get('customer_name', 'Customer')},\n\n"
+            f"Please find attached the delivery note return ({dnr_id}) issued against your invoice return {dnr.get('invoice_return_ref') or dnr.get('invoice_return_ref_id') or ''}.\n"
+            "The return details have been processed as per the information provided.\n\n"
+            "Please let us know if you have any questions.\n\n"
+            "Regards,\n"
+            "Stackly Team"
+        ),
         from_email=EMAIL_ADDRESS,
         password=EMAIL_PASSWORD,
         attachments=[{"filename": f"{dnr_id}.pdf", "content_bytes": pdf_bytes}],
@@ -21056,6 +21074,1002 @@ def dnr_delete_attachment(att_id):
     except Exception as e:
         print(traceback.format_exc())
         return jsonify({"success": False, "error": str(e)}), 500
+
+
+
+
+
+
+
+
+
+
+# -------------------------------
+# CREDIT NOTE LIST PAGE
+# -------------------------------
+@app.get("/credit-note")
+def credit_note():
+    user_email = session.get("user", "")
+    users = load_users()
+
+    user_name = "User"
+    for u in users:
+        if isinstance(u, dict) and (u.get("email") or "").lower() == user_email.lower():
+            user_name = u.get("name") or "User"
+            break
+
+    return render_template(
+        "credit.html",
+        page="credit_note",
+        title="Credit Note - Stackly",
+        user_email=user_email,
+        user_name=user_name,
+    )
+
+
+# -------------------------------
+# NEW / EDIT CREDIT NOTE PAGE
+# -------------------------------
+@app.get("/new-credit-note")
+def new_credit_note():
+    user_email = session.get("user", "")
+    users = load_users()
+
+    user_name = "User"
+    for u in users:
+        if isinstance(u, dict) and (u.get("email") or "").lower() == user_email.lower():
+            user_name = u.get("name") or "User"
+            break
+
+    # Mode (new / edit)
+    mode = (request.args.get("mode") or "new").strip().lower()
+
+    # ✅ FIX: always assign credit_id
+    if mode == "new":
+        credit_id = generate_credit_note_id()
+    else:
+        credit_id = (request.args.get("credit_note_id") or "").strip()
+
+    print("Credit ID:", credit_id)  # debug
+
+    return render_template(
+        "credit-new.html",
+        page="credit_note",
+        title="New Credit Note - Stackly",
+        user_email=user_email,
+        user_name=user_name,
+        credit_id=credit_id,
+        mode=mode,
+    )
+
+
+# -------------------------------
+# AUTO GENERATE CREDIT NOTE ID
+# -------------------------------
+def generate_credit_note_id():
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT credit_note_id
+        FROM credit_notes
+        ORDER BY credit_note_id DESC
+        LIMIT 1
+    """)
+    last = cur.fetchone()
+
+    print("DB RESULT:", last)   
+
+    try:
+        if last and last[0]:
+            print("Last ID:", last[0])
+            last_num = int(last[0].split("-")[1])
+            new_num = last_num + 1
+        else:
+            print("No data found, starting from 1")
+            new_num = 1
+    except Exception as e:
+        print("ERROR:", e)
+        new_num = 1
+
+    new_id = f"CRN-{str(new_num).zfill(3)}"
+    print("Generated ID:", new_id)
+
+    return new_id
+
+@app.get("/api/invoices-credit")
+def get_invoices_credit():
+    last_err = None
+    for _ in range(2):
+        conn = None
+        cur = None
+        try:
+            conn = get_db_connection()
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT invoice_id
+                FROM invoices
+                ORDER BY id DESC
+            """)
+            rows = cur.fetchall()
+            invoice_list = [r[0] for r in rows]
+            return {"invoices": invoice_list}
+        except Exception as e:
+            last_err = e
+            if "SSL connection has been closed unexpectedly" not in str(e):
+                break
+        finally:
+            try:
+                if cur:
+                    cur.close()
+            except Exception:
+                pass
+            try:
+                if conn:
+                    conn.close()
+            except Exception:
+                pass
+    return jsonify({"invoices": [], "success": False, "message": str(last_err or "Failed to load invoices")}), 500
+
+
+@app.get("/api/invoice-details-credit/<invoice_id>")
+def get_invoice_details_credit(invoice_id):
+    last_err = None
+    for _ in range(2):
+        conn = None
+        cur = None
+        try:
+            conn = get_db_connection()
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT i.invoice_id, i.customer_name, i.customer_id,
+                       i.billing_address, i.phone, i.invoice_date,
+                       i.due_date, i.payment_terms, i.status,
+                       i.payment_status, COALESCE(s.grand_total, 0)
+                FROM invoices i
+                LEFT JOIN invoice_summary s ON s.invoice_id = i.invoice_id
+                WHERE i.invoice_id = %s
+                LIMIT 1
+            """, (invoice_id,))
+            row = cur.fetchone()
+            if not row:
+                return jsonify({"success": False, "message": "Invoice not found"}), 404
+
+            cur.execute("""
+                SELECT product_name, product_id, quantity, uom,
+                       unit_price, tax_pct, disc_pct
+                FROM invoice_items
+                WHERE invoice_id = %s
+            """, (invoice_id,))
+            items_rows = cur.fetchall()
+
+            items = [
+                {
+                    "product_name": r[0] or "",
+                    "product_id": r[1] or "",
+                    "quantity": float(r[2] or 0),
+                    "uom": r[3] or "",
+                    "unit_price": float(r[4] or 0),
+                    "tax_percent": float(r[5] or 0),
+                    "discount": float(r[6] or 0),
+                    "total": round(
+                        (float(r[2] or 0) * float(r[4] or 0))
+                        * (1 + float(r[5] or 0) / 100)
+                        * (1 - float(r[6] or 0) / 100),
+                        2
+                    ),
+                }
+                for r in (items_rows or [])
+            ]
+
+            return jsonify({
+                "success": True,
+                "invoice": {
+                    "invoice_id": row[0] or "",
+                    "customer_name": row[1] or "",
+                    "customer_id": row[2] or "",
+                    "billing_address": row[3] or "",
+                    "phone": row[4] or "",
+                    "invoice_date": str(row[5]) if row[5] else "",
+                    "due_date": str(row[6]) if row[6] else "",
+                    "payment_terms": row[7] or "",
+                    "status": row[8] or "",
+                    "payment_status": row[9] or "",
+                    "grand_total": float(row[10] or 0),
+                },
+                "items": items
+            })
+        except Exception as e:
+            last_err = e
+            if "SSL connection has been closed unexpectedly" not in str(e):
+                break
+        finally:
+            try:
+                if cur:
+                    cur.close()
+            except Exception:
+                pass
+            try:
+                if conn:
+                    conn.close()
+            except Exception:
+                pass
+
+    print(f"get_invoice_details_credit error: {last_err}")
+    return jsonify({"success": False, "message": str(last_err)}), 500
+
+@app.get("/api/invoice-return-items/<invoice_id>")
+def get_return_items(invoice_id):
+    rows = []
+    last_err = None
+    for _ in range(2):
+        conn = None
+        cur = None
+        try:
+            conn = get_db_connection()
+            cur = conn.cursor()
+            # Schema differs across environments; try the common column variants.
+            queries = [
+            """
+            SELECT iri.product_name, iri.product_id, iri.return_quantity, iri.uom,
+                   iri.return_reason, iri.unit_price, 0 AS tax_percent, 0 AS discount, iri.total
+            FROM invoice_return_items iri
+            INNER JOIN invoice_return ir ON ir.invoice_return_id = iri.invoice_return_id
+            WHERE ir.invoice_id = %s
+            ORDER BY iri.id
+            """,
+            """
+            SELECT product_name, product_id, return_qty, uom,
+                   reason, unit_price, tax_percent, discount, total
+            FROM invoice_return_items
+            WHERE invoice_id = %s
+            """,
+            """
+            SELECT product_name, product_id, returned_qty, uom,
+                   reason, unit_price, tax_percent, discount, total
+            FROM invoice_return_items
+            WHERE invoice_id = %s
+            """,
+            """
+            SELECT product_name, product_id, quantity, uom,
+                   reason, unit_price, tax_percent, discount, total
+            FROM invoice_return_items
+            WHERE invoice_id = %s
+            """,
+            ]
+            for q in queries:
+                try:
+                    cur.execute(q, (invoice_id,))
+                    rows = cur.fetchall()
+                    break
+                except Exception:
+                    conn.rollback()
+            return jsonify({
+                "items": [
+                    {
+                        "product_name": r[0],
+                        "product_id": r[1],
+                        "return_qty": r[2],
+                        "uom": r[3],
+                        "reason": r[4],
+                        "unit_price": r[5],
+                        "tax_percent": r[6],
+                        "discount": r[7],
+                        "total": r[8]
+                    } for r in rows
+                ]
+            })
+        except Exception as e:
+            last_err = e
+            if "SSL connection has been closed unexpectedly" not in str(e):
+                break
+        finally:
+            try:
+                if cur:
+                    cur.close()
+            except Exception:
+                pass
+            try:
+                if conn:
+                    conn.close()
+            except Exception:
+                pass
+
+    print(f"get_return_items error: {last_err}")
+    return jsonify({"items": [], "success": False, "message": str(last_err)}), 500
+
+
+def _ensure_credit_notes_table(cur):
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS credit_notes (
+            credit_note_id TEXT PRIMARY KEY,
+            credit_note_date DATE,
+            invoice_ref_id TEXT,
+            created_by TEXT,
+            branch TEXT,
+            currency TEXT,
+            customer_name TEXT,
+            customer_id TEXT,
+            billing_address TEXT,
+            phone TEXT,
+            invoice_date DATE,
+            due_date DATE,
+            payment_terms TEXT,
+            invoice_status TEXT,
+            payment_status TEXT,
+            invoice_total NUMERIC,
+            amount_paid NUMERIC,
+            balance_due NUMERIC,
+            invoice_return_amount NUMERIC,
+            balance_to_refund NUMERIC,
+            refund_mode TEXT,
+            refund_paid NUMERIC,
+            refund_date DATE,
+            adjusted_invoice_reference TEXT,
+            status TEXT DEFAULT 'Draft',
+            items_json JSONB DEFAULT '[]'::jsonb,
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW()
+        )
+        """
+    )
+
+
+@app.get("/api/credit-notes")
+def get_credit_notes():
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        _ensure_credit_notes_table(cur)
+        cur.execute("""
+            SELECT
+                credit_note_id,
+                invoice_ref_id,
+                customer_name,
+                credit_note_date,
+                status,
+                COALESCE(payment_status, 'Unpaid')
+            FROM credit_notes
+            ORDER BY updated_at DESC, credit_note_id DESC
+        """)
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+
+        items = []
+        for r in rows:
+            items.append({
+                "crn_id": r[0] or "",
+                "invoice_ref_id": r[1] or "",
+                "customer_name": r[2] or "",
+                "credit_note_date": str(r[3]) if r[3] else "",
+                "status": r[4] or "Draft",
+                "payment_status": r[5] or "Unpaid",
+            })
+
+        return jsonify({"success": True, "items": items})
+    except Exception as e:
+        print(f"get_credit_notes error: {e}")
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+def _get_credit_note_row(credit_note_id):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    _ensure_credit_notes_table(cur)
+    cur.execute("""
+        SELECT
+            credit_note_id, credit_note_date, invoice_ref_id, created_by, branch, currency,
+            customer_name, customer_id, billing_address, phone, invoice_date, due_date,
+            payment_terms, invoice_status, payment_status, invoice_total, amount_paid,
+            balance_due, invoice_return_amount, balance_to_refund, refund_mode, refund_paid,
+            refund_date, adjusted_invoice_reference, status, items_json
+        FROM credit_notes
+        WHERE credit_note_id = %s
+        LIMIT 1
+    """, (credit_note_id,))
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    return row
+
+
+@app.get("/api/credit-notes/<credit_note_id>")
+def get_credit_note_by_id(credit_note_id):
+    try:
+        row = _get_credit_note_row(credit_note_id)
+
+        if not row:
+            return jsonify({"success": False, "message": "Credit note not found"}), 404
+
+        raw_items = row[25]
+        if isinstance(raw_items, list):
+            items = raw_items
+        elif isinstance(raw_items, str):
+            try:
+                items = json.loads(raw_items)
+            except Exception:
+                items = []
+        else:
+            items = []
+
+        return jsonify({
+            "success": True,
+            "item": {
+                "credit_note_id": row[0] or "",
+                "credit_note_date": str(row[1]) if row[1] else "",
+                "invoice_ref_id": row[2] or "",
+                "created_by": row[3] or "",
+                "branch": row[4] or "",
+                "currency": row[5] or "INR",
+                "customer_name": row[6] or "",
+                "customer_id": row[7] or "",
+                "billing_address": row[8] or "",
+                "phone": row[9] or "",
+                "invoice_date": str(row[10]) if row[10] else "",
+                "due_date": str(row[11]) if row[11] else "",
+                "payment_terms": row[12] or "",
+                "invoice_status": row[13] or "",
+                "payment_status": row[14] or "",
+                "invoice_total": float(row[15] or 0),
+                "amount_paid": float(row[16] or 0),
+                "balance_due": float(row[17] or 0),
+                "invoice_return_amount": float(row[18] or 0),
+                "balance_to_refund": float(row[19] or 0),
+                "refund_mode": row[20] or "",
+                "refund_paid": float(row[21] or 0),
+                "refund_date": str(row[22]) if row[22] else "",
+                "adjusted_invoice_reference": row[23] or "",
+                "status": row[24] or "Draft",
+                "items": items,
+            }
+        })
+    except Exception as e:
+        print(f"get_credit_note_by_id error: {e}")
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+def generate_credit_note_pdf_bytes(cn):
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer, pagesize=A4, rightMargin=18, leftMargin=18, topMargin=16, bottomMargin=18
+    )
+    styles = getSampleStyleSheet()
+
+    company_style = ParagraphStyle(
+        name="CN_CompanyName", parent=styles["Normal"], fontName="DejaVuSans-Bold",
+        fontSize=20, leading=24, textColor=colors.HexColor("#8c1f1f"), alignment=TA_CENTER, spaceAfter=4
+    )
+    company_info_style = ParagraphStyle(
+        name="CN_CompanyInfo", parent=styles["Normal"], fontName="DejaVuSans",
+        fontSize=9, leading=12, textColor=colors.black, alignment=TA_CENTER, spaceAfter=1
+    )
+    page_title_style = ParagraphStyle(
+        name="CN_PageTitle", parent=styles["Heading1"], fontName="DejaVuSans-Bold",
+        fontSize=16, leading=20, textColor=colors.green, alignment=TA_CENTER, spaceBefore=12, spaceAfter=12
+    )
+    section_style = ParagraphStyle(
+        name="CN_Section", parent=styles["Heading3"], fontName="DejaVuSans-Bold",
+        fontSize=11, leading=14, textColor=colors.HexColor("#8c1f1f"), spaceAfter=6, spaceBefore=10
+    )
+    label_style = ParagraphStyle(
+        name="CN_Label", parent=styles["Normal"], fontName="DejaVuSans-Bold",
+        fontSize=8.5, leading=11, textColor=colors.HexColor("#6b1a1a")
+    )
+    value_style = ParagraphStyle(
+        name="CN_Value", parent=styles["Normal"], fontName="DejaVuSans",
+        fontSize=8.5, leading=11, textColor=colors.black
+    )
+    header_small_style = ParagraphStyle(
+        name="CN_HeaderSmall", parent=styles["Normal"], fontName="DejaVuSans-Bold",
+        fontSize=8, leading=10, textColor=colors.white, alignment=TA_CENTER
+    )
+
+    def s(v, d="-"):
+        if v is None:
+            return d
+        x = str(v).strip()
+        return x if x else d
+
+    elements = []
+    elements.append(Paragraph("STACKLY", company_style))
+    elements.append(Paragraph("MMR Complex, Chinna Thirupathi, near Chinna Muniyappan Kovil, Salem, Tamil Nadu - 636008", company_info_style))
+    elements.append(Paragraph("Phone: +91 7010792745", company_info_style))
+    elements.append(Paragraph("Email: info@stackly.com", company_info_style))
+    elements.append(Spacer(1, 10))
+
+    status_text = s(cn.get("status") or "DRAFT").upper()
+    elements.append(Paragraph(f"CREDIT NOTE - {status_text}", page_title_style))
+    elements.append(Spacer(1, 2))
+
+    details_data = [
+        [Paragraph("<b>Credit Note No:</b>", label_style), Paragraph(s(cn.get("credit_note_id")), value_style),
+         Paragraph("<b>Date:</b>", label_style), Paragraph(s(cn.get("credit_note_date")), value_style)],
+        [Paragraph("<b>Invoice Ref ID:</b>", label_style), Paragraph(s(cn.get("invoice_ref_id")), value_style),
+         Paragraph("<b>Customer:</b>", label_style), Paragraph(s(cn.get("customer_name")), value_style)],
+        [Paragraph("<b>Customer ID:</b>", label_style), Paragraph(s(cn.get("customer_id")), value_style),
+         Paragraph("<b>Phone:</b>", label_style), Paragraph(s(cn.get("phone")), value_style)],
+        [Paragraph("<b>Branch:</b>", label_style), Paragraph(s(cn.get("branch")), value_style),
+         Paragraph("<b>Currency:</b>", label_style), Paragraph(s(cn.get("currency")), value_style)],
+        [Paragraph("<b>Payment Status:</b>", label_style), Paragraph(s(cn.get("payment_status")), value_style),
+         Paragraph("<b>Invoice Status:</b>", label_style), Paragraph(s(cn.get("invoice_status")), value_style)],
+    ]
+    details_table = Table(details_data, colWidths=[110, 170, 95, 145])
+    details_table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f3f3f3")),
+        ("BOX", (0, 0), (-1, -1), 0.8, colors.HexColor("#8a8a8a")),
+        ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#a5a5a5")),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 6),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+    ]))
+    elements.append(details_table)
+    elements.append(Spacer(1, 16))
+
+    elements.append(Paragraph("RETURNED LINE ITEMS", section_style))
+    elements.append(Spacer(1, 2))
+    items = cn.get("items", []) or []
+    item_data = [[
+        Paragraph("S.No", header_small_style),
+        Paragraph("Product Name", header_small_style),
+        Paragraph("Product ID", header_small_style),
+        Paragraph("Qty", header_small_style),
+        Paragraph("UOM", header_small_style),
+        Paragraph("Reason", header_small_style),
+        Paragraph("Unit Price", header_small_style),
+        Paragraph("Total", header_small_style),
+    ]]
+    for idx, item in enumerate(items, start=1):
+        qty = item.get("returned_qty") or item.get("return_qty") or item.get("quantity") or 0
+        reason = item.get("reason") or item.get("return_reason") or "-"
+        item_data.append([
+            Paragraph(str(idx), value_style),
+            Paragraph(s(item.get("product_name")), value_style),
+            Paragraph(s(item.get("product_id")), value_style),
+            Paragraph(s(qty), value_style),
+            Paragraph(s(item.get("uom")), value_style),
+            Paragraph(s(reason), value_style),
+            Paragraph(s(item.get("unit_price"), "0"), value_style),
+            Paragraph(s(item.get("total"), "0"), value_style),
+        ])
+    if len(item_data) == 1:
+        item_data.append([
+            Paragraph("-", value_style), Paragraph("No line items available", value_style),
+            Paragraph("-", value_style), Paragraph("-", value_style),
+            Paragraph("-", value_style), Paragraph("-", value_style),
+            Paragraph("-", value_style), Paragraph("-", value_style),
+        ])
+    items_table = Table(item_data, colWidths=[35, 130, 70, 45, 40, 100, 55, 55], repeatRows=1)
+    items_table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#a12828")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTNAME", (0, 0), (-1, 0), "DejaVuSans-Bold"),
+        ("FONTNAME", (0, 1), (-1, -1), "DejaVuSans"),
+        ("FONTSIZE", (0, 0), (-1, -1), 7.5),
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ("ALIGN", (1, 1), (2, -1), "LEFT"),
+        ("ALIGN", (5, 1), (5, -1), "LEFT"),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#999999")),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f7f7f7")]),
+        ("LEFTPADDING", (0, 0), (-1, -1), 4),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+    ]))
+    elements.append(items_table)
+    elements.append(Spacer(1, 16))
+
+    elements.append(Paragraph("PAYMENT & REFUND DETAILS", section_style))
+    elements.append(Spacer(1, 2))
+
+    summary_data = [
+        [Paragraph("<b>Invoice Total:</b>", label_style), Paragraph(s(cn.get("invoice_total"), "0"), value_style)],
+        [Paragraph("<b>Amount Paid:</b>", label_style), Paragraph(s(cn.get("amount_paid"), "0"), value_style)],
+        [Paragraph("<b>Balance Due:</b>", label_style), Paragraph(s(cn.get("balance_due"), "0"), value_style)],
+        [Paragraph("<b>Invoice Return Amount:</b>", label_style), Paragraph(s(cn.get("invoice_return_amount"), "0"), value_style)],
+        [Paragraph("<b>Balance to Refund:</b>", label_style), Paragraph(s(cn.get("balance_to_refund"), "0"), value_style)],
+        [Paragraph("<b>Refund Paid:</b>", label_style), Paragraph(s(cn.get("refund_paid"), "0"), value_style)],
+    ]
+    summary_table = Table(summary_data, colWidths=[190, 120])
+    summary_table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#fafafa")),
+        ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor("#999999")),
+        ("INNERGRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#c7c7c7")),
+        ("LEFTPADDING", (0, 0), (-1, -1), 8),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+        ("TOPPADDING", (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+    ]))
+    elements.append(summary_table)
+
+    footer_text = "This is a system-generated credit note. The refund/adjustment has been processed as per company policy."
+
+    def _draw_footer(canvas, _doc):
+        canvas.saveState()
+        canvas.setFont("DejaVuSans", 9)
+        canvas.setFillColor(colors.HexColor("#333333"))
+        page_width, _ = A4
+        canvas.drawCentredString(page_width / 2, 22, footer_text)
+        canvas.restoreState()
+
+    doc.build(elements, onFirstPage=_draw_footer, onLaterPages=_draw_footer)
+    pdf_bytes = buffer.getvalue()
+    buffer.close()
+    return pdf_bytes
+
+
+@app.get("/api/credit-notes/<credit_note_id>/pdf")
+def credit_note_pdf(credit_note_id):
+    try:
+        row = _get_credit_note_row(credit_note_id)
+        if not row:
+            return jsonify({"success": False, "message": "Credit note not found"}), 404
+
+        raw_items = row[25]
+        if isinstance(raw_items, list):
+            items = raw_items
+        elif isinstance(raw_items, str):
+            try:
+                items = json.loads(raw_items)
+            except Exception:
+                items = []
+        else:
+            items = []
+
+        cn = {
+            "credit_note_id": row[0] or "",
+            "credit_note_date": str(row[1]) if row[1] else "",
+            "invoice_ref_id": row[2] or "",
+            "created_by": row[3] or "",
+            "branch": row[4] or "",
+            "currency": row[5] or "INR",
+            "customer_name": row[6] or "",
+            "customer_id": row[7] or "",
+            "billing_address": row[8] or "",
+            "phone": row[9] or "",
+            "invoice_date": str(row[10]) if row[10] else "",
+            "due_date": str(row[11]) if row[11] else "",
+            "payment_terms": row[12] or "",
+            "invoice_status": row[13] or "",
+            "payment_status": row[14] or "",
+            "invoice_total": float(row[15] or 0),
+            "amount_paid": float(row[16] or 0),
+            "balance_due": float(row[17] or 0),
+            "invoice_return_amount": float(row[18] or 0),
+            "balance_to_refund": float(row[19] or 0),
+            "refund_mode": row[20] or "",
+            "refund_paid": float(row[21] or 0),
+            "refund_date": str(row[22]) if row[22] else "",
+            "adjusted_invoice_reference": row[23] or "",
+            "status": row[24] or "Draft",
+            "items": items,
+        }
+
+        pdf_bytes = generate_credit_note_pdf_bytes(cn)
+        return send_file(
+            io.BytesIO(pdf_bytes),
+            mimetype="application/pdf",
+            download_name=f"{credit_note_id}.pdf",
+            as_attachment=False,
+        )
+    except Exception as e:
+        print(f"credit_note_pdf error: {e}")
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.post("/api/credit-notes/<credit_note_id>/email")
+def credit_note_email(credit_note_id):
+    try:
+        row = _get_credit_note_row(credit_note_id)
+        if not row:
+            return jsonify({"success": False, "message": "Credit note not found"}), 404
+
+        payload = request.get_json(silent=True) or {}
+        recipient = (payload.get("email") or "").strip()
+        if not recipient:
+            return jsonify({"success": False, "message": "Recipient email required"}), 400
+
+        raw_items = row[25]
+        if isinstance(raw_items, list):
+            items = raw_items
+        elif isinstance(raw_items, str):
+            try:
+                items = json.loads(raw_items)
+            except Exception:
+                items = []
+        else:
+            items = []
+
+        cn = {
+            "credit_note_id": row[0] or "",
+            "credit_note_date": str(row[1]) if row[1] else "",
+            "invoice_ref_id": row[2] or "",
+            "created_by": row[3] or "",
+            "branch": row[4] or "",
+            "currency": row[5] or "INR",
+            "customer_name": row[6] or "",
+            "customer_id": row[7] or "",
+            "billing_address": row[8] or "",
+            "phone": row[9] or "",
+            "invoice_date": str(row[10]) if row[10] else "",
+            "due_date": str(row[11]) if row[11] else "",
+            "payment_terms": row[12] or "",
+            "invoice_status": row[13] or "",
+            "payment_status": row[14] or "",
+            "invoice_total": float(row[15] or 0),
+            "amount_paid": float(row[16] or 0),
+            "balance_due": float(row[17] or 0),
+            "invoice_return_amount": float(row[18] or 0),
+            "balance_to_refund": float(row[19] or 0),
+            "refund_mode": row[20] or "",
+            "refund_paid": float(row[21] or 0),
+            "refund_date": str(row[22]) if row[22] else "",
+            "adjusted_invoice_reference": row[23] or "",
+            "status": row[24] or "Draft",
+            "items": items,
+        }
+
+        pdf_bytes = generate_credit_note_pdf_bytes(cn)
+        ok = send_email_with_attachments(
+            to_email=recipient,
+            subject=f"Credit Note {credit_note_id}",
+            body=(
+                f"Dear {cn.get('customer_name', 'Customer')},\n\n"
+                f"Please find attached the credit note ({credit_note_id}) issued against your invoice {cn.get('invoice_ref_id', '')}.\n"
+                "The refund/adjustment has been processed as per the details mentioned.\n\n"
+                "Please let us know if you have any questions.\n\n"
+                "Regards,\n"
+                "Stackly Team"
+            ),
+            from_email=EMAIL_ADDRESS,
+            password=EMAIL_PASSWORD,
+            attachments=[{"filename": f"{credit_note_id}.pdf", "content_bytes": pdf_bytes}],
+        )
+        if not ok:
+            return jsonify({"success": False, "message": "Email sending failed"}), 500
+        return jsonify({"success": True, "message": "Email sent successfully"})
+    except Exception as e:
+        print(f"credit_note_email error: {e}")
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.post("/api/credit-notes")
+def save_credit_note():
+    try:
+        def _to_num(v):
+            try:
+                if v is None:
+                    return 0.0
+                s = str(v).strip()
+                if not s:
+                    return 0.0
+                return float(s)
+            except Exception:
+                return 0.0
+
+        def _normalized_amounts(payload):
+            invoice_total = max(_to_num(payload.get("invoice_total")), 0.0)
+            amount_paid = max(_to_num(payload.get("amount_paid")), 0.0)
+            if amount_paid > invoice_total:
+                amount_paid = invoice_total
+
+            invoice_return_amount = max(_to_num(payload.get("invoice_return_amount")), 0.0)
+            if invoice_return_amount > invoice_total:
+                invoice_return_amount = invoice_total
+
+            refund_paid = max(_to_num(payload.get("refund_paid")), 0.0)
+            refundable_base = min(invoice_return_amount, amount_paid)
+            if refund_paid > refundable_base:
+                refund_paid = refundable_base
+
+            balance_due = max(invoice_total - amount_paid, 0.0)
+            balance_to_refund = max(refundable_base - refund_paid, 0.0)
+            return invoice_total, amount_paid, balance_due, invoice_return_amount, balance_to_refund, refund_paid
+
+        data = request.get_json(silent=True) or {}
+        credit_note_id = (data.get("credit_note_id") or "").strip()
+        if not credit_note_id:
+            return jsonify({"success": False, "message": "credit_note_id is required"}), 400
+
+        invoice_total, amount_paid, balance_due, invoice_return_amount, balance_to_refund, refund_paid = _normalized_amounts(data)
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+        _ensure_credit_notes_table(cur)
+
+        cur.execute("""
+            INSERT INTO credit_notes (
+                credit_note_id, credit_note_date, invoice_ref_id, created_by, branch, currency,
+                customer_name, customer_id, billing_address, phone, invoice_date, due_date,
+                payment_terms, invoice_status, payment_status, invoice_total, amount_paid,
+                balance_due, invoice_return_amount, balance_to_refund, refund_mode, refund_paid,
+                refund_date, adjusted_invoice_reference, status, items_json, updated_at
+            ) VALUES (
+                %s, NULLIF(%s, '')::date, %s, %s, %s, %s,
+                %s, %s, %s, %s, NULLIF(%s, '')::date, NULLIF(%s, '')::date,
+                %s, %s, %s, %s, %s,
+                %s, %s, %s, %s, %s,
+                NULLIF(%s, '')::date, %s, %s, %s::jsonb, NOW()
+            )
+            ON CONFLICT (credit_note_id) DO UPDATE SET
+                credit_note_date = EXCLUDED.credit_note_date,
+                invoice_ref_id = EXCLUDED.invoice_ref_id,
+                created_by = EXCLUDED.created_by,
+                branch = EXCLUDED.branch,
+                currency = EXCLUDED.currency,
+                customer_name = EXCLUDED.customer_name,
+                customer_id = EXCLUDED.customer_id,
+                billing_address = EXCLUDED.billing_address,
+                phone = EXCLUDED.phone,
+                invoice_date = EXCLUDED.invoice_date,
+                due_date = EXCLUDED.due_date,
+                payment_terms = EXCLUDED.payment_terms,
+                invoice_status = EXCLUDED.invoice_status,
+                payment_status = EXCLUDED.payment_status,
+                invoice_total = EXCLUDED.invoice_total,
+                amount_paid = EXCLUDED.amount_paid,
+                balance_due = EXCLUDED.balance_due,
+                invoice_return_amount = EXCLUDED.invoice_return_amount,
+                balance_to_refund = EXCLUDED.balance_to_refund,
+                refund_mode = EXCLUDED.refund_mode,
+                refund_paid = EXCLUDED.refund_paid,
+                refund_date = EXCLUDED.refund_date,
+                adjusted_invoice_reference = EXCLUDED.adjusted_invoice_reference,
+                status = EXCLUDED.status,
+                items_json = EXCLUDED.items_json,
+                updated_at = NOW()
+        """, (
+            credit_note_id,
+            data.get("credit_note_date") or "",
+            data.get("invoice_ref_id") or "",
+            data.get("created_by") or "",
+            data.get("branch") or "",
+            data.get("currency") or "INR",
+            data.get("customer_name") or "",
+            data.get("customer_id") or "",
+            data.get("billing_address") or "",
+            data.get("phone") or "",
+            data.get("invoice_date") or "",
+            data.get("due_date") or "",
+            data.get("payment_terms") or "",
+            data.get("invoice_status") or "",
+            data.get("payment_status") or "Unpaid",
+            invoice_total,
+            amount_paid,
+            balance_due,
+            invoice_return_amount,
+            balance_to_refund,
+            data.get("refund_mode") or "",
+            refund_paid,
+            data.get("refund_date") or "",
+            data.get("adjusted_invoice_reference") or "",
+            data.get("status") or "Draft",
+            json.dumps(data.get("items") or []),
+        ))
+        conn.commit()
+        cur.close()
+        conn.close()
+        return jsonify({"success": True, "credit_note_id": credit_note_id})
+    except Exception as e:
+        print(f"save_credit_note error: {e}")
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.post("/api/credit-notes/<credit_note_id>/mark-paid")
+def mark_credit_note_paid(credit_note_id):
+    try:
+        def _to_num(v):
+            try:
+                if v is None:
+                    return 0.0
+                s = str(v).strip()
+                if not s:
+                    return 0.0
+                return float(s)
+            except Exception:
+                return 0.0
+
+        def _normalized_amounts(payload):
+            invoice_total = max(_to_num(payload.get("invoice_total")), 0.0)
+            amount_paid = max(_to_num(payload.get("amount_paid")), 0.0)
+            if amount_paid > invoice_total:
+                amount_paid = invoice_total
+
+            invoice_return_amount = max(_to_num(payload.get("invoice_return_amount")), 0.0)
+            if invoice_return_amount > invoice_total:
+                invoice_return_amount = invoice_total
+
+            refund_paid = max(_to_num(payload.get("refund_paid")), 0.0)
+            refundable_base = min(invoice_return_amount, amount_paid)
+            if refund_paid > refundable_base:
+                refund_paid = refundable_base
+
+            balance_due = max(invoice_total - amount_paid, 0.0)
+            balance_to_refund = max(refundable_base - refund_paid, 0.0)
+            return amount_paid, balance_due, invoice_return_amount, balance_to_refund, refund_paid
+
+        data = request.get_json(silent=True) or {}
+        data["credit_note_id"] = credit_note_id
+        data["status"] = "Approved"
+        data["payment_status"] = "Paid"
+        amount_paid, balance_due, invoice_return_amount, balance_to_refund, refund_paid = _normalized_amounts(data)
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+        _ensure_credit_notes_table(cur)
+        cur.execute(
+            "SELECT 1 FROM credit_notes WHERE credit_note_id = %s LIMIT 1",
+            (credit_note_id,),
+        )
+        exists = cur.fetchone() is not None
+        cur.close()
+        conn.close()
+
+        if not exists:
+            with app.test_request_context(
+                "/api/credit-notes",
+                method="POST",
+                json=data,
+            ):
+                return save_credit_note()
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+        _ensure_credit_notes_table(cur)
+        cur.execute("""
+            UPDATE credit_notes
+            SET
+                status = 'Approved',
+                payment_status = 'Paid',
+                amount_paid = %s,
+                balance_due = %s,
+                invoice_return_amount = %s,
+                balance_to_refund = %s,
+                refund_mode = %s,
+                refund_paid = %s,
+                refund_date = NULLIF(%s, '')::date,
+                adjusted_invoice_reference = %s,
+                updated_at = NOW()
+            WHERE credit_note_id = %s
+        """, (
+            amount_paid,
+            balance_due,
+            invoice_return_amount,
+            balance_to_refund,
+            data.get("refund_mode") or "",
+            refund_paid,
+            data.get("refund_date") or "",
+            data.get("adjusted_invoice_reference") or "",
+            credit_note_id,
+        ))
+        conn.commit()
+        cur.close()
+        conn.close()
+        return jsonify({"success": True, "credit_note_id": credit_note_id, "status": "Approved"})
+    except Exception as e:
+        print(f"mark_credit_note_paid error: {e}")
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.delete("/api/credit-notes/<credit_note_id>")
+def delete_credit_note(credit_note_id):
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        _ensure_credit_notes_table(cur)
+        cur.execute("DELETE FROM credit_notes WHERE credit_note_id = %s", (credit_note_id,))
+        conn.commit()
+        deleted = cur.rowcount > 0
+        cur.close()
+        conn.close()
+        return jsonify({"success": deleted})
+    except Exception as e:
+        print(f"delete_credit_note error: {e}")
+        return jsonify({"success": False, "message": str(e)}), 500
 
 
 # =========================================

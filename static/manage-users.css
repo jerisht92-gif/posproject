@@ -165,8 +165,8 @@
   overflow-y: hidden;
   -webkit-overflow-scrolling: touch;
   border-radius: 10px;
-  /* Keep scrollbar visible (classic bar below table, like Product Master) */
-  scrollbar-gutter: stable;
+  /* Avoid reserved right-side gutter strip */
+  scrollbar-gutter: auto;
 }
 /* Visible horizontal scrollbar for table (shows at bottom when content overflows) */
 .table-scroll::-webkit-scrollbar {
@@ -189,7 +189,8 @@
 ============================= */
 .user-table {
   width: 100%;
-  min-width: 900px; /* Force horizontal overflow so scrollbar appears (like Product Master) */
+  min-width: 760px;
+  table-layout: fixed;
   border-collapse: collapse;
   font-size: 14px;
 }
@@ -201,23 +202,53 @@
   z-index: 2;
 }
 
+.user-table thead tr {
+  background: #fff4f4;
+  border-bottom: 2px solid #992525 !important;
+}
+
 .user-table th {
   text-align: left;
-  padding: 14px 10px;
+  padding: 14px 8px;
   font-size: 15px;
   color: #992525;
   font-weight: 600;
   text-transform: capitalize;
   white-space: nowrap;
+  background: #fff4f4;
+}
+
+.user-table thead th:first-child {
+  border-top-left-radius: 10px;
+}
+
+.user-table thead th:last-child {
+  border-top-right-radius: 10px;
 }
 
 .user-table td {
-  padding: 14px 10px;
+  padding: 14px 8px;
   border-bottom: 1px solid #f0eaea;
   font-size: 14px;
   background: #ffffff;
   transition: 0.25s;
   white-space: nowrap;
+}
+
+.user-table th:nth-child(1),
+.user-table td:nth-child(1),
+.user-table th:nth-child(2),
+.user-table td:nth-child(2),
+.user-table th:nth-child(3),
+.user-table td:nth-child(3),
+.user-table th:nth-child(4),
+.user-table td:nth-child(4) {
+  width: 24%;
+}
+
+.user-table th:nth-child(5),
+.user-table td:nth-child(5) {
+  width: 12%;
 }
 
 /* Row hover 3D lift */
@@ -243,7 +274,7 @@
 
 .action-cell {
   width: 150px;
-  padding-right: 20px;
+  padding-right: 8px;
 }
 
 .action-buttons {

@@ -641,7 +641,7 @@
   .dnr-td-action {
     position: relative;
     overflow: visible;
-    text-align: right !important;
+  text-align: center !important;
     vertical-align: middle;
   }
 

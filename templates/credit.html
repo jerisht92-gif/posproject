@@ -1,0 +1,104 @@
+{% extends "menu.html" %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='credit.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="credit-page">
+  <div class="credit-header">
+    <h2 class="credit-title">Credit Note List</h2>
+    <button type="button" class="credit-btn-primary" id="newCreditBtn">
+      + New Credit Note
+    </button>
+  </div>
+
+  <div class="credit-card">
+    <div class="credit-search-row">
+      <div class="credit-search-wrap">
+        <input
+          type="text"
+          id="creditSearchInput"
+          class="credit-search-input"
+          placeholder="Search by Credit Note ID, Customer name, Invoice ref ID..."
+          autocomplete="off"
+        >
+      </div>
+      <button type="button" id="creditClearBtn" class="credit-clear-link">Clear Filters</button>
+    </div>
+
+    <div class="credit-filters">
+      <div class="credit-filter">
+        <label for="creditStatusFilter" class="credit-label">Credit Note Status</label>
+        <select id="creditStatusFilter" class="credit-select">
+          <option value="all" selected>All</option>
+        </select>
+      </div>
+
+      <div class="credit-filter">
+        <label for="creditCustomerFilter" class="credit-label">Customer Name</label>
+        <select id="creditCustomerFilter" class="credit-select">
+          <option value="all" selected>All</option>
+        </select>
+      </div>
+
+      <div class="credit-filter credit-date-filter">
+        <label class="credit-label">Credit Note Date</label>
+        <div class="credit-date-wrap">
+          <div class="credit-date-field">
+            <span class="credit-date-text">From</span>
+            <input type="date" id="creditFromDate" class="credit-date-input">
+          </div>
+          <div class="credit-date-field">
+            <span class="credit-date-text">To</span>
+            <input type="date" id="creditToDate" class="credit-date-input">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="credit-table-wrap">
+      <table class="credit-table">
+        <thead>
+          <tr>
+            <th class="credit-th-check">Mark</th>
+            <th>CRN ID</th>
+            <th>Invoice Ref. ID</th>
+            <th>Customer Name</th>
+            <th>Credit Note Date</th>
+            <th class="credit-sort-th" id="creditStatusSortTh">
+              Status <span class="credit-sort-caret">|</span>
+              <div class="credit-sort-menu" id="creditStatusSortMenu">
+                <button type="button" data-sort="newest">Newest First</button>
+                <button type="button" data-sort="oldest">Oldest First</button>
+                <button type="button" data-sort="progress">Progressing (Draft to Cancelled)</button>
+                <button type="button" data-sort="reverse">Reverse Progressing (Cancelled to Draft)</button>
+              </div>
+            </th>
+            <th>Payment Status</th>
+            <th class="credit-th-action">Action</th>
+          </tr>
+        </thead>
+        <tbody id="creditTbody">
+          <tr id="creditNoDataRow">
+            <td colspan="8" class="credit-empty">No Credit Notes found</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="credit-footer">
+      <div class="credit-showing" id="creditShowingText">Showing 0 of 0 Entries</div>
+      <div class="credit-pager">
+        <button type="button" class="credit-btn-page" id="creditPrevBtn">Prev</button>
+        <div class="credit-page-text" id="creditPageText">Page <strong>0</strong> of <strong>0</strong></div>
+        <button type="button" class="credit-btn-page" id="creditNextBtn">Next</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', filename='credit.js') }}" defer></script>
+{% endblock %}

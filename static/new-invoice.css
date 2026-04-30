@@ -255,13 +255,17 @@ color: #d18a84;
 }
 
 .add-btn {
-  background: #a73434;
+  background: #d9a3a3;
   color: #fff;
   border: none;
   padding: 6px 14px;
   border-radius: 4px;
   font-size: 12px;
   cursor: pointer;
+}
+
+.add-btn:hover:not(:disabled) {
+  background: #a73434;
 }
 
 .add-btn:disabled {

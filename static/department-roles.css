@@ -235,16 +235,16 @@
 
 /* ✅ COLUMN WIDTHS (better balance) */
 .department-page .dept-table th:nth-child(1),
-.department-page .dept-table td:nth-child(1) { width: 100px; }   /* Code */
+.department-page .dept-table td:nth-child(1) { width: 18%; }   /* Code */
 
 .department-page .dept-table th:nth-child(2),
-.department-page .dept-table td:nth-child(2) { width: 200px; }   /* Department Name */
+.department-page .dept-table td:nth-child(2) { width: 26%; }   /* Department Name */
 
 .department-page .dept-table th:nth-child(3),
-.department-page .dept-table td:nth-child(3) { width: 180px; }   /* Description */
+.department-page .dept-table td:nth-child(3) { width: 41%; }   /* Description */
 
 .department-page .dept-table th:nth-child(4),
-.department-page .dept-table td:nth-child(4) { width: 100px; }   /* Action */
+.department-page .dept-table td:nth-child(4) { width: 15%; }   /* Action */
 
 /* ✅ Description should be left + wrap */
 .department-page .dept-table th:nth-child(3),
@@ -261,8 +261,9 @@
 /* ✅ Action column stays right */
 .department-page .dept-table th:nth-child(4),
 .department-page .dept-table td:nth-child(4) {
-  text-align: right;
-  padding-right: 8px;
+  text-align: center;
+  padding-left: 0;
+  padding-right: 0;
 }
 
 /* hover */
@@ -289,17 +290,18 @@
    ACTION BUTTONS
 ------------------------------------------ */
 .department-page .dept-table th.action-header {
-  text-align: right;       /* ✅ matches Action column */
-  padding-right: 40px;
+  text-align: center;       /* ✅ matches Action column */
+  padding-left: 0;
+  padding-right: 0;
 }
 
 .department-page .action-cell {
-  padding-right: 14px;
+  padding-right: 0;
 }
 
 .department-page .action-buttons {
   display: flex;
-  justify-content: flex-end;
+  justify-content: center;
   gap: 10px;
 }
 
