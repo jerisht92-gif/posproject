@@ -1,0 +1,8 @@
+[project]
+name = "pos-billing"
+version = "0"
+requires-python = ">=3.10"
+
+[tool.vercel]
+# Prefer the Flask app in app.py; main.py is a standalone DB test script without `app`.
+entrypoint = "app:app"
