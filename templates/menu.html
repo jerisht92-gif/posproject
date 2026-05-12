@@ -40,7 +40,7 @@
         <div class="menu-group">
           <button
             type="button"
-            class="menu-toggle"
+            class="menu-toggle{% if page in ['manage_users','department_roles','products','customer','suppliers','supplier_new'] %} open{% endif %}"
             data-target="masters-submenu"
           >
             <span class="menu-icon">☰</span>
@@ -49,7 +49,7 @@
           </button>
 
           <div id="masters-submenu"
-            class="submenu{% if page in ['manage_users','department_roles','products','customer'] %} open{% endif %}">
+            class="submenu{% if page in ['manage_users','department_roles','products','customer','suppliers','supplier_new'] %} open{% endif %}">
             <a href="{{ url_for('manage_users') }}"
                class="submenu-item{% if page == 'manage_users' %} active{% endif %}">
               <span class="submenu-icon">👤</span>
@@ -73,6 +73,12 @@
                class="submenu-item{% if page == 'customer' %} active{% endif %}">
               <span class="submenu-icon">👥</span>
               <span>Customer</span>
+            </a>
+
+            <a href= "{{ url_for('suppliers') }}"
+               class="submenu-item{% if page in ['suppliers','supplier_new'] %} active{% endif %}">
+              <span class="submenu-icon">👥</span>
+              <span>suppliers</span>
             </a>
           </div>
         </div>

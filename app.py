@@ -3774,34 +3774,33 @@ def check_email():
     return jsonify({"status": "ok"}), 200
 
 
+
 # =========================================
 # 1. ROOT & AUTH — Forgot Password (AJAX)
 # =========================================
 @app.route("/send-reset-link", methods=["POST"])
 def send_reset_link():
-    data = request.get_json()
+    data = request.get_json() or {}
     email = (data.get("email") or "").strip().lower()
 
     if not email:
         return jsonify({"status": "error", "message": "Email is required"}), 400
 
     try:
-        users = load_users()
-        exists = False
-        if isinstance(users, list):
-            for u in users:
-                if not isinstance(u, dict):
-                    continue
-                if (u.get("email") or "").strip().lower() == email:
-                    exists = True
-                    break
-        elif isinstance(users, dict):
-            for u in users.values():
-                if not isinstance(u, dict):
-                    continue
-                if (u.get("email") or "").strip().lower() == email:
-                    exists = True
-                    break
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT 1
+            FROM users
+            WHERE LOWER(email) = LOWER(%s)
+            LIMIT 1
+            """,
+            (email,),
+        )
+        exists = cur.fetchone() is not None
+        cur.close()
+        conn.close()
 
         if not exists:
             return jsonify({"status": "error", "message": "Email not registered."}), 400
@@ -3860,6 +3859,8 @@ def reset_password_page():
 
 @app.route("/reset-password", methods=["POST"])
 def reset_password_submit():
+    conn = None
+    cur = None
     try:
         data = request.get_json() or {}
         token = data.get("token")
@@ -3872,30 +3873,41 @@ def reset_password_submit():
         if not email:
             return jsonify({"status": "error", "message": "Invalid or expired token."}), 400
 
-        email_key = email.strip().lower()
-        users = load_users()
-        updated = False
+        email_key = email.strip()
+        hashed_password = hashlib.sha256(new_password.encode()).hexdigest()
 
-        for u in users:
-            if not isinstance(u, dict):
-                continue
-            if (u.get("email") or "").strip().lower() == email_key:
-                u["password"] = new_password
-                updated = True
-                break
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            UPDATE users
+            SET password = %s
+            WHERE LOWER(email) = LOWER(%s)
+            """,
+            (hashed_password, email_key),
+        )
+        updated = cur.rowcount > 0
+        conn.commit()
 
         if not updated:
             return jsonify({"status": "error", "message": "User not found."}), 400
 
-        save_users(users)
         RESET_TOKENS.pop(token, None)
 
-        print("✅ Password reset for:", email_key)
+        print("✅ Password reset for:", email_key.strip().lower())
         return jsonify({"status": "ok"}), 200
 
     except Exception as e:
+        if conn:
+            conn.rollback()
         print("❌ Reset password error:", e)
         return jsonify({"status": "error", "message": "Server error while updating password."}), 500
+    finally:
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
+
 
 
 
@@ -7883,6 +7895,504 @@ def api_get_customers():
             "success": False,
             "message": str(e)
         }), 500
+
+# =========================================
+# 6.Masters— Suppliers
+# =========================================
+@app.route("/suppliers")
+def suppliers():
+    user_email = session.get("user")
+    if not user_email:
+        return redirect(url_for("login", message="session_expired"))
+ 
+    # ✅ Get user name
+    users = load_users()
+    user_name = "User"
+    for u in users:
+        if isinstance(u, dict) and (u.get("email") or "").lower() == user_email.lower():
+            user_name = u.get("name") or "User"
+            break
+ 
+    # ✅ FETCH FROM DATABASE (NOT JSON)
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+ 
+    cur.execute("""
+        SELECT supplier_id, supplier_name, status, supplier_type, supplier_tier, created_at
+        FROM suppliers
+        ORDER BY created_at DESC
+    """)
+ 
+    rows = cur.fetchall()
+ 
+    cur.close()
+    conn.close()
+ 
+    # ✅ MAP DATA FOR UI
+    suppliers_rows = []
+ 
+    for s in rows:
+        suppliers_rows.append({
+            "id": (s.get("supplier_id") or "").strip(),
+            "name": (s.get("supplier_name") or "").strip(),
+            "created_date": str(s.get("created_at", ""))[:10],
+            "status": (s.get("status") or "").strip(),
+            "type": (s.get("supplier_type") or "").strip(),
+            "tier": (s.get("supplier_tier") or "").strip(),
+        })
+ 
+    return render_template(
+        "suppliers.html",
+        title="Supplier Master - Stackly",
+        page="suppliers",
+        section="inventory",
+        user_email=user_email,
+        user_name=user_name,
+        suppliers=suppliers_rows,
+    )
+ 
+ 
+@app.route("/supplier-new")
+def supplier_new():
+    user_email = session.get("user")
+    if not user_email:
+        return redirect(url_for("login", message="session_expired"))
+ 
+    users = load_users()
+    user_name = "User"
+    for u in users:
+        if isinstance(u, dict) and (u.get("email") or "").lower() == user_email.lower():
+            user_name = u.get("name") or "User"
+            break
+ 
+    return render_template(
+        "supplier-new.html",
+        title="Create Supplier - Stackly",
+        page="supplier_new",
+        section="inventory",
+        user_email=user_email,
+        user_name=user_name,
+    )
+ 
+ 
+# =========================================
+# Supplier Backend (Clean REST + PostgreSQL)
+# =========================================
+#---------intialize regex patterns for supplier validation
+SUPPLIER_NAME_REGEX = re.compile(r"^[A-Za-z0-9 .,&()'/-]{3,100}$")
+SUPPLIER_CONTACT_REGEX = re.compile(r"^[A-Za-z .'-]{2,80}$")
+SUPPLIER_PHONE_REGEX = re.compile(r"^\+?[0-9][0-9\s-]{6,19}$")
+SUPPLIER_EMAIL_REGEX = re.compile(r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$")
+SUPPLIER_FIELDS = (
+    "supplier_id",
+    "supplier_name",
+    "gstin",
+    "company_registration_number",
+    "legal_entity_name",
+    "country_of_registration",
+    "supplier_type",
+    "supplier_tier",
+    "status",
+    "product_detail",
+ 
+    "contact_first_name",
+    "contact_last_name",
+    "designation_role",
+    "alternate_contact_no",
+    "email",
+    "phone_number",
+    "website",
+    "relationship_manager",
+ 
+    "registered_office_address",
+    "mailing_address",
+    "warehouse_address",
+    "billing_address",
+    "registered_billing_address",
+ 
+    "bank_name",
+    "payment_method",
+    "bank_account_no",
+    "payment_terms",
+    "iban_swift_code",
+    "tax_withholding_setup",
+ 
+    "currency",
+    "categories_served",
+    "inco_terms",
+    "product_service_catalog",
+    "freight_terms",
+ 
+    "minimum_order_quantity",
+    "return_replacement_policy",
+    "average_delivery_time_days",
+ 
+    "contract_references",
+    "compliance_certifications",
+    "risk_notes_flags",
+    "compliance_status",
+    "last_risk_assessment_date",
+    "risk_ratings",
+ 
+    "on_time_delivery_rate",
+    "quality_ratings",
+    "defect_return_rate",
+ 
+    "last_evaluation_date",
+    "contract_breaches",
+    "improvement_plans",
+    "complaints_registered",
+ 
+    "external_key_contact",
+    "visit_history_meeting_notes",
+    "comments",
+    "created_by"
+)
+ 
+# Columns that must not receive '' from the client (PostgreSQL date types reject empty string)
+SUPPLIER_DATE_FIELDS = frozenset({
+    "last_risk_assessment_date",
+    "last_evaluation_date",
+})
+ 
+SUPPLIER_REQUIRED_FIELD_LABELS = (
+    ("supplier_id", "Supplier ID"),
+    ("supplier_name", "Supplier name"),
+    ("gstin", "GSTIN"),
+    ("company_registration_number", "Company registration number"),
+    ("legal_entity_name", "Legal entity name"),
+    ("country_of_registration", "Country of registration"),
+    ("supplier_type", "Supplier type"),
+    ("supplier_tier", "Supplier tier"),
+    ("status", "Status"),
+    ("contact_first_name", "Primary contact first name"),
+    ("contact_last_name", "Last name"),
+    ("email", "Email"),
+    ("phone_number", "Phone number"),
+    ("registered_office_address", "Registered office address"),
+)
+ 
+ 
+def _supplier_value_blank(v):
+    return v is None or (isinstance(v, str) and not str(v).strip())
+ 
+ 
+def validate_supplier_required(row):
+    """Return an error message if required fields (per supplier form) are missing or invalid, else None."""
+    row = row or {}
+    for key, label in SUPPLIER_REQUIRED_FIELD_LABELS:
+        if _supplier_value_blank(row.get(key)):
+            return f"{label} is required."
+    sid = (row.get("supplier_id") or "").strip().upper()
+    if not re.match(r"^SUP-\d{3,}$", sid):
+        return "Supplier ID must be in SUP-001 format."
+    email = (row.get("email") or "").strip()
+    if not SUPPLIER_EMAIL_REGEX.match(email):
+        return "Enter a valid email address."
+    phone = (row.get("phone_number") or "").strip()
+    if not SUPPLIER_PHONE_REGEX.match(phone):
+        return "Enter a valid phone number."
+    fn = (row.get("contact_first_name") or "").strip()
+    ln = (row.get("contact_last_name") or "").strip()
+    if not SUPPLIER_CONTACT_REGEX.match(fn):
+        return "Primary contact first name must be 2–80 letters (spaces, dots, apostrophes allowed)."
+    if not SUPPLIER_CONTACT_REGEX.match(ln):
+        return "Last name must be 2–80 letters (spaces, dots, apostrophes allowed)."
+    sname = (row.get("supplier_name") or "").strip()
+    if not SUPPLIER_NAME_REGEX.match(sname):
+        return "Supplier name must be 3–100 characters and use allowed characters only."
+    return None
+#---------function to generate next supplier ID in SUP-NNN format
+ 
+def generate_supplier_id():
+    """Next SUP-NNN id based on existing rows (matches supplier-new.js /^SUP-\\d{3,}$/)."""
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT supplier_id FROM suppliers")
+        rows = cur.fetchall()
+    finally:
+        cur.close()
+        conn.close()
+ 
+    best = 0
+    for row in rows:
+        sid = (row[0] or "").strip()
+        if not sid:
+            continue
+        up = sid.upper()
+        if not up.startswith("SUP-"):
+            continue
+        suffix = up[4:]
+        if not suffix.isdigit():
+            continue
+        try:
+            n = int(suffix)
+            if n > best:
+                best = n
+        except ValueError:
+            continue
+    return f"SUP-{str(best + 1).zfill(3)}"
+ 
+#---------API endpoint to get a new supplier ID (for supplier creation form)
+@app.route("/api/suppliers/new-id", methods=["GET"])
+def get_new_supplier_id():
+    return jsonify({"supplierId": generate_supplier_id()})
+ 
+ 
+def _normalize_supplier_row_from_request(data):
+    """Build a dict with every SUPPLIER_FIELDS key for INSERT/UPSERT (missing JSON keys → None)."""
+    data = dict(data or {})
+    row = {}
+    for col in SUPPLIER_FIELDS:
+        v = data.get(col)
+        if col in SUPPLIER_DATE_FIELDS and (v is None or (isinstance(v, str) and v.strip() == "")):
+            v = None
+        elif isinstance(v, str) and v.strip() == "":
+            v = None
+        row[col] = v
+    return row
+ 
+#----API endpoint to create a new supplier
+@app.route("/api/suppliers", methods=["POST"])
+def create_supplier():
+    raw = dict(request.json or {})
+    if not raw.get("supplier_id"):
+        raw["supplier_id"] = generate_supplier_id()
+ 
+    data = _normalize_supplier_row_from_request(raw)
+    req_err = validate_supplier_required(data)
+    if req_err:
+        return jsonify({"success": False, "error": req_err}), 400
+ 
+    conn = get_db_connection()
+    cur = conn.cursor()
+ 
+    try:
+        cur.execute("""
+            INSERT INTO suppliers (
+                supplier_id, supplier_name, gstin,
+                company_registration_number, legal_entity_name,
+                country_of_registration, supplier_type, supplier_tier,
+                status, product_detail,
+ 
+                contact_first_name, contact_last_name,
+                designation_role, alternate_contact_no,
+                email, phone_number, website, relationship_manager,
+ 
+                registered_office_address, mailing_address,
+                warehouse_address, billing_address,
+                registered_billing_address,
+ 
+                bank_name, payment_method, bank_account_no,
+                payment_terms, iban_swift_code, tax_withholding_setup,
+ 
+                currency, categories_served, inco_terms,
+                product_service_catalog, freight_terms,
+ 
+                minimum_order_quantity, return_replacement_policy,
+                average_delivery_time_days,
+ 
+                contract_references, compliance_certifications,
+                risk_notes_flags, compliance_status,
+                last_risk_assessment_date, risk_ratings,
+ 
+                on_time_delivery_rate, quality_ratings, defect_return_rate,
+ 
+                last_evaluation_date, contract_breaches,
+                improvement_plans, complaints_registered,
+ 
+                external_key_contact, visit_history_meeting_notes,
+                comments, created_by
+            )
+            VALUES (
+                %(supplier_id)s, %(supplier_name)s, %(gstin)s,
+                %(company_registration_number)s, %(legal_entity_name)s,
+                %(country_of_registration)s, %(supplier_type)s, %(supplier_tier)s,
+                %(status)s, %(product_detail)s,
+ 
+                %(contact_first_name)s, %(contact_last_name)s,
+                %(designation_role)s, %(alternate_contact_no)s,
+                %(email)s, %(phone_number)s, %(website)s, %(relationship_manager)s,
+ 
+                %(registered_office_address)s, %(mailing_address)s,
+                %(warehouse_address)s, %(billing_address)s,
+                %(registered_billing_address)s,
+ 
+                %(bank_name)s, %(payment_method)s, %(bank_account_no)s,
+                %(payment_terms)s, %(iban_swift_code)s, %(tax_withholding_setup)s,
+ 
+                %(currency)s, %(categories_served)s, %(inco_terms)s,
+                %(product_service_catalog)s, %(freight_terms)s,
+ 
+                %(minimum_order_quantity)s, %(return_replacement_policy)s,
+                %(average_delivery_time_days)s,
+ 
+                %(contract_references)s, %(compliance_certifications)s,
+                %(risk_notes_flags)s, %(compliance_status)s,
+                %(last_risk_assessment_date)s, %(risk_ratings)s,
+ 
+                %(on_time_delivery_rate)s, %(quality_ratings)s, %(defect_return_rate)s,
+ 
+                %(last_evaluation_date)s, %(contract_breaches)s,
+                %(improvement_plans)s, %(complaints_registered)s,
+ 
+                %(external_key_contact)s, %(visit_history_meeting_notes)s,
+                %(comments)s, %(created_by)s
+            )
+        """, data)
+ 
+        conn.commit()
+        sid = (data.get("supplier_id") or "").strip()
+        return jsonify(
+            {"success": True, "message": "Supplier created successfully", "supplier_id": sid}
+        ), 201
+ 
+    except Exception as e:
+        conn.rollback()
+        print("❌ create_supplier:", repr(e))
+        return jsonify({"success": False, "error": str(e)}), 500
+ 
+    finally:
+        cur.close()
+        conn.close()
+ 
+#----API endpoint to get all suppliers (for supplier list UI)
+ 
+@app.route("/api/suppliers", methods=["GET"])
+def get_suppliers():
+    conn = get_db_connection()
+    cur = conn.cursor()
+ 
+    cur.execute("SELECT * FROM suppliers ORDER BY created_at DESC")
+    suppliers = cur.fetchall()
+ 
+    cur.close()
+    conn.close()
+ 
+    return jsonify(suppliers)
+#----API endpoint to get a single supplier by ID (for supplier detail/edit UI)
+@app.route("/api/suppliers/<supplier_id>", methods=["GET"])
+def get_supplier(supplier_id):
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+ 
+    cur.execute("SELECT * FROM suppliers WHERE supplier_id = %s", (supplier_id,))
+    supplier = cur.fetchone()
+ 
+    cur.close()
+    conn.close()
+ 
+    if not supplier:
+        return jsonify({"success": False, "message": "Supplier not found"}), 404
+ 
+    row = dict(supplier)
+    for key, val in list(row.items()):
+        if hasattr(val, "isoformat"):
+            row[key] = val.isoformat()
+        elif type(val).__name__ == "Decimal":
+            row[key] = float(val) if val is not None else None
+ 
+    return jsonify({"success": True, "data": row})
+ 
+#----API endpoint to update a supplier by ID (for supplier detail/edit UI)
+@app.route("/api/suppliers/<supplier_id>", methods=["PUT"])
+def update_supplier(supplier_id):
+    data = dict(request.json or {})
+ 
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+ 
+    try:
+        cur.execute("SELECT * FROM suppliers WHERE supplier_id = %s", (supplier_id,))
+        row = cur.fetchone()
+        if not row:
+            return jsonify({"success": False, "message": "Supplier not found"}), 404
+ 
+        row_dict = dict(row)
+        merged = dict(row_dict)
+        for key, val in data.items():
+            if key == "supplier_id":
+                continue
+            if key not in SUPPLIER_FIELDS:
+                continue
+            if key in SUPPLIER_DATE_FIELDS and val == "":
+                val = None
+            merged[key] = val
+ 
+        for dcol in SUPPLIER_DATE_FIELDS:
+            if merged.get(dcol) == "":
+                merged[dcol] = None
+ 
+        merged_check = dict(merged)
+        merged_check["supplier_id"] = supplier_id
+        for col in SUPPLIER_FIELDS:
+            if col not in merged_check:
+                continue
+            v = merged_check.get(col)
+            if isinstance(v, str) and v.strip() == "":
+                merged_check[col] = None
+        req_err = validate_supplier_required(merged_check)
+        if req_err:
+            return jsonify({"success": False, "error": req_err}), 400
+ 
+        # Only SET columns that exist on this database table (avoids 500 if schema lags code)
+        update_columns = [
+            c for c in SUPPLIER_FIELDS
+            if c != "supplier_id" and c in row_dict
+        ]
+        if not update_columns:
+            return jsonify({"success": False, "message": "No updatable columns on suppliers table"}), 500
+ 
+        params = {col: merged.get(col) for col in update_columns}
+        params["supplier_id"] = supplier_id
+ 
+        set_clause = ", ".join(f"{col} = %({col})s" for col in update_columns)
+        has_updated_at = "updated_at" in row_dict
+        tail = ", updated_at = CURRENT_TIMESTAMP" if has_updated_at else ""
+ 
+        cur.execute(
+            f"""
+            UPDATE suppliers
+            SET {set_clause}{tail}
+            WHERE supplier_id = %(supplier_id)s
+            """,
+            params,
+        )
+ 
+        conn.commit()
+        return jsonify({"success": True, "message": "Supplier updated successfully"})
+ 
+    except Exception as e:
+        conn.rollback()
+        print("❌ update_supplier:", repr(e))
+        return jsonify({"success": False, "error": str(e)}), 500
+ 
+    finally:
+        cur.close()
+        conn.close()
+#----API endpoint to delete a supplier by ID (for supplier list UI)
+@app.route("/api/suppliers/<supplier_id>", methods=["DELETE"])
+def delete_supplier(supplier_id):
+    conn = get_db_connection()
+    cur = conn.cursor()
+ 
+    try:
+        cur.execute("DELETE FROM suppliers WHERE supplier_id = %s", (supplier_id,))
+        conn.commit()
+ 
+        return jsonify({"success": True, "message": "Supplier deleted successfully"})
+ 
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"success": False, "error": str(e)}), 500
+ 
+    finally:
+        cur.close()
+        conn.close()
+ 
+
+
 
 @app.route("/crm")
 def crm():
@@ -20822,7 +21332,7 @@ def get_sales_order_purchase(so_id):
 # ========================================
 
 @app.route("/api/suppliers")
-def get_suppliers():
+def suppliers_page():
 
     conn = get_db_connection()
     cur = conn.cursor()

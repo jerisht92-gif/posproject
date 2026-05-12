@@ -1,0 +1,125 @@
+{% extends "menu.html" %}
+ 
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='products.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='suppliers.css') }}">
+{% endblock %}
+ 
+{% block content %}
+<div class="manage-page product-page supplier-page">
+ 
+  <div class="manage-header-row">
+    <div class="manage-header-left">
+      <h1 class="manage-title">Supplier Master</h1>
+    </div>
+ 
+    <div class="manage-header-right">
+      <a href="{{ url_for('supplier_new') }}" class="btn-primary">+ New Supplier</a>
+    </div>
+  </div>
+ 
+  <div class="card">
+ 
+    <div class="top-controls">
+      <div class="mini-search">
+        <span class="search-icon">🔍</span>
+        <input type="text" id="searchInput" placeholder="Search by ID number..." autocomplete="off" />
+      </div>
+ 
+      <button class="clear-filter" id="clearFilterBtn" type="button">Clear Filter</button>
+    </div>
+ 
+    <div class="filters">
+      <div class="filter-group">
+        <label for="statusFilter">Status</label>
+        <select id="statusFilter">
+          <option value="all">All</option>
+          <option value="active">Active</option>
+            <option value="pending">Pending</option>
+          <option value="inactive">Inactive</option>
+        </select>
+      </div>
+ 
+      <div class="filter-group">
+        <label for="typeFilter">Supplier Type</label>
+        <select id="typeFilter">
+          <option value="all types">All Types</option>
+          <option value="manufacturer">Manufacturer</option>
+          <option value="distributor">Distributor</option>
+          <option value="service provider">Service Provider</option>
+          <option value="wholesaler">Wholesaler</option>
+        </select>
+      </div>
+ 
+      <div class="filter-group">
+        <label for="tierFilter">Supplier Tier</label>
+        <select id="tierFilter">
+          <option value="all">All</option>
+            <option value="strategic">Strategic</option>
+            <option value="preferred">Preferred</option>
+            <option value="backup">Backup</option>
+        </select>
+      </div>
+    </div>
+ 
+    <div class="table-wrap">
+      <table class="table product-table">
+        <thead>
+          <tr>
+            <th>Supplier ID</th>
+            <th>Supplier Name</th>
+            <th>Created Date</th>
+            <th>Status</th>
+            <th>Supplier Type</th>
+            <th>Supplier Tier</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+ 
+        <tbody>
+          {% if suppliers %}
+            {% for supplier in suppliers %}
+              <tr>
+                <td>{{ supplier.id }}</td>
+                <td>{{ supplier.name }}</td>
+                <td>{{ supplier.created_date or '-' }}</td>
+                <td>{{ supplier.status }}</td>
+                <td>{{ supplier.type }}</td>
+                <td>{{ supplier.tier }}</td>
+                <td class="supplier-action-cell">
+                  <div class="supplier-action-buttons">
+                    <button type="button" class="supplier-action-btn supplier-edit-btn">Edit</button>
+                    <button type="button" class="supplier-action-btn supplier-delete-btn">Delete</button>
+                  </div>
+                </td>
+              </tr>
+            {% endfor %}
+          {% else %}
+            <tr>
+              <td colspan="7" class="empty">No suppliers found</td>
+            </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+ 
+    <div class="table-footer">
+      <div class="left-info">
+        <span id="showingCount">Showing 0 of 0 Entries</span>
+      </div>
+ 
+      <div class="right-pager">
+        <button class="pager-btn" id="prevBtn" type="button">Prev</button>
+        <span class="page-text">Page <b id="pageNow">1</b> of <b id="pageTotal">1</b></span>
+        <button class="pager-btn" id="nextBtn" type="button">Next</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+ 
+{% block extra_js %}
+<script src="{{ url_for('static', filename='suppliers.js') }}"></script>
+{% endblock %}
+ 
+ 
