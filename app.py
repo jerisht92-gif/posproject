@@ -724,86 +724,21 @@ def _resolve_department_name(cur, department_ref):
 # =========================================
 FONT_DIR = os.path.join(BASE_DIR, "static", "fonts")
 
+pdfmetrics.registerFont(
+    TTFont("DejaVuSans", os.path.join(FONT_DIR, "DejaVuSans.ttf"))
+)
 
-def _register_pdf_dejavu_fonts():
-    """Load DejaVu TTFs for ReportLab; never fail import if fonts are missing (e.g. Vercel bundle)."""
-    from reportlab.pdfbase import pdfmetrics as _pm
-    from reportlab.pdfbase.pdfmetrics import Font as _PdfFont
-    from reportlab.pdfbase.pdfmetrics import TypeFace as _TypeFace
+pdfmetrics.registerFont(
+    TTFont("DejaVuSans-Bold", os.path.join(FONT_DIR, "DejaVuSans-Bold.ttf"))
+)
 
-    def _try_register_ttf(path_normal, path_bold):
-        if not (path_normal and path_bold and os.path.isfile(path_normal) and os.path.isfile(path_bold)):
-            return False
-        try:
-            _pm.registerFont(TTFont("DejaVuSans", path_normal))
-            _pm.registerFont(TTFont("DejaVuSans-Bold", path_bold))
-            _pm.registerFontFamily(
-                "DejaVuSans",
-                normal="DejaVuSans",
-                bold="DejaVuSans-Bold",
-                italic="DejaVuSans",
-                boldItalic="DejaVuSans-Bold",
-            )
-            return True
-        except Exception as e:
-            print(f"PDF DejaVu TTF registration skipped ({path_normal}): {e}")
-            return False
-
-    ttf_pairs = [
-        (
-            os.path.join(FONT_DIR, "DejaVuSans.ttf"),
-            os.path.join(FONT_DIR, "DejaVuSans-Bold.ttf"),
-        )
-    ]
-    for dejavu_dir in ("/usr/share/fonts/truetype/dejavu", "/usr/share/fonts/dejavu"):
-        ttf_pairs.append(
-            (
-                os.path.join(dejavu_dir, "DejaVuSans.ttf"),
-                os.path.join(dejavu_dir, "DejaVuSans-Bold.ttf"),
-            )
-        )
-    for normal_path, bold_path in ttf_pairs:
-        if _try_register_ttf(normal_path, bold_path):
-            return
-
-    # Fallback: register DejaVuSans* names as Helvetica so PDF routes stay usable (₹ may not render).
-    print(
-        "PDF fonts: DejaVu TTF not available; using Helvetica fallback "
-        "(commit static/fonts/DejaVuSans.ttf and DejaVuSans-Bold.ttf for correct INR symbol in PDFs)."
-    )
-
-    def _clone_typeface(source_name, target_name):
-        src = _pm.getTypeFace(source_name)
-        dst = _TypeFace(target_name)
-        for key in (
-            "glyphNames",
-            "glyphWidths",
-            "ascent",
-            "descent",
-            "familyName",
-            "bold",
-            "italic",
-            "requiredEncoding",
-            "builtIn",
-        ):
-            setattr(dst, key, getattr(src, key))
-        dst.name = target_name
-        _pm.registerTypeFace(dst)
-
-    _clone_typeface("Helvetica", "DejaVuSans")
-    _clone_typeface("Helvetica-Bold", "DejaVuSans-Bold")
-    _pm.registerFont(_PdfFont("DejaVuSans", "DejaVuSans", "WinAnsiEncoding"))
-    _pm.registerFont(_PdfFont("DejaVuSans-Bold", "DejaVuSans-Bold", "WinAnsiEncoding"))
-    _pm.registerFontFamily(
-        "DejaVuSans",
-        normal="DejaVuSans",
-        bold="DejaVuSans-Bold",
-        italic="DejaVuSans",
-        boldItalic="DejaVuSans-Bold",
-    )
-
-
-_register_pdf_dejavu_fonts()
+registerFontFamily(
+    "DejaVuSans",
+    normal="DejaVuSans",
+    bold="DejaVuSans-Bold",
+    italic="DejaVuSans",
+    boldItalic="DejaVuSans-Bold"
+)
 
 # =========================================
 # ✅ EMAIL SENDER (SMTP / UNIVERSAL)
