@@ -833,6 +833,22 @@ def _dnr_attachments_dir():
 
 
 DNR_ATTACHMENTS_FOLDER = _dnr_attachments_dir()
+
+
+def _writable_upload_subdir(*parts):
+    """Path under UPLOAD_FOLDER for feature-specific files; mkdir when FS allows (Vercel-safe)."""
+    base = os.path.join(UPLOAD_FOLDER, *parts) if parts else UPLOAD_FOLDER
+    try:
+        os.makedirs(base, exist_ok=True)
+    except OSError:
+        pass
+    return base
+
+
+PURCHASE_ATTACHMENTS_FOLDER = _writable_upload_subdir("purchase_attachments")
+STOCK_ATTACHMENTS_FOLDER = _writable_upload_subdir("stock_attachments")
+CREDIT_NOTE_ATTACHMENTS_FOLDER = _writable_upload_subdir("credit_note_attachments")
+
 PRODUCT_FILE = os.path.join(app.root_path, "product.json")
 CATEGORY_FILE = os.path.join(app.root_path, "product_categories.json")
 TAX_CODE_FILE = os.path.join(app.root_path, "product_tax_codes.json")
@@ -17071,10 +17087,7 @@ def send_invoice_email_api(invoice_id):
         if cur:
             cur.close()
         if conn:
-            conn.close()        
-
-UPLOAD_FOLDER = "uploads"
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+            conn.close()
 
 # =========================
 # GENERATE INVOICE ID
@@ -18231,10 +18244,6 @@ def get_attachments_invoice_return(invoice_return_id):
     return jsonify({"success": True, "attachments": data})
 
 
-UPLOAD_FOLDER = "uploads/invoice_return"
-# Make sure folder exists
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-
 @app.route('/api/invoice-return/<invoice_return_id>/attachments', methods=['POST'])
 def upload_attachment_invoice_return(invoice_return_id):
     try:
@@ -18248,7 +18257,7 @@ def upload_attachment_invoice_return(invoice_return_id):
         original_name = file.filename           # ✅ correct attribute
         ext = original_name.split('.')[-1]
         stored_name = f"{uuid.uuid4()}.{ext}"
-        file_path = os.path.join(UPLOAD_FOLDER, stored_name)
+        file_path = os.path.join(INVOICE_RETURN_UPLOAD_FOLDER, stored_name)
         file.save(file_path)
 
         # Optional: if you want to store file size, uncomment and add column
@@ -21994,9 +22003,6 @@ def add_purchase_comment():
 # Attachments
 # ========================================
 
-UPLOAD_FOLDER = "uploads/purchase_attachments"
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-
 @app.route("/api/purchase-attachments", methods=["POST"])
 def upload_purchase_attachment():
     try:
@@ -22007,7 +22013,7 @@ def upload_purchase_attachment():
             return jsonify({"success": False, "message": "No file uploaded"}), 400
 
         filename = secure_filename(file.filename)
-        save_path = os.path.join(UPLOAD_FOLDER, filename)
+        save_path = os.path.join(PURCHASE_ATTACHMENTS_FOLDER, filename)
         file.save(save_path)
 
         conn = get_db_connection()
@@ -23140,9 +23146,6 @@ def get_stock_comments(grn_number):
     return jsonify(result)
 
 
-UPLOAD_FOLDER = "uploads/stock_attachments"
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-
 @app.route("/api/stock-attachments", methods=["POST"])
 def upload_stock_attachment():
 
@@ -23154,7 +23157,7 @@ def upload_stock_attachment():
             return jsonify({"success": False, "message": "No file uploaded"}), 400
 
         filename = secure_filename(file.filename)
-        path = os.path.join(UPLOAD_FOLDER, filename)
+        path = os.path.join(STOCK_ATTACHMENTS_FOLDER, filename)
         file.save(path)
 
         conn = get_db_connection()
@@ -24663,7 +24666,7 @@ def _ensure_credit_note_attachment_table(cur=None):
     if getattr(_ensure_credit_note_attachment_table, "_checked", False):
         return
     try:
-        os.makedirs(os.path.join(UPLOAD_FOLDER, "credit_note_attachments"), exist_ok=True)
+        os.makedirs(CREDIT_NOTE_ATTACHMENTS_FOLDER, exist_ok=True)
     except OSError:
         pass
     own_conn = None
@@ -24852,7 +24855,7 @@ def cn_upload_attachment():
         unique_filename = (
             f"{credit_note_id}_{uuid.uuid4().hex}.{file_ext}" if file_ext else f"{credit_note_id}_{uuid.uuid4().hex}"
         )
-        abs_path = os.path.join(os.path.join(UPLOAD_FOLDER, "credit_note_attachments"), unique_filename)
+        abs_path = os.path.join(CREDIT_NOTE_ATTACHMENTS_FOLDER, unique_filename)
         file.save(abs_path)
 
         row = None
@@ -24967,7 +24970,7 @@ def cn_get_attachments(credit_note_id):
                 tstr = str(ts)
         rel = os.path.basename(str(fpath or ""))
         sz = 0
-        ap = os.path.join(os.path.join(UPLOAD_FOLDER, "credit_note_attachments"), rel)
+        ap = os.path.join(CREDIT_NOTE_ATTACHMENTS_FOLDER, rel)
         if rel and os.path.isfile(ap):
             try:
                 sz = os.path.getsize(ap)
@@ -25002,7 +25005,7 @@ def _cn_serve_attachment(att_id, as_download):
         return jsonify({"success": False, "message": "Attachment not found"}), 404
     row = dict(row)
     rel = os.path.basename(str(row.get("file_path") or ""))
-    abs_path = os.path.join(os.path.join(UPLOAD_FOLDER, "credit_note_attachments"), rel) if rel else ""
+    abs_path = os.path.join(CREDIT_NOTE_ATTACHMENTS_FOLDER, rel) if rel else ""
     if (not abs_path) or (not os.path.isfile(abs_path)):
         return jsonify({"success": False, "message": "Attachment not found"}), 404
     return send_file(
@@ -25042,7 +25045,7 @@ def cn_delete_attachment(att_id):
             return jsonify({"success": False, "error": "Attachment not found"}), 404
         row = dict(row)
         rel = os.path.basename(str(row.get("file_path") or ""))
-        abs_path = os.path.join(os.path.join(UPLOAD_FOLDER, "credit_note_attachments"), rel) if rel else ""
+        abs_path = os.path.join(CREDIT_NOTE_ATTACHMENTS_FOLDER, rel) if rel else ""
 
         conn = get_db_connection()
         try:
@@ -25133,7 +25136,7 @@ def delete_credit_note(credit_note_id):
         for pr in cur.fetchall() or []:
             rel = os.path.basename(str(pr[0] or ""))
             if rel:
-                ap = os.path.join(os.path.join(UPLOAD_FOLDER, "credit_note_attachments"), rel)
+                ap = os.path.join(CREDIT_NOTE_ATTACHMENTS_FOLDER, rel)
                 if os.path.isfile(ap):
                     try:
                         os.remove(ap)
