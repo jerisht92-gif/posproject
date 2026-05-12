@@ -6,7 +6,7 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='deliverynote-new.css') }}">
 <!-- Attachment upload/list (same as quotation); comment UI matches Sales Order (so-ch-*) -->
 <link rel="stylesheet" href="{{ url_for('static', filename='add-new-quotation.css') }}">
-<link rel="stylesheet" href="{{ url_for('static', filename='deliverynotereturn-new.css') }}?v=34">
+<link rel="stylesheet" href="{{ url_for('static', filename='deliverynotereturn-new.css') }}?v=35">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 {% endblock %}
 
@@ -277,7 +277,7 @@
 
 <script id="dnr-inline-config" type="application/json">{{ {"currentUserName": user_name, "pageMode": mode or "new", "dnrStatus": (record.status if record else none)}|tojson }}</script>
 
-<script src="{{ url_for('static', filename='deliverynotereturn-new.js') }}?v=42" defer></script>
+<script src="{{ url_for('static', filename='deliverynotereturn-new.js') }}?v=43" defer></script>
 
 {% endblock %}
 

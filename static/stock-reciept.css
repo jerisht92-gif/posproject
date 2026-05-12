@@ -1,66 +1,504 @@
-body{
-    font-family: 'Courier New', Courier, monospace;
-    background-color: #f9f9f9;
-    margin: 0;
-    padding: 20px;
+/* ============================= */
+/* PAGE BACKGROUND */
+/* ============================= */
+.stock-receipt-container{
+  padding: 20px;
+  font-family: "Poppins", sans-serif;
+  color: #4a1f1a;
+  background: #f3eded;
 }
-    .page-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-    }
+
+.card{
+  background: rgba(255, 255, 255, 0.65);
+  border: 1px solid rgba(190, 140, 140, 0.35);
+  border-radius: 18px;
+  padding: 8px;
+  box-shadow: 0 18px 40px rgba(70, 10, 10, 0.08);
+}
  
-    .btn {
-        background: #9f2d2d;
-        color: white;
-        padding: 8px 15px;
-        border: none;
-        border-radius: 5px;
-        cursor: pointer;
-    }
+/* ============================= */
+/* CARD (MAIN UI) */
+/* ============================= */
+.sr-card{
+  background: rgba(255,255,255,0.7);
+  border:1px solid rgba(190,140,140,0.35);
+  border-radius:18px;
+  padding:15px;
+  box-shadow:0 18px 40px rgba(70,10,10,0.08);
+}
  
-    .filters {
-        display: flex;
-        gap: 20px;
-        margin: 20px 0;
-    }
+/* ============================= */
+/* HEADER */
+/* ============================= */
+.page-header{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  margin-bottom:10px;
+}
  
-    select, input {
-        padding: 8px;
-        border-radius: 5px;
-        border: 1px solid #ccc;
-    }
+.page-header h2{
+  font-size:26px;
+  color:#a12828;
+  font-weight:600;
+  text-shadow:1px 1px 2px #d8b7b7;
+}
  
-    table {
-        width: 100%;
-        border-collapse: collapse;
-        background: white;
-    }
+/* Button like DN */
+.btn{
+  background:linear-gradient(#a12828,#8c1f1f);
+  color:white;
+  border:none;
+  padding:8px 14px;
+  border-radius:10px;
+  cursor:pointer;
+  box-shadow:0 5px 0 #6d1717;
+  transition:0.25s;
+}
  
-    th, td {
-        padding: 10px;
-        border-bottom: 1px solid #ddd;
-        text-align: center;
-    }
+.btn:hover{
+  transform:translateY(-3px);
+}
  
-    th {
-        background: #f1f1f1;
-    }
+/* ============================= */
+/* SEARCH */
+/* ============================= */
+.search-section{
+  display:flex;
+  flex-direction:column;
+  margin-bottom:10px;
+}
  
-    .status {
-        padding: 5px 10px;
-        border-radius: 5px;
-        color: white;
-        font-size: 12px;
-    }
+.search-section input{
+  height:40px;
+  border-radius:999px;
+  border:1.5px solid #a12828;
+  padding-left:20px;
+  font-size:14px;
+  box-shadow:0 4px 10px rgba(161,40,40,0.25);
+  outline:none;
+}
  
-    .draft { background: gold; color: black; }
-    .cancelled { background: red; }
-    .submitted { background: green; }
-    .returned { background: teal; }
+.search-section input:hover{
+  transform:translateY(-2px);
+}
  
-    .pagination {
-        margin-top: 15px;
-        display: flex;
-        justify-content: space-between;
-    }
+/* Clear filter like DN */
+.clear-filter{
+  align-self:flex-end;
+  margin-top:8px;
+  background:none;
+  border:none;
+  color:#8d1f1f;
+  font-weight:700;
+  cursor:pointer;
+}
+ 
+/* ============================= */
+/* FILTERS */
+/* ============================= */
+.filter-row{
+  display:flex;
+  align-items:flex-end;
+  gap:16px;
+  margin-bottom: 26px;
+  margin-top: 10px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+.filter-box label {
+    display: inline-block;
+    margin-left: 10px;
+}
+ 
+.filter-box{
+  flex: 1 1 0;
+  min-width: 0;
+}
+ 
+.date-box{
+  flex: 2 1 0;
+}
+ 
+.filter-box label{
+  font-size:13px;
+  font-weight:700;
+  color:#4a1f1a;
+  margin-bottom:6px;
+}
+ 
+.filter-box select{
+  width:100%;
+  height:32px;
+  border-radius:18px;
+  border:2px solid #ead0d0;
+  padding:0 12px;
+}
+ 
+/* Date */
+.date-range{
+  display:flex;
+  border:2px solid #ead0d0;
+  border-radius:16px;
+  overflow:hidden;
+}
+ 
+.date-range input{
+  border:none;
+  padding:6px;
+  width:100%;
+}
+ 
+.sr-date-wrap{
+  display:flex;
+  align-items:center;
+  border: 2px solid #ead0d0;
+  border-radius: 10px;
+  height: 27px;
+  overflow:hidden;
+  background:#fff;
+}
+ 
+.sr-date-field{
+  display:flex;
+  align-items:center;
+  gap: 8px;
+  width: 50%;
+  height: 100%;
+  padding: 0 12px;
+}
+.sr-date-field:first-child{ border-right: 1px solid #e6bcbc; }
+ 
+.sr-date-text{
+  font-size: 12px;
+  font-weight: 700;
+  color:#7a1d1d;
+  white-space: nowrap;
+}
+ 
+.sr-date-input{
+  width:100%;
+  height:100%;
+  border:none;
+  outline:none;
+  font-size: 13px;
+  background: transparent;
+  color:#4a1f1a;
+}
+ 
+ 
+/* ============================= */
+/* TABLE */
+/* ============================= */
+table{
+  min-width: 1200px;
+  width:100%;
+  border-collapse:collapse;
+  font-size:14px;
+  border-spacing: 0 8px; 
+}
+ 
+thead th{
+  background:rgba(170,70,70,0.10);
+  color:#7a1d1d;
+  padding:10px;
+  padding: 15px 18px;
+
+  text-align: left;
+  vertical-align: middle;
+}   
+
+ 
+tbody td{
+  padding:10px;
+  border-bottom:1px solid rgba(170,70,70,0.12);
+  padding: 15px 18px; 
+
+  text-align: left;
+  vertical-align: middle;
+
+}
+
+tbody tr{
+  transition: all 0.2s ease;
+  background: white;
+}
+
+/* HOVER (clean + soft like your sample) */
+tbody tr:hover{
+  background-color: #f8e6e6;
+  transform: scale(1.002);
+  box-shadow: 0 4px 10px rgba(0,0,0,0.06);
+}
+
+/* optional: remove extra default hover */
+tr:hover{
+  background: none;
+}
+ 
+/* ============================= */
+/* STATUS BADGES */
+/* ============================= */
+.status-badge {
+  display: inline-block;
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  transition: all 0.3s ease;
+
+  box-shadow: inset 0 1px 2px rgba(255,255,255,0.4),
+              0 3px 8px rgba(0,0,0,0.08);
+}
+
+.status-badge:hover{
+  transform: translateY(-2px) scale(1.05);
+  box-shadow: 0 8px 16px rgba(0,0,0,0.15);
+}
+
+
+
+/* Legacy .status support */
+.status {
+  padding:5px 10px;
+  border-radius:999px;
+  font-size:11px;
+  font-weight:700;
+}
+
+.status-draft {
+  background: linear-gradient(135deg, #FFF4E5, #FFD8A8);
+  color: #9A3412;
+}
+.status-submitted {
+
+  background: linear-gradient(135deg, #D1FAE5, #A7F3D0);
+  color: #047857;
+}
+.status-returned {
+  background: linear-gradient(135deg, #E9D5FF, #C4B5FD);
+  color: #6D28D9;
+}
+.status-cancelled {
+  background: linear-gradient(135deg, #FEE2E2, #FCA5A5);
+  color: #991B1B;
+}
+
+.status-received {
+  background: linear-gradient(135deg, #E0ECFF, #B6CCFF);
+  color: #1D4ED8;
+}
+.status-closed {
+  background: linear-gradient(135deg, #E5E7EB, #D1D5DB);
+  color: #374151;
+}
+
+/* ============================= */
+/* FOOTER */
+/* ============================= */
+.table-footer{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  margin-top:10px;
+  padding-top:10px;
+  border-top:1px solid rgba(170,70,70,0.12);
+}
+ 
+/* Pagination buttons */
+.prev-btn,
+.next-btn{
+  background:linear-gradient(#a12828,#821f1f);
+  color:white;
+  border:none;
+  padding:6px 16px;
+  border-radius:4px;
+  cursor:pointer;
+  box-shadow:0 4px 0 #6d1717;
+}
+ 
+ 
+ 
+.prev-btn:disabled,
+.next-btn:disabled{
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+ 
+ 
+ 
+.table-footer .entries{
+    font-size: 13px;
+    font-weight: 600;
+    color: #7a1d1d;
+}
+ 
+ 
+ 
+/* ============================= */
+/* ACTION BUTTON */
+/* ============================= */
+.sr-act-fly{
+  position: fixed;   /* IMPORTANT for your JS positioning */
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 10px;
+
+  min-width: 160px;
+  box-shadow: 0 8px 20px rgba(0,0,0,0.15);
+
+  z-index: 99999;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+ 
+.sr-act-dots{
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+
+  width: 100%;
+  height: 100%;
+
+  background: transparent;
+  border: none;
+  padding: 0;
+
+  font-size: 20px;
+  color: #a12828;
+  cursor: pointer;
+}
+.sr-act-item{
+  padding: 10px 12px;
+  border: none;
+  background: white;
+  text-align: left;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.sr-act-item:hover{
+  background: #f8e6e6;
+}
+
+.sr-act-item:disabled{
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.sr-act-dots:hover{
+  color: #7a1d1d;
+  transform: scale(1.1);
+  background: transparent;
+}
+ 
+.sr-act-item:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+td:last-child,
+th:last-child{
+  text-align: center;
+  vertical-align: middle;
+  position: relative;
+}
+/* ========================= */
+/* CUSTOM DROPDOWN STYLE */
+/* ========================= */
+
+.custom-select {
+  position: relative;
+  width: 220px;
+}
+
+
+.custom-select select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+
+  width: 100%;
+  padding: 6px 35px 6px 8px;
+  border-radius: 8px;
+  border: 1px solid #e7b7b5;
+
+  background: linear-gradient(135deg, #fff5f5 0%, #f5f5f5 100%);
+  cursor: pointer;
+}
+
+/* Arrow */
+.custom-select::after {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #a12828;
+  font-size: 12px;
+  pointer-events: none;
+}
+
+/* Dropdown options (works in some browsers) */
+select option {
+  background: #e6b3b3;  /* pink background */
+  color: #000;
+}
+
+/* Hover effect (limited browser support) */
+select option:hover {
+  background: #d99898;
+}
+
+.custom-select select:hover {
+  box-shadow: 0 6px 14px rgba(161, 40, 40, 0.2);
+  transform: translateY(-1px);
+}
+
+.custom-select select:focus{
+  outline:none;
+  border-color:#a12828;
+}
+
+/* DISABLE TEXT SELECTION */
+table,
+th,
+td,
+tr,
+tbody,
+thead {
+    user-select: none;
+    -webkit-user-select: none;
+    -ms-user-select: none;
+}
+.table-scroll{
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: visible;
+  position: relative;
+  margin-bottom: 12px; /* space before footer */
+}
+ h1,
+ h2,
+ h3,
+ h4,
+ h5,
+ h6,
+ label {
+    user-select: none;
+    -webkit-user-select: none;
+    -ms-user-select: none;
+
+    -webkit-tap-highlight-color: transparent;
+}
+
+ h1::selection,
+h2::selection,
+h3::selection,
+h4::selection,
+h5::selection,
+h6::selection,
+ label::selection {
+    background: transparent;
+}

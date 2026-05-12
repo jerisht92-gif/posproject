@@ -3,7 +3,8 @@
 {% block title %}New Credit Note{% endblock %}
 
 {% block extra_css %}
-<link rel="stylesheet" href="{{ url_for('static', filename='credit-new.css') }}?v=3">
+
+<link rel="stylesheet" href="{{ url_for('static', filename='credit-new.css') }}?v=48">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 {% endblock %}
 
@@ -11,8 +12,8 @@
 <div class="cn-page">
 
   <div class="cn-top">
-    <h2 class="cn-title">Credit Note</h2>
-    <span id="cnStatusPill" class="cn-status-pill" style="display:none;"></span>
+    <h2 class="cn-title">New Credit Note</h2>
+    <span id="cnStatusPill" class="cn-status-pill cn-status-pill--hidden" aria-hidden="true"></span>
   </div>
 
   <div class="cn-card">
@@ -20,30 +21,30 @@
     <section class="cn-section">
       <div class="cn-grid">
         <div class="cn-field">
-          <label>Credit Note ID</label>
+          <label for="cnId">Credit Note ID</label>
           <input id="cnId" type="text" placeholder="Auto Generate" readonly>
         </div>
         <div class="cn-field">
-          <label>Credit Note Date</label>
-          <input id="cnDate" type="date" title="Credit Note Date">
+          <label for="cnDate">Credit Note Date</label>
+          <input id="cnDate" type="date" autocomplete="off">
         </div>
       </div>
       <div class="cn-grid">
         <div class="cn-field">
-          <label>Invoice Reference ID</label>
-          <select id="cnInvoiceRef" title="Invoice Reference ID">
+          <label for="cnInvoiceRef">Invoice Reference ID</label>
+          <select id="cnInvoiceRef">
             <option value="">Select Invoice Ref. ID</option>
           </select>
         </div>
         <div class="cn-field">
-          <label>Created By</label>
-          <input id="cnCreatedBy" type="text" placeholder="Enter name">
+          <label for="cnCreatedBy">Created By</label>
+          <input id="cnCreatedBy" type="text" placeholder="Enter name" maxlength="30" autocomplete="off" spellcheck="false">
         </div>
       </div>
       <div class="cn-grid">
         <div class="cn-field">
-          <label>Branch / Location</label>
-          <select id="cnBranch" title="Branch / Location">
+          <label for="cnBranch">Branch / Location</label>
+          <select id="cnBranch">
             <option value="" selected>Select Branch</option>
             <option value="Branch 1">Branch 1</option>
             <option value="Branch 2">Branch 2</option>
@@ -51,8 +52,8 @@
           </select>
         </div>
         <div class="cn-field">
-          <label>Currency</label>
-          <input id="cnCurrency" type="text" value="INR" title="Currency" readonly>
+          <label for="cnCurrency">Currency</label>
+          <input id="cnCurrency" type="text" value="INR" readonly>
         </div>
       </div>
     </section>
@@ -61,38 +62,38 @@
       <h3>Customer &amp; Invoice Details</h3>
       <div class="cn-grid">
         <div class="cn-field">
-          <label>Customer Name</label>
+          <label for="cnCustomerName">Customer Name</label>
           <input id="cnCustomerName" type="text" placeholder="Select Customer" readonly>
         </div>
         <div class="cn-field">
-          <label>Customer ID</label>
+          <label for="cnCustomerId">Customer ID</label>
           <input id="cnCustomerId" type="text" placeholder="Auto Generate" readonly>
         </div>
       </div>
       <div class="cn-grid">
         <div class="cn-field">
-          <label>Billing Address</label>
+          <label for="cnBillingAddress">Billing Address</label>
           <input id="cnBillingAddress" type="text" placeholder="Enter Billing address">
         </div>
         <div class="cn-field">
-          <label>Phone Number</label>
+          <label for="cnPhone">Phone Number</label>
           <input id="cnPhone" type="text" placeholder="Enter Phone Number" readonly>
         </div>
       </div>
       <div class="cn-grid">
         <div class="cn-field">
-          <label>Invoice Date</label>
-          <input id="cnInvoiceDate" type="date" title="Invoice Date" readonly>
+          <label for="cnInvoiceDate">Invoice Date</label>
+          <input id="cnInvoiceDate" type="date" readonly autocomplete="off">
         </div>
         <div class="cn-field">
-          <label>Due Date</label>
-          <input id="cnDueDate" type="date" title="Due Date" readonly>
+          <label for="cnDueDate">Due Date</label>
+          <input id="cnDueDate" type="date" readonly autocomplete="off">
         </div>
       </div>
       <div class="cn-grid">
         <div class="cn-field">
-          <label>Payment Terms</label>
-          <select id="cnPaymentTerms" title="Payment Terms">
+          <label for="cnPaymentTerms">Payment Terms</label>
+          <select id="cnPaymentTerms">
             <option value="" selected>Select Payment</option>
             <option value="Net 15">Net 15</option>
             <option value="Net 30">Net 30</option>
@@ -101,17 +102,17 @@
           </select>
         </div>
         <div class="cn-field">
-          <label>Invoice Status</label>
+          <label for="cnInvoiceStatus">Invoice Status</label>
           <input id="cnInvoiceStatus" type="text" placeholder="Enter Invoice Status" readonly>
         </div>
       </div>
       <div class="cn-grid">
         <div class="cn-field">
-          <label>Payment Status</label>
+          <label for="cnPaymentStatus">Payment Status</label>
           <input id="cnPaymentStatus" type="text" placeholder="Enter payment status" readonly>
         </div>
         <div class="cn-field">
-          <label>Invoice Total</label>
+          <label for="cnInvoiceTotal">Invoice Total</label>
           <input id="cnInvoiceTotal" type="text" placeholder="Enter Invoice Total" readonly>
         </div>
       </div>
@@ -154,19 +155,37 @@
           <div class="cn-row"><span>Balance to Refund :</span><strong id="cnBalanceToRefund">0</strong></div>
         </div>
         <div class="cn-box">
-          <div class="cn-row"><span>Refund Mode :</span><select id="cnRefundMode"><option value="">None</option><option value="cash">Cash</option><option value="bank">Bank</option><option value="upi">UPI</option></select></div>
-          <div class="cn-row"><span>Refund Paid :</span><input id="cnRefundPaid" type="number" min="0" step="0.01" placeholder="0.00"></div>
-          <div class="cn-row"><span>Refund Date :</span><input id="cnRefundDate" type="date"></div>
-          <div class="cn-row"><span>Adjusted Invoice Reference :</span><input id="cnAdjustedInvoiceRef" type="text" placeholder="Not yet adjusted"></div>
+          <div class="cn-row"><span>Refund Mode :</span><select id="cnRefundMode"><option value="">None</option><option value="cash">Cash</option><option value="bank_transfer">Bank Transfer</option><option value="upi">UPI</option><option value="cheque">Cheque</option></select></div>
+          <div class="cn-row"><span>Refund Paid :</span><input id="cnRefundPaid" type="number" min="0" step="0.01" placeholder="0.00" title="Maximum is the lower of invoice return amount and amount paid by customer"></div>
+          <div class="cn-row"><span>Refund Date :</span>
+            <div class="cn-refund-date-wrap">
+              <input id="cnRefundDate" type="date" autocomplete="off" class="cn-refund-date-input">
+              <button type="button" class="cn-refund-date-open" id="cnRefundDateOpenBtn" aria-label="Choose refund date">
+                <i class="fa-regular fa-calendar" aria-hidden="true"></i>
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </section>
 
     <section class="cn-section">
       <div class="cn-tabs">
-        <button type="button" class="cn-tab active" data-tab="comments">Comments</button>
-        <button type="button" class="cn-tab" data-tab="history">History</button>
-        <button type="button" class="cn-tab" data-tab="attachments">Attachments</button>
+        <div class="cn-tab-col cn-tab-col--start">
+          <button type="button" class="cn-tab active" data-tab="comments">
+            <i class="fa-regular fa-comment" aria-hidden="true"></i><span>Comments</span>
+          </button>
+        </div>
+        <div class="cn-tab-col cn-tab-col--center">
+          <button type="button" class="cn-tab" data-tab="history">
+            <i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i><span>History</span>
+          </button>
+        </div>
+        <div class="cn-tab-col cn-tab-col--end">
+          <button type="button" class="cn-tab" data-tab="attachments">
+            <i class="fa-solid fa-paperclip" aria-hidden="true"></i><span>Attachments</span>
+          </button>
+        </div>
       </div>
       <div class="cn-panel" id="cnCommentsPanel">
         <label class="cn-comment-label" for="cnCommentInput">Add Comment</label>
@@ -177,11 +196,36 @@
         <div id="cnCommentList"></div>
         <div id="cnCommentEmpty" class="cn-empty">No comments yet</div>
       </div>
-      <div class="cn-panel hidden" id="cnHistoryPanel">
-        <div id="cnHistoryList" class="cn-empty">No history</div>
+      <div class="cn-panel cn-is-hidden" id="cnHistoryPanel">
+        <div id="cnHistoryList" class="cn-history-list"></div>
+        <div id="cnHistoryEmpty" class="cn-empty">No history yet.</div>
       </div>
-      <div class="cn-panel hidden" id="cnAttachmentsPanel">
-        <div class="cn-empty">Attachments coming soon</div>
+      <div class="cn-panel cn-is-hidden" id="cnAttachmentsPanel">
+        <p id="cnAttachmentsReadonlyHint" class="cn-attachments-readonly-hint cn-is-hidden">Attachments are view only for this credit note.</p>
+        <div class="upload-section">
+          <input type="file" id="cnFileInput" hidden multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png">
+          <div class="upload-card" id="cnUploadCard">
+            <i class="fa-solid fa-cloud-upload-alt"></i>
+            <h4>Upload Attachment</h4>
+            <p>Click to select or drag &amp; drop</p>
+            <small>PDF, DOC, XLS, JPG, PNG (Max 10MB)</small>
+          </div>
+          <button type="button" class="btn-upload" id="cnUploadBtn">
+            <i class="fa-solid fa-upload"></i> Choose File
+          </button>
+        </div>
+        <div class="files-section">
+          <div class="files-header">
+            <h4><i class="fa-solid fa-paperclip"></i> Attached Files</h4>
+            <span class="file-count" id="cnFileCount">0 / 5 files</span>
+          </div>
+          <div class="files-list" id="cnFilesList">
+            <div class="no-files">
+              <i class="fa-regular fa-folder-open"></i>
+              <p>No files attached yet</p>
+            </div>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -201,7 +245,7 @@
       <button type="button" class="btn-discard" id="cnCancelBtn" onclick="window.location.href='/credit-note'">Cancel</button>
       <button type="button" class="btn-draft" id="cnSaveDraftBtn">Save Draft</button>
       <button type="button" class="btn-save" id="cnMarkPaidBtn">Mark as Paid</button>
-      <button type="button" class="btn-discard" id="cnDeleteBtn">Delete Credit Note</button>
+      <button type="button" class="btn-discard" id="cnDeleteBtn">Cancel Credit Note</button>
     </div>
   </div>
 
@@ -209,8 +253,8 @@
 
 </div><!-- /.cn-page.modal -->
 
-<!-- Email Modal -->
-<div id="cnEmailModal" class="email-modal" style="display: none;">
+<!-- Email Modal (hidden until wired to open; footer email uses API directly) -->
+<div id="cnEmailModal" class="email-modal" hidden>
   <div class="email-modal-content">
     <h3>Send Credit Note via Email</h3>
     <div class="email-modal-body">
@@ -223,9 +267,25 @@
     </div>
   </div>
 </div>
+
+<div class="pos-modal-backdrop" id="cnDeleteFileBackdrop" hidden>
+  <div class="pos-modal" role="dialog" aria-modal="true" aria-labelledby="cnDeleteFileTitle">
+    <div class="pos-modal-head">
+      <h4 id="cnDeleteFileTitle">Delete File</h4>
+      <button type="button" class="pos-modal-x" onclick="closeCnDeleteFileModal()">×</button>
+    </div>
+    <div class="pos-modal-body">
+      <p class="pos-modal-msg">Are you sure you want to delete this file?</p>
+    </div>
+    <div class="pos-modal-actions">
+      <button type="button" class="pos-btn pos-btn-outline" id="cnDeleteFileCancelBtn">Cancel</button>
+      <button type="button" class="pos-btn pos-btn-primary" id="cnDeleteFileConfirmBtn">Delete</button>
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block extra_js %}
 <script id="credit-inline-config" type="application/json">{{ {"creditId": credit_id, "mode": mode, "userName": user_name}|tojson }}</script>
-<script src="{{ url_for('static', filename='credit-new-clean.js') }}?v=8" defer></script>
+<script src="{{ url_for('static', filename='credit-new.js') }}?v=48" defer></script>
 {% endblock %}

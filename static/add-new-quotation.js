@@ -1165,6 +1165,17 @@ function initializeAllComponents() {
 
     // 1️⃣ FIRST: Create all UI elements (totals, tabs, buttons, etc.)
     loadDropdowns();
+
+const customerSelect = document.getElementById('customerSelect');
+const hiddenEmail = document.getElementById('selectedCustomerEmail');
+if (customerSelect && hiddenEmail) {
+    customerSelect.addEventListener('change', function() {
+        const selectedOption = this.options[this.selectedIndex];
+        const email = selectedOption.getAttribute('data-email') || '';
+        hiddenEmail.value = email;
+    });
+}
+
     initializeCurrencyListener();
     initializeFormValidation();
     initializeGlobalFields();
@@ -1236,7 +1247,6 @@ function initializeAllComponents() {
 // ===================================================
 // LOAD DROPDOWNS
 // ===================================================
-
 function loadDropdowns() {
     console.log("📋 Loading dropdowns...");
     
@@ -1253,55 +1263,47 @@ function loadDropdowns() {
         fetch("/get-customers-quotation")
             .then(response => response.json())
             .then(data => {
-                console.log("📋 Customers loaded:", data.length);
-                var customerNames = [];
-                var salesRepValues = [];
-                var paymentTermsValues = [];
-                var seenCustomer = {};
-                var seenSalesRep = {};
-                var seenPaymentTerms = {};
+                // Clear all dropdowns before adding new options
+                customerSelect.innerHTML = '<option value="">Select Customer</option>';
+                salesRep.innerHTML = '<option value="">Select Sales Rep</option>';
+                paymentTerms.innerHTML = '<option value="">Select Payment Terms</option>';
+
+                const seenSalesRep = new Set();
+                const seenPaymentTerms = new Set();
 
                 data.forEach(customer => {
                     if (customer.status !== "Active") return;
 
-                    var name = (customer.name || "").trim();
-                    if (name && !seenCustomer[name]) {
-                        seenCustomer[name] = true;
-                        customerNames.push(name);
+                    // ---- Customer dropdown (with email) ----
+                    const name = customer.name?.trim();
+                    const email = customer.email?.trim();
+                    if (name) {
+                        const opt = document.createElement("option");
+                        opt.value = name;
+                        opt.textContent = name;
+                        if (email) opt.setAttribute("data-email", email);
+                        customerSelect.appendChild(opt);
                     }
 
-                    var rep = (customer.sales_rep || "").trim();
-                    if (rep && !seenSalesRep[rep]) {
-                        seenSalesRep[rep] = true;
-                        salesRepValues.push(rep);
+                    // ---- Sales Rep dropdown ----
+                    const rep = customer.sales_rep?.trim();
+                    if (rep && !seenSalesRep.has(rep)) {
+                        seenSalesRep.add(rep);
+                        const repOpt = document.createElement("option");
+                        repOpt.value = rep;
+                        repOpt.textContent = rep;
+                        salesRep.appendChild(repOpt);
                     }
 
-                    var terms = (customer.paymentTerms || "").trim();
-                    if (terms && !seenPaymentTerms[terms]) {
-                        seenPaymentTerms[terms] = true;
-                        paymentTermsValues.push(terms);
+                    // ---- Payment Terms dropdown ----
+                    const terms = customer.paymentTerms?.trim();
+                    if (terms && !seenPaymentTerms.has(terms)) {
+                        seenPaymentTerms.add(terms);
+                        const termsOpt = document.createElement("option");
+                        termsOpt.value = terms;
+                        termsOpt.textContent = terms;
+                        paymentTerms.appendChild(termsOpt);
                     }
-                });
-
-                customerNames.forEach(function(name) {
-                    var opt = document.createElement("option");
-                    opt.value = name;
-                    opt.textContent = name;
-                    customerSelect.appendChild(opt);
-                });
-
-                salesRepValues.forEach(function(rep) {
-                    var opt = document.createElement("option");
-                    opt.value = rep;
-                    opt.textContent = rep;
-                    salesRep.appendChild(opt);
-                });
-
-                paymentTermsValues.forEach(function(terms) {
-                    var opt = document.createElement("option");
-                    opt.value = terms;
-                    opt.textContent = terms;
-                    paymentTerms.appendChild(opt);
                 });
             })
             .catch(error => console.error("❌ Error loading dropdowns:", error));
@@ -4260,52 +4262,94 @@ function initializeActionButtons() {
             });
     });
     
-    const emailBtn = document.querySelector(".footer-item.email");
-    if (emailBtn) {
-        console.log("✅ Email button found, attaching click handler");
-        emailBtn.addEventListener("click", function(e) {
-            e.preventDefault();
-            console.log("📧 Email button clicked");
-            
-            const quotationId = document.getElementById("quotationNumber")?.value;
-            if (!quotationId) {
-                showToast("No quotation ID found", 'error');
-                return;
-            }
-            
-            // Check if email is allowed for current status
-            if (!isEmailEnabled()) {
-                showToast(`Email cannot be sent for ${currentQuotationStatus} status`, 'warning');
-                return;
-            }
-            
-            fetch(`/check-quotation/${quotationId}`)
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        if (data.exists) {
-                            promptForEmailWithModal(quotationId);
-                        } else {
-                            if (confirm('This quotation needs to be saved first. Save now?')) {
-                                if (!validateRequiredFields()) return;
-                                saveAndPromptForEmailWithModal(quotationId);
-                            }
-                        }
-                    } else {
-                        showToast('Error checking quotation: ' + (data.error || 'Unknown error'), 'error');
+   const emailBtn = document.querySelector(".footer-item.email");
+if (emailBtn) {
+    emailBtn.addEventListener("click", function(e) {
+        e.preventDefault();
+        const quotationId = document.getElementById("quotationNumber")?.value;
+        if (!quotationId) {
+            showToast("No quotation ID found", 'error');
+            return;
+        }
+
+        // Check if quotation exists
+        fetch(`/check-quotation/${quotationId}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.exists) {
+                    sendQuotationDirectly(quotationId);   // NEW: direct send
+                } else {
+                    if (confirm('This quotation needs to be saved first. Save now?')) {
+                        if (!validateRequiredFields()) return;
+                        saveQuotationAndThenSend(quotationId); // NEW: save then send
                     }
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                    showToast('Error checking quotation status', 'error');
-                });
-        });
-    } else {
+                }
+            })
+            .catch(error => {
+                console.error("Error checking quotation:", error);
+                showToast("Error checking quotation", 'error');
+            });
+    });
+}
+     else {
         console.error("❌ Email button not found!");
     }
     
 }
+async function sendQuotationDirectly(quotationId) {
+    if (!isEmailEnabled()) {
+        showToast(`Email cannot be sent for ${currentQuotationStatus} status`, 'warning');
+        return;
+    }
 
+    const customerEmail = document.getElementById('selectedCustomerEmail')?.value.trim();
+    if (!customerEmail || !validateEmail(customerEmail)) {
+        showToast('No valid email found for the selected customer. Please update customer record.', 'error');
+        return;
+    }
+
+    setButtonLoading(true, 'Sending quotation...');
+    try {
+        const response = await fetch('/api/send-quotation-email', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ quotation_id: quotationId, email: customerEmail })
+        });
+        const data = await response.json();
+        if (data.success) {
+            showToast(`Quotation sent successfully to ${customerEmail}`, 'success');
+        } else {
+            showToast(data.error || 'Failed to send quotation', 'error');
+        }
+    } catch (error) {
+        console.error(error);
+        showToast('Network error. Please try again.', 'error');
+    } finally {
+        setButtonLoading(false);
+    }
+}
+async function saveQuotationAndThenSend(quotationId) {
+    const quotationData = collectQuotationData('draft');
+    setButtonLoading(true, 'Saving...');
+    try {
+        const response = await fetch("/save-quotation", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(quotationData)
+        });
+        const result = await response.json();
+        if (result.success) {
+            showToast("Quotation saved", 'success');
+            await sendQuotationDirectly(quotationId);
+        } else {
+            showToast("Error saving: " + (result.error || "Unknown error"), 'error');
+        }
+    } catch (error) {
+        showToast("Error saving quotation", 'error');
+    } finally {
+        setButtonLoading(false);
+    }
+}
 // ===================================================
 // SUBMIT FUNCTIONS - WITH AUTO REDIRECT
 // ===================================================
@@ -5157,7 +5201,18 @@ if (globalDiscountInput && quotation.totals?.global_discount_percent !== undefin
                 calculateGrandTotal();
             }
         }, quotation.items ? (quotation.items.length * 100 + 500) : 500);
+// After you set the customer dropdown value, e.g.:
+document.getElementById('customerSelect').value = quotation.customer_name || '';
 
+// === MANUALLY UPDATE THE HIDDEN EMAIL ===
+const customerSelectEl = document.getElementById('customerSelect');
+const hiddenEmail = document.getElementById('selectedCustomerEmail');
+if (customerSelectEl && hiddenEmail) {
+    const selectedOption = customerSelectEl.options[customerSelectEl.selectedIndex];
+    const email = selectedOption ? (selectedOption.getAttribute('data-email') || '') : '';
+    hiddenEmail.value = email;
+    console.log('Loaded customer email for edit:', email);
+}
         // Load attachments and comments
         loadAttachmentsForQuotation(quotationId);
         loadCommentsForQuotation(quotationId);
@@ -5804,12 +5859,24 @@ if (globalDiscountInput && quotation.totals?.global_discount_percent !== undefin
                         calculateGrandTotal();
                     }
                 }, quotation.items && quotation.items.length ? 80 : 50);
+// After you set the customer dropdown value, e.g.:
+document.getElementById('customerSelect').value = quotation.customer_name || '';
 
+// === MANUALLY UPDATE THE HIDDEN EMAIL ===
+const customerSelectEl = document.getElementById('customerSelect');
+const hiddenEmail = document.getElementById('selectedCustomerEmail');
+if (customerSelectEl && hiddenEmail) {
+    const selectedOption = customerSelectEl.options[customerSelectEl.selectedIndex];
+    const email = selectedOption ? (selectedOption.getAttribute('data-email') || '') : '';
+    hiddenEmail.value = email;
+    console.log('Loaded customer email for edit:', email);
+}
                 // Load attachments and comments
                 loadAttachmentsForQuotation(quotationId);
                 loadCommentsForQuotation(quotationId);
 
-                document.querySelector('h1').innerHTML = `Edit Quotation: ${quotationId}`;
+const titleEl = document.querySelector('.quotation-title');
+if (titleEl) titleEl.innerHTML = `Edit Quotation: ${quotationId}`;
                 showToast('Quotation loaded for editing', 'success');
     }).catch(error => {
         console.error('Error loading quotation or products:', error);

@@ -311,7 +311,7 @@ function createActionMenu(returnId, returnStatus) {
     pageData.forEach(item => {
       const row = document.createElement("tr");
       row.innerHTML = `
-        <td class="so-check-td">
+        <td class="dn-td-check">
           <input type="checkbox" class="row-check" data-id="${item.return_id}">
         </td>
         <td class="so-id">${safeText(item.return_id)}</td>

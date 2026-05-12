@@ -80,9 +80,28 @@
   border: none;
   outline: none;
   background: transparent;
-  padding: 0 18px;
+  padding-left: 30px;
+  padding-right: 18px;
   font-size: 14px;
   color: #4a1f1a;
+}
+
+#creditCustomerFilter {
+  width: 100%;
+  height: 30px;
+  padding: 6px 12px;
+  border-radius: 10px;
+  border: 1px solid #e7b7b5;
+  background-color: #fff5f5;
+  font-size: 13px;
+  outline: none;
+  color: #000;
+  box-sizing: border-box;
+}
+
+#creditCustomerFilter:focus {
+  border-color: #a12828;
+  background-color: #fff;
 }
 
 .credit-search-input::placeholder {
@@ -248,6 +267,11 @@
 .credit-td-check {
   width: 70px;
   text-align: center;
+  vertical-align: middle;
+}
+
+.credit-table thead th.credit-th-check {
+  text-align: center !important;
 }
 
 .credit-row-check {
@@ -268,10 +292,9 @@
   line-height: 1;
 }
 
-.credit-status-draft { background: #ffe28a; color: #000; }
-.credit-status-submitted { background: #67c3ff; color: #000; }
-.credit-status-approved { background: #8be5a9; color: #000; }
-.credit-status-cancelled { background: #d6d6d6; color: #000; }
+.credit-status-draft { background: #f4ba57; color: #000; }
+.credit-status-submitted { background: #85f057; color: #000; }
+.credit-status-cancelled { background: #ec44c8; color: #000; }
 
 .credit-payment-unpaid { color: #dc2626; font-weight: 600; }
 .credit-payment-partial { color: #f97316; font-weight: 600; }
@@ -384,12 +407,6 @@
   user-select: none;
 }
 
-.credit-sort-caret {
-  margin-left: 6px;
-  font-size: 12px;
-  opacity: 0.7;
-}
-
 .credit-sort-menu {
   position: absolute;
   top: calc(100% + 8px);
@@ -422,8 +439,10 @@
   color: #4a1f1a;
 }
 
-.credit-sort-menu button:hover {
-  background: rgba(161, 40, 40, 0.08);
+.credit-sort-menu button:hover,
+.credit-sort-menu button:focus-visible {
+  background: #e3bdbd;
+  color: #2e1b1b;
 }
 
 .credit-empty {
@@ -599,7 +618,8 @@
     border: none;
     outline: none;
     background: transparent;
-    padding: 0 18px;
+    padding-left: 30px;
+    padding-right: 18px;
     font-size: 14px;
     color: #4a1f1a;
   }
@@ -761,6 +781,11 @@
   .credit-td-check {
     width: 70px;
     text-align: center;
+    vertical-align: middle;
+  }
+
+  .credit-table thead th.credit-th-check {
+    text-align: center !important;
   }
   
   .credit-row-check {
@@ -782,22 +807,17 @@
   }
   
   .credit-status-draft {
-    background: #ffe28a;
+    background: #f4ba57;
     color: #000;
   }
   
   .credit-status-submitted {
-    background: #67c3ff;
-    color: #000;
-  }
-  
-  .credit-status-approved {
-    background: #8be5a9;
+    background: #85f057;
     color: #000;
   }
   
   .credit-status-cancelled {
-    background: #d6d6d6;
+    background: #ec44c8;
     color: #000;
   }
   
@@ -864,12 +884,6 @@
     user-select: none;
   }
   
-  .credit-sort-caret {
-    margin-left: 6px;
-    font-size: 12px;
-    opacity: 0.7;
-  }
-  
   .credit-sort-menu {
     position: absolute;
     top: calc(100% + 8px);
@@ -902,8 +916,10 @@
     color: #4a1f1a;
   }
   
-  .credit-sort-menu button:hover {
-    background: rgba(161, 40, 40, 0.08);
+  .credit-sort-menu button:hover,
+  .credit-sort-menu button:focus-visible {
+    background: #e3bdbd;
+    color: #2e1b1b;
   }
   
   .credit-empty {
@@ -1011,3 +1027,104 @@
       gap: 12px;
     }
   }
+
+/* Toasts (list page delete + ?toast= redirect from detail page) */
+.success-notification,
+.error-notification {
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-100px);
+  padding: 14px 28px;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 600;
+  z-index: 10000;
+  opacity: 0;
+  transition: all 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+  pointer-events: none;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.success-notification {
+  background: linear-gradient(135deg, #fff4f4, #ffe8e8);
+  color: #a12828;
+  border: 1.5px solid #a12828;
+  box-shadow: 0 8px 24px rgba(161, 40, 40, 0.25);
+}
+
+.error-notification {
+  background: linear-gradient(135deg, #ffe6e6, #ffc2c2);
+  color: #a12828;
+  border: 1.5px solid #a12828;
+  box-shadow: 0 8px 24px rgba(161, 40, 40, 0.35);
+}
+
+.success-notification.show,
+.error-notification.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+  pointer-events: auto;
+}
+
+.success-notification::before {
+  content: "✓";
+  font-size: 18px;
+  font-weight: bold;
+}
+
+.error-notification::before {
+  content: "✕";
+  font-size: 18px;
+  font-weight: bold;
+}
+
+/* Credit note status sort trigger/menu (POS style) */
+.credit-sort-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #7a1d1d;
+  font-weight: 700;
+}
+
+.credit-sort-caret {
+  font-size: 16px;
+  line-height: 1;
+  color: #7a1d1d;
+  opacity: 0.95;
+  transition: transform 0.2s ease;
+}
+
+.credit-sort-th:hover .credit-sort-caret,
+.credit-sort-th.open .credit-sort-caret {
+  transform: translateY(-1px);
+}
+
+.credit-sort-th {
+  position: relative;
+}
+
+.credit-sort-menu {
+  min-width: 245px;
+  border: 1px solid #e7caca;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 14px 28px rgba(88, 32, 32, 0.18);
+  top: calc(100% + 2px);
+}
+
+.credit-sort-menu button {
+  font-size: 14px;
+  font-weight: 500;
+  color: #2e1b1b;
+}
+
+.credit-sort-menu button:hover,
+.credit-sort-menu button:focus-visible {
+  background: #e3bdbd;
+  color: #2e1b1b;
+}

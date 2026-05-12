@@ -11,11 +11,40 @@
   min-height: 28px;
   padding: 0 12px;
   border-radius: 8px;
-  background: #f6c833;
+  background: #f4ba57;
   color: #111;
   font-size: 14px;
   font-weight: 600;
 }
+
+.cn-status-pill.draft {
+  background: #f4ba57;
+  color: #111;
+}
+
+.cn-status-pill.submitted {
+  background: #85f057;
+  color: #111;
+}
+
+.cn-status-pill.cancelled {
+  background: #ec44c8;
+  color: #111;
+}
+
+.cn-status-pill.cn-status-pill--hidden {
+  display: none;
+}
+
+/* Credit note page: hide email modal until opened (no inline styles in HTML) */
+#cnEmailModal.email-modal {
+  display: none;
+}
+
+.pos-modal-backdrop.cn-modal-backdrop--open {
+  display: flex;
+}
+
 .cn-page {
   min-height: 100vh;
   padding: 20px;
@@ -238,7 +267,8 @@
   background: #fff;
 }
 
-.cn-panel.hidden { display: none; }
+.cn-panel.hidden,
+.cn-panel.cn-is-hidden { display: none; }
 
 .cn-comment-label {
   display: block;
@@ -496,6 +526,109 @@
   gap: 10px;
 }
 
+.pos-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.pos-modal {
+  width: min(520px, 92vw);
+  overflow: hidden;
+  border: 2px solid #e8b1b1;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.25);
+}
+
+.pos-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid #f0d2d2;
+  background: #fff4f4;
+}
+
+.pos-modal-head h4 {
+  margin: 0;
+  color: #8c1f1f;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.pos-modal-x {
+  padding: 0;
+  color: #8c1f1f;
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.pos-modal-body {
+  padding: 18px 16px;
+  color: #4a1f1a;
+  font-size: 14px;
+}
+
+.pos-modal-msg {
+  margin-bottom: 10px;
+  color: #4a1f1a;
+  font-size: 13px;
+}
+
+.pos-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 14px 16px 18px;
+}
+
+.pos-btn {
+  min-width: 110px;
+  height: 40px;
+  cursor: pointer;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  transition: 0.2s ease;
+}
+
+.pos-btn-outline {
+  color: #a12828;
+  border: 1.5px solid #a12828;
+  background: #fff;
+}
+
+.pos-btn-outline:hover {
+  color: #fff;
+  background: #a12828;
+}
+
+.pos-btn-primary {
+  color: #fff;
+  border: none;
+  background: linear-gradient(#a12828, #8c1f1f);
+  box-shadow: 0 5px 0 #6d1717;
+}
+
+.pos-btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 7px 0 #6d1717;
+}
+
+.pos-btn-primary:active {
+  transform: translateY(0);
+  box-shadow: 0 3px 0 #6d1717;
+}
+
 @media (max-width: 768px) {
   .cn-grid,
   .cn-split { grid-template-columns: 1fr; }
@@ -734,7 +867,8 @@
   background: #fff;
 }
 
-.cn-panel.hidden { display: none; }
+.cn-panel.hidden,
+.cn-panel.cn-is-hidden { display: none; }
 
 .cn-comment-label {
   display: block;
@@ -1078,7 +1212,8 @@
   background: #fff;
 }
 
-.cn-panel.hidden { display: none; }
+.cn-panel.hidden,
+.cn-panel.cn-is-hidden { display: none; }
 
 #cnCommentInput {
   width: 100%;
@@ -1561,7 +1696,8 @@
   background: #fff;
 }
 
-.cn-panel.hidden { display: none; }
+.cn-panel.hidden,
+.cn-panel.cn-is-hidden { display: none; }
 
 /* =========================================
    COMMENTS
@@ -1655,6 +1791,106 @@
   color: #666;
   font-size: 12px;
   text-align: left;
+}
+
+.cn-history-list {
+  margin-top: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.cn-history-row {
+  display: flex;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid #eee;
+  align-items: flex-start;
+}
+
+.cn-history-row:last-child {
+  border-bottom: none;
+}
+
+.cn-history-icon {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: #f5e6e6;
+  color: #8c1f1f;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+}
+
+.cn-history-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.cn-history-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #333;
+  margin: 0 0 4px;
+}
+
+.cn-history-msg {
+  font-size: 13px;
+  font-weight: 600;
+  color: #222;
+  margin: 0 0 6px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.cn-history-time {
+  font-size: 11px;
+  color: #888;
+  margin: 0 0 4px;
+}
+
+.cn-history-detail {
+  margin: 0;
+  font-size: 12px;
+  color: #555;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+#cnHistoryEmpty {
+  margin-top: 0;
+  padding: 10px 0;
+  color: #666;
+  font-size: 12px;
+  text-align: left;
+}
+
+#cnHistoryEmpty.cn-is-hidden {
+  display: none;
+}
+
+.cn-attachments-readonly-hint {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  background: #f8f4f4;
+  border: 1px solid #e8d4d4;
+  border-radius: 8px;
+  color: #6b1a1a;
+  font-size: 13px;
+}
+
+.cn-attachments-readonly-hint.cn-is-hidden {
+  display: none;
+}
+
+#cnAttachmentsPanel .upload-section,
+#cnAttachmentsPanel .files-section {
+  max-width: 100%;
 }
 
 /* =========================================
@@ -1929,3 +2165,186 @@ transform: translateY(-2px);
   .btn-discard { width: 100%; }
 }
 
+/* Row delete: same icon + colors as Sales Order (.so-delete-btn in sales-new.css) */
+.cn-delete-row-btn {
+  padding: 0 !important;
+  border: none !important;
+  background: none !important;
+  box-shadow: none !important;
+}
+.cn-delete-row-btn i {
+  color: #ff1a1a !important;
+  line-height: 1;
+  font-family: "Font Awesome 6 Free" !important;
+  font-size: 15px !important;
+  font-weight: 900 !important;
+}
+.cn-delete-row-btn:hover i {
+  transform: scale(1.05);
+  color: #d10000 !important;
+}
+
+/* Credit note tab bar: Comments (left), History (center), Attachments (right) */
+.cn-page .cn-tabs {
+  position: relative;
+  z-index: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0;
+  padding: 10px 24px;
+  background: #a73434;
+  border-radius: 8px 8px 0 0;
+}
+
+.cn-page .cn-tab-col {
+  flex: 1 1 0;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.cn-page .cn-tab-col--start {
+  justify-content: flex-start;
+}
+
+.cn-page .cn-tab-col--center {
+  justify-content: center;
+}
+
+.cn-page .cn-tab-col--end {
+  justify-content: flex-end;
+}
+
+.cn-page .cn-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.cn-page .cn-tab i {
+  font-size: 13px;
+  line-height: 1;
+  opacity: 0.95;
+}
+
+/* Keep footer actions above tab row stacking (fixes clicks not reaching Save / Mark paid / Delete). */
+.cn-page .modal-footer {
+  position: relative;
+  z-index: 50;
+  isolation: isolate;
+}
+
+.cn-page .modal-footer-button {
+  position: relative;
+  z-index: 51;
+}
+
+.cn-page .modal-footer-button .btn-save,
+.cn-page .modal-footer-button .btn-draft,
+.cn-page .modal-footer-button .btn-discard {
+  pointer-events: auto;
+  position: relative;
+  z-index: 52;
+}
+
+/* Refund date: hide native calendar icon (Chromium “Show date picker” shadow tooltip). Open via .cn-refund-date-open + showPicker(). */
+.cn-refund-date-wrap {
+  position: relative;
+  display: block;
+  width: 100%;
+  min-width: 0;
+}
+.cn-refund-date-wrap .cn-refund-date-input {
+  display: block;
+  min-width: 0;
+  width: 100%;
+  padding-right: 38px;
+}
+.cn-refund-date-wrap .cn-refund-date-input::-webkit-calendar-picker-indicator {
+  display: none;
+}
+.cn-refund-date-wrap .cn-refund-date-input::-moz-calendar-picker-indicator {
+  display: none;
+}
+.cn-refund-date-open {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #a73434;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  font-size: 13px;
+}
+.cn-refund-date-open:hover {
+  background: rgba(167, 52, 52, 0.1);
+}
+.cn-refund-date-open:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* Keep invoice reference dropdown width stable */
+.cn-grid .cn-field {
+  min-width: 0;
+}
+
+#cnInvoiceRef {
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  box-sizing: border-box !important;
+}
+
+/* ---------------------------------------------------------------------------
+   Modals: this stylesheet repeats generic `.email-modal { display: flex }`
+   blocks later in the file, which can override the early `#cnEmailModal` rule.
+   These ID-scoped rules must stay last so overlays stay off-screen until opened.
+   --------------------------------------------------------------------------- */
+#cnEmailModal.email-modal:not(.cn-email-modal--open) {
+  display: none !important;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+#cnEmailModal.email-modal.cn-email-modal--open {
+  display: flex !important;
+  visibility: visible;
+  pointer-events: auto;
+  position: fixed;
+  z-index: 100000;
+  inset: 0;
+  align-items: center;
+  justify-content: center;
+  background-color: rgba(0, 0, 0, 0.5);
+}
+
+#cnDeleteFileBackdrop.pos-modal-backdrop:not(.cn-modal-backdrop--open) {
+  display: none !important;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+#cnDeleteFileBackdrop.pos-modal-backdrop.cn-modal-backdrop--open {
+  display: flex !important;
+  visibility: visible;
+  pointer-events: auto;
+  position: fixed;
+  inset: 0;
+  z-index: 100001;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.35);
+}

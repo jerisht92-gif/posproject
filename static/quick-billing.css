@@ -594,72 +594,6 @@
 
 
 /* =========================================================
-   12) BOTTOM PAGINATION / SHOWING COUNT 
-========================================================= */
-.qb-bottom-row{
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 18px;
-  margin: 16px 0 6px;
-  padding-top: 10px;
-  border-top: 1px solid #ead7d7;
-  padding-bottom: 15px;
-}
-
-.qb-footer-left{
-  font-size: 13px;
-  font-weight: 600;
-  color: #7a1d1d;
-}
-
-
-
-.pager-btn{
-  padding: 6px 18px;
-  border-radius: 4px;
-  background: linear-gradient(#a12828, #821f1f);
-  border: none;
-  color: white;
-  font-size: 14px;
-  cursor: pointer;
-  box-shadow: 0 4px 0 #6d1717;
-  transition: 0.25s ease;
-}
-/* ===== Pagination Indicator (Page 1 of 1) ===== */
-.page-indicator{
-  font-size: 12px;         
-  font-weight: 400;          
-  color: #8a5a5a;             
-  letter-spacing: 0.2px;
-}
-
-/* numbers inside (1 of 1) */
-#pageNow,
-#pageTotal{
-  font-size: 12px;
-  font-weight: 700;        
-  color: #6a2a2a;
-}
-
-
-.qb-footer-right{
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-#pageNow {
-  font-size: 13px;
-  color: #7a1d1d;
-}
-
-.pager-btn:disabled{ opacity: 0.5; }
-.pager-btn:hover:not(:disabled){ transform: translateY(-2px); }
-
-
-
-/* =========================================================
    13) TOAST NOTIFICATION  (#qbToast)
 ========================================================= */
 .qb-toast{
@@ -843,8 +777,7 @@
 ========================================================= */
 @media print{
   .quick-billing-header,
-  .quick-billing-tabs,
-  .qb-bottom-row{
+  .quick-billing-tabs{
     display: none !important;
   }
 
@@ -1002,24 +935,6 @@
 
   .qty-input{ width: 64px; }
 
-  .qb-bottom-row{
-    flex-direction: row;
-    flex-wrap: wrap;
-    gap: 10px;
-    padding-bottom: 10px;
-  }
-
-  .qb-footer-left{
-    flex: 1 1 100%;
-    text-align: left;
-  }
-
-  .qb-footer-right{
-    flex: 1 1 100%;
-    justify-content: flex-end;
-    gap: 10px;
-  }
-
   
  
 
@@ -1086,15 +1001,6 @@
     padding: 6px 10px;
     border-radius: 10px;
   }
-
-  .qb-bottom-row{
-    flex-direction: column;
-    align-items: stretch;
-    gap: 8px;
-  }
-
-  .qb-footer-left{ text-align: center; }
-  .qb-footer-right{ justify-content: center; }
 
   
   .mp-grid{ grid-template-columns: 1fr; }

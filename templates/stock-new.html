@@ -1,0 +1,358 @@
+{% extends 'menu.html' %}
+
+{% block content %}
+
+<link rel="stylesheet" href="{{ url_for('static', filename='stock.css') }}">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+<div class="stock-container">
+    <div id="stockDataContainer" data-stock='{{ stock_data | tojson | safe if stock_data else "{}" }}' data-mode="{{ mode if mode else 'new' }}"></div>
+    <div class="so-page-body">
+    <!-- HEADER -->
+    <div class="header">
+        <h2 id="pageTitle">New Stock Receipt</h2>
+        <div class="header-actions">
+            <button class="btn-light" id="stockReturnBtn" type="button" onclick="stockReturn()">Stock Return</button>
+        </div>
+    </div>
+
+    <!-- FORM -->
+    <div class="form-grid">
+
+        <div>
+            <label>GRN ID (Auto Generate)</label>
+            <input type="text" id="grnField" readonly placeholder="Auto Generate">
+        </div>
+
+        <div>
+            <label>PO Reference ID</label>
+            <input type="text" id="poField" value="{{ po_data.po_number if po_data else '' }}" readonly>
+        </div>
+        <div>
+            <label>Received Date</label>
+            <input type="date" id="receivedDate">
+        </div>
+
+        <div>
+            <label>Supplier Name</label>
+            <input type="text" id="supplierName" value="{{ po_data.supplier if po_data else '' }}">
+        </div>
+
+        <div>
+            <label>Supplier Email</label>
+            <input type="text" id="supplierEmail" value="{{ po_data.supplier_email if po_data else '' }}">
+        </div>
+
+        <div>
+            <label>Supplier DN No.</label>
+            <input type="text" id="supplierDn" name="supplier_dn" placeholder="Enter Supplier DN No">
+        </div>
+
+        <div>
+            <label>Supplier Invoice No.</label>
+            <input type="text" id="supplierInvoice" name="supplier_invoice" placeholder="Enter Supplier Invoice No">
+        </div>
+
+        <div>
+            <label>Received By</label>
+
+            <input
+                type="text"
+                id="receivedBy"
+                name="received_by"
+                placeholder="Enter Received By"
+            >
+        </div>
+
+        <div>
+            <label>QC Done By</label>
+            <input
+                type="text"
+                id="qcBy"
+                name="qc_by"
+                placeholder="Enter QC Done By"
+            >
+        </div>
+     
+        
+
+
+
+        <div class="form-group">
+            <label>Status</label>
+
+            <div class="custom-select">
+
+            <select id="statusField">
+
+                <option value="draft">Draft</option>
+
+                <option value="submitted">Submitted</option>
+
+                <option value="cancelled">Cancelled</option>
+
+                <option value="returned">Returned</option>
+
+            </select>
+        </div>
+        </div>
+
+    </div>
+
+    <!-- LINE ITEMS -->
+    <div class="line-items">
+        <h3>Line Items</h3>
+        <div class="so-items-box">
+
+       <div class="table-wrapper">
+    <table class="so-items-table">
+            <thead>
+            <tr>
+                <th>S.No</th>
+                <th>Product Name</th>
+                <th>Product Id</th>
+                <th>UOM</th>
+                <th>Qty Ordered</th>
+                <th>Unit Price</th>
+                <th>Tax %</th>
+                <th>Discount %</th>
+                <th>Qty Received</th>
+                <th>Accepted Qty</th>
+                <th>Rejected Qty</th>
+                <th>Remaining Qty</th>
+                <th>Total</th>
+                <th>Warehouse</th>
+                <th>Stock Dim</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody id="items-body">
+        {% if po_data %}
+            {% for item in po_data.get('items', []) %}
+            <tr>
+
+    <td>{{ loop.index }}</td>
+
+    <td>{{ item.name }}</td>
+
+    <td>{{ item.product_id }}</td>
+
+    <td>{{ item.uom }}</td>
+
+    <td>
+        <input class="qty-ordered"
+               type="number"
+               value="{{ item.qty }}"
+               readonly>
+    </td>
+
+    <td>
+        <input class="unit-price"
+            type="number"
+            value="{{ item.price or 0 }}"
+            readonly>
+    </td>
+
+<td>
+    <input class="tax-pct"
+        type="number"
+        value="{{ item.tax_pct or 0 }}"
+        readonly>
+</td>
+
+<td>
+    <input class="disc-pct"
+        type="number"
+        value="{{ item.disc_pct or 0 }}"
+        readonly>
+</td>
+
+    <td>
+      <input class="qty-received" type="number" step="1" min="0" inputmode="numeric">
+    </td>
+
+    <td>
+    <input class="qty-accepted" type="number" step="1" min="0" inputmode="numeric">
+    </td>
+
+    <td>
+        <input class="qty-rejected"
+               type="number"
+               value="0"
+               readonly>
+    </td>
+
+    <td>
+        <input class="qty-remaining"
+               type="number"
+               value="{{ item.qty }}"
+               readonly>
+    </td>
+
+    <td>
+        <input class="line-total"
+               type="number"
+               value="0"
+               readonly>
+    </td>
+
+    <td>
+        <div class="custom-select">
+        <select class="warehouse">
+            
+            <option value="">Select</option>
+            <option>Main Store</option>
+            <option>Secondary Store</option>
+        </select>
+        </div>
+    </td>
+
+    <td>
+        <div class="custom-select">
+        <select class="stock-dim">
+            <option value="">Select</option>
+            <option>Good</option>
+            <option>Damaged</option>
+        </select>
+        </div>
+    </td>
+
+    <td>
+        <button class="so-delete-btn"
+                type="button"
+                onclick="deleteRow(this)">
+            <i class="fa-solid fa-trash"></i>
+        </button>
+    </td>
+
+</tr>
+            {% endfor %}
+        {% endif %}
+</tbody>
+    </table>
+</div>
+
+        
+    </div>
+    </div>
+
+<div class="summary-box">
+
+    <div class="summary-row">
+        <label>Grand Total</label>
+        <input id="grandTotalField" type="number" readonly>
+    </div>
+
+</div>
+
+<!-- COMMENTS / HISTORY / ATTACHMENTS -->
+<div class="comment-box">
+    <!-- Tabs -->
+    <div class="comment-tabs">
+        <button type="button" class="tab active" data-tab="comments">💬 Comments</button>
+        <button type="button" class="tab" data-tab="history">🕘 History</button>
+        <button type="button" class="tab" data-tab="attachments">📎 Attachments</button>
+    </div>
+
+    <!-- Comments Tab -->
+    <div class="comment-body tab-content" id="comments">
+        <label>Add Comment:</label>
+        <textarea id="commentText" name="commentText" placeholder="Enter Your Comment" maxlength="200"></textarea>
+        <div class="comment-actions">
+        <button class="add-btn" id="addCommentBtn" disabled>
+            Add New
+        </button>
+        </div>
+    </div>
+
+    <!-- History Tab -->
+    <div class="comment-history tab-content" id="history" style="display:none;">
+        <div class="no-history-message" id="noHistoryMsg">
+            No history available.
+        </div>
+    </div>
+
+    <!-- Attachments Tab -->
+ <div class="tab-content" id="attachments" style="display:none;">
+
+    <!-- Upload Section -->
+    <div class="upload-wrapper">
+        <input type="file" id="fileInput" hidden multiple>
+
+        <div class="upload-box" id="uploadBox">
+            <i class="fa-solid fa-cloud-arrow-up upload-icon"></i>
+            <h3>Upload Attachment</h3>
+            <p>Click to select or drag & drop</p>
+            <small>PDF, DOC, XLS, JPG, PNG (Max 10MB)</small>
+        </div>
+
+        <button class="choose-btn" id="uploadBtn">
+            <i class="fa-solid fa-upload"></i> Choose File
+        </button>
+    </div>
+
+    <!-- File List -->
+    <div class="files-section">
+        <div class="files-header">
+            <h4><i class="fa-solid fa-paperclip"></i> Attached Files</h4>
+            <span id="fileCount">0 / 5 files</span>
+        </div>
+
+        <div id="filesList" class="files-list">
+            <div class="no-files">
+                <i class="fa-regular fa-folder-open"></i>
+                <p>No files attached yet</p>
+            </div>
+        </div>
+    </div>
+
+</div>
+</div>
+
+    <!-- FOOTER ACTIONS -->
+    <div class="footer">
+
+        <div class="left-actions">
+            <button class="footer-item icon-card pdf" id="pdfBtn" onclick="generateStockPDF()">
+                <i class="fa-solid fa-file-pdf"></i>
+                <span>PDF</span>
+            </button>
+            <button class="footer-item icon-card email" id="emailBtn" onclick="sendStockEmail()">
+                <i class="fa-solid fa-envelope"></i>
+                <span>Email</span>
+            </button>
+        </div>
+
+        <div class="right-actions">
+            <button class="btn-light" id="cancelOrderBtn" onclick="cancelOrder()">Cancel Order</button>
+            <button class="btn-close" onclick="closePage()">Cancel</button>
+            <button class="btn-dark" id="saveDraftBtn" onclick="saveDraft()">Save Draft</button>
+            <button class="btn-primary" id="submitBtn" onclick="submitForm()">Submit</button>
+
+        </div>
+
+    </div>
+    </div>
+
+</div>
+
+
+<div id="confirmModal" class="pos-modal-backdrop">
+  <div class="pos-modal">
+    <div class="pos-modal-head">
+      <h4>Confirm Action</h4>
+    </div>
+    <div class="pos-modal-body">
+      <p id="confirmText">Are you sure?</p>
+    </div>
+    <div class="pos-modal-actions">
+      <button id="confirmNo" class="btn cancel">Cancel</button>
+      <button id="confirmYes" class="btn primary">Yes</button>
+    </div>
+  </div>
+</div>
+
+
+<script src="{{ url_for('static', filename='stock.js') }}"></script>
+
+{% endblock %}

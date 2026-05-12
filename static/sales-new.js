@@ -945,9 +945,13 @@ function renderComments() {
 
   empty.style.display = "none";
 
-  [...window.SO_COMMENTS].slice().reverse().forEach((c) => {
-    list.appendChild(buildCommentRow(c));
-  });
+  // Comments tab: latest entry only (full trail stays on History tab).
+  const latest = [...window.SO_COMMENTS].sort(
+    (a, b) => new Date(b.at || 0) - new Date(a.at || 0)
+  )[0];
+  if (latest) {
+    list.appendChild(buildCommentRow(latest));
+  }
 }
 
 function renderHistory() {

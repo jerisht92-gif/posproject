@@ -155,18 +155,39 @@
               <span class="submenu-icon">↩</span>
               <span>Invoice Return</span>
             </a>
-            <a href="#"
-            class="submenu-item{% if page == '' %} active{% endif %}">
-           <span class="submenu-icon">↩</span>
-           <span>Purchase</span>
-         </a>
-            <a href="{{ url_for('stock_receipt') }}"
-                class="submenu-item{% if page == 'stock_receipt' %} active{% endif %}">
-                  <span class="submenu-icon">📦</span>
-                  <span>Stock Receipt</span>
-              </a>
+
           </div>
         </div>
+
+        <div class="menu-group purchase-group">
+
+          <button type="button" class="menu-toggle" data-target="purchase-submenu">
+            <span class="menu-icon">☰</span>
+            <span class="menu-text">Purchase</span>
+            <span class="menu-chevron">›</span>
+          </button>
+
+          <div id="purchase-submenu"
+              class="submenu{% if page in ['purchase_page','stock_receipt'] %} open{% endif %}">
+
+            <!-- Purchase -->
+            <a href="{{ url_for('purchase_page') }}"
+              class="submenu-item{% if page == 'purchase_page' %} active{% endif %}">
+              <span class="submenu-icon">🛒</span>
+              <span>Purchase</span>
+            </a>
+
+            <!-- Stock Receipt -->
+            <a href="{{ url_for('stock_receipt') }}"
+              class="submenu-item{% if page == 'stock_receipt' %} active{% endif %}">
+              <span class="submenu-icon">📦</span>
+              <span>Stock Receipt</span>
+            </a>
+
+          </div>
+        </div>
+
+        
         <!-- Finance -->
         <div class="menu-group finance-group">
           <button

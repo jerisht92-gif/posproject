@@ -1,5 +1,46 @@
 document.addEventListener("DOMContentLoaded", function () {
 
+        // =====================================
+    // VIEW MODE - DISABLE ALL FIELDS
+    // =====================================
+
+    if (window.location.pathname.includes("/purchase/view/")) {
+
+        // Disable all inputs
+        document.querySelectorAll("input").forEach(input => {
+            input.readOnly = true;
+        });
+
+        // Disable all selects
+        document.querySelectorAll("select").forEach(select => {
+            select.disabled = true;
+        });
+
+        // Disable all textareas
+        document.querySelectorAll("textarea").forEach(textarea => {
+            textarea.readOnly = true;
+        });
+
+        // Disable all buttons except print / pdf / back
+        document.querySelectorAll("button").forEach(button => {
+
+            const text = button.innerText.toLowerCase();
+
+            if (
+                !text.includes("print") &&
+                !text.includes("pdf") &&
+                !text.includes("back")
+            ) {
+                button.disabled = true;
+                button.style.opacity = "0.6";
+                button.style.cursor = "not-allowed";
+            }
+        });
+
+        showAlert("View Mode Enabled 👁️", "info");
+    }
+    
+
     // -------------------------
     // ELEMENTS
     // -------------------------
@@ -43,8 +84,8 @@ document.addEventListener("DOMContentLoaded", function () {
                             ${order.status}
                         </span>
                     </td>
-                    <td>${order.payment || "-"}</td>
-                    <td>${order.value || "-"}</td>
+                    <td>${order.payment_terms || "-"}</td>
+                    <td>₹ ${order.grand_total ? order.grand_total.toFixed(2) : "0.00"}</td>
                     <td class="action-buttons">
                         <div class="dropdown">
                             <button class="btn-more">⋮</button>
@@ -64,7 +105,21 @@ document.addEventListener("DOMContentLoaded", function () {
             allRows = Array.from(tbody.querySelectorAll("tr"));
             filteredRows = [...allRows];
 
-            applyFilters(); // apply filters and show first page
+            // populate supplier filter from all suppliers in DB
+            try {
+                const supRes = await fetch("/api/suppliers");
+                const supData = await supRes.json();
+                supplierFilter.innerHTML = '<option value="">All</option>';
+                supData.forEach(s => {
+                    if (s.name) {
+                        supplierFilter.innerHTML += `<option value="${s.name}">${s.name}</option>`;
+                    }
+                });
+            } catch (err) {
+                console.error("Supplier filter load error:", err);
+            }
+
+            applyFilters();
 
         } catch (err) {
             console.error("Error loading purchase orders:", err);
@@ -89,56 +144,97 @@ document.addEventListener("DOMContentLoaded", function () {
     // -------------------------
     // FILTER FUNCTION
     // -------------------------
-    function applyFilters() {
-        const searchValue = searchInput.value.toLowerCase();
-        const statusValue = statusFilter.value.toLowerCase();
-        const supplierValue = supplierFilter.value.toLowerCase();
-        const paymentValue = paymentFilter.value.toLowerCase();
+function applyFilters() {
 
-        filteredRows = allRows.filter(row => {
-            const text = row.innerText.toLowerCase();
-            const status = row.children[5].innerText.toLowerCase();
-            const supplier = row.children[2].innerText.toLowerCase();
-            const payment = row.children[6].innerText.toLowerCase();
+    const searchValue = (searchInput.value || "").toLowerCase().trim();
 
-            return (
-                text.includes(searchValue) &&
-                (!statusValue || status.includes(statusValue)) &&
-                (!supplierValue || supplier.includes(supplierValue)) &&
-                (!paymentValue || payment.includes(paymentValue))
-            );
-        });
+    const statusValue = statusFilter.value.trim().toLowerCase();
+    const supplierValue = supplierFilter.value.trim().toLowerCase();
+    const paymentValue = paymentFilter.value.trim().toLowerCase();
 
-        showPage(1);
-    }
+    filteredRows = allRows.filter(row => {
 
-    // -------------------------
-    // PAGINATION
-    // -------------------------
-function showPage(page) {
-    const totalPages = Math.ceil(filteredRows.length / rowsPerPage);
-    if (page > totalPages) page = totalPages || 1;
-    currentPage = page;
+        const cols = row.querySelectorAll("td");
 
-    const start = (page - 1) * rowsPerPage;
-    const end = Math.min(start + rowsPerPage, filteredRows.length);
+        const rowStatus = (cols[5]?.innerText || "").trim().toLowerCase();
+        const rowSupplier = (cols[2]?.innerText || "").trim().toLowerCase();
+        const rowPayment = (cols[6]?.innerText || "").trim().toLowerCase();
 
-    allRows.forEach(row => row.style.display = "none");
-    filteredRows.forEach((row, index) => {
-        if (index >= start && index < end) row.style.display = "";
+        const rowText = row.innerText.toLowerCase();
+
+        return (
+            rowText.includes(searchValue) &&
+            (statusValue === "" || rowStatus === statusValue) &&
+            (supplierValue === "" || rowSupplier === supplierValue) &&
+            (paymentValue === "" || rowPayment === paymentValue)
+        );
     });
 
-    document.querySelector(".page-info").innerText = `Page ${currentPage} of ${totalPages || 1}`;
-    btnPrev.disabled = currentPage === 1;
-    btnNext.disabled = currentPage === totalPages;
-
-    if (filteredRows.length === 0) {
-        entryText.innerText = `Showing 0 of 0 Entries`;
-    } else {
-        entryText.innerText = `Showing ${start + 1}-${end} of ${filteredRows.length} Entries`;
-    }
+    showPage(1);
 }
 
+function showPage(page) {
+
+    const totalRows = filteredRows.length;
+    const totalPages = Math.ceil(totalRows / rowsPerPage);
+
+    // ✅ EMPTY CASE
+    if (totalRows === 0) {
+
+        currentPage = 1;
+
+        allRows.forEach(row => row.style.display = "none");
+
+        document.querySelector(".page-info").innerHTML =
+            `Page <b>0</b> of <b>0</b>`;
+
+        btnPrev.disabled = true;
+        btnNext.disabled = true;
+
+        entryText.innerHTML = "<b>Showing 0 of 0 Entries</b>";
+        return;
+    }
+
+    // ✅ FIX PAGE LIMIT
+    if (page < 1) page = 1;
+    if (page > totalPages) page = totalPages;
+
+    currentPage = page;
+
+    const start = (currentPage - 1) * rowsPerPage;
+    const end = Math.min(start + rowsPerPage, totalRows);
+
+    // ✅ HIDE ALL
+    allRows.forEach(row => row.style.display = "none");
+
+    // ✅ SHOW CURRENT PAGE
+    filteredRows.forEach((row, index) => {
+        if (index >= start && index < end) {
+            row.style.display = "table-row";
+        }
+    });
+
+    // ✅ PAGE TEXT
+    document.querySelector(".page-info").innerHTML =
+        `Page <b>${currentPage}</b> of <b>${totalPages}</b>`;
+
+    // ===========================
+    // 🔥 BUTTON CONTROL (FINAL)
+    // ===========================
+
+    btnPrev.disabled = (currentPage === 1);
+    btnNext.disabled = (currentPage === totalPages);
+
+    // extra safety
+    if (totalPages <= 1) {
+        btnPrev.disabled = true;
+        btnNext.disabled = true;
+    }
+
+    // ✅ ENTRY TEXT
+    entryText.innerHTML =
+        `<b>Showing ${start + 1}-${end} of ${totalRows} Entries</b>`;
+}
     // -------------------------
     // EVENT LISTENERS
     // -------------------------
@@ -220,9 +316,9 @@ function showPage(page) {
         }
 
         // GENERATE STOCK RECEIPT
-        if (target.classList.contains("stock-receipt") && !target.disabled) {
-            window.location.href = `/generate_stock_receipt/${po_number}`;
-        }
+            if (target.classList.contains("stock-receipt") && !target.disabled) {
+                window.location.href = `/stock-new?id=${po_number}&mode=create`;
+            }
     });
 
     // -------------------------

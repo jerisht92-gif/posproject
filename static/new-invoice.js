@@ -1288,8 +1288,6 @@ function initializePaymentRefLogic() {
 // ===================================================
 // PAYMENT TERMS FROM CUSTOMER MASTER
 // ===================================================
-
-
 function fetchCustomerPaymentTerms(customerName) {
     if (!customerName) return;
     fetch(`/api/customer-by-name/${encodeURIComponent(customerName)}`)
@@ -1979,6 +1977,59 @@ function startOverdueMonitor() {
     }, 300000);
 }
 
+
+async function sendInvoiceEmailAutomatically() {
+    const invoiceId = document.getElementById('invoiceId').value;
+    if (!invoiceId || invoiceId === 'Auto Generate') {
+        showToast('Please save the invoice first before sending email.', 'warning');
+        return;
+    }
+
+    const customerEmail = document.getElementById('email').value.trim();
+    if (!customerEmail || !validateEmail(customerEmail)) {
+        showToast('No valid email found for this customer. Please update customer record.', 'error');
+        return;
+    }
+
+    // Optional: Set loading state on email button
+    const emailBtn = document.getElementById('emailAction');
+    const originalContent = emailBtn.innerHTML;
+    emailBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Sending...';
+    emailBtn.style.opacity = '0.7';
+    emailBtn.style.pointerEvents = 'none';
+
+    try {
+        const response = await fetch(`/api/invoice/${invoiceId}/send-email`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                email: customerEmail,
+                message: ''   // or a default message like "Please find attached invoice"
+            })
+        });
+        const data = await response.json();
+        if (data.success) {
+            showToast(`Invoice sent successfully to ${customerEmail}`, 'success');
+        } else {
+            showToast('Failed to send email: ' + (data.error || 'Unknown error'), 'error');
+        }
+    } catch (error) {
+        console.error(error);
+        showToast('Error sending email. Please try again.', 'error');
+    } finally {
+        // Restore button
+        emailBtn.innerHTML = originalContent;
+        emailBtn.style.opacity = '1';
+        emailBtn.style.pointerEvents = 'auto';
+    }
+}
+
+// Helper email validation (if not already defined)
+function validateEmail(email) {
+    const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return re.test(email);
+}
+
 // ===================================================
 // MAIN INITIALIZATION
 // ===================================================
@@ -2343,7 +2394,12 @@ else {
     function hideEmailModal() { if (emailModal) emailModal.style.display = 'none'; }
     if (emailAction && emailModal) {
         emailAction.removeEventListener('click', showEmailModal);
-        emailAction.addEventListener('click', showEmailModal);
+        // emailAction.addEventListener('click', showEmailModal);
+        emailAction.removeEventListener('click', showEmailModal);
+emailAction.addEventListener('click', function(e) {
+    e.preventDefault();
+    sendInvoiceEmailAutomatically();
+});
     }
     if (closeModal) closeModal.addEventListener('click', hideEmailModal);
     if (cancelEmailBtn) cancelEmailBtn.addEventListener('click', hideEmailModal);

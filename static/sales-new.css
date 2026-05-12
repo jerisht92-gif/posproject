@@ -106,17 +106,16 @@ label {
 }
 
 /* =========================================
-   FORM CONTROLS 
+   FORM CONTROLS (compact — match credit note / other modules)
 ========================================= */
 
-/* INPUT + TEXTAREA */
-.sales-wrapper input,
-.sales-wrapper textarea {
+.sales-wrapper input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+.sales-wrapper select {
   width: 100%;
-  
-  padding: 11px 14px;
-  font-size: 14px;
-  border-radius: 10px;
+  height: 30px;
+  padding: 6px 12px;
+  font-size: 13px;
+  border-radius: 8px;
   border: 1px solid #e7b7b5;
   background-color: #fff5f5;
   outline: none;
@@ -125,17 +124,19 @@ label {
   transition: 0.2s ease;
 }
 
-.sales-wrapper select {
+.sales-wrapper textarea {
   width: 100%;
-  padding: 11px 14px;      /* ✅ same as input */
-  font-size: 14px;         /* ✅ same */
-  border-radius: 10px;     
+  min-height: 88px;
+  padding: 8px 12px;
+  font-size: 13px;
+  border-radius: 8px;
   border: 1px solid #e7b7b5;
   background-color: #fff5f5;
-  color: #000;
   outline: none;
+  color: #000;
   box-sizing: border-box;
   transition: 0.2s ease;
+  resize: vertical;
 }
 
 /* HOVER */
@@ -256,15 +257,14 @@ textarea:disabled {
   align-items: center;
   justify-content: space-between;
   width: 100%;
-
-  padding: 11px 14px;   /* ✅ same as input */
-  font-size: 14px;
-
+  min-height: 30px;
+  height: 30px;
+  padding: 6px 12px;
+  font-size: 13px;
   border: 1px solid #e7b7b5;
-  border-radius: 10px;
+  border-radius: 8px;
   background-color: #fff5f5;
   color: #000;
-
   cursor: pointer;
   box-sizing: border-box;
   transition: 0.2s ease;

@@ -1,315 +1,282 @@
-function getConfig() {
+function cnCfg() {
   const el = document.getElementById("credit-inline-config");
   if (!el) return {};
   try { return JSON.parse(el.textContent || "{}"); } catch { return {}; }
 }
 
-function setVal(id, value) {
+function cnSet(id, value) {
   const el = document.getElementById(id);
   if (el) el.value = value ?? "";
 }
 
-function getVal(id) {
+function cnGet(id) {
   return (document.getElementById(id)?.value || "").trim();
 }
 
-function setText(id, value) {
+function cnSetText(id, value) {
   const el = document.getElementById(id);
   if (el) el.innerText = value ?? "";
 }
 
-function showToast(message, type = "success") {
+function cnToast(message, type = "success") {
   const toast = document.createElement("div");
-  toast.className = type === "error" ? "error-notification" : "success-notification";
+  const isErrorLike = type === "error" || type === "warning";
+  toast.className = isErrorLike ? "error-notification" : "success-notification";
   toast.textContent = message;
   document.body.appendChild(toast);
   requestAnimationFrame(() => toast.classList.add("show"));
   setTimeout(() => {
     toast.classList.remove("show");
     setTimeout(() => toast.remove(), 250);
-  }, 2200);
+  }, isErrorLike ? 2200 : 3000);
 }
 
-function renderRows(items) {
-  const tbody = document.getElementById("cnItemsBody");
-  if (!tbody) return;
+function cnRenderRows(items) {
+  const body = document.getElementById("cnItemsBody");
+  if (!body) return;
   if (!Array.isArray(items) || !items.length) {
-    tbody.innerHTML = '<tr><td colspan="11" class="cn-empty">No returned items</td></tr>';
+    body.innerHTML = '<tr><td colspan="11" class="cn-empty">No returned items</td></tr>';
     return;
   }
-  tbody.innerHTML = "";
-  items.forEach((item, idx) => {
+  body.innerHTML = "";
+  items.forEach((it, idx) => {
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td>${idx + 1}</td>
-      <td>${item.product_name ?? ""}</td>
-      <td>${item.product_id ?? ""}</td>
-      <td>${item.return_qty ?? item.return_quantity ?? item.returned_qty ?? item.quantity ?? 0}</td>
-      <td>${item.uom ?? ""}</td>
-      <td>${item.reason ?? item.return_reason ?? ""}</td>
-      <td>${item.unit_price ?? 0}</td>
-      <td>${item.tax_percent ?? 0}</td>
-      <td>${item.discount ?? 0}</td>
-      <td>${item.total ?? 0}</td>
-      <td><button type="button" class="cn-delete-row-btn" title="Delete">Delete</button></td>
+      <td>${it.product_name ?? ""}</td>
+      <td>${it.product_id ?? ""}</td>
+      <td>${it.return_qty ?? it.return_quantity ?? it.returned_qty ?? it.quantity ?? 0}</td>
+      <td>${it.uom ?? ""}</td>
+      <td>${it.reason ?? it.return_reason ?? ""}</td>
+      <td>${it.unit_price ?? 0}</td>
+      <td>${it.tax_percent ?? 0}</td>
+      <td>${it.discount ?? 0}</td>
+      <td>${it.total ?? 0}</td>
+      <td><button type="button" class="cn-delete-row-btn" title="Delete" aria-label="Delete row"><i class="fa-solid fa-trash" aria-hidden="true"></i></button></td>
     `;
-    tbody.appendChild(tr);
+    body.appendChild(tr);
   });
+  cnSyncRowDeleteButtonsLockState();
 }
 
-function calculateReturnedTotal() {
-  let total = 0;
-  document.querySelectorAll("#cnItemsBody tr").forEach((row) => {
-    const totalCell = row.children[9];
-    if (totalCell && totalCell.innerText) total += parseFloat(totalCell.innerText) || 0;
-  });
-  return total;
-}
-
-function calculateRefund() {
-  const invoiceTotal = Math.max(parseFloat(getVal("cnInvoiceTotal")) || 0, 0);
-  let amountPaid = Math.max(parseFloat(getVal("cnAmountPaid")) || 0, 0);
+function cnCalcRefund() {
+  const invoiceTotal = Math.max(parseFloat(cnGet("cnInvoiceTotal")) || 0, 0);
+  let amountPaid = Math.max(parseFloat(cnGet("cnAmountPaid")) || 0, 0);
   if (amountPaid > invoiceTotal) amountPaid = invoiceTotal;
-  let invoiceReturnAmount = Math.max(calculateReturnedTotal(), 0);
-  if (invoiceReturnAmount > invoiceTotal) invoiceReturnAmount = invoiceTotal;
-  const refundableBase = Math.min(invoiceReturnAmount, amountPaid);
-  let refundPaid = Math.max(parseFloat(getVal("cnRefundPaid")) || 0, 0);
-  if (refundPaid > refundableBase) refundPaid = refundableBase;
-  setText("cnBalanceDue", Math.max(invoiceTotal - amountPaid, 0).toFixed(2));
-  setText("cnInvoiceReturnAmount", invoiceReturnAmount.toFixed(2));
-  setText("cnBalanceToRefund", Math.max(refundableBase - refundPaid, 0).toFixed(2));
-}
-
-async function loadInvoiceIds() {
-  const sel = document.getElementById("cnInvoiceRef");
-  if (!sel) return;
-  const res = await fetch("/api/invoices-credit");
-  const data = await res.json();
-  const invoices = Array.isArray(data?.invoices) ? data.invoices : [];
-  sel.innerHTML = '<option value="">Select Invoice Ref. ID</option>';
-  invoices.forEach((id) => {
-    const opt = document.createElement("option");
-    opt.value = String(id || "");
-    opt.textContent = String(id || "");
-    sel.appendChild(opt);
+  let returned = 0;
+  document.querySelectorAll("#cnItemsBody tr").forEach((row) => {
+    const cell = row.children[9];
+    if (cell && cell.innerText) returned += parseFloat(cell.innerText) || 0;
   });
+  if (returned > invoiceTotal) returned = invoiceTotal;
+  const refundableBase = Math.min(returned, amountPaid);
+
+  const refundPaidInput = document.getElementById("cnRefundPaid");
+  if (refundPaidInput) {
+    refundPaidInput.max = refundableBase.toFixed(2);
+  }
+
+  const rawRefund = Math.max(parseFloat(cnGet("cnRefundPaid")) || 0, 0);
+  let refundPaid = rawRefund;
+  if (refundPaid > refundableBase) {
+    refundPaid = refundableBase;
+    cnSet("cnRefundPaid", refundableBase.toFixed(2));
+    if (refundPaidInput && document.activeElement === refundPaidInput && rawRefund > refundableBase) {
+      cnToast(`Refund paid cannot exceed ${refundableBase.toFixed(2)}.`, "error");
+    }
+  }
+
+  // Balance Due = Invoice Total - Invoice Return Amount - Amount Paid
+  cnSetText("cnBalanceDue", Math.max(invoiceTotal - returned - amountPaid, 0).toFixed(2));
+  cnSetText("cnInvoiceReturnAmount", returned.toFixed(2));
+  cnSetText("cnBalanceToRefund", Math.max(refundableBase - refundPaid, 0).toFixed(2));
 }
 
-function clearInvoiceData() {
-  ["cnCustomerName","cnCustomerId","cnBillingAddress","cnPhone","cnInvoiceDate","cnDueDate","cnPaymentTerms","cnInvoiceStatus","cnPaymentStatus","cnInvoiceTotal"].forEach((id) => setVal(id, ""));
-  setVal("cnAmountPaid", "0.00");
-  setVal("cnRefundPaid", "");
-  setText("invoice_total_display", "0.00");
-  setText("cnBalanceDue", "0.00");
-  setText("cnInvoiceReturnAmount", "0.00");
-  setText("cnBalanceToRefund", "0.00");
-  renderRows([]);
+function cnMaybeAutoSetRefundDate() {
+  const refundMode = document.getElementById("cnRefundMode");
+  const refundDate = document.getElementById("cnRefundDate");
+  if (!refundMode || !refundDate) return;
+  if (!String(refundMode.value || "").trim()) return;
+  if (String(refundDate.value || "").trim()) return;
+  const now = new Date();
+  const yyyy = now.getFullYear();
+  const mm = String(now.getMonth() + 1).padStart(2, "0");
+  const dd = String(now.getDate()).padStart(2, "0");
+  refundDate.value = `${yyyy}-${mm}-${dd}`;
 }
 
-async function fillFromInvoice(invoiceId) {
-  if (!invoiceId) return clearInvoiceData();
-  const detailsRes = await fetch(`/api/invoice-details-credit/${encodeURIComponent(invoiceId)}`);
-  const details = await detailsRes.json();
-  if (!detailsRes.ok || !details.success) {
-    clearInvoiceData();
-    showToast("Failed to fetch invoice details", "error");
+function cnSanitizeCreatedBy(raw) {
+  let v = String(raw ?? "");
+  // Allow letters + spaces only (no digits, no special chars).
+  v = v.replace(/[^A-Za-z ]+/g, "");
+  // Collapse multiple spaces and trim.
+  v = v.replace(/\s+/g, " ").trim();
+  // Hard cap for safety (input maxlength also exists).
+  if (v.length > 30) v = v.slice(0, 30);
+  return v;
+}
+
+function cnGetCreatedByValidationMessage(v) {
+  if (!v) return "Created By is required (3 to 30 characters).";
+  if (v.length < 3 || v.length > 30) return "Created By must be 3 to 30 characters.";
+  if (!/^[A-Za-z ]+$/.test(v)) return "Created By can contain only letters and spaces.";
+  return "";
+}
+
+function cnValidateCreatedByUI({ silent = false } = {}) {
+  const el = document.getElementById("cnCreatedBy");
+  if (!el) return true;
+  const sanitized = cnSanitizeCreatedBy(el.value);
+  if (el.value !== sanitized) el.value = sanitized;
+  const msg = cnGetCreatedByValidationMessage(sanitized);
+  if (msg) {
+    if (!silent) cnToast(msg, "error");
+    return false;
+  }
+  return true;
+}
+
+function cnSanitizeRefundPaidInput(el) {
+  if (!el) return;
+  if (String(el.value || "").includes("-")) {
+    el.value = String(el.value || "").replace(/-/g, "");
+  }
+  const n = parseFloat(el.value);
+  if (!Number.isFinite(n) || n < 0) {
+    el.value = "0";
     return;
   }
-  const inv = details.invoice || {};
-  setVal("cnCustomerName", inv.customer_name || "");
-  setVal("cnCustomerId", inv.customer_id || "");
-  setVal("cnBillingAddress", inv.billing_address || "");
-  setVal("cnPhone", inv.phone || "");
-  setVal("cnInvoiceDate", inv.invoice_date || "");
-  setVal("cnDueDate", inv.due_date || "");
-  setVal("cnPaymentTerms", inv.payment_terms || "");
-  setVal("cnInvoiceStatus", inv.status || "");
-  setVal("cnPaymentStatus", inv.payment_status || "");
-  setVal("cnInvoiceTotal", Number(inv.grand_total || 0).toFixed(2));
-  setVal("cnAmountPaid", "0.00");
-  setVal("cnRefundPaid", "");
-  setText("invoice_total_display", Number(inv.grand_total || 0).toFixed(2));
-  const retRes = await fetch(`/api/invoice-return-items/${encodeURIComponent(invoiceId)}`);
-  const retData = retRes.ok ? await retRes.json() : { items: [] };
-  renderRows(Array.isArray(retData?.items) ? retData.items : []);
-  calculateRefund();
+  // Avoid float precision artifacts like 3403.2200000000003 while typing/spinner usage.
+  const rounded = Math.round((n + Number.EPSILON) * 100) / 100;
+  el.value = String(rounded);
 }
 
-function setViewOnly() {
-  document.querySelectorAll(".cn-card input, .cn-card textarea").forEach((el) => {
-    if (el.id !== "cnId") el.readOnly = true;
-  });
-  document.querySelectorAll(".cn-card select").forEach((el) => { el.disabled = true; });
-  ["cnSaveDraftBtn", "cnMarkPaidBtn", "cnDeleteBtn"].forEach((id) => {
-    const btn = document.getElementById(id);
-    if (btn) btn.style.display = "none";
-  });
-  document.querySelectorAll(".cn-delete-row-btn").forEach((btn) => { btn.style.display = "none"; });
-}
-
-document.addEventListener("DOMContentLoaded", async () => {
-  const config = getConfig();
-  const mode = (config.mode || "new").toLowerCase();
-  if (config.creditId) setVal("cnId", config.creditId);
-  if (!getVal("cnDate")) setVal("cnDate", new Date().toISOString().split("T")[0]);
-
-  try { await loadInvoiceIds(); } catch { showToast("Failed to load invoice IDs", "error"); }
-
-  if (mode === "view") {
-    setViewOnly();
-  } else {
-    document.getElementById("cnInvoiceRef")?.addEventListener("change", function () {
-      fillFromInvoice(this.value).catch(() => showToast("Failed to fetch invoice details", "error"));
-    });
-    document.getElementById("cnAmountPaid")?.addEventListener("input", calculateRefund);
-    document.getElementById("cnRefundPaid")?.addEventListener("input", calculateRefund);
-    document.getElementById("cnItemsBody")?.addEventListener("click", (e) => {
-      const btn = e.target.closest(".cn-delete-row-btn");
-      if (!btn) return;
-      btn.closest("tr")?.remove();
-      calculateRefund();
-    });
-  }
-
-  document.getElementById("cnCancelBtn")?.addEventListener("click", () => { window.location.href = "/credit-note"; });
-});
-function getConfig() {
-  const el = document.getElementById("credit-inline-config");
-  if (!el) return {};
-  try { return JSON.parse(el.textContent || "{}"); } catch { return {}; }
-}
-
-function setVal(id, value) {
-  const el = document.getElementById(id);
-  if (el) el.value = value ?? "";
-}
-
-function getVal(id) {
-  return (document.getElementById(id)?.value || "").trim();
-}
-
-function setText(id, value) {
-  const el = document.getElementById(id);
-  if (el) el.innerText = value ?? "";
-}
-
-function showToast(message, type = "success") {
-  const toast = document.createElement("div");
-  toast.className = type === "error" ? "error-notification" : "success-notification";
-  toast.textContent = message;
-  document.body.appendChild(toast);
-  requestAnimationFrame(() => toast.classList.add("show"));
-  setTimeout(() => {
-    toast.classList.remove("show");
-    setTimeout(() => toast.remove(), 250);
-  }, 2200);
-}
-
-function renderRows(items) {
-  const tbody = document.getElementById("cnItemsBody");
-  if (!tbody) return;
-  if (!Array.isArray(items) || !items.length) {
-    tbody.innerHTML = '<tr><td colspan="11" class="cn-empty">No returned items</td></tr>';
+function cnFormatRefundPaidOnBlur(el) {
+  if (!el) return;
+  const raw = String(el.value || "").trim();
+  if (!raw) return;
+  const n = parseFloat(raw);
+  if (!Number.isFinite(n) || n < 0) {
+    el.value = "0.00";
     return;
   }
-  tbody.innerHTML = "";
-  items.forEach((item, idx) => {
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td>${idx + 1}</td>
-      <td>${item.product_name ?? ""}</td>
-      <td>${item.product_id ?? ""}</td>
-      <td>${item.return_qty ?? item.return_quantity ?? item.returned_qty ?? item.quantity ?? 0}</td>
-      <td>${item.uom ?? ""}</td>
-      <td>${item.reason ?? item.return_reason ?? ""}</td>
-      <td>${item.unit_price ?? 0}</td>
-      <td>${item.tax_percent ?? 0}</td>
-      <td>${item.discount ?? 0}</td>
-      <td>${item.total ?? 0}</td>
-      <td><button type="button" class="cn-delete-row-btn" title="Delete">Delete</button></td>
-    `;
-    tbody.appendChild(tr);
-  });
+  const rounded = Math.round((n + Number.EPSILON) * 100) / 100;
+  el.value = rounded.toFixed(2);
 }
 
-function collectLineItems() {
-  const rows = Array.from(document.querySelectorAll("#cnItemsBody tr"));
-  return rows.map((row) => {
-    const cells = row.querySelectorAll("td");
-    if (!cells || cells.length < 10) return null;
-    const productName = (cells[1]?.innerText || "").trim();
-    const productId = (cells[2]?.innerText || "").trim();
-    if (!productName && !productId) return null;
+/** Map `invoice-details-credit` line items into rows for the Returned Line Items table. */
+function cnMapInvoiceLinesToReturnRows(invItems) {
+  if (!Array.isArray(invItems) || !invItems.length) return [];
+  return invItems.map((row) => {
+    const qty = Number(row.quantity ?? 0);
+    const unit = Number(row.unit_price ?? 0);
+    const tax = Number(row.tax_percent ?? 0);
+    const disc = Number(row.discount ?? 0);
+    const lineTotal =
+      row.total != null
+        ? Number(row.total)
+        : Math.round(qty * unit * (1 + tax / 100) * (1 - disc / 100) * 100) / 100;
     return {
-      product_name: productName,
-      product_id: productId,
-      returned_qty: (cells[3]?.innerText || "").trim(),
-      uom: (cells[4]?.innerText || "").trim(),
-      reason: (cells[5]?.innerText || "").trim(),
-      unit_price: (cells[6]?.innerText || "").trim(),
-      tax_percent: (cells[7]?.innerText || "").trim(),
-      discount: (cells[8]?.innerText || "").trim(),
-      total: (cells[9]?.innerText || "").trim()
+      product_name: row.product_name ?? "",
+      product_id: row.product_id ?? "",
+      return_qty: qty,
+      uom: row.uom ?? "",
+      reason: row.reason ?? "",
+      unit_price: unit,
+      tax_percent: tax,
+      discount: disc,
+      total: lineTotal
     };
-  }).filter(Boolean);
+  });
 }
 
-function collectPayload(status) {
+function cnCollectLineItems() {
+  const rows = Array.from(document.querySelectorAll("#cnItemsBody tr"));
+  return rows
+    .map((row) => {
+      const cells = row.querySelectorAll("td");
+      if (!cells || cells.length < 10) return null;
+      const productName = (cells[1]?.innerText || "").trim();
+      const productId = (cells[2]?.innerText || "").trim();
+      if (!productName && !productId) return null;
+      return {
+        product_name: productName,
+        product_id: productId,
+        returned_qty: (cells[3]?.innerText || "").trim(),
+        uom: (cells[4]?.innerText || "").trim(),
+        reason: (cells[5]?.innerText || "").trim(),
+        unit_price: (cells[6]?.innerText || "").trim(),
+        tax_percent: (cells[7]?.innerText || "").trim(),
+        discount: (cells[8]?.innerText || "").trim(),
+        total: (cells[9]?.innerText || "").trim()
+      };
+    })
+    .filter(Boolean);
+}
+
+function cnCollectPayload(status) {
   return {
-    credit_note_id: getVal("cnId"),
-    credit_note_date: getVal("cnDate"),
-    invoice_ref_id: getVal("cnInvoiceRef"),
-    created_by: getVal("cnCreatedBy"),
-    branch: getVal("cnBranch"),
-    currency: getVal("cnCurrency"),
-    customer_name: getVal("cnCustomerName"),
-    customer_id: getVal("cnCustomerId"),
-    billing_address: getVal("cnBillingAddress"),
-    phone: getVal("cnPhone"),
-    invoice_date: getVal("cnInvoiceDate"),
-    due_date: getVal("cnDueDate"),
-    payment_terms: getVal("cnPaymentTerms"),
-    invoice_status: getVal("cnInvoiceStatus"),
-    payment_status: getVal("cnPaymentStatus"),
-    invoice_total: getVal("cnInvoiceTotal"),
-    amount_paid: getVal("cnAmountPaid"),
+    credit_note_id: cnGet("cnId"),
+    credit_note_date: cnGet("cnDate"),
+    invoice_ref_id: cnGet("cnInvoiceRef"),
+    created_by: cnGet("cnCreatedBy"),
+    branch: cnGet("cnBranch"),
+    currency: cnGet("cnCurrency"),
+    customer_name: cnGet("cnCustomerName"),
+    customer_id: cnGet("cnCustomerId"),
+    billing_address: cnGet("cnBillingAddress"),
+    phone: cnGet("cnPhone"),
+    invoice_date: cnGet("cnInvoiceDate"),
+    due_date: cnGet("cnDueDate"),
+    payment_terms: cnGet("cnPaymentTerms"),
+    invoice_status: cnGet("cnInvoiceStatus"),
+    payment_status: cnGet("cnPaymentStatus"),
+    invoice_total: cnGet("cnInvoiceTotal"),
+    amount_paid: cnGet("cnAmountPaid"),
     balance_due: (document.getElementById("cnBalanceDue")?.innerText || "0").trim(),
     invoice_return_amount: (document.getElementById("cnInvoiceReturnAmount")?.innerText || "0").trim(),
     balance_to_refund: (document.getElementById("cnBalanceToRefund")?.innerText || "0").trim(),
-    refund_mode: getVal("cnRefundMode"),
-    refund_paid: getVal("cnRefundPaid"),
-    refund_date: getVal("cnRefundDate"),
-    adjusted_invoice_reference: getVal("cnAdjustedInvoiceRef"),
-    items: collectLineItems(),
+    refund_mode: cnGet("cnRefundMode"),
+    refund_paid: cnGet("cnRefundPaid"),
+    refund_date: cnGet("cnRefundDate"),
+    items: cnCollectLineItems(),
+    comments: cnPageComments.map((c) => {
+      const at = c.at != null ? Number(c.at) : null;
+      return {
+        user: String(c.user || "User").slice(0, 200),
+        message: String(c.message || "").slice(0, 4000),
+        at: at != null && Number.isFinite(at) ? at : null,
+      };
+    }),
     status
   };
 }
 
-function calculateReturnedTotal() {
-  let total = 0;
-  document.querySelectorAll("#cnItemsBody tr").forEach((row) => {
-    const totalCell = row.children[9];
-    if (totalCell && totalCell.innerText) total += parseFloat(totalCell.innerText) || 0;
+/** If return rows have 0 tax/disc (legacy API), copy from matching invoice line by product_id. */
+function cnMergeReturnTaxDiscountFromInvoice(returnRows, invoiceLineRows) {
+  if (!Array.isArray(returnRows) || !Array.isArray(invoiceLineRows) || !invoiceLineRows.length) {
+    return returnRows;
+  }
+  const byPid = new Map();
+  for (const row of invoiceLineRows) {
+    const k = String(row.product_id ?? "").trim();
+    if (k) byPid.set(k, row);
+  }
+  return returnRows.map((r) => {
+    const k = String(r.product_id ?? "").trim();
+    const inv = byPid.get(k);
+    if (!inv) return r;
+    const t = Number(r.tax_percent ?? 0);
+    const d = Number(r.discount ?? 0);
+    if (t !== 0 || d !== 0) return r;
+    const it = Number(inv.tax_percent ?? 0);
+    const id = Number(inv.discount ?? 0);
+    if (it === 0 && id === 0) return r;
+    return { ...r, tax_percent: it, discount: id };
   });
-  return total;
 }
 
-function calculateRefund() {
-  const invoiceTotal = Math.max(parseFloat(getVal("cnInvoiceTotal")) || 0, 0);
-  let amountPaid = Math.max(parseFloat(getVal("cnAmountPaid")) || 0, 0);
-  if (amountPaid > invoiceTotal) amountPaid = invoiceTotal;
-  let invoiceReturnAmount = Math.max(calculateReturnedTotal(), 0);
-  if (invoiceReturnAmount > invoiceTotal) invoiceReturnAmount = invoiceTotal;
-  const refundableBase = Math.min(invoiceReturnAmount, amountPaid);
-  let refundPaid = Math.max(parseFloat(getVal("cnRefundPaid")) || 0, 0);
-  if (refundPaid > refundableBase) refundPaid = refundableBase;
-
-  setText("cnBalanceDue", Math.max(invoiceTotal - amountPaid, 0).toFixed(2));
-  setText("cnInvoiceReturnAmount", invoiceReturnAmount.toFixed(2));
-  setText("cnBalanceToRefund", Math.max(refundableBase - refundPaid, 0).toFixed(2));
-}
-
-async function loadInvoiceIds() {
+async function cnLoadInvoiceIds() {
   const sel = document.getElementById("cnInvoiceRef");
   if (!sel) return;
   const res = await fetch("/api/invoices-credit");
@@ -324,826 +291,739 @@ async function loadInvoiceIds() {
   });
 }
 
-function clearInvoiceData() {
-  [
-    "cnCustomerName", "cnCustomerId", "cnBillingAddress", "cnPhone",
-    "cnInvoiceDate", "cnDueDate", "cnPaymentTerms", "cnInvoiceStatus",
-    "cnPaymentStatus", "cnInvoiceTotal"
-  ].forEach((id) => setVal(id, ""));
-  setVal("cnAmountPaid", "0.00");
-  setVal("cnRefundPaid", "");
-  setText("invoice_total_display", "0.00");
-  setText("cnBalanceDue", "0.00");
-  setText("cnInvoiceReturnAmount", "0.00");
-  setText("cnBalanceToRefund", "0.00");
-  renderRows([]);
-}
-
-async function fillFromInvoice(invoiceId) {
-  if (!invoiceId) return clearInvoiceData();
-  const detailsRes = await fetch(`/api/invoice-details-credit/${encodeURIComponent(invoiceId)}`);
-  const details = await detailsRes.json();
-  if (!detailsRes.ok || !details.success) {
-    clearInvoiceData();
-    showToast("Failed to fetch invoice details", "error");
+async function cnFillFromInvoice(invoiceId) {
+  if (!invoiceId) {
+    cnSet("cnCustomerName", "");
+    cnSet("cnCustomerId", "");
+    cnSet("cnBillingAddress", "");
+    cnSet("cnPhone", "");
+    cnSet("cnInvoiceDate", "");
+    cnSet("cnDueDate", "");
+    cnSet("cnPaymentTerms", "");
+    cnSet("cnInvoiceStatus", "");
+    cnSet("cnPaymentStatus", "");
+    cnSet("cnInvoiceTotal", "");
+    cnSetText("invoice_total_display", "0.00");
+    cnRenderRows([]);
+    cnCalcRefund();
     return;
   }
-
+  const detailsRes = await fetch(`/api/invoice-details-credit/${encodeURIComponent(invoiceId)}`);
+  const details = await detailsRes.json();
+  if (!detailsRes.ok || !details.success) throw new Error("details fetch failed");
   const inv = details.invoice || {};
-  setVal("cnCustomerName", inv.customer_name || "");
-  setVal("cnCustomerId", inv.customer_id || "");
-  setVal("cnBillingAddress", inv.billing_address || "");
-  setVal("cnPhone", inv.phone || "");
-  setVal("cnInvoiceDate", inv.invoice_date || "");
-  setVal("cnDueDate", inv.due_date || "");
-  setVal("cnPaymentTerms", inv.payment_terms || "");
-  setVal("cnInvoiceStatus", inv.status || "");
-  setVal("cnPaymentStatus", inv.payment_status || "");
-  setVal("cnInvoiceTotal", Number(inv.grand_total || 0).toFixed(2));
-  setVal("cnAmountPaid", "0.00");
-  setVal("cnRefundPaid", "");
-  setText("invoice_total_display", Number(inv.grand_total || 0).toFixed(2));
+  cnSet("cnCustomerName", inv.customer_name || "");
+  cnSet("cnCustomerId", inv.customer_id || "");
+  cnSet("cnBillingAddress", inv.billing_address || "");
+  cnSet("cnPhone", inv.phone || "");
+  cnSet("cnInvoiceDate", inv.invoice_date || "");
+  cnSet("cnDueDate", inv.due_date || "");
+  cnSet("cnPaymentTerms", inv.payment_terms || "");
+  cnSet("cnInvoiceStatus", inv.status || "");
+  cnSet("cnPaymentStatus", inv.payment_status || "");
+  cnSet("cnInvoiceTotal", Number(inv.grand_total || 0).toFixed(2));
+  const paid = Number(inv.amount_paid ?? 0);
+  cnSet("cnAmountPaid", paid.toFixed(2));
+  cnSet("cnRefundPaid", "");
+  cnSetText("invoice_total_display", Number(inv.grand_total || 0).toFixed(2));
 
+  // Prefer lines from an existing Invoice Return for this invoice; otherwise use invoice line items
+  // (invoice-return-items is empty until a return is saved — credit notes still need the sold lines).
   const retRes = await fetch(`/api/invoice-return-items/${encodeURIComponent(invoiceId)}`);
   const retData = retRes.ok ? await retRes.json() : { items: [] };
-  renderRows(Array.isArray(retData?.items) ? retData.items : []);
-  calculateRefund();
+  const fromReturn = Array.isArray(retData?.items) ? retData.items : [];
+  const fromInvoice = cnMapInvoiceLinesToReturnRows(details.items);
+  let rows = fromReturn.length ? fromReturn : fromInvoice;
+  if (fromReturn.length && fromInvoice.length) {
+    rows = cnMergeReturnTaxDiscountFromInvoice(fromReturn, fromInvoice);
+  }
+  cnRenderRows(rows);
+  cnCalcRefund();
+  cnToast(`Invoice ${invoiceId} loaded successfully`);
 }
 
-async function loadCreditNoteForView(creditId) {
+/** In-page comments (Comments tab; not persisted until API support). */
+const cnPageComments = [];
+let cnCurrentStatus = "New";
+let cnCurrentPaymentStatus = "";
+let cnIsSavedNote = false;
+let cnCoreSectionsLocked = false;
+
+function cnSyncRowDeleteButtonsLockState() {
+  document.querySelectorAll(".cn-delete-row-btn").forEach((btn) => {
+    if (cnCoreSectionsLocked) {
+      btn.style.display = "none";
+      btn.disabled = true;
+    } else {
+      btn.style.display = "";
+      btn.disabled = false;
+    }
+  });
+}
+
+function cnLockCoreSectionsForEditMode() {
+  cnCoreSectionsLocked = true;
+  // Credit Note core identity
+  const cnDate = document.getElementById("cnDate");
+  if (cnDate) cnDate.readOnly = true;
+  const invoiceRef = document.getElementById("cnInvoiceRef");
+  if (invoiceRef) invoiceRef.disabled = true;
+
+  // Customer & Invoice details block
+  [
+    "cnCustomerName",
+    "cnCustomerId",
+    "cnBillingAddress",
+    "cnPhone",
+    "cnInvoiceDate",
+    "cnDueDate",
+    "cnInvoiceStatus",
+    "cnPaymentStatus",
+    "cnInvoiceTotal"
+  ].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.readOnly = true;
+  });
+  const paymentTerms = document.getElementById("cnPaymentTerms");
+  if (paymentTerms) paymentTerms.disabled = true;
+
+  // Returned line items should be view-only in edit flow.
+  cnSyncRowDeleteButtonsLockState();
+}
+
+function cnGetSortedComments() {
+  return [...cnPageComments].sort((a, b) => (Number(b.at) || 0) - (Number(a.at) || 0));
+}
+
+function cnParseTimeMs(v) {
+  if (v == null || v === "") return 0;
+  const t = Date.parse(String(v));
+  return Number.isFinite(t) ? t : 0;
+}
+
+function cnCommentDisplayTime(c) {
+  if (c.at != null && Number.isFinite(Number(c.at))) return new Date(Number(c.at)).toLocaleString();
+  if (c.time) return c.time;
+  return "";
+}
+
+/** History tab: show full comment trail (including latest). */
+function cnRefreshHistory() {
+  const list = document.getElementById("cnHistoryList");
+  const empty = document.getElementById("cnHistoryEmpty");
+  if (!list || !empty) return;
+  list.innerHTML = "";
+  const allComments = cnGetSortedComments();
+  allComments.forEach((c) => {
+    const wrap = document.createElement("div");
+    wrap.className = "cn-history-row";
+    const body = document.createElement("div");
+    body.className = "cn-history-body";
+    const meta = document.createElement("p");
+    meta.className = "cn-history-title";
+    meta.textContent = `${c.user || "User"} - ${cnCommentDisplayTime(c)}`;
+    const detail = document.createElement("p");
+    detail.className = "cn-history-detail";
+    detail.textContent = c.message || "";
+    body.appendChild(meta);
+    body.appendChild(detail);
+    wrap.appendChild(body);
+    list.appendChild(wrap);
+  });
+  empty.classList.toggle("cn-is-hidden", allComments.length > 0);
+}
+
+function cnRenderComments() {
+  const commentList = document.getElementById("cnCommentList");
+  const emptyState = document.getElementById("cnCommentEmpty");
+  if (!commentList || !emptyState) return;
+  commentList.innerHTML = "";
+  const latestComment = cnGetSortedComments()[0];
+  emptyState.hidden = Boolean(latestComment);
+  if (!latestComment) return;
+  const row = document.createElement("div");
+  row.className = "cn-comment-row";
+  const meta = document.createElement("div");
+  meta.className = "cn-comment-meta";
+  const userSpan = document.createElement("span");
+  userSpan.className = "cn-comment-user";
+  userSpan.textContent = latestComment.user;
+  const timeSpan = document.createElement("span");
+  timeSpan.className = "cn-comment-time";
+  timeSpan.textContent = ` - ${cnCommentDisplayTime(latestComment)}`;
+  meta.appendChild(userSpan);
+  meta.appendChild(timeSpan);
+  const p = document.createElement("p");
+  p.className = "cn-comment-msg";
+  p.textContent = latestComment.message;
+  row.appendChild(meta);
+  row.appendChild(p);
+  commentList.appendChild(row);
+}
+
+async function cnLoadCreditNoteById(creditId) {
+  if (!creditId) return;
   const res = await fetch(`/api/credit-notes/${encodeURIComponent(creditId)}`);
   const data = await res.json();
-  if (!res.ok || !data?.success || !data?.item) throw new Error(data?.message || "Failed to load credit note");
-  const item = data.item;
-
-  setVal("cnId", item.credit_note_id || "");
-  setVal("cnDate", item.credit_note_date || "");
-  setVal("cnInvoiceRef", item.invoice_ref_id || "");
-  setVal("cnCreatedBy", item.created_by || "");
-  setVal("cnBranch", item.branch || "");
-  setVal("cnCurrency", item.currency || "INR");
-  setVal("cnCustomerName", item.customer_name || "");
-  setVal("cnCustomerId", item.customer_id || "");
-  setVal("cnBillingAddress", item.billing_address || "");
-  setVal("cnPhone", item.phone || "");
-  setVal("cnInvoiceDate", item.invoice_date || "");
-  setVal("cnDueDate", item.due_date || "");
-  setVal("cnPaymentTerms", item.payment_terms || "");
-  setVal("cnInvoiceStatus", item.invoice_status || "");
-  setVal("cnPaymentStatus", item.payment_status || "");
-  setVal("cnInvoiceTotal", Number(item.invoice_total || 0).toFixed(2));
-  setVal("cnAmountPaid", Number(item.amount_paid || 0).toFixed(2));
-  setVal("cnRefundMode", item.refund_mode || "");
-  setVal("cnRefundPaid", Number(item.refund_paid || 0).toFixed(2));
-  setVal("cnRefundDate", item.refund_date || "");
-  setVal("cnAdjustedInvoiceRef", item.adjusted_invoice_reference || "");
-  setText("invoice_total_display", Number(item.invoice_total || 0).toFixed(2));
-  setText("cnBalanceDue", Number(item.balance_due || 0).toFixed(2));
-  setText("cnInvoiceReturnAmount", Number(item.invoice_return_amount || 0).toFixed(2));
-  setText("cnBalanceToRefund", Number(item.balance_to_refund || 0).toFixed(2));
-  renderRows(Array.isArray(item.items) ? item.items : []);
+  if (!res.ok || !data?.success || !data?.item) throw new Error("credit note fetch failed");
+  const it = data.item;
+  cnSet("cnId", it.credit_note_id || "");
+  cnSet("cnDate", it.credit_note_date || "");
+  cnSet("cnInvoiceRef", it.invoice_ref_id || "");
+  cnSet("cnCreatedBy", it.created_by || "");
+  cnSet("cnBranch", it.branch || "");
+  cnSet("cnCurrency", it.currency || "INR");
+  cnSet("cnCustomerName", it.customer_name || "");
+  cnSet("cnCustomerId", it.customer_id || "");
+  cnSet("cnBillingAddress", it.billing_address || "");
+  cnSet("cnPhone", it.phone || "");
+  cnSet("cnInvoiceDate", it.invoice_date || "");
+  cnSet("cnDueDate", it.due_date || "");
+  cnSet("cnPaymentTerms", it.payment_terms || "");
+  cnSet("cnInvoiceStatus", it.invoice_status || "");
+  cnSet("cnPaymentStatus", it.payment_status || "");
+  cnSet("cnInvoiceTotal", Number(it.invoice_total || 0).toFixed(2));
+  cnSet("cnAmountPaid", Number(it.amount_paid || 0).toFixed(2));
+  cnSet("cnRefundMode", it.refund_mode || "");
+  cnSet("cnRefundPaid", Number(it.refund_paid || 0).toFixed(2));
+  cnSet("cnRefundDate", it.refund_date || "");
+  cnSetText("invoice_total_display", Number(it.invoice_total || 0).toFixed(2));
+  cnSetText("cnBalanceDue", Number(it.balance_due || 0).toFixed(2));
+  cnSetText("cnInvoiceReturnAmount", Number(it.invoice_return_amount || 0).toFixed(2));
+  cnSetText("cnBalanceToRefund", Number(it.balance_to_refund || 0).toFixed(2));
+  cnRenderRows(Array.isArray(it.items) ? it.items : []);
+  cnCalcRefund();
+  cnPageComments.length = 0;
+  const com = it.comments;
+  if (Array.isArray(com)) {
+    const normalized = com
+      .map((x) => ({
+        user: String(x.user || x.author || x.created_by || "User").trim() || "User",
+        message: String(x.message || x.text || x.comment || "").trim(),
+        at:
+          x.at != null && Number.isFinite(Number(x.at))
+            ? Number(x.at)
+            : cnParseTimeMs(x.created_at || x.time) || Date.now()
+      }))
+      .filter((x) => x.message);
+    normalized.sort((a, b) => (b.at || 0) - (a.at || 0));
+    normalized.forEach((c) => cnPageComments.push(c));
+  }
+  cnRenderComments();
+  cnRefreshHistory();
+  return it;
 }
 
-function enableViewOnlyMode() {
-  document.querySelectorAll(".cn-card input, .cn-card select, .cn-card textarea").forEach((el) => {
+function cnEnableViewOnlyMode() {
+  document.querySelectorAll(".cn-card input, .cn-card textarea").forEach((el) => {
     if (el.id === "cnId") return;
-    if (el.tagName === "SELECT") el.disabled = true;
-    else el.readOnly = true;
+    el.readOnly = true;
   });
-  document.querySelectorAll(".cn-delete-row-btn").forEach((btn) => { btn.style.display = "none"; });
+  document.querySelectorAll(".cn-card select").forEach((el) => {
+    el.disabled = true;
+  });
+  document.querySelectorAll(".cn-delete-row-btn").forEach((btn) => {
+    btn.style.display = "none";
+  });
   ["cnSaveDraftBtn", "cnMarkPaidBtn", "cnDeleteBtn"].forEach((id) => {
     const btn = document.getElementById(id);
     if (btn) btn.style.display = "none";
   });
-}
-
-document.addEventListener("DOMContentLoaded", async () => {
-  const config = getConfig();
-  const mode = (config.mode || "new").toString().toLowerCase();
-  if (config.creditId) setVal("cnId", config.creditId);
-  if (!getVal("cnDate")) setVal("cnDate", new Date().toISOString().split("T")[0]);
-
+  const refundPick = document.getElementById("cnRefundDateOpenBtn");
+  if (refundPick) refundPick.disabled = true;
+  const cIn = document.getElementById("cnCommentInput");
+  if (cIn) {
+    cIn.readOnly = true;
+    cIn.placeholder = "";
+  }
+  const cAdd = document.getElementById("cnAddCommentBtn");
+  if (cAdd) {
+    cAdd.disabled = true;
+    cAdd.style.display = "none";
+  }
+  if (typeof window !== "undefined") window.cnCreditAttachmentsReadOnly = true;
   try {
-    await loadInvoiceIds();
-  } catch {
-    showToast("Failed to load invoice IDs", "error");
+    cnUpdateAttachmentsReadonlyUI();
+  } catch (_e) {
+    /* noop */
+  }
+}
+
+function cnApplyStatusPill(status) {
+  const pill = document.getElementById("cnStatusPill");
+  if (!pill) return;
+  const st = String(status || "").trim() || "Draft";
+  const statusKey = cnNormalizeStatus(st);
+  pill.className = `cn-status-pill ${statusKey}`;
+  pill.textContent = `Status: ${st}`;
+  pill.classList.remove("cn-status-pill--hidden");
+  pill.removeAttribute("aria-hidden");
+}
+
+function cnNormalizeStatus(v) {
+  return String(v || "").trim().toLowerCase();
+}
+
+function cnNormalizePayment(v) {
+  return String(v || "").trim().toLowerCase();
+}
+
+function cnSetActionEnabled(el, enabled) {
+  if (!el) return;
+  el.style.display = "";
+  el.disabled = !enabled;
+  el.style.opacity = enabled ? "1" : "0.55";
+  el.style.pointerEvents = enabled ? "auto" : "none";
+}
+
+function cnSetFooterIconEnabled(el, enabled) {
+  if (!el) return;
+  el.style.opacity = enabled ? "1" : "0.5";
+  el.style.pointerEvents = enabled ? "auto" : "none";
+}
+
+function cnHasAtLeastOneComment() {
+  return Array.isArray(cnPageComments) && cnPageComments.length > 0;
+}
+
+function cnApplyWorkflowActions({ status, paymentStatus, isSaved }) {
+  const st = cnNormalizeStatus(status);
+  const ps = cnNormalizePayment(paymentStatus);
+  const saveBtn = document.getElementById("cnSaveDraftBtn");
+  const markBtn = document.getElementById("cnMarkPaidBtn");
+  const cancelBtn = document.getElementById("cnDeleteBtn");
+  const pdfAction = document.getElementById("cnPdfAction");
+  const emailAction = document.getElementById("cnEmailAction");
+
+  let canSave = false;
+  let canMarkPaid = false;
+  let canCancel = false;
+  let canPdf = false;
+  let canEmail = false;
+
+  if (!isSaved) {
+    canSave = true;
+    canMarkPaid = true;
+  } else if (st === "draft") {
+    canSave = true;
+    // Allow finalization from draft; backend will convert to Submitted+Paid.
+    canMarkPaid = true;
+    canCancel = true;
+  } else if (st === "submitted") {
+    canPdf = true;
+    canEmail = true;
+    canMarkPaid = ps !== "paid";
+    canCancel = ps !== "paid";
   }
 
-  if (mode === "view" && config.creditId) {
-    try {
-      await loadCreditNoteForView(config.creditId);
-      enableViewOnlyMode();
-    } catch {
-      showToast("Failed to load credit note details", "error");
+  // DNR-like rule: final action requires at least one comment.
+  canMarkPaid = canMarkPaid && cnHasAtLeastOneComment();
+
+  cnSetActionEnabled(saveBtn, canSave);
+  cnSetActionEnabled(markBtn, canMarkPaid);
+  cnSetActionEnabled(cancelBtn, canCancel);
+  cnSetFooterIconEnabled(pdfAction, canPdf);
+  cnSetFooterIconEnabled(emailAction, canEmail);
+}
+
+/** Remove native `title` tooltips on form fields (they duplicate labels and float over other inputs). Keeps title on row delete buttons. */
+/** Refund date uses a hidden native picker indicator + calendar button so Chromium does not show “Show date picker” on hover. */
+function cnInitRefundDatePicker() {
+  const input = document.getElementById("cnRefundDate");
+  const btn = document.getElementById("cnRefundDateOpenBtn");
+  if (!input) return;
+  const open = () => {
+    if (typeof input.showPicker === "function") {
+      try {
+        input.showPicker();
+        return;
+      } catch (_e) {
+        /* InvalidStateError if already open, etc. */
+      }
     }
-  } else {
-    document.getElementById("cnInvoiceRef")?.addEventListener("change", function () {
-      fillFromInvoice(this.value).catch(() => showToast("Failed to fetch invoice details", "error"));
-    });
-    document.getElementById("cnAmountPaid")?.addEventListener("input", calculateRefund);
-    document.getElementById("cnRefundPaid")?.addEventListener("input", calculateRefund);
-    document.getElementById("cnItemsBody")?.addEventListener("click", (e) => {
-      const btn = e.target.closest(".cn-delete-row-btn");
-      if (!btn) return;
-      btn.closest("tr")?.remove();
-      calculateRefund();
-    });
-    calculateRefund();
-  }
-
-  document.getElementById("cnCancelBtn")?.addEventListener("click", () => {
-    window.location.href = "/credit-note";
-  });
-
-  document.getElementById("cnSaveDraftBtn")?.addEventListener("click", async () => {
-    const payload = collectPayload("Draft");
-    if (!payload.credit_note_id) return showToast("Credit Note ID is required", "error");
+    input.focus();
     try {
-      const res = await fetch("/api/credit-notes", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      });
-      if (!res.ok) throw new Error();
-      window.location.href = `/credit-note?toast=${encodeURIComponent("Credit note saved as draft")}&type=success`;
-    } catch {
-      showToast("Failed to save credit note", "error");
+      input.click();
+    } catch (_e) {
+      /* noop */
     }
-  });
-
-  document.getElementById("cnMarkPaidBtn")?.addEventListener("click", async () => {
-    const payload = collectPayload("Approved");
-    if (!payload.credit_note_id) return showToast("Credit Note ID is required", "error");
-    try {
-      const res = await fetch(`/api/credit-notes/${encodeURIComponent(payload.credit_note_id)}/mark-paid`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      });
-      if (!res.ok) throw new Error();
-      window.location.href = `/credit-note?toast=${encodeURIComponent("Credit note marked as paid")}&type=success`;
-    } catch {
-      showToast("Failed to mark as paid", "error");
-    }
-  });
-
-  document.getElementById("cnDeleteBtn")?.addEventListener("click", async () => {
-    const creditId = getVal("cnId");
-    if (!creditId) return showToast("Credit Note ID is required", "error");
-    try {
-      const res = await fetch(`/api/credit-notes/${encodeURIComponent(creditId)}`, { method: "DELETE" });
-      if (!res.ok) throw new Error();
-      window.location.href = `/credit-note?toast=${encodeURIComponent("Credit note deleted")}&type=success`;
-    } catch {
-      showToast("Failed to delete credit note", "error");
-    }
-  });
-
-  document.getElementById("cnEmailAction")?.addEventListener("click", () => {
-    const modal = document.getElementById("cnEmailModal");
-    if (modal) modal.style.display = "flex";
-  });
-  document.getElementById("cnCancelEmailBtn")?.addEventListener("click", () => {
-    const modal = document.getElementById("cnEmailModal");
-    if (modal) modal.style.display = "none";
-  });
-
-  const tabs = document.querySelectorAll(".cn-tab");
-  tabs.forEach((tab) => {
-    tab.addEventListener("click", () => {
-      tabs.forEach((t) => t.classList.remove("active"));
-      tab.classList.add("active");
-      const key = tab.dataset.tab;
-      document.getElementById("cnCommentsPanel")?.classList.toggle("hidden", key !== "comments");
-      document.getElementById("cnHistoryPanel")?.classList.toggle("hidden", key !== "history");
-      document.getElementById("cnAttachmentsPanel")?.classList.toggle("hidden", key !== "attachments");
-    });
-  });
-});
-function getConfig() {
-  const el = document.getElementById("credit-inline-config");
-  if (!el) return {};
-  try {
-    return JSON.parse(el.textContent || "{}");
-  } catch {
-    return {};
-  }
-}
-
-function setVal(id, value) {
-  const el = document.getElementById(id);
-  if (el) el.value = value ?? "";
-}
-
-function getVal(id) {
-  return (document.getElementById(id)?.value || "").trim();
-}
-
-function getText(id) {
-  return (document.getElementById(id)?.innerText || "").trim();
-}
-
-function showToast(message, type = "success") {
-  const toast = document.createElement("div");
-  toast.className = type === "error" ? "error-notification" : "success-notification";
-  toast.textContent = message;
-  document.body.appendChild(toast);
-  requestAnimationFrame(() => toast.classList.add("show"));
-  setTimeout(() => {
-    toast.classList.remove("show");
-    setTimeout(() => toast.remove(), 250);
-  }, 2200);
-}
-
-function renderRows(items) {
-  const tbody = document.getElementById("cnItemsBody");
-  if (!tbody) return;
-  if (!Array.isArray(items) || !items.length) {
-    tbody.innerHTML = '<tr><td colspan="11" class="cn-empty">No returned items</td></tr>';
-    return;
-  }
-  tbody.innerHTML = "";
-  items.forEach((item, idx) => {
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td>${idx + 1}</td>
-      <td>${item.product_name ?? ""}</td>
-      <td>${item.product_id ?? ""}</td>
-      <td>${item.return_qty ?? item.return_quantity ?? item.quantity ?? 0}</td>
-      <td>${item.uom ?? ""}</td>
-      <td>${item.reason ?? item.return_reason ?? ""}</td>
-      <td>${item.unit_price ?? 0}</td>
-      <td>${item.tax_percent ?? 0}</td>
-      <td>${item.discount ?? 0}</td>
-      <td>${item.total ?? 0}</td>
-      <td><button type="button" class="cn-delete-row-btn" title="Delete">Delete</button></td>
-    `;
-    tbody.appendChild(tr);
-  });
-}
-
-function calculateReturnedTotal() {
-  let total = 0;
-  document.querySelectorAll("#cnItemsBody tr").forEach((row) => {
-    const totalCell = row.children[9];
-    if (totalCell && totalCell.innerText) total += parseFloat(totalCell.innerText) || 0;
-  });
-  return total;
-}
-
-function calculateRefund() {
-  const invoiceTotal = Math.max(parseFloat(getVal("cnInvoiceTotal")) || 0, 0);
-  const amountPaidInput = document.getElementById("cnAmountPaid");
-  const refundPaidInput = document.getElementById("cnRefundPaid");
-  const balanceDueEl = document.getElementById("cnBalanceDue");
-  const invoiceReturnAmountEl = document.getElementById("cnInvoiceReturnAmount");
-  const balanceToRefundEl = document.getElementById("cnBalanceToRefund");
-
-  let amountPaid = Math.max(parseFloat(amountPaidInput?.value) || 0, 0);
-  if (amountPaid > invoiceTotal) amountPaid = invoiceTotal;
-
-  let invoiceReturnAmount = Math.max(calculateReturnedTotal(), 0);
-  if (invoiceReturnAmount > invoiceTotal) invoiceReturnAmount = invoiceTotal;
-
-  const refundableBase = Math.min(invoiceReturnAmount, amountPaid);
-  let refundPaid = Math.max(parseFloat(refundPaidInput?.value) || 0, 0);
-  if (refundPaid > refundableBase) refundPaid = refundableBase;
-
-  if (amountPaidInput) amountPaidInput.max = invoiceTotal.toFixed(2);
-  if (refundPaidInput) refundPaidInput.max = refundableBase.toFixed(2);
-  if (balanceDueEl) balanceDueEl.innerText = Math.max(invoiceTotal - amountPaid, 0).toFixed(2);
-  if (invoiceReturnAmountEl) invoiceReturnAmountEl.innerText = invoiceReturnAmount.toFixed(2);
-  if (balanceToRefundEl) balanceToRefundEl.innerText = Math.max(refundableBase - refundPaid, 0).toFixed(2);
-}
-
-async function loadInvoiceIds() {
-  const sel = document.getElementById("cnInvoiceRef");
-  if (!sel) return;
-  const res = await fetch("/api/invoices-credit");
-  const data = await res.json();
-  const invoices = Array.isArray(data?.invoices) ? data.invoices : [];
-  sel.innerHTML = '<option value="">Select Invoice Ref. ID</option>';
-  invoices.forEach((id) => {
-    const opt = document.createElement("option");
-    opt.value = String(id || "");
-    opt.textContent = String(id || "");
-    sel.appendChild(opt);
-  });
-}
-
-function clearInvoiceData() {
-  [
-    "cnCustomerName", "cnCustomerId", "cnBillingAddress", "cnPhone",
-    "cnInvoiceDate", "cnDueDate", "cnPaymentTerms", "cnInvoiceStatus",
-    "cnPaymentStatus", "cnInvoiceTotal"
-  ].forEach((id) => setVal(id, ""));
-  setVal("cnAmountPaid", "0.00");
-  setVal("cnRefundPaid", "");
-  const totalDisplay = document.getElementById("invoice_total_display");
-  if (totalDisplay) totalDisplay.textContent = "0.00";
-  renderRows([]);
-  calculateRefund();
-}
-
-async function fillFromInvoice(invoiceId) {
-  if (!invoiceId) return clearInvoiceData();
-  const detailsRes = await fetch(`/api/invoice-details-credit/${encodeURIComponent(invoiceId)}`);
-  const details = await detailsRes.json();
-  if (!detailsRes.ok || !details.success) {
-    clearInvoiceData();
-    showToast("Failed to fetch invoice details", "error");
-    return;
-  }
-
-  const inv = details.invoice || {};
-  setVal("cnCustomerName", inv.customer_name || "");
-  setVal("cnCustomerId", inv.customer_id || "");
-  setVal("cnBillingAddress", inv.billing_address || "");
-  setVal("cnPhone", inv.phone || "");
-  setVal("cnInvoiceDate", inv.invoice_date || "");
-  setVal("cnDueDate", inv.due_date || "");
-  setVal("cnPaymentTerms", inv.payment_terms || "");
-  setVal("cnInvoiceStatus", inv.status || "");
-  setVal("cnPaymentStatus", inv.payment_status || "");
-  setVal("cnInvoiceTotal", Number(inv.grand_total || 0).toFixed(2));
-  setVal("cnAmountPaid", "0.00");
-  setVal("cnRefundPaid", "");
-
-  const totalDisplay = document.getElementById("invoice_total_display");
-  if (totalDisplay) totalDisplay.textContent = Number(inv.grand_total || 0).toFixed(2);
-
-  const retRes = await fetch(`/api/invoice-return-items/${encodeURIComponent(invoiceId)}`);
-  const retData = retRes.ok ? await retRes.json() : { items: [] };
-  renderRows(Array.isArray(retData?.items) ? retData.items : []);
-  calculateRefund();
-}
-
-function collectLineItems() {
-  const rows = Array.from(document.querySelectorAll("#cnItemsBody tr"));
-  return rows.map((row) => {
-    const cells = row.querySelectorAll("td");
-    if (!cells || cells.length < 10) return null;
-    const productName = (cells[1]?.innerText || "").trim();
-    const productId = (cells[2]?.innerText || "").trim();
-    if (!productName && !productId) return null;
-    return {
-      sno: (cells[0]?.innerText || "").trim(),
-      product_name: productName,
-      product_id: productId,
-      returned_qty: (cells[3]?.innerText || "").trim(),
-      uom: (cells[4]?.innerText || "").trim(),
-      reason: (cells[5]?.innerText || "").trim(),
-      unit_price: (cells[6]?.innerText || "").trim(),
-      tax_percent: (cells[7]?.innerText || "").trim(),
-      discount: (cells[8]?.innerText || "").trim(),
-      total: (cells[9]?.innerText || "").trim()
-    };
-  }).filter(Boolean);
-}
-
-function collectPayload(status) {
-  return {
-    credit_note_id: getVal("cnId"),
-    credit_note_date: getVal("cnDate"),
-    invoice_ref_id: getVal("cnInvoiceRef"),
-    created_by: getVal("cnCreatedBy"),
-    branch: getVal("cnBranch"),
-    currency: getVal("cnCurrency"),
-    customer_name: getVal("cnCustomerName"),
-    customer_id: getVal("cnCustomerId"),
-    billing_address: getVal("cnBillingAddress"),
-    phone: getVal("cnPhone"),
-    invoice_date: getVal("cnInvoiceDate"),
-    due_date: getVal("cnDueDate"),
-    payment_terms: getVal("cnPaymentTerms"),
-    invoice_status: getVal("cnInvoiceStatus"),
-    payment_status: getVal("cnPaymentStatus"),
-    invoice_total: getVal("cnInvoiceTotal"),
-    amount_paid: getVal("cnAmountPaid"),
-    balance_due: getText("cnBalanceDue"),
-    invoice_return_amount: getText("cnInvoiceReturnAmount"),
-    balance_to_refund: getText("cnBalanceToRefund"),
-    refund_mode: getVal("cnRefundMode"),
-    refund_paid: getVal("cnRefundPaid"),
-    refund_date: getVal("cnRefundDate"),
-    adjusted_invoice_reference: getVal("cnAdjustedInvoiceRef"),
-    items: collectLineItems(),
-    status
   };
+  btn?.addEventListener("click", (e) => {
+    e.preventDefault();
+    open();
+  });
 }
 
-document.addEventListener("DOMContentLoaded", () => {
-  const config = getConfig();
-  if (config.creditId) setVal("cnId", config.creditId);
-  if (!getVal("cnDate")) setVal("cnDate", new Date().toISOString().split("T")[0]);
-
-  loadInvoiceIds().catch(() => showToast("Failed to load invoice IDs", "error"));
-
-  document.getElementById("cnInvoiceRef")?.addEventListener("change", function () {
-    fillFromInvoice(this.value).catch(() => showToast("Failed to fetch invoice details", "error"));
-  });
-
-  document.getElementById("cnCancelBtn")?.addEventListener("click", () => {
-    window.location.href = "/credit-note";
-  });
-
-  document.getElementById("cnItemsBody")?.addEventListener("click", (e) => {
-    const btn = e.target.closest(".cn-delete-row-btn");
-    if (!btn) return;
-    btn.closest("tr")?.remove();
-    calculateRefund();
-  });
-
-  document.getElementById("cnAmountPaid")?.addEventListener("input", calculateRefund);
-  document.getElementById("cnRefundPaid")?.addEventListener("input", calculateRefund);
-  calculateRefund();
-
-  document.getElementById("cnSaveDraftBtn")?.addEventListener("click", async () => {
-    const payload = collectPayload("Draft");
-    if (!payload.credit_note_id) return showToast("Credit Note ID is required", "error");
-    try {
-      const res = await fetch("/api/credit-notes", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      });
-      if (!res.ok) throw new Error("save failed");
-      window.location.href = `/credit-note?toast=${encodeURIComponent("Credit note saved as draft")}&type=success`;
-    } catch {
-      showToast("Failed to save credit note", "error");
-    }
-  });
-
-  document.getElementById("cnMarkPaidBtn")?.addEventListener("click", async () => {
-    const payload = collectPayload("Approved");
-    if (!payload.credit_note_id) return showToast("Credit Note ID is required", "error");
-    try {
-      const res = await fetch(`/api/credit-notes/${encodeURIComponent(payload.credit_note_id)}/mark-paid`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      });
-      if (!res.ok) throw new Error("mark paid failed");
-      window.location.href = `/credit-note?toast=${encodeURIComponent("Credit note marked as paid")}&type=success`;
-    } catch {
-      showToast("Failed to mark as paid", "error");
-    }
-  });
-
-  document.getElementById("cnDeleteBtn")?.addEventListener("click", async () => {
-    const creditId = getVal("cnId");
-    if (!creditId) return showToast("Credit Note ID is required", "error");
-    try {
-      const res = await fetch(`/api/credit-notes/${encodeURIComponent(creditId)}`, { method: "DELETE" });
-      if (!res.ok) throw new Error("delete failed");
-      window.location.href = `/credit-note?toast=${encodeURIComponent("Credit note deleted")}&type=success`;
-    } catch {
-      showToast("Failed to delete credit note", "error");
-    }
-  });
-
-  // Basic tab toggle
-  const tabs = document.querySelectorAll(".cn-tab");
-  tabs.forEach((tab) => {
-    tab.addEventListener("click", () => {
-      tabs.forEach((t) => t.classList.remove("active"));
-      tab.classList.add("active");
-      const key = tab.dataset.tab;
-      document.getElementById("cnCommentsPanel")?.classList.toggle("hidden", key !== "comments");
-      document.getElementById("cnHistoryPanel")?.classList.toggle("hidden", key !== "history");
-      document.getElementById("cnAttachmentsPanel")?.classList.toggle("hidden", key !== "attachments");
+function cnSuppressNativeFieldTooltips() {
+  const cnRoot = document.querySelector(".cn-page");
+  if (!cnRoot) return;
+  const shouldStrip = (el) => {
+    if (!el || !el.matches) return false;
+    if (!el.matches("input, select, textarea, label")) return false;
+    if (el.closest(".cn-delete-row-btn")) return false;
+    return true;
+  };
+  const strip = () => {
+    cnRoot.querySelectorAll("input, select, textarea, label").forEach((el) => {
+      if (shouldStrip(el) && el.getAttribute("title")) el.removeAttribute("title");
     });
-  });
-
-  // Basic email modal open/close
-  document.getElementById("cnEmailAction")?.addEventListener("click", () => {
-    const m = document.getElementById("cnEmailModal");
-    if (m) m.style.display = "flex";
-  });
-  document.getElementById("cnCancelEmailBtn")?.addEventListener("click", () => {
-    const m = document.getElementById("cnEmailModal");
-    if (m) m.style.display = "none";
-  });
-});
-function cfg() {
-  const el = document.getElementById("credit-inline-config");
-  if (!el) return {};
-  try { return JSON.parse(el.textContent || "{}"); } catch { return {}; }
+  };
+  strip();
+  if (typeof MutationObserver === "undefined") return;
+  new MutationObserver((mutations) => {
+    for (const m of mutations) {
+      if (m.type !== "attributes" || m.attributeName !== "title") continue;
+      const el = m.target;
+      if (!cnRoot.contains(el)) continue;
+      if (shouldStrip(el) && el.getAttribute("title")) el.removeAttribute("title");
+    }
+  }).observe(cnRoot, { subtree: true, attributes: true, attributeFilter: ["title"] });
 }
 
-function setField(id, value) {
-  const el = document.getElementById(id);
-  if (el) el.value = value ?? "";
+const MAX_CN_ATTACHMENTS = 5;
+const MAX_CN_FILE_SIZE_BYTES = 10 * 1024 * 1024;
+
+function cnCreditNoteAttachmentsReadOnly() {
+  return typeof window !== "undefined" && !!window.cnCreditAttachmentsReadOnly;
 }
 
-function calcReturnedTotal() {
-  let total = 0;
-  document.querySelectorAll("#cnItemsBody tr").forEach((row) => {
-    const totalCell = row.children[9];
-    if (totalCell && totalCell.innerText) total += parseFloat(totalCell.innerText) || 0;
-  });
-  return total;
+function cnUpdateAttachmentsReadonlyUI() {
+  const ro = cnCreditNoteAttachmentsReadOnly();
+  const hint = document.getElementById("cnAttachmentsReadonlyHint");
+  const sec = document.querySelector("#cnAttachmentsPanel .upload-section");
+  if (hint) {
+    hint.classList.toggle("cn-is-hidden", !ro);
+  }
+  if (sec) {
+    sec.style.display = ro ? "none" : "";
+  }
 }
 
-function calcRefund() {
-  const invoiceTotal = Math.max(parseFloat(document.getElementById("cnInvoiceTotal")?.value) || 0, 0);
-  const amountPaidInput = document.getElementById("cnAmountPaid");
-  const refundPaidInput = document.getElementById("cnRefundPaid");
-  const balanceDueEl = document.getElementById("cnBalanceDue");
-  const invoiceReturnAmountEl = document.getElementById("cnInvoiceReturnAmount");
-  const balanceToRefundEl = document.getElementById("cnBalanceToRefund");
-
-  let amountPaid = Math.max(parseFloat(amountPaidInput?.value) || 0, 0);
-  if (amountPaid > invoiceTotal) amountPaid = invoiceTotal;
-  let invoiceReturnAmount = Math.max(calcReturnedTotal(), 0);
-  if (invoiceReturnAmount > invoiceTotal) invoiceReturnAmount = invoiceTotal;
-  const refundableBase = Math.min(invoiceReturnAmount, amountPaid);
-  let refundPaid = Math.max(parseFloat(refundPaidInput?.value) || 0, 0);
-  if (refundPaid > refundableBase) refundPaid = refundableBase;
-
-  if (amountPaidInput) amountPaidInput.max = invoiceTotal.toFixed(2);
-  if (refundPaidInput) refundPaidInput.max = refundableBase.toFixed(2);
-  if (balanceDueEl) balanceDueEl.innerText = Math.max(invoiceTotal - amountPaid, 0).toFixed(2);
-  if (invoiceReturnAmountEl) invoiceReturnAmountEl.innerText = invoiceReturnAmount.toFixed(2);
-  if (balanceToRefundEl) balanceToRefundEl.innerText = Math.max(refundableBase - refundPaid, 0).toFixed(2);
+function cnEscapeHtmlText(str) {
+  return String(str || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 }
 
-function renderRows(items) {
-  const tbody = document.getElementById("cnItemsBody");
-  if (!tbody) return;
-  if (!Array.isArray(items) || items.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="11" class="cn-empty">No returned items</td></tr>';
+function cnFormatCreditFileSize(bytes) {
+  const n = Number(bytes) || 0;
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function cnCreditFileIcon(ext) {
+  const e = String(ext || "").toLowerCase();
+  if (["pdf"].includes(e)) return "fa-solid fa-file-pdf";
+  if (["doc", "docx"].includes(e)) return "fa-solid fa-file-word";
+  if (["xls", "xlsx"].includes(e)) return "fa-solid fa-file-excel";
+  if (["jpg", "jpeg", "png"].includes(e)) return "fa-solid fa-file-image";
+  return "fa-regular fa-file";
+}
+
+function cnCreditFileIconClass(ext) {
+  const e = String(ext || "").toLowerCase();
+  if (["pdf"].includes(e)) return "pdf";
+  if (["doc", "docx"].includes(e)) return "doc";
+  if (["xls", "xlsx"].includes(e)) return "xls";
+  if (["jpg", "jpeg"].includes(e)) return "jpg";
+  if (["png"].includes(e)) return "png";
+  return "default";
+}
+
+function cnRenderCreditAttachments(files) {
+  const filesList = document.getElementById("cnFilesList");
+  const fileCount = document.getElementById("cnFileCount");
+  const uploadCard = document.getElementById("cnUploadCard");
+  const uploadBtn = document.getElementById("cnUploadBtn");
+  if (!filesList) return;
+
+  window.cnCurrentCreditAttachments = files || [];
+  const currentCount = files.length;
+  const isFull = currentCount >= MAX_CN_ATTACHMENTS;
+  const ro = cnCreditNoteAttachmentsReadOnly();
+
+  if (fileCount) {
+    fileCount.textContent = `${currentCount} / ${MAX_CN_ATTACHMENTS} files`;
+  }
+  if (uploadCard && !ro) {
+    uploadCard.style.opacity = isFull ? "0.5" : "1";
+    uploadCard.style.pointerEvents = isFull ? "none" : "auto";
+    uploadCard.title = isFull ? "Maximum files reached" : "Click or drag to upload";
+  }
+  if (uploadBtn && !ro) {
+    uploadBtn.disabled = isFull;
+    uploadBtn.style.opacity = isFull ? "0.5" : "1";
+  }
+
+  if (!files || files.length === 0) {
+    filesList.innerHTML =
+      '<div class="no-files"><i class="fa-regular fa-folder-open"></i><p>No files attached yet</p></div>';
     return;
   }
-  tbody.innerHTML = "";
-  items.forEach((item, idx) => {
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td>${idx + 1}</td>
-      <td>${item.product_name ?? ""}</td>
-      <td>${item.product_id ?? ""}</td>
-      <td>${item.return_qty ?? item.quantity ?? 0}</td>
-      <td>${item.uom ?? ""}</td>
-      <td>${item.reason ?? ""}</td>
-      <td>${item.unit_price ?? 0}</td>
-      <td>${item.tax_percent ?? 0}</td>
-      <td>${item.discount ?? 0}</td>
-      <td>${item.total ?? 0}</td>
-      <td><button type="button" class="cn-delete-row-btn" title="Delete">Delete</button></td>
-    `;
-    tbody.appendChild(tr);
+
+  let html = "";
+  files.forEach((file) => {
+    const ext = file.original_filename ? file.original_filename.split(".").pop().toLowerCase() : "";
+    const icon = cnCreditFileIcon(ext);
+    const iconClass = cnCreditFileIconClass(ext);
+    const size = cnFormatCreditFileSize(file.size || 0);
+    const uploadDate = file.upload_date || "—";
+    const id = file.id;
+    const delBlock = ro
+      ? ""
+      : `<button type="button" class="btn-action btn-delete" onclick="openCnDeleteFileModal(${id})" title="Delete"><i class="fa-solid fa-trash-can"></i></button>`;
+    html += `
+    <div class="file-item" data-id="${id}">
+      <div class="file-info">
+        <div class="file-icon ${iconClass}"><i class="${icon}" aria-hidden="true"></i></div>
+        <div class="file-details">
+          <div class="file-name">${cnEscapeHtmlText(file.original_filename || "Unknown file")}</div>
+          <div class="file-meta">
+            <span><i class="fa-regular fa-file"></i> ${cnEscapeHtmlText(size)}</span>
+            <span><i class="fa-regular fa-calendar"></i> ${cnEscapeHtmlText(uploadDate)}</span>
+          </div>
+        </div>
+      </div>
+      <div class="file-actions">
+        <button type="button" class="btn-action btn-view" onclick="cnViewCreditAttachment(${id})" title="View"><i class="fa-regular fa-eye"></i></button>
+        <button type="button" class="btn-action btn-download" onclick="cnDownloadCreditAttachment(${id})" title="Download"><i class="fa-solid fa-cloud-arrow-down"></i></button>
+        ${delBlock}
+      </div>
+    </div>`;
   });
+  filesList.innerHTML = html;
 }
 
-async function loadInvoiceIds() {
-  const sel = document.getElementById("cnInvoiceRef");
-  if (!sel) return;
-  const res = await fetch("/api/invoices-credit");
-  const data = await res.json();
-  const invoices = Array.isArray(data?.invoices) ? data.invoices : [];
-  sel.innerHTML = '<option value="">Select Invoice Ref. ID</option>';
-  invoices.forEach((id) => {
-    const opt = document.createElement("option");
-    opt.value = String(id || "");
-    opt.textContent = String(id || "");
-    sel.appendChild(opt);
-  });
-}
-
-function clearInvoiceData() {
-  [
-    "cnCustomerName", "cnCustomerId", "cnBillingAddress", "cnPhone",
-    "cnInvoiceDate", "cnDueDate", "cnPaymentTerms", "cnInvoiceStatus",
-    "cnPaymentStatus", "cnInvoiceTotal"
-  ].forEach((id) => setField(id, ""));
-  setField("cnAmountPaid", "0.00");
-  setField("cnRefundPaid", "");
-  const totalDisplay = document.getElementById("invoice_total_display");
-  if (totalDisplay) totalDisplay.textContent = "0.00";
-  renderRows([]);
-  calcRefund();
-}
-
-async function onInvoiceChange(invoiceId) {
-  if (!invoiceId) return clearInvoiceData();
-  const detailsRes = await fetch(`/api/invoice-details-credit/${encodeURIComponent(invoiceId)}`);
-  const details = await detailsRes.json();
-  if (!detailsRes.ok || !details.success) return clearInvoiceData();
-
-  const inv = details.invoice || {};
-  setField("cnCustomerName", inv.customer_name || "");
-  setField("cnCustomerId", inv.customer_id || "");
-  setField("cnBillingAddress", inv.billing_address || "");
-  setField("cnPhone", inv.phone || "");
-  setField("cnInvoiceDate", inv.invoice_date || "");
-  setField("cnDueDate", inv.due_date || "");
-  setField("cnPaymentTerms", inv.payment_terms || "");
-  setField("cnInvoiceStatus", inv.status || "");
-  setField("cnPaymentStatus", inv.payment_status || "");
-  setField("cnInvoiceTotal", Number(inv.grand_total || 0).toFixed(2));
-  setField("cnAmountPaid", "0.00");
-  setField("cnRefundPaid", "");
-  const totalDisplay = document.getElementById("invoice_total_display");
-  if (totalDisplay) totalDisplay.textContent = Number(inv.grand_total || 0).toFixed(2);
-
-  const retRes = await fetch(`/api/invoice-return-items/${encodeURIComponent(invoiceId)}`);
-  const retData = retRes.ok ? await retRes.json() : { items: [] };
-  renderRows(Array.isArray(retData?.items) ? retData.items : []);
-  calcRefund();
-}
-
-document.addEventListener("DOMContentLoaded", () => {
-  const c = cfg();
-  if (c.creditId) setField("cnId", c.creditId);
-  if (!document.getElementById("cnDate")?.value) setField("cnDate", new Date().toISOString().split("T")[0]);
-
-  loadInvoiceIds().catch(console.error);
-  document.getElementById("cnInvoiceRef")?.addEventListener("change", function () {
-    onInvoiceChange(this.value).catch(console.error);
-  });
-  document.getElementById("cnCancelBtn")?.addEventListener("click", () => { window.location.href = "/credit-note"; });
-  document.getElementById("cnItemsBody")?.addEventListener("click", (e) => {
-    const btn = e.target.closest(".cn-delete-row-btn");
-    if (!btn) return;
-    btn.closest("tr")?.remove();
-    calcRefund();
-  });
-  document.getElementById("cnAmountPaid")?.addEventListener("input", calcRefund);
-  document.getElementById("cnRefundPaid")?.addEventListener("input", calcRefund);
-  calcRefund();
-});
-function getConfig() {
-  const el = document.getElementById("credit-inline-config");
-  if (!el) return {};
+async function cnLoadCreditAttachments() {
+  const id = cnGet("cnId");
+  const filesList = document.getElementById("cnFilesList");
+  if (!filesList) return;
+  if (!id) {
+    cnRenderCreditAttachments([]);
+    return;
+  }
+  filesList.innerHTML =
+    '<div class="loading-files"><i class="fa-solid fa-spinner fa-spin"></i><p>Loading attachments...</p></div>';
   try {
-    return JSON.parse(el.textContent || "{}");
-  } catch {
-    return {};
+    const res = await fetch(`/api/cn-attachments/${encodeURIComponent(id)}`, { cache: "no-store" });
+    const data = await res.json();
+    if (data.success) {
+      cnRenderCreditAttachments(data.attachments || []);
+    } else {
+      cnRenderCreditAttachments([]);
+    }
+  } catch (_e) {
+    cnRenderCreditAttachments([]);
   }
 }
 
-function setVal(id, value) {
-  const el = document.getElementById(id);
-  if (el) el.value = value ?? "";
+function cnShowCreditUploading(filename) {
+  const filesList = document.getElementById("cnFilesList");
+  if (!filesList) return;
+  const prev = filesList.querySelector(".file-item.uploading");
+  if (prev) prev.remove();
+  const uploading = document.createElement("div");
+  uploading.className = "file-item uploading";
+  uploading.innerHTML = `
+    <div class="file-info">
+      <div class="file-icon default"><i class="fa-solid fa-spinner fa-spin"></i></div>
+      <div class="file-details">
+        <div class="file-name">${cnEscapeHtmlText(filename)}</div>
+        <div class="file-meta"><span>Uploading...</span></div>
+      </div>
+    </div>`;
+  filesList.insertBefore(uploading, filesList.firstChild);
 }
 
-function showToast(message, type = "success") {
-  const toast = document.createElement("div");
-  toast.className = type === "error" ? "error-notification" : "success-notification";
-  toast.textContent = message;
-  document.body.appendChild(toast);
-  requestAnimationFrame(() => toast.classList.add("show"));
-  setTimeout(() => {
-    toast.classList.remove("show");
-    setTimeout(() => toast.remove(), 250);
-  }, 2200);
+function cnRemoveCreditUploading() {
+  const u = document.querySelector("#cnFilesList .file-item.uploading");
+  if (u) u.remove();
 }
 
-function calculateReturnedTotal() {
-  // Business rule: keep Invoice Return Amount as 0 by default.
-  return 0;
+function cnValidateCreditUploadFile(file) {
+  if (file.size > MAX_CN_FILE_SIZE_BYTES) {
+    cnToast(`${file.name} exceeds 10MB limit`, "error");
+    return false;
+  }
+  const allowed = ["pdf", "doc", "docx", "xls", "xlsx", "jpg", "jpeg", "png"];
+  const ext = file.name.split(".").pop().toLowerCase();
+  if (!allowed.includes(ext)) {
+    cnToast(`${file.name} type not allowed. Allowed: PDF, DOC, XLS, JPG, PNG`, "error");
+    return false;
+  }
+  return true;
 }
 
-function calculateRefund() {
-  const invoiceTotal = Math.max(parseFloat(document.getElementById("cnInvoiceTotal")?.value) || 0, 0);
-  const amountPaidInput = document.getElementById("cnAmountPaid");
-  const refundPaidInput = document.getElementById("cnRefundPaid");
-  const balanceDueEl = document.getElementById("cnBalanceDue");
-  const invoiceReturnAmountEl = document.getElementById("cnInvoiceReturnAmount");
-  const balanceToRefundEl = document.getElementById("cnBalanceToRefund");
-
-  let amountPaid = Math.max(parseFloat(amountPaidInput?.value) || 0, 0);
-  if (amountPaid > invoiceTotal) amountPaid = invoiceTotal;
-
-  let invoiceReturnAmount = Math.max(calculateReturnedTotal(), 0);
-  if (invoiceReturnAmount > invoiceTotal) invoiceReturnAmount = invoiceTotal;
-
-  const refundableBase = Math.min(invoiceReturnAmount, amountPaid);
-  let refundPaid = Math.max(parseFloat(refundPaidInput?.value) || 0, 0);
-  if (refundPaid > refundableBase) refundPaid = refundableBase;
-
-  if (amountPaidInput) amountPaidInput.max = invoiceTotal.toFixed(2);
-  if (refundPaidInput) refundPaidInput.max = refundableBase.toFixed(2);
-  if (balanceDueEl) balanceDueEl.innerText = Math.max(invoiceTotal - amountPaid, 0).toFixed(2);
-  if (invoiceReturnAmountEl) invoiceReturnAmountEl.innerText = invoiceReturnAmount.toFixed(2);
-  if (balanceToRefundEl) balanceToRefundEl.innerText = Math.max(refundableBase - refundPaid, 0).toFixed(2);
-}
-
-function renderRows(items, useReturnQty) {
-  const tbody = document.getElementById("cnItemsBody");
-  if (!tbody) return;
-
-  if (!Array.isArray(items) || items.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="11" class="cn-empty">No returned items</td></tr>';
+async function cnUploadCreditFile(file) {
+  if (!cnValidateCreditUploadFile(file)) return;
+  const creditNoteId = cnGet("cnId");
+  if (!creditNoteId) {
+    cnToast("Credit Note ID missing", "error");
     return;
   }
-
-  tbody.innerHTML = "";
-  items.forEach((item, idx) => {
-    const qty = useReturnQty ? item.return_qty : item.quantity;
-    const reason = useReturnQty ? (item.reason || "") : "";
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td>${idx + 1}</td>
-      <td>${item.product_name ?? ""}</td>
-      <td>${item.product_id ?? ""}</td>
-      <td>${qty ?? 0}</td>
-      <td>${item.uom ?? ""}</td>
-      <td>${reason}</td>
-      <td>${item.unit_price ?? 0}</td>
-      <td>${item.tax_percent ?? 0}</td>
-      <td>${item.discount ?? 0}</td>
-      <td>${item.total ?? 0}</td>
-      <td>
-        <button type="button" class="cn-delete-row-btn" title="Delete">
-          <svg class="cn-delete-icon" viewBox="0 0 448 512" aria-hidden="true" focusable="false">
-            <path d="M135.2 17.7C140.6 7.1 151.5 0 163.3 0h121.4c11.8 0 22.7 7.1 28.1 17.7L328 32h88c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 96 0 81.7 0 64S14.3 32 32 32h88l15.2-14.3zM53.2 467c1.6 25.7 23 45 48.8 45h244c25.8 0 47.2-19.3 48.8-45L416 128H32l21.2 339z"/>
-          </svg>
-        </button>
-      </td>
-    `;
-    tbody.appendChild(tr);
-  });
-}
-
-async function fillFromInvoice(invoiceId) {
-  if (!invoiceId) {
-    [
-      "cnCustomerName", "cnCustomerId", "cnBillingAddress", "cnPhone",
-      "cnInvoiceDate", "cnDueDate", "cnPaymentTerms", "cnInvoiceStatus",
-      "cnPaymentStatus", "cnInvoiceTotal", "cnAmountPaid", "cnRefundPaid"
-    ].forEach((id) => setVal(id, ""));
-    const totalDisplay = document.getElementById("invoice_total_display");
-    if (totalDisplay) totalDisplay.textContent = "0.00";
-    renderRows([], true);
-    calculateRefund();
-    return;
-  }
-
+  cnShowCreditUploading(file.name);
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("credit_note_id", creditNoteId);
   try {
-    const detailsRes = await fetch(`/api/invoice-details-credit/${encodeURIComponent(invoiceId)}`);
-    const details = await detailsRes.json();
-    if (!detailsRes.ok || !details.success) {
-      showToast("Failed to fetch invoice details", "error");
+    let response = await fetch("/api/cn-upload-attachment", { method: "POST", body: formData });
+    let data = await response.json();
+    const uploadError = String(data?.error || data?.message || "").toLowerCase();
+
+    // If note is not persisted yet, silently save draft and retry upload once.
+    if (
+      !data?.success &&
+      uploadError.includes("save the credit note as draft first")
+    ) {
+      const saved = await cnSaveDraftInternal({ redirectOnSuccess: false, silent: true });
+      if (saved) {
+        response = await fetch("/api/cn-upload-attachment", { method: "POST", body: formData });
+        data = await response.json();
+      }
+    }
+
+    if (data.success) {
+      cnToast(`${file.name} uploaded successfully!`, "success");
+      await cnLoadCreditAttachments();
+    } else {
+      cnToast(`Upload failed: ${data.error || data.message || "Unknown error"}`, "error");
+    }
+  } catch (err) {
+    console.error(err);
+    cnToast("Upload failed. Please try again.", "error");
+  } finally {
+    cnRemoveCreditUploading();
+  }
+}
+
+async function cnUploadCreditFiles(fileList) {
+  for (const file of fileList) {
+    if (file.size > MAX_CN_FILE_SIZE_BYTES) {
+      cnToast(`${file.name} exceeds 10MB limit`, "error");
+      continue;
+    }
+    await cnUploadCreditFile(file);
+  }
+}
+
+function cnInitCreditAttachments() {
+  const fileInput = document.getElementById("cnFileInput");
+  const uploadCard = document.getElementById("cnUploadCard");
+  const uploadBtn = document.getElementById("cnUploadBtn");
+  const filesList = document.getElementById("cnFilesList");
+  if (!fileInput || !uploadCard || !uploadBtn || !filesList) return;
+
+  function maxReached() {
+    const n = window.cnCurrentCreditAttachments ? window.cnCurrentCreditAttachments.length : 0;
+    return n >= MAX_CN_ATTACHMENTS;
+  }
+
+  uploadCard.addEventListener("click", (e) => {
+    e.preventDefault();
+    if (cnCreditNoteAttachmentsReadOnly()) return;
+    if (maxReached()) {
+      cnToast(`Maximum ${MAX_CN_ATTACHMENTS} files allowed`, "warning");
       return;
     }
+    fileInput.click();
+  });
 
-    const inv = details.invoice || {};
-    setVal("cnCustomerName", inv.customer_name || "");
-    setVal("cnCustomerId", inv.customer_id || "");
-    setVal("cnBillingAddress", inv.billing_address || "");
-    setVal("cnPhone", inv.phone || "");
-    setVal("cnInvoiceDate", inv.invoice_date || "");
-    setVal("cnDueDate", inv.due_date || "");
-    setVal("cnPaymentTerms", inv.payment_terms || "");
-    setVal("cnInvoiceStatus", inv.status || "");
-    setVal("cnPaymentStatus", inv.payment_status || "");
-    setVal("cnInvoiceTotal", Number(inv.grand_total || 0).toFixed(2));
-
-    const totalDisplay = document.getElementById("invoice_total_display");
-    if (totalDisplay) totalDisplay.textContent = Number(inv.grand_total || 0).toFixed(2);
-
-    // User requested: keep Amount Paid default as 0 on invoice selection.
-    setVal("cnAmountPaid", "0.00");
-    setVal("cnRefundPaid", "");
-
-    const returnRes = await fetch(`/api/invoice-return-items/${encodeURIComponent(invoiceId)}`);
-    const returnData = returnRes.ok ? await returnRes.json() : { items: [] };
-    if (Array.isArray(returnData.items) && returnData.items.length) {
-      renderRows(returnData.items, true);
-    } else {
-      // Credit Note should be based on returned items only.
-      renderRows([], true);
+  uploadBtn.addEventListener("click", (e) => {
+    e.preventDefault();
+    if (cnCreditNoteAttachmentsReadOnly()) return;
+    if (maxReached()) {
+      cnToast(`Maximum ${MAX_CN_ATTACHMENTS} files allowed`, "warning");
+      return;
     }
+    fileInput.click();
+  });
 
-    calculateRefund();
-  } catch (err) {
-    console.error(err);
-    showToast("Failed to fetch invoice details", "error");
-  }
+  fileInput.addEventListener("change", (e) => {
+    const files = Array.from(e.target.files || []);
+    const currentCount = window.cnCurrentCreditAttachments ? window.cnCurrentCreditAttachments.length : 0;
+    if (currentCount + files.length > MAX_CN_ATTACHMENTS) {
+      cnToast(
+        `Cannot upload ${files.length} file(s). Maximum ${MAX_CN_ATTACHMENTS} files allowed. You have ${currentCount} file(s).`,
+        "warning"
+      );
+      fileInput.value = "";
+      return;
+    }
+    if (files.length > 0) void cnUploadCreditFiles(files);
+    fileInput.value = "";
+  });
+
+  uploadCard.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    if (cnCreditNoteAttachmentsReadOnly()) return;
+    uploadCard.style.borderColor = "#007bff";
+    uploadCard.style.background = "#f0f7ff";
+  });
+  uploadCard.addEventListener("dragleave", (e) => {
+    e.preventDefault();
+    uploadCard.style.borderColor = "#ddd";
+    uploadCard.style.background = "#f8f9fa";
+  });
+  uploadCard.addEventListener("drop", (e) => {
+    e.preventDefault();
+    uploadCard.style.borderColor = "#ddd";
+    uploadCard.style.background = "#f8f9fa";
+    if (cnCreditNoteAttachmentsReadOnly()) return;
+    const files = Array.from(e.dataTransfer.files || []);
+    const currentCount = window.cnCurrentCreditAttachments ? window.cnCurrentCreditAttachments.length : 0;
+    if (currentCount + files.length > MAX_CN_ATTACHMENTS) {
+      cnToast(`Cannot upload ${files.length} file(s). Maximum ${MAX_CN_ATTACHMENTS} files allowed.`, "warning");
+      return;
+    }
+    if (files.length > 0) void cnUploadCreditFiles(files);
+  });
+
+  void cnLoadCreditAttachments();
 }
 
-async function loadInvoiceIds() {
-  const dropdown = document.getElementById("cnInvoiceRef");
-  if (!dropdown) return;
+window.cnViewCreditAttachment = function (id) {
+  window.open(`/api/cn-attachment/${id}/view`, "_blank");
+};
+
+window.cnDownloadCreditAttachment = function (id) {
+  window.location.href = `/api/cn-attachment/${id}/download`;
+};
+
+window.cnDeleteCreditAttachment = async function (id) {
   try {
-    const res = await fetch("/api/invoices-credit");
-    const data = await res.json();
-    const invoices = Array.isArray(data?.invoices) ? data.invoices : [];
-    dropdown.innerHTML = '<option value="">Select Invoice Ref. ID</option>';
-    invoices.forEach((id) => {
-      const option = document.createElement("option");
-      option.value = id;
-      option.textContent = id;
-      dropdown.appendChild(option);
-    });
-  } catch (err) {
-    console.error(err);
-    showToast("Failed to load invoice IDs", "error");
+    const res = await fetch(`/api/cn-attachment/${encodeURIComponent(id)}`, { method: "DELETE" });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.success === false) throw new Error(data.error || data.message || "Delete failed");
+    cnToast("File deleted successfully", "success");
+    await cnLoadCreditAttachments();
+  } catch (e) {
+    cnToast(e.message || "Failed to delete attachment", "error");
   }
-}
+};
 
-function initTabsAndComments(userName) {
+let _cnPendingDeleteAttachmentId = null;
+
+window.openCnDeleteFileModal = function (id) {
+  _cnPendingDeleteAttachmentId = id;
+  const backdrop = document.getElementById("cnDeleteFileBackdrop");
+  if (backdrop) {
+    backdrop.removeAttribute("hidden");
+    backdrop.classList.add("cn-modal-backdrop--open");
+  }
+};
+
+window.closeCnDeleteFileModal = function () {
+  _cnPendingDeleteAttachmentId = null;
+  const backdrop = document.getElementById("cnDeleteFileBackdrop");
+  if (backdrop) {
+    backdrop.classList.remove("cn-modal-backdrop--open");
+    backdrop.setAttribute("hidden", "");
+  }
+};
+
+function cnInitTabsAndComments(userName) {
   const commentsTab = document.querySelector('.cn-tab[data-tab="comments"]');
   const historyTab = document.querySelector('.cn-tab[data-tab="history"]');
   const attachmentsTab = document.querySelector('.cn-tab[data-tab="attachments"]');
@@ -1152,10 +1032,6 @@ function initTabsAndComments(userName) {
   const attachmentsPanel = document.getElementById("cnAttachmentsPanel");
   const commentInput = document.getElementById("cnCommentInput");
   const addBtn = document.getElementById("cnAddCommentBtn");
-  const commentList = document.getElementById("cnCommentList");
-  const emptyState = document.getElementById("cnCommentEmpty");
-  const comments = [];
-
   function toggleTab(tab) {
     const isComments = tab === "comments";
     const isHistory = tab === "history";
@@ -1163,1348 +1039,357 @@ function initTabsAndComments(userName) {
     commentsTab?.classList.toggle("active", isComments);
     historyTab?.classList.toggle("active", isHistory);
     attachmentsTab?.classList.toggle("active", isAttachments);
-    commentsPanel?.classList.toggle("hidden", !isComments);
-    historyPanel?.classList.toggle("hidden", !isHistory);
-    attachmentsPanel?.classList.toggle("hidden", !isAttachments);
-  }
-
-  function renderComments() {
-    if (!commentList || !emptyState) return;
-    commentList.innerHTML = "";
-    if (!comments.length) {
-      emptyState.classList.remove("hidden");
-      return;
-    }
-    emptyState.classList.add("hidden");
-    comments.forEach((c) => {
-      const row = document.createElement("div");
-      row.className = "cn-comment-row";
-      row.innerHTML = `
-        <div class="cn-comment-meta">
-          <span class="cn-comment-user">${c.user}</span>
-          <span class="cn-comment-time">- ${c.time}</span>
-        </div>
-        <p class="cn-comment-msg">${c.message}</p>
-      `;
-      commentList.appendChild(row);
-    });
+    commentsPanel?.classList.toggle("cn-is-hidden", !isComments);
+    historyPanel?.classList.toggle("cn-is-hidden", !isHistory);
+    attachmentsPanel?.classList.toggle("cn-is-hidden", !isAttachments);
   }
 
   if (commentInput && addBtn) {
-    commentInput.addEventListener("input", () => {
+    const syncAddBtn = () => {
       addBtn.disabled = commentInput.value.trim().length === 0;
-    });
+    };
+    syncAddBtn();
+    commentInput.addEventListener("input", syncAddBtn);
     addBtn.addEventListener("click", () => {
       const msg = commentInput.value.trim();
       if (!msg) return;
-      comments.unshift({ user: userName, time: new Date().toLocaleString(), message: msg });
+      cnPageComments.unshift({ user: userName, at: Date.now(), message: msg });
       commentInput.value = "";
-      addBtn.disabled = true;
-      renderComments();
-      showToast("Comment added successfully", "success");
+      syncAddBtn();
+      cnRenderComments();
+      cnRefreshHistory();
+      cnApplyWorkflowActions({
+        status: cnCurrentStatus,
+        paymentStatus: cnCurrentPaymentStatus,
+        isSaved: cnIsSavedNote
+      });
+      cnToast("Comment added successfully", "success");
     });
   }
 
   commentsTab?.addEventListener("click", () => toggleTab("comments"));
-  historyTab?.addEventListener("click", () => toggleTab("history"));
-  attachmentsTab?.addEventListener("click", () => toggleTab("attachments"));
-  renderComments();
+  historyTab?.addEventListener("click", () => {
+    toggleTab("history");
+    cnRefreshHistory();
+  });
+  attachmentsTab?.addEventListener("click", () => {
+    toggleTab("attachments");
+    void cnLoadCreditAttachments();
+  });
+  cnRenderComments();
+  cnRefreshHistory();
 }
 
-function initEmailModal() {
-  const cnEmailAction = document.getElementById("cnEmailAction");
-  const modal = document.getElementById("cnEmailModal");
-  const emailInput = document.getElementById("cnRecipientEmail");
-  const sendBtn = document.getElementById("cnSendEmailBtn");
-  const cancelBtn = document.getElementById("cnCancelEmailBtn");
-  if (!cnEmailAction || !modal || !sendBtn || !cancelBtn) return;
-
-  cnEmailAction.addEventListener("click", () => {
-    modal.style.display = "flex";
-    if (emailInput) emailInput.value = "";
-  });
-  cancelBtn.addEventListener("click", () => {
-    modal.style.display = "none";
-  });
-}
-
-document.addEventListener("DOMContentLoaded", () => {
-  const config = getConfig();
-  const userName = (config.userName || "User").toString().trim() || "User";
-  if (config.creditId) setVal("cnId", config.creditId);
-  if (!document.getElementById("cnDate")?.value) {
-    setVal("cnDate", new Date().toISOString().split("T")[0]);
+async function cnSaveDraftInternal({ redirectOnSuccess = false, silent = false } = {}) {
+  if (!cnValidateCreatedByUI({ silent: true })) {
+    if (!silent) cnToast("Please enter a valid Created By (3-30 letters/spaces only).", "error");
+    return false;
   }
+  const payload = cnCollectPayload("Draft");
+  if (!payload.credit_note_id) {
+    if (!silent) cnToast("Credit Note ID is required", "error");
+    return false;
+  }
+  const res = await fetch("/api/credit-notes", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    credentials: "same-origin",
+    body: JSON.stringify(payload)
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data.success === false) {
+    throw new Error(data.message || "Failed to save credit note");
+  }
+  if (redirectOnSuccess) {
+    window.location.href = `/credit-note?toast=${encodeURIComponent("Credit note saved as draft")}&type=success`;
+  } else if (!silent) {
+    cnToast("Credit note saved as draft", "success");
+  }
+  return true;
+}
 
-  loadInvoiceIds();
+async function cnDoSaveDraft() {
+  try {
+    await cnSaveDraftInternal({ redirectOnSuccess: true });
+  } catch (e) {
+    cnToast(e.message || "Failed to save credit note", "error");
+  }
+}
 
-  const refSelect = document.getElementById("cnInvoiceRef");
-  if (refSelect) {
-    refSelect.addEventListener("change", function () {
-      fillFromInvoice(this.value);
+async function cnDoMarkPaid() {
+  try {
+    // Ensure Created By stays valid before collecting payload.
+    if (!cnValidateCreatedByUI({ silent: false })) return;
+    const payload = cnCollectPayload("Approved");
+    if (!payload.credit_note_id) return cnToast("Credit Note ID is required", "error");
+    const res = await fetch(`/api/credit-notes/${encodeURIComponent(payload.credit_note_id)}/mark-paid`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify(payload)
     });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.success === false) throw new Error(data.message || "Failed to mark as paid");
+    window.location.href = `/credit-note?toast=${encodeURIComponent("Credit note marked as paid")}&type=success`;
+  } catch (e) {
+    cnToast(e.message || "Failed to mark as paid", "error");
   }
+}
+
+async function cnDoCancelCreditNote() {
+  try {
+    const creditId = cnGet("cnId");
+    if (!creditId) return cnToast("Credit Note ID is required", "error");
+    const res = await fetch(`/api/credit-notes/${encodeURIComponent(creditId)}/cancel`, {
+      method: "POST",
+      headers: { Accept: "application/json" },
+      credentials: "same-origin"
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      cnToast(data.message || "Failed to cancel credit note", "error");
+      return;
+    }
+    if (data.success !== true) {
+      cnToast(
+        data.message ||
+          "This credit note is not in the database yet. Save a draft first, or use Cancel to leave.",
+        "error"
+      );
+      return;
+    }
+    window.location.href = `/credit-note?toast=${encodeURIComponent(`Credit note ${creditId} cancelled`)}&type=success`;
+  } catch (e) {
+    cnToast(e.message || "Failed to cancel credit note", "error");
+  }
+}
+
+document.addEventListener("DOMContentLoaded", async () => {
+  const cfg = cnCfg();
+  const qs = new URLSearchParams(window.location.search);
+  const qsCreditId = (qs.get("credit_note_id") || qs.get("crn_id") || "").trim();
+  const creditIdForPage = String(cfg.creditId || qsCreditId || "").trim();
+  if (creditIdForPage) cnSet("cnId", creditIdForPage);
+  if (!cnGet("cnDate")) cnSet("cnDate", new Date().toISOString().split("T")[0]);
+
+  const mode = (qs.get("mode") || cfg.mode || "new").toString().trim().toLowerCase();
+  cnCurrentStatus = "New";
+  cnCurrentPaymentStatus = "";
+  cnIsSavedNote = false;
+  if (typeof window !== "undefined") {
+    window.cnCreditAttachmentsReadOnly = mode === "view";
+  }
+
+  /* Wire Save / Mark paid / Delete / etc. first so a later init error cannot leave them dead. */
+  document.getElementById("cnItemsBody")?.addEventListener("click", (e) => {
+    const btn = e.target.closest(".cn-delete-row-btn");
+    if (!btn) return;
+    if (cnCoreSectionsLocked) return;
+    btn.closest("tr")?.remove();
+    cnCalcRefund();
+  });
 
   document.getElementById("cnCancelBtn")?.addEventListener("click", () => {
     window.location.href = "/credit-note";
   });
 
+  document.getElementById("cnSaveDraftBtn")?.addEventListener("click", (e) => {
+    e.preventDefault();
+    void cnDoSaveDraft();
+  });
+  document.getElementById("cnMarkPaidBtn")?.addEventListener("click", (e) => {
+    e.preventDefault();
+    void cnDoMarkPaid();
+  });
+  document.getElementById("cnDeleteBtn")?.addEventListener("click", (e) => {
+    e.preventDefault();
+    void cnDoCancelCreditNote();
+  });
+
   document.getElementById("cnPdfAction")?.addEventListener("click", () => {
-    const creditId = (document.getElementById("cnId")?.value || "").trim();
+    if (cnNormalizeStatus(cnCurrentStatus) !== "submitted") {
+      cnToast("PDF is available only for submitted credit notes", "error");
+      return;
+    }
+    const creditId = cnGet("cnId");
     if (!creditId) {
-      showToast("Please save the credit note first before generating PDF", "error");
+      cnToast("Please save the credit note first before generating PDF", "error");
       return;
     }
     window.open(`/api/credit-notes/${encodeURIComponent(creditId)}/pdf`, "_blank");
   });
 
-  document.getElementById("cnItemsBody")?.addEventListener("click", (e) => {
-    const deleteBtn = e.target.closest(".cn-delete-row-btn");
-    if (!deleteBtn) return;
-    const row = deleteBtn.closest("tr");
-    if (row) row.remove();
-    calculateRefund();
-  });
-
-  document.getElementById("cnAmountPaid")?.addEventListener("input", calculateRefund);
-  document.getElementById("cnRefundPaid")?.addEventListener("input", calculateRefund);
-  calculateRefund();
-
-  initTabsAndComments(userName);
-  initEmailModal();
-});
-function getCreditConfig() {
-  const el = document.getElementById("credit-inline-config");
-  if (!el) return {};
-  try {
-    return JSON.parse(el.textContent || "{}");
-  } catch (e) {
-    return {};
-  }
-}
-
-function showToast(message, type) {
-  const toast = document.createElement("div");
-  toast.className = type === "error" ? "error-notification" : "success-notification";
-  toast.textContent = message;
-  document.body.appendChild(toast);
-  requestAnimationFrame(() => toast.classList.add("show"));
-  setTimeout(() => {
-    toast.classList.remove("show");
-    setTimeout(() => toast.remove(), 250);
-  }, 2200);
-}
-
-function setValue(id, value) {
-  const el = document.getElementById(id);
-  if (el) el.value = value ?? "";
-}
-
-function calculateReturnedTotal() {
-  let total = 0;
-  document.querySelectorAll("#cnItemsBody tr").forEach((row) => {
-    const totalCell = row.children[9];
-    if (totalCell && totalCell.innerText) {
-      total += parseFloat(totalCell.innerText) || 0;
-    }
-  });
-  return total;
-}
-
-function calculateRefund() {
-  const invoiceTotal = Math.max(parseFloat(document.getElementById("cnInvoiceTotal")?.value) || 0, 0);
-  const amountPaidInput = document.getElementById("cnAmountPaid");
-  const refundPaidInput = document.getElementById("cnRefundPaid");
-  const balanceDueEl = document.getElementById("cnBalanceDue");
-  const invoiceReturnAmountEl = document.getElementById("cnInvoiceReturnAmount");
-  const balanceToRefundEl = document.getElementById("cnBalanceToRefund");
-
-  let amountPaid = Math.max(parseFloat(amountPaidInput?.value) || 0, 0);
-  if (amountPaid > invoiceTotal) amountPaid = invoiceTotal;
-
-  let invoiceReturnAmount = Math.max(calculateReturnedTotal(), 0);
-  if (invoiceReturnAmount > invoiceTotal) invoiceReturnAmount = invoiceTotal;
-
-  const refundableBase = Math.min(invoiceReturnAmount, amountPaid);
-  let refundPaid = Math.max(parseFloat(refundPaidInput?.value) || 0, 0);
-  if (refundPaid > refundableBase) refundPaid = refundableBase;
-
-  if (amountPaidInput) amountPaidInput.max = invoiceTotal.toFixed(2);
-  if (refundPaidInput) refundPaidInput.max = refundableBase.toFixed(2);
-  if (balanceDueEl) balanceDueEl.innerText = Math.max(invoiceTotal - amountPaid, 0).toFixed(2);
-  if (invoiceReturnAmountEl) invoiceReturnAmountEl.innerText = invoiceReturnAmount.toFixed(2);
-  if (balanceToRefundEl) balanceToRefundEl.innerText = Math.max(refundableBase - refundPaid, 0).toFixed(2);
-}
-
-function renderRows(items, useReturnQty) {
-  const tbody = document.getElementById("cnItemsBody");
-  if (!tbody) return;
-  if (!Array.isArray(items) || items.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="11" class="cn-empty">No returned items</td></tr>';
-    return;
-  }
-  tbody.innerHTML = "";
-  items.forEach((item, idx) => {
-    const qty = useReturnQty ? item.return_qty : item.quantity;
-    const reason = useReturnQty ? (item.reason || "") : "";
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td>${idx + 1}</td>
-      <td>${item.product_name ?? ""}</td>
-      <td>${item.product_id ?? ""}</td>
-      <td>${qty ?? 0}</td>
-      <td>${item.uom ?? ""}</td>
-      <td>${reason}</td>
-      <td>${item.unit_price ?? 0}</td>
-      <td>${item.tax_percent ?? 0}</td>
-      <td>${item.discount ?? 0}</td>
-      <td>${item.total ?? 0}</td>
-      <td>
-        <button type="button" class="cn-delete-row-btn" title="Delete">
-          <svg class="cn-delete-icon" viewBox="0 0 448 512" aria-hidden="true" focusable="false">
-            <path d="M135.2 17.7C140.6 7.1 151.5 0 163.3 0h121.4c11.8 0 22.7 7.1 28.1 17.7L328 32h88c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 96 0 81.7 0 64S14.3 32 32 32h88l15.2-14.3zM53.2 467c1.6 25.7 23 45 48.8 45h244c25.8 0 47.2-19.3 48.8-45L416 128H32l21.2 339z"/>
-          </svg>
-        </button>
-      </td>
-    `;
-    tbody.appendChild(tr);
-  });
-}
-
-async function loadInvoiceList() {
-  const dropdown = document.getElementById("cnInvoiceRef");
-  if (!dropdown) return;
-  try {
-    const response = await fetch("/api/invoices-credit");
-    const data = await response.json();
-    const invoices = Array.isArray(data?.invoices) ? data.invoices : [];
-    dropdown.innerHTML = '<option value="">Select Invoice Ref. ID</option>';
-    invoices.forEach((inv) => {
-      const option = document.createElement("option");
-      option.value = String(inv || "");
-      option.textContent = String(inv || "");
-      dropdown.appendChild(option);
-    });
-  } catch (err) {
-    console.error("Failed to load invoice reference IDs:", err);
-  }
-}
-
-async function handleInvoiceSelection(invoiceId) {
-  if (!invoiceId) {
-    [
-      "cnCustomerName", "cnCustomerId", "cnBillingAddress", "cnPhone",
-      "cnInvoiceDate", "cnDueDate", "cnPaymentTerms", "cnInvoiceStatus",
-      "cnPaymentStatus", "cnInvoiceTotal"
-    ].forEach((id) => setValue(id, ""));
-    renderRows([], true);
-    calculateRefund();
-    return;
-  }
-
-  try {
-    const detailsRes = await fetch(`/api/invoice-details-credit/${encodeURIComponent(invoiceId)}`);
-    const details = await detailsRes.json();
-    if (!detailsRes.ok || !details.success) return;
-
-    const inv = details.invoice || {};
-    setValue("cnCustomerName", inv.customer_name || "");
-    setValue("cnCustomerId", inv.customer_id || "");
-    setValue("cnBillingAddress", inv.billing_address || "");
-    setValue("cnPhone", inv.phone || "");
-    setValue("cnInvoiceDate", inv.invoice_date || "");
-    setValue("cnDueDate", inv.due_date || "");
-    setValue("cnPaymentTerms", inv.payment_terms || "");
-    setValue("cnInvoiceStatus", inv.status || "");
-    setValue("cnPaymentStatus", inv.payment_status || "");
-    setValue("cnInvoiceTotal", Number(inv.grand_total || 0).toFixed(2));
-    const totalDisplay = document.getElementById("invoice_total_display");
-    if (totalDisplay) totalDisplay.textContent = Number(inv.grand_total || 0).toFixed(2);
-
-    const returnRes = await fetch(`/api/invoice-return-items/${encodeURIComponent(invoiceId)}`);
-    const returnData = returnRes.ok ? await returnRes.json() : { items: [] };
-    if (Array.isArray(returnData.items) && returnData.items.length) {
-      renderRows(returnData.items, true);
-    } else {
-      renderRows(details.items || [], false);
-    }
-    calculateRefund();
-  } catch (err) {
-    console.error("Failed to load selected invoice:", err);
-  }
-}
-
-document.addEventListener("DOMContentLoaded", () => {
-  const config = getCreditConfig();
-  const cnIdInput = document.getElementById("cnId");
-  const dateInput = document.getElementById("cnDate");
-  const invoiceRef = document.getElementById("cnInvoiceRef");
-  const cancelBtn = document.getElementById("cnCancelBtn");
-  const amountPaidInput = document.getElementById("cnAmountPaid");
-  const refundPaidInput = document.getElementById("cnRefundPaid");
-
-  if (cnIdInput && config.creditId) cnIdInput.value = config.creditId;
-  if (dateInput && !dateInput.value) dateInput.value = new Date().toISOString().split("T")[0];
-
-  loadInvoiceList();
-  if (invoiceRef) {
-    invoiceRef.addEventListener("change", function () {
-      handleInvoiceSelection(this.value);
-    });
-  }
-
-  if (cancelBtn) {
-    cancelBtn.addEventListener("click", () => {
-      window.location.href = "/credit-note";
-    });
-  }
-
-  if (amountPaidInput) amountPaidInput.addEventListener("input", calculateRefund);
-  if (refundPaidInput) refundPaidInput.addEventListener("input", calculateRefund);
-  calculateRefund();
-
-  const cnItemsBody = document.getElementById("cnItemsBody");
-  if (cnItemsBody) {
-    cnItemsBody.addEventListener("click", (e) => {
-      const deleteBtn = e.target.closest(".cn-delete-row-btn");
-      if (!deleteBtn) return;
-      const row = deleteBtn.closest("tr");
-      if (row) row.remove();
-      calculateRefund();
-    });
-  }
-
-  const commentsTab = document.querySelector('.cn-tab[data-tab="comments"]');
-  const historyTab = document.querySelector('.cn-tab[data-tab="history"]');
-  const attachmentsTab = document.querySelector('.cn-tab[data-tab="attachments"]');
-  const commentsPanel = document.getElementById("cnCommentsPanel");
-  const historyPanel = document.getElementById("cnHistoryPanel");
-  const attachmentsPanel = document.getElementById("cnAttachmentsPanel");
-  const commentInput = document.getElementById("cnCommentInput");
-  const addBtn = document.getElementById("cnAddCommentBtn");
-  const commentList = document.getElementById("cnCommentList");
-  const emptyState = document.getElementById("cnCommentEmpty");
-  const currentUser = (config.userName || "User").toString().trim() || "User";
-  const comments = [];
-
-  function toggleTab(tab) {
-    const isComments = tab === "comments";
-    const isHistory = tab === "history";
-    const isAttachments = tab === "attachments";
-    commentsTab?.classList.toggle("active", isComments);
-    historyTab?.classList.toggle("active", isHistory);
-    attachmentsTab?.classList.toggle("active", isAttachments);
-    commentsPanel?.classList.toggle("hidden", !isComments);
-    historyPanel?.classList.toggle("hidden", !isHistory);
-    attachmentsPanel?.classList.toggle("hidden", !isAttachments);
-  }
-
-  function renderComments() {
-    if (!commentList || !emptyState) return;
-    commentList.innerHTML = "";
-    if (!comments.length) {
-      emptyState.classList.remove("hidden");
+  const emailAction = document.getElementById("cnEmailAction");
+  emailAction?.addEventListener("click", async () => {
+    if (cnNormalizeStatus(cnCurrentStatus) !== "submitted") {
+      cnToast("Email is available only for submitted credit notes", "error");
       return;
     }
-    emptyState.classList.add("hidden");
-    comments.forEach((c) => {
-      const row = document.createElement("div");
-      row.className = "cn-comment-row";
-      row.innerHTML = `
-        <div class="cn-comment-meta">
-          <span class="cn-comment-user">${c.user}</span>
-          <span class="cn-comment-time">- ${c.time}</span>
-        </div>
-        <p class="cn-comment-msg">${c.message}</p>
-      `;
-      commentList.appendChild(row);
-    });
-  }
-
-  if (commentInput && addBtn) {
-    commentInput.addEventListener("input", () => {
-      addBtn.disabled = commentInput.value.trim().length === 0;
-    });
-    addBtn.addEventListener("click", () => {
-      const message = commentInput.value.trim();
-      if (!message) return;
-      comments.unshift({
-        user: currentUser,
-        time: new Date().toLocaleString(),
-        message
+    const id = cnGet("cnId");
+    if (!id) {
+      cnToast("Please save the credit note first before sending email", "error");
+      return;
+    }
+    if (emailAction.dataset.sending === "1") return;
+    emailAction.dataset.sending = "1";
+    // cnToast("Sending email...", "warning");
+    try {
+      const res = await fetch(`/api/credit-notes/${encodeURIComponent(id)}/email`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({})
       });
-      commentInput.value = "";
-      addBtn.disabled = true;
-      renderComments();
-      showToast("Comment added successfully", "success");
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data?.success === false) {
+        throw new Error(data?.message || "Email sending failed");
+      }
+      cnToast(data?.message || "Email sent successfully", "success");
+    } catch (err) {
+      cnToast(err.message || "Failed to send email", "error");
+    } finally {
+      emailAction.dataset.sending = "0";
+    }
+  });
+
+  document.getElementById("cnDeleteFileCancelBtn")?.addEventListener("click", () => {
+    closeCnDeleteFileModal();
+  });
+  document.getElementById("cnDeleteFileConfirmBtn")?.addEventListener("click", async () => {
+    if (_cnPendingDeleteAttachmentId != null) {
+      const id = _cnPendingDeleteAttachmentId;
+      closeCnDeleteFileModal();
+      await window.cnDeleteCreditAttachment(id);
+    }
+  });
+  document.getElementById("cnDeleteFileBackdrop")?.addEventListener("click", (e) => {
+    if (e.target?.id === "cnDeleteFileBackdrop") closeCnDeleteFileModal();
+  });
+
+  try {
+    cnSuppressNativeFieldTooltips();
+  } catch (e) {
+    console.warn("cnSuppressNativeFieldTooltips:", e);
+  }
+
+  try {
+    cnInitRefundDatePicker();
+  } catch (e) {
+    console.warn("cnInitRefundDatePicker:", e);
+  }
+
+  // Load invoice IDs in background; do not block draft/view note hydration.
+  const invoiceIdsPromise = cnLoadInvoiceIds().catch(() => {
+    cnToast("Failed to load invoice IDs", "error");
+  });
+
+  const invoiceRef = document.getElementById("cnInvoiceRef");
+
+  // Only `change` on <select> — do not also use `input` or `onchange` or the handler runs multiple times per pick (duplicate toasts).
+  const onInvoiceRefChanged = function () {
+    cnFillFromInvoice(this.value).catch(() => cnToast("Failed to fetch invoice details", "error"));
+  };
+  if (invoiceRef) {
+    invoiceRef.addEventListener("change", onInvoiceRefChanged);
+  }
+
+  // For mode "new", creditId is only the next reserved number (not in DB yet) — do not GET it.
+  if (creditIdForPage && mode !== "new") {
+    cnLoadCreditNoteById(creditIdForPage)
+      .then(async (it) => {
+        const status = it?.status || "Draft";
+        cnCurrentStatus = status;
+        cnCurrentPaymentStatus = it?.payment_status || "";
+        cnIsSavedNote = true;
+        cnApplyStatusPill(status);
+        const isDraft = String(status).trim().toLowerCase() === "draft";
+        // Ensure the invoice dropdown contains options before finalizing selection.
+        await invoiceIdsPromise;
+        const invoiceRefEl = document.getElementById("cnInvoiceRef");
+        if (invoiceRefEl && it?.invoice_ref_id) {
+          invoiceRefEl.value = String(it.invoice_ref_id);
+        }
+        if (mode === "view" || !isDraft) cnEnableViewOnlyMode();
+        else if (mode === "edit") {
+          cnLockCoreSectionsForEditMode();
+        }
+        else if (typeof window !== "undefined") {
+          window.cnCreditAttachmentsReadOnly = false;
+          try {
+            cnUpdateAttachmentsReadonlyUI();
+          } catch (_e) {
+            /* noop */
+          }
+        }
+        cnApplyWorkflowActions({
+          status: cnCurrentStatus,
+          paymentStatus: cnCurrentPaymentStatus,
+          isSaved: cnIsSavedNote
+        });
+        void cnLoadCreditAttachments();
+      })
+      .catch(() => cnToast("Failed to load credit note details", "error"));
+  } else {
+    await invoiceIdsPromise;
+    if (invoiceRef && invoiceRef.value) {
+      cnFillFromInvoice(invoiceRef.value).catch(() => cnToast("Failed to fetch invoice details", "error"));
+    }
+    // New (unsaved) note: no DB row yet — do not show a status pill ("Draft" would imply a saved draft).
+    cnApplyWorkflowActions({
+      status: cnCurrentStatus,
+      paymentStatus: cnCurrentPaymentStatus,
+      isSaved: cnIsSavedNote
     });
   }
 
-  commentsTab?.addEventListener("click", () => toggleTab("comments"));
-  historyTab?.addEventListener("click", () => toggleTab("history"));
-  attachmentsTab?.addEventListener("click", () => toggleTab("attachments"));
-  renderComments();
+  if (mode !== "view") {
+    document.getElementById("cnAmountPaid")?.addEventListener("input", cnCalcRefund);
+    document.getElementById("cnRefundPaid")?.addEventListener("input", (e) => {
+      cnSanitizeRefundPaidInput(e.currentTarget);
+    }, { capture: true });
+    document.getElementById("cnRefundPaid")?.addEventListener("input", cnCalcRefund);
+    document.getElementById("cnRefundPaid")?.addEventListener("blur", (e) => {
+      cnFormatRefundPaidOnBlur(e.currentTarget);
+      cnCalcRefund();
+    });
+    document.getElementById("cnRefundPaid")?.addEventListener("change", (e) => {
+      cnFormatRefundPaidOnBlur(e.currentTarget);
+      cnCalcRefund();
+    });
+    document.getElementById("cnRefundPaid")?.addEventListener("keydown", (e) => {
+      // Prevent negatives and scientific notation.
+      if (["-", "+", "e", "E"].includes(e.key)) e.preventDefault();
+    });
+    document.getElementById("cnRefundMode")?.addEventListener("change", cnMaybeAutoSetRefundDate);
+
+    const createdByEl = document.getElementById("cnCreatedBy");
+    createdByEl?.addEventListener("input", () => {
+      if (!createdByEl) return;
+      createdByEl.value = cnSanitizeCreatedBy(createdByEl.value);
+    });
+    createdByEl?.addEventListener("keydown", (e) => {
+      // Block digits/special chars; allow letters, space, and control/navigation keys.
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.key.length === 1 && !/^[A-Za-z ]$/.test(e.key)) {
+        e.preventDefault();
+      }
+      // Hard cap at 30 (unless backspace/delete).
+      const isBackspace = e.key === "Backspace" || e.key === "Delete";
+      const current = String(createdByEl?.value || "");
+      if (!isBackspace && current.length >= 30) e.preventDefault();
+    });
+  }
+  cnMaybeAutoSetRefundDate();
+
+  const userName = (cfg.userName || "User").toString().trim() || "User";
+  try {
+    cnInitTabsAndComments(userName);
+  } catch (e) {
+    console.warn("cnInitTabsAndComments:", e);
+  }
+  try {
+    cnInitCreditAttachments();
+    cnUpdateAttachmentsReadonlyUI();
+  } catch (e) {
+    console.warn("cnInitCreditAttachments:", e);
+  }
 });
-document.addEventListener("DOMContentLoaded", () => {
-    const searchInput = document.getElementById("creditSearchInput");
-    const clearBtn = document.getElementById("creditClearBtn");
-    const statusFilter = document.getElementById("creditStatusFilter");
-    const customerFilter = document.getElementById("creditCustomerFilter");
-    const fromDateInput = document.getElementById("creditFromDate");
-    const toDateInput = document.getElementById("creditToDate");
-  
-    const tbody = document.getElementById("creditTbody");
-    const noDataRow = document.getElementById("creditNoDataRow");
-    const showingText = document.getElementById("creditShowingText");
-    const prevBtn = document.getElementById("creditPrevBtn");
-    const nextBtn = document.getElementById("creditNextBtn");
-    const pageText = document.getElementById("creditPageText");
-    const newCreditBtn = document.getElementById("newCreditBtn");
-  
-    const sortTh = document.getElementById("creditStatusSortTh");
-    const sortMenu = document.getElementById("creditStatusSortMenu");
-  
-    const STATUS_ORDER = ["Draft", "Submitted", "Approved", "Cancelled"];
-    const ROWS_PER_PAGE = 10;
-  
-    let allRows = [];
-    let filteredRows = [];
-    let currentPage = 1;
-    let flyEl = null;
-    let hideTimer = null;
-  
-    function getInlineConfig() {
-      const el = document.getElementById("credit-inline-config");
-      if (!el) return {};
-      try {
-        return JSON.parse(el.textContent || "{}");
-      } catch (e) {
-        return {};
-      }
-    }
-  
-    function formatCommentTimestamp(d = new Date()) {
-      const date = d.toLocaleDateString("en-GB");
-      let time = d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
-      time = time.replace(":", ".").toLowerCase();
-      return `${date}, ${time}`;
-    }
-  
-    function showToast(message, type = "success") {
-      const toast = document.createElement("div");
-      toast.className = type === "error" ? "error-notification" : "success-notification";
-      toast.textContent = message;
-      document.body.appendChild(toast);
-      requestAnimationFrame(() => toast.classList.add("show"));
-      setTimeout(() => {
-        toast.classList.remove("show");
-        setTimeout(() => toast.remove(), 280);
-      }, 2200);
-    }
-  
-    function initCreditNoteComments() {
-      const commentInput = document.getElementById("cnCommentInput");
-      const addBtn = document.getElementById("cnAddCommentBtn");
-      const commentList = document.getElementById("cnCommentList");
-      const emptyState = document.getElementById("cnCommentEmpty");
-      const commentsTab = document.querySelector('.cn-tab[data-tab="comments"]');
-      const historyTab = document.querySelector('.cn-tab[data-tab="history"]');
-      const attachmentsTab = document.querySelector('.cn-tab[data-tab="attachments"]');
-      const commentsPanel = document.getElementById("cnCommentsPanel");
-      const historyPanel = document.getElementById("cnHistoryPanel");
-      const attachmentsPanel = document.getElementById("cnAttachmentsPanel");
-  
-      if (!commentInput || !addBtn || !commentList || !emptyState) return;
-  
-      const config = getInlineConfig();
-      const currentUser = (config.userName || "User").toString().trim() || "User";
-      const comments = [];
-  
-      function toggleTab(tab) {
-        const isComments = tab === "comments";
-        const isHistory = tab === "history";
-        const isAttachments = tab === "attachments";
-  
-        commentsTab?.classList.toggle("active", isComments);
-        historyTab?.classList.toggle("active", isHistory);
-        attachmentsTab?.classList.toggle("active", isAttachments);
-  
-        commentsPanel?.classList.toggle("hidden", !isComments);
-        historyPanel?.classList.toggle("hidden", !isHistory);
-        attachmentsPanel?.classList.toggle("hidden", !isAttachments);
-      }
-  
-      function setAddBtnState() {
-        addBtn.disabled = commentInput.value.trim().length === 0;
-      }
-  
-      function renderComments() {
-        commentList.innerHTML = "";
-        if (!comments.length) {
-          emptyState.classList.remove("hidden");
-          return;
-        }
-  
-        emptyState.classList.add("hidden");
-        comments.forEach((c) => {
-          const row = document.createElement("div");
-          row.className = "cn-comment-row";
-          row.innerHTML = `
-            <div class="cn-comment-meta">
-              <span class="cn-comment-user">${escapeHtml(c.user)}</span>
-              <span class="cn-comment-time">- ${escapeHtml(c.time)}</span>
-            </div>
-            <p class="cn-comment-msg">${escapeHtml(c.message)}</p>
-          `;
-          commentList.appendChild(row);
-        });
-      }
-  
-      commentInput.addEventListener("input", setAddBtnState);
-      addBtn.addEventListener("click", () => {
-        const message = commentInput.value.trim();
-        if (!message) {
-          setAddBtnState();
-          return;
-        }
-  
-        comments.unshift({
-          user: currentUser,
-          time: formatCommentTimestamp(new Date()),
-          message
-        });
-  
-        commentInput.value = "";
-        setAddBtnState();
-        renderComments();
-        showToast("Comment added successfully", "success");
-      });
-  
-      commentsTab?.addEventListener("click", () => toggleTab("comments"));
-      historyTab?.addEventListener("click", () => toggleTab("history"));
-      attachmentsTab?.addEventListener("click", () => toggleTab("attachments"));
-  
-      setAddBtnState();
-      renderComments();
-    }
-  
-    function norm(v) {
-      return (v ?? "").toString().trim().toLowerCase();
-    }
-  
-    function escapeHtml(v) {
-      return (v ?? "")
-        .toString()
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#39;");
-    }
-  
-    function parseDate(dateValue) {
-      if (!dateValue) return 0;
-      return new Date(dateValue + "T00:00:00").getTime();
-    }
-  
-    function totalPages() {
-      return filteredRows.length === 0 ? 0 : Math.ceil(filteredRows.length / ROWS_PER_PAGE);
-    }
-  
-    function statusRank(status) {
-      const idx = STATUS_ORDER.indexOf((status || "").trim());
-      return idx === -1 ? 999 : idx;
-    }
-  
-    function statusClass(status) {
-      const s = norm(status);
-      if (s === "draft") return "credit-status-badge credit-status-draft";
-      if (s === "submitted") return "credit-status-badge credit-status-submitted";
-      if (s === "approved") return "credit-status-badge credit-status-approved";
-      if (s === "cancelled") return "credit-status-badge credit-status-cancelled";
-      return "credit-status-badge credit-status-draft";
-    }
-  
-    function paymentClass(paymentStatus) {
-      const s = norm(paymentStatus);
-      if (s === "paid") return "credit-payment-paid";
-      if (s === "partial") return "credit-payment-partial";
-      return "credit-payment-unpaid";
-    }
-  
-    function removeFly() {
-      if (flyEl) {
-        flyEl.remove();
-        flyEl = null;
-      }
-    }
-  
-    function scheduleHide() {
-      clearTimeout(hideTimer);
-      hideTimer = setTimeout(() => removeFly(), 120);
-    }
-  
-    function keepOpen() {
-      clearTimeout(hideTimer);
-    }
-  
-    function buildFlyMenu(row, anchorBtn) {
-      const crnId = String(row.crn_id || "").trim();
-      if (!crnId) return;
-  
-      flyEl = document.createElement("div");
-      flyEl.className = "credit-act-fly";
-  
-      const mkItem = (label, onClick) => {
-        const button = document.createElement("button");
-        button.type = "button";
-        button.className = "credit-act-item";
-        button.textContent = label;
-        button.addEventListener("click", onClick);
-        return button;
-      };
-  
-      flyEl.appendChild(
-        mkItem("View Details", () => {
-          window.location.href = `/new-credit-note?crn_id=${encodeURIComponent(crnId)}&mode=view`;
-        })
-      );
-  
-      flyEl.appendChild(
-        mkItem("Delete", async () => {
-          const ok = window.confirm(`Delete Credit Note ${crnId}?`);
-          if (!ok) return;
-  
-          let deletedOnServer = false;
-          try {
-            const res = await fetch(`/api/credit-notes/${encodeURIComponent(crnId)}`, {
-              method: "DELETE"
-            });
-            deletedOnServer = res.ok;
-          } catch (e) {
-            deletedOnServer = false;
-          }
-  
-          // Keep UI responsive even if backend delete endpoint is not ready yet.
-          allRows = allRows.filter((r) => String(r.crn_id || "") !== crnId);
-          applyFilters();
-          removeFly();
-  
-          if (!deletedOnServer) {
-            console.warn("Delete endpoint not available, removed only from current list view.");
-          }
-        })
-      );
-  
-      flyEl.addEventListener("mouseenter", keepOpen);
-      flyEl.addEventListener("mouseleave", scheduleHide);
-      document.body.appendChild(flyEl);
-  
-      const btnRect = anchorBtn.getBoundingClientRect();
-      flyEl.style.visibility = "hidden";
-      flyEl.style.left = "0px";
-      flyEl.style.top = "0px";
-  
-      const popRect = flyEl.getBoundingClientRect();
-      const gap = 8;
-      const dropY = 25;
-  
-      let top = btnRect.top - popRect.height - gap + dropY;
-      if (top < 8) top = btnRect.bottom + gap + dropY;
-  
-      let left = btnRect.right - popRect.width;
-      const maxLeft = window.innerWidth - popRect.width - 8;
-      if (left > maxLeft) left = maxLeft;
-      if (left < 8) left = 8;
-  
-      flyEl.style.left = `${Math.round(left)}px`;
-      flyEl.style.top = `${Math.round(top)}px`;
-      flyEl.style.visibility = "visible";
-    }
-  
-    function attachHoverMenu(btn, row) {
-      btn.addEventListener("mouseenter", () => {
-        removeFly();
-        keepOpen();
-        buildFlyMenu(row, btn);
-      });
-      btn.addEventListener("mouseleave", scheduleHide);
-    }
-  
-    function updatePager() {
-      const tp = totalPages();
-      prevBtn.disabled = currentPage <= 1 || tp === 0;
-      nextBtn.disabled = currentPage >= tp || tp === 0;
-  
-      if (tp === 0) {
-        pageText.innerHTML = "Page <strong>0</strong> of <strong>0</strong>";
-      } else {
-        pageText.innerHTML = `Page <strong>${currentPage}</strong> of <strong>${tp}</strong>`;
-      }
-    }
-  
-    function updateShowing() {
-      if (!filteredRows.length) {
-        showingText.textContent = "Showing 0 of 0 Entries";
-        return;
-      }
-      const start = (currentPage - 1) * ROWS_PER_PAGE + 1;
-      const end = Math.min(currentPage * ROWS_PER_PAGE, filteredRows.length);
-      showingText.textContent = `Showing ${start}-${end} of ${filteredRows.length} Entries`;
-    }
-  
-    function renderTable() {
-      tbody.innerHTML = "";
-  
-      if (!filteredRows.length) {
-        if (noDataRow) tbody.appendChild(noDataRow);
-        updatePager();
-        updateShowing();
-        return;
-      }
-  
-      const start = (currentPage - 1) * ROWS_PER_PAGE;
-      const rows = filteredRows.slice(start, start + ROWS_PER_PAGE);
-  
-      rows.forEach((item) => {
-        const tr = document.createElement("tr");
-        tr.innerHTML = `
-          <td class="credit-td-check">
-            <input type="checkbox" class="credit-row-check" data-id="${escapeHtml(item.crn_id)}">
-          </td>
-          <td>${escapeHtml(item.crn_id)}</td>
-          <td>${escapeHtml(item.invoice_ref_id)}</td>
-          <td>${escapeHtml(item.customer_name)}</td>
-          <td>${escapeHtml(item.credit_note_date)}</td>
-          <td>
-            <span class="${statusClass(item.status)}">${escapeHtml(item.status)}</span>
-          </td>
-          <td class="${paymentClass(item.payment_status)}">${escapeHtml(item.payment_status)}</td>
-          <td>
-            <button type="button" class="credit-action-btn" title="Actions">⋮</button>
-          </td>
-        `;
-        tbody.appendChild(tr);
-  
-        const dots = tr.querySelector(".credit-action-btn");
-        if (dots) attachHoverMenu(dots, item);
-      });
-  
-      updatePager();
-      updateShowing();
-    }
-  
-    function applyFilters() {
-      const q = norm(searchInput.value);
-      const status = statusFilter.value;
-      const customer = customerFilter.value;
-      const from = fromDateInput.value;
-      const to = toDateInput.value;
-  
-      if (from && to && parseDate(to) < parseDate(from)) {
-        toDateInput.value = "";
-        alert("To date cannot be earlier than From date");
-        return;
-      }
-  
-      filteredRows = allRows.filter((row) => {
-        const searchMatch =
-          norm(row.crn_id).includes(q) ||
-          norm(row.invoice_ref_id).includes(q) ||
-          norm(row.customer_name).includes(q);
-  
-        const statusMatch = status === "all" || row.status === status;
-        const customerMatch = customer === "all" || row.customer_name === customer;
-  
-        let dateMatch = true;
-        if (from || to) {
-          const rowDate = parseDate(row.credit_note_date);
-          const fromTime = from ? parseDate(from) : null;
-          const toTime = to ? parseDate(to) + 86400000 : null;
-          if (fromTime && rowDate < fromTime) dateMatch = false;
-          if (toTime && rowDate >= toTime) dateMatch = false;
-        }
-  
-        return searchMatch && statusMatch && customerMatch && dateMatch;
-      });
-  
-      currentPage = 1;
-      renderTable();
-    }
-  
-    function applyStatusSort(mode) {
-      if (mode === "newest") {
-        filteredRows.sort((a, b) => parseDate(b.credit_note_date) - parseDate(a.credit_note_date));
-      } else if (mode === "oldest") {
-        filteredRows.sort((a, b) => parseDate(a.credit_note_date) - parseDate(b.credit_note_date));
-      } else if (mode === "progress") {
-        filteredRows.sort((a, b) => statusRank(a.status) - statusRank(b.status));
-      } else if (mode === "reverse") {
-        filteredRows.sort((a, b) => statusRank(b.status) - statusRank(a.status));
-      }
-      currentPage = 1;
-      renderTable();
-    }
-  
-    async function loadCreditNotes() {
-      try {
-        const res = await fetch("/api/credit-notes");
-        if (!res.ok) throw new Error("credit notes api unavailable");
-        const payload = await res.json();
-        const rows = Array.isArray(payload?.items) ? payload.items : Array.isArray(payload) ? payload : [];
-  
-        allRows = rows.map((r) => ({
-          crn_id: r.crn_id || r.credit_note_id || "",
-          invoice_ref_id: r.invoice_ref_id || r.invoice_id || "",
-          customer_name: r.customer_name || "",
-          credit_note_date: r.credit_note_date || r.note_date || "",
-          status: r.status || "Draft",
-          payment_status: r.payment_status || "Unpaid"
-        }));
-  
-      } catch (err) {
-        console.warn("Failed to load credit note data:", err);
-        allRows = [];
-      }
-  
-      filteredRows = [...allRows];
-      renderTable();
-    }
-  
-    if (searchInput) searchInput.addEventListener("input", applyFilters);
-    if (statusFilter) statusFilter.addEventListener("change", applyFilters);
-    if (customerFilter) customerFilter.addEventListener("change", applyFilters);
-    if (fromDateInput) fromDateInput.addEventListener("change", applyFilters);
-    if (toDateInput) toDateInput.addEventListener("change", applyFilters);
-  
-    if (clearBtn) {
-      clearBtn.addEventListener("click", () => {
-        if (searchInput) searchInput.value = "";
-        if (statusFilter) statusFilter.value = "all";
-        if (customerFilter) customerFilter.value = "all";
-        if (fromDateInput) fromDateInput.value = "";
-        if (toDateInput) toDateInput.value = "";
-        applyFilters();
-      });
-    }
-  
-    if (prevBtn) {
-      prevBtn.addEventListener("click", () => {
-        if (prevBtn.disabled) return;
-        currentPage -= 1;
-        renderTable();
-      });
-    }
-  
-    if (nextBtn) {
-      nextBtn.addEventListener("click", () => {
-        if (nextBtn.disabled) return;
-        currentPage += 1;
-        renderTable();
-      });
-    }
-  
-    window.addEventListener("scroll", () => removeFly(), true);
-    window.addEventListener("resize", () => removeFly());
-  
-    if (sortTh && sortMenu) {
-      sortTh.addEventListener("click", (e) => {
-        if (e.target.closest("#creditStatusSortMenu")) return;
-        sortTh.classList.toggle("open");
-      });
-  
-      document.addEventListener("click", (e) => {
-        if (!e.target.closest("#creditStatusSortTh")) {
-          sortTh.classList.remove("open");
-        }
-      });
-  
-      sortMenu.addEventListener("click", (e) => {
-        const btn = e.target.closest("[data-sort]");
-        if (!btn) return;
-        applyStatusSort(btn.dataset.sort);
-        sortTh.classList.remove("open");
-      });
-    }
-  
-    if (newCreditBtn) {
-      newCreditBtn.addEventListener("click", () => {
-        window.location.href = "/new-credit-note";
-      });
-    }
-  
-    const cancelBtn = document.getElementById("cnCancelBtn");
-    if (cancelBtn) {
-      cancelBtn.addEventListener("click", () => {
-        window.location.href = "/credit-note";
-      });
-    }
-  
-    const cnPdfAction = document.getElementById("cnPdfAction");
-    if (cnPdfAction) {
-      cnPdfAction.addEventListener("click", cnGeneratePDF);
-    }
-  
-    const cnEmailAction = document.getElementById("cnEmailAction");
-    if (cnEmailAction) {
-      cnEmailAction.addEventListener("click", cnSendEmail);
-    }
-  
-    const cnItemsBody = document.getElementById("cnItemsBody");
-    if (cnItemsBody) {
-      cnItemsBody.addEventListener("click", (e) => {
-        const deleteBtn = e.target.closest(".cn-delete-row-btn");
-        if (!deleteBtn) return;
-  
-        const tr = deleteBtn.closest("tr");
-        if (!tr) return;
-        tr.remove();
-  
-        const rows = Array.from(cnItemsBody.querySelectorAll("tr")).filter((row) => !row.querySelector(".cn-empty"));
-        if (!rows.length) {
-          cnItemsBody.innerHTML = '<tr><td colspan="11" class="cn-empty">No returned items</td></tr>';
-          return;
-        }
-  
-        rows.forEach((row, idx) => {
-          const firstCell = row.querySelector("td");
-          if (firstCell) firstCell.textContent = String(idx + 1);
-        });
-      });
-    }
-  
-    if (tbody && pageText && showingText && prevBtn && nextBtn) {
-      renderTable();
-      loadCreditNotes();
-    }
-  
-    initCreditNoteComments();
-  });
-  
-  document.addEventListener("DOMContentLoaded", function () {
-      const configElement = document.getElementById("credit-inline-config");
-      let config = {};
-  
-      if (configElement) {
-          try {
-              config = JSON.parse(configElement.textContent || "{}");
-          } catch (err) {
-              console.warn("Invalid credit inline config:", err);
-              config = {};
-          }
-      }
-  
-      const cnIdInput = document.getElementById("cnId");
-      if (cnIdInput && config.creditId) {
-          cnIdInput.value = config.creditId;
-      }
-  
-      const dateInput = document.getElementById("cnDate");
-      if (dateInput && !dateInput.value) {
-          const today = new Date().toISOString().split("T")[0];
-          dateInput.value = today;
-      }
-  
-      const invoiceTotalDisplay = document.getElementById("invoice_total_display");
-      const dropdown = document.getElementById("cnInvoiceRef");
-      const tbody = document.getElementById("cnItemsBody");
-      const amountPaidInput = document.getElementById("cnAmountPaid");
-      const refundPaidInput = document.getElementById("cnRefundPaid");
-      const saveDraftBtn = document.getElementById("cnSaveDraftBtn");
-      const markPaidBtn = document.getElementById("cnMarkPaidBtn");
-      const deleteBtn = document.getElementById("cnDeleteBtn");
-  
-      function setInputValue(id, val) {
-          const el = document.getElementById(id);
-          if (el) el.value = val ?? "";
-      }
-  
-      function setInvoiceTotal(totalValue) {
-          const numeric = Number(totalValue || 0);
-          setInputValue("cnInvoiceTotal", numeric.toFixed(2));
-          if (invoiceTotalDisplay) {
-              invoiceTotalDisplay.textContent = numeric.toFixed(2);
-          }
-          if (amountPaidInput) {
-              amountPaidInput.max = numeric.toFixed(2);
-          }
-      }
-  
-      function renderRows(items, isReturnItems) {
-          if (!tbody) return;
-          if (!Array.isArray(items) || items.length === 0) {
-              tbody.innerHTML = '<tr><td colspan="11" class="cn-empty">No returned items</td></tr>';
-              return;
-          }
-  
-          tbody.innerHTML = "";
-          items.forEach((item, idx) => {
-              const qty = isReturnItems ? item.return_qty : item.quantity;
-              const reason = isReturnItems ? (item.reason || "") : "";
-              const tr = document.createElement("tr");
-              tr.innerHTML = `
-                  <td>${idx + 1}</td>
-                  <td>${item.product_name ?? ""}</td>
-                  <td>${item.product_id ?? ""}</td>
-                  <td>${qty ?? 0}</td>
-                  <td>${item.uom ?? ""}</td>
-                  <td>${reason}</td>
-                  <td>${item.unit_price ?? 0}</td>
-                  <td>${item.tax_percent ?? 0}</td>
-                  <td>${item.discount ?? 0}</td>
-                  <td>${item.total ?? 0}</td>
-                  <td>
-                      <button type="button" class="cn-delete-row-btn" title="Delete">
-                          <svg class="cn-delete-icon" viewBox="0 0 448 512" aria-hidden="true" focusable="false">
-                              <path d="M135.2 17.7C140.6 7.1 151.5 0 163.3 0h121.4c11.8 0 22.7 7.1 28.1 17.7L328 32h88c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 96 0 81.7 0 64S14.3 32 32 32h88l15.2-14.3zM53.2 467c1.6 25.7 23 45 48.8 45h244c25.8 0 47.2-19.3 48.8-45L416 128H32l21.2 339z"/>
-                          </svg>
-                      </button>
-                  </td>
-              `;
-              tbody.appendChild(tr);
-          });
-      }
-  
-      function clearInvoiceFields() {
-          [
-              "cnCustomerName", "cnCustomerId", "cnBillingAddress", "cnPhone",
-              "cnInvoiceDate", "cnDueDate", "cnPaymentTerms", "cnInvoiceStatus",
-              "cnPaymentStatus", "cnInvoiceTotal"
-          ].forEach((id) => setInputValue(id, ""));
-  
-          setInvoiceTotal(0);
-          renderRows([], true);
-          calculateRefund();
-      }
-  
-      async function handleInvoiceSelection(invoiceId) {
-          if (!invoiceId) {
-              clearInvoiceFields();
-              return;
-          }
-  
-          try {
-              const detailsRes = await fetch(`/api/invoice-details-credit/${encodeURIComponent(invoiceId)}`);
-              const details = await detailsRes.json();
-              if (!detailsRes.ok || !details.success) {
-                  clearInvoiceFields();
-                  return;
-              }
-  
-              const inv = details.invoice || {};
-              setInputValue("cnCustomerName", inv.customer_name || "");
-              setInputValue("cnCustomerId", inv.customer_id || "");
-              setInputValue("cnBillingAddress", inv.billing_address || "");
-              setInputValue("cnPhone", inv.phone || "");
-              setInputValue("cnInvoiceDate", inv.invoice_date || "");
-              setInputValue("cnDueDate", inv.due_date || "");
-              setInputValue("cnPaymentTerms", inv.payment_terms || "");
-              setInputValue("cnInvoiceStatus", inv.status || "");
-              setInputValue("cnPaymentStatus", inv.payment_status || "");
-              setInvoiceTotal(inv.grand_total || 0);
-  
-              const returnRes = await fetch(`/api/invoice-return-items/${encodeURIComponent(invoiceId)}`);
-              const returnData = returnRes.ok ? await returnRes.json() : { items: [] };
-              if (Array.isArray(returnData.items) && returnData.items.length) {
-                  renderRows(returnData.items, true);
-              } else {
-                  renderRows(details.items || [], false);
-              }
-  
-              calculateRefund();
-          } catch (err) {
-              console.error("Failed to load selected invoice:", err);
-              clearInvoiceFields();
-          }
-      }
-  
-      if (dropdown) {
-          fetch("/api/invoices-credit")
-              .then((response) => response.json())
-              .then((data) => {
-                  const invoices = Array.isArray(data?.invoices) ? data.invoices : [];
-                  dropdown.innerHTML = '<option value="">Select Invoice Ref. ID</option>';
-                  invoices.forEach((inv) => {
-                      const option = document.createElement("option");
-                      option.value = String(inv || "");
-                      option.textContent = String(inv || "");
-                      dropdown.appendChild(option);
-                  });
-              })
-              .catch((err) => {
-                  console.error("Failed to load invoice reference IDs:", err);
-              });
-  
-          dropdown.addEventListener("change", function () {
-              handleInvoiceSelection(this.value);
-          });
-      }
-  
-      function getText(id) {
-          const el = document.getElementById(id);
-          return (el?.innerText || "").trim();
-      }
-  
-      function getValue(id) {
-          const el = document.getElementById(id);
-          return (el?.value || "").trim();
-      }
-  
-      function collectLineItems() {
-          const rows = Array.from(document.querySelectorAll("#cnItemsBody tr"));
-          return rows
-              .map((row) => {
-                  const cells = row.querySelectorAll("td");
-                  if (!cells || cells.length < 10) return null;
-                  const productName = (cells[1]?.innerText || "").trim();
-                  const productId = (cells[2]?.innerText || "").trim();
-                  if (!productName && !productId) return null;
-                  return {
-                      sno: (cells[0]?.innerText || "").trim(),
-                      product_name: productName,
-                      product_id: productId,
-                      returned_qty: (cells[3]?.innerText || "").trim(),
-                      uom: (cells[4]?.innerText || "").trim(),
-                      reason: (cells[5]?.innerText || "").trim(),
-                      unit_price: (cells[6]?.innerText || "").trim(),
-                      tax_percent: (cells[7]?.innerText || "").trim(),
-                      discount: (cells[8]?.innerText || "").trim(),
-                      total: (cells[9]?.innerText || "").trim()
-                  };
-              })
-              .filter(Boolean);
-      }
-  
-      function collectCreditNotePayload(status) {
-          return {
-              credit_note_id: getValue("cnId"),
-              credit_note_date: getValue("cnDate"),
-              invoice_ref_id: getValue("cnInvoiceRef"),
-              created_by: getValue("cnCreatedBy"),
-              branch: getValue("cnBranch"),
-              currency: getValue("cnCurrency"),
-              customer_name: getValue("cnCustomerName"),
-              customer_id: getValue("cnCustomerId"),
-              billing_address: getValue("cnBillingAddress"),
-              phone: getValue("cnPhone"),
-              invoice_date: getValue("cnInvoiceDate"),
-              due_date: getValue("cnDueDate"),
-              payment_terms: getValue("cnPaymentTerms"),
-              invoice_status: getValue("cnInvoiceStatus"),
-              payment_status: getValue("cnPaymentStatus"),
-              invoice_total: getValue("cnInvoiceTotal"),
-              amount_paid: getValue("cnAmountPaid"),
-              balance_due: getText("cnBalanceDue"),
-              invoice_return_amount: getText("cnInvoiceReturnAmount"),
-              balance_to_refund: getText("cnBalanceToRefund"),
-              refund_mode: getValue("cnRefundMode"),
-              refund_paid: getValue("cnRefundPaid"),
-              refund_date: getValue("cnRefundDate"),
-              adjusted_invoice_reference: getValue("cnAdjustedInvoiceRef"),
-              items: collectLineItems(),
-              status
-          };
-      }
-  
-      async function saveCreditNote(status) {
-          const payload = collectCreditNotePayload(status);
-          if (!payload.credit_note_id) {
-              alert("Credit Note ID is required.");
-              return false;
-          }
-          try {
-              const res = await fetch("/api/credit-notes", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify(payload)
-              });
-              if (!res.ok) throw new Error("save failed");
-              const msg = status === "Approved" ? "Credit note marked as paid" : "Credit note saved as draft";
-              window.location.href = `/credit-note?toast=${encodeURIComponent(msg)}&type=success`;
-              return true;
-          } catch (err) {
-              console.error("Failed to save credit note:", err);
-              showToast("Failed to save credit note", "error");
-              return false;
-          }
-      }
-  
-      saveDraftBtn?.addEventListener("click", async () => {
-          await saveCreditNote("Draft");
-      });
-  
-      markPaidBtn?.addEventListener("click", async () => {
-          const payload = collectCreditNotePayload("Approved");
-          if (!payload.credit_note_id) {
-              alert("Credit Note ID is required.");
-              return;
-          }
-          try {
-              const res = await fetch(`/api/credit-notes/${encodeURIComponent(payload.credit_note_id)}/mark-paid`, {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify(payload)
-              });
-              if (!res.ok) throw new Error("mark paid failed");
-              window.location.href = `/credit-note?toast=${encodeURIComponent("Credit note marked as paid")}&type=success`;
-          } catch (err) {
-              console.error("Failed to mark credit note as paid:", err);
-              showToast("Failed to mark as paid", "error");
-          }
-      });
-  
-      deleteBtn?.addEventListener("click", async () => {
-          const creditId = getValue("cnId");
-          if (!creditId) {
-              alert("Credit Note ID is required.");
-              return;
-          }
-          const ok = window.confirm(`Delete Credit Note ${creditId}?`);
-          if (!ok) return;
-          try {
-              const res = await fetch(`/api/credit-notes/${encodeURIComponent(creditId)}`, {
-                  method: "DELETE"
-              });
-              if (!res.ok) throw new Error("delete failed");
-              window.location.href = `/credit-note?toast=${encodeURIComponent("Credit note deleted")}&type=success`;
-          } catch (err) {
-              console.error("Failed to delete credit note:", err);
-              showToast("Failed to delete credit note", "error");
-          }
-      });
-  
-      amountPaidInput?.addEventListener("input", calculateRefund);
-      refundPaidInput?.addEventListener("input", calculateRefund);
-      calculateRefund();
-  });
-  
-  
-  function calculateRefund() {
-      const invoiceTotal = Math.max(parseFloat(document.getElementById("cnInvoiceTotal").value) || 0, 0);
-      const amountPaidInput = document.getElementById("cnAmountPaid");
-      const refundPaidInput = document.getElementById("cnRefundPaid");
-      const balanceDueEl = document.getElementById("cnBalanceDue");
-      const invoiceReturnAmountEl = document.getElementById("cnInvoiceReturnAmount");
-      const balanceToRefundEl = document.getElementById("cnBalanceToRefund");
-  
-      let amountPaid = Math.max(parseFloat(amountPaidInput?.value) || 0, 0);
-      if (amountPaid > invoiceTotal) amountPaid = invoiceTotal;
-  
-      let invoiceReturnAmount = Math.max(calculateReturnedTotal(), 0);
-      if (invoiceReturnAmount > invoiceTotal) invoiceReturnAmount = invoiceTotal;
-  
-      const refundableBase = Math.min(invoiceReturnAmount, amountPaid);
-  
-      let refundPaid = Math.max(parseFloat(refundPaidInput?.value) || 0, 0);
-      if (refundPaid > refundableBase) refundPaid = refundableBase;
-  
-      if (amountPaidInput) {
-          const rawAmount = parseFloat(amountPaidInput.value);
-          if (Number.isFinite(rawAmount) && rawAmount !== amountPaid) {
-              amountPaidInput.value = amountPaid.toFixed(2);
-          }
-          amountPaidInput.max = invoiceTotal.toFixed(2);
-      }
-      if (refundPaidInput) {
-          const rawRefund = parseFloat(refundPaidInput.value);
-          if (Number.isFinite(rawRefund) && rawRefund !== refundPaid) {
-              refundPaidInput.value = refundPaid.toFixed(2);
-          }
-          refundPaidInput.max = refundableBase.toFixed(2);
-      }
-  
-      const balanceDue = Math.max(invoiceTotal - amountPaid, 0);
-      const balanceToRefund = Math.max(refundableBase - refundPaid, 0);
-  
-      if (balanceDueEl) balanceDueEl.innerText = balanceDue.toFixed(2);
-      if (invoiceReturnAmountEl) invoiceReturnAmountEl.innerText = invoiceReturnAmount.toFixed(2);
-      if (balanceToRefundEl) balanceToRefundEl.innerText = balanceToRefund.toFixed(2);
-  }
-  function calculateReturnedTotal() {
-      let total = 0;
-  
-      document.querySelectorAll("#cnItemsBody tr").forEach(row => {
-          const totalCell = row.children[9]; // Total column
-          if (totalCell && totalCell.innerText) {
-              total += parseFloat(totalCell.innerText) || 0;
-          }
-      });
-  
-      return total;
-  }
-  
-  
-  function cnGeneratePDF() {
-      const creditId = (document.getElementById("cnId")?.value || "").trim();
-      if (!creditId) {
-          const toast = document.createElement("div");
-          toast.className = "error-notification";
-          toast.textContent = "Please save the credit note first before generating PDF";
-          document.body.appendChild(toast);
-          requestAnimationFrame(() => toast.classList.add("show"));
-          setTimeout(() => { toast.classList.remove("show"); setTimeout(() => toast.remove(), 280); }, 2200);
-          return;
-      }
-      window.open(`/api/credit-notes/${encodeURIComponent(creditId)}/pdf`, "_blank");
-  }
-  
-  function cnSendEmail() {
-      const creditId = (document.getElementById("cnId")?.value || "").trim();
-      if (!creditId) {
-          const toast = document.createElement("div");
-          toast.className = "error-notification";
-          toast.textContent = "Please save the credit note first before sending email";
-          document.body.appendChild(toast);
-          requestAnimationFrame(() => toast.classList.add("show"));
-          setTimeout(() => { toast.classList.remove("show"); setTimeout(() => toast.remove(), 280); }, 2200);
-          return;
-      }
-  
-      const modal = document.getElementById("cnEmailModal");
-      if (!modal) return;
-      modal.style.display = "flex";
-  
-      const emailInput = document.getElementById("cnRecipientEmail");
-      if (emailInput) emailInput.value = "";
-  
-      const sendBtn = document.getElementById("cnSendEmailBtn");
-      const cancelBtn = document.getElementById("cnCancelEmailBtn");
-  
-      const newSendBtn = sendBtn.cloneNode(true);
-      const newCancelBtn = cancelBtn.cloneNode(true);
-      sendBtn.parentNode.replaceChild(newSendBtn, sendBtn);
-      cancelBtn.parentNode.replaceChild(newCancelBtn, cancelBtn);
-  
-      newCancelBtn.addEventListener("click", () => { modal.style.display = "none"; });
-  
-      newSendBtn.addEventListener("click", async () => {
-          const recipient = (document.getElementById("cnRecipientEmail")?.value || "").trim();
-          if (!recipient || !/^[^\s@]+@([^\s@]+\.)+[^\s@]+$/.test(recipient)) {
-              alert("Please enter a valid email address.");
-              return;
-          }
-          newSendBtn.disabled = true;
-          newSendBtn.textContent = "Sending...";
-          try {
-              const res = await fetch(`/api/credit-notes/${encodeURIComponent(creditId)}/email`, {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ email: recipient })
-              });
-              const data = await res.json();
-              const toast = document.createElement("div");
-              toast.className = data.success ? "success-notification" : "error-notification";
-              toast.textContent = data.success ? "Email sent successfully" : ("Failed to send email: " + (data.error || "Unknown error"));
-              document.body.appendChild(toast);
-              requestAnimationFrame(() => toast.classList.add("show"));
-              setTimeout(() => { toast.classList.remove("show"); setTimeout(() => toast.remove(), 280); }, 2200);
-              if (data.success) modal.style.display = "none";
-          } catch (err) {
-              alert("Failed to send email. Please try again.");
-          } finally {
-              newSendBtn.disabled = false;
-              newSendBtn.textContent = "Send";
-          }
-      });
-  }
-  

@@ -35,9 +35,11 @@ const pageTotal = document.getElementById("pageTotal");
   let currentPage = 1;
   let allOrders = [];
   let filteredOrders = [];
+  let currentStatusSortMode = "";
 
   let flyEl = null;
   let hideTimer = null;
+  let statusSortHideTimer = null;
 
   /* =========================================================
      CONSTANTS
@@ -184,8 +186,22 @@ const pageTotal = document.getElementById("pageTotal");
   /* =========================================================
      SORTING
   ========================================================== */
+  function syncStatusSortMenuActive() {
+    if (!statusSortMenu) return;
+    statusSortMenu.querySelectorAll("button[data-sort]").forEach((b) => {
+      b.classList.toggle("so-sort-option--active", b.dataset.sort === currentStatusSortMode);
+    });
+  }
+
   function applyStatusSort(mode) {
-    if (!filteredOrders.length) return;
+    currentStatusSortMode = mode || "";
+    syncStatusSortMenuActive();
+
+    if (!filteredOrders.length) {
+      currentPage = 1;
+      renderTable();
+      return;
+    }
 
     if (mode === "newest") {
       filteredOrders.sort(
@@ -335,6 +351,18 @@ const pageTotal = document.getElementById("pageTotal");
 
   function keepOpen() {
     clearTimeout(hideTimer);
+  }
+
+  function openStatusSortMenu() {
+    clearTimeout(statusSortHideTimer);
+    statusSortTh?.classList.add("open");
+  }
+
+  function scheduleStatusSortMenuClose() {
+    clearTimeout(statusSortHideTimer);
+    statusSortHideTimer = setTimeout(() => {
+      statusSortTh?.classList.remove("open");
+    }, 160);
   }
 
   function buildFlyMenuForSO(row, anchorBtn) {
@@ -535,7 +563,11 @@ flyEl.appendChild(
     });
 
     currentPage = 1;
-    renderTable();
+    if (currentStatusSortMode) {
+      applyStatusSort(currentStatusSortMode);
+    } else {
+      renderTable();
+    }
   }
 
   function fillSalesRepsDropdown() {
@@ -622,6 +654,11 @@ flyEl.appendChild(
   });
 
   if (statusSortTh && statusSortMenu) {
+    statusSortTh.addEventListener("mouseenter", openStatusSortMenu);
+    statusSortTh.addEventListener("mouseleave", scheduleStatusSortMenuClose);
+    statusSortMenu.addEventListener("mouseenter", openStatusSortMenu);
+    statusSortMenu.addEventListener("mouseleave", scheduleStatusSortMenuClose);
+
     statusSortTh.addEventListener("click", (e) => {
       if (e.target.closest("#statusSortMenu")) return;
       statusSortTh.classList.toggle("open");

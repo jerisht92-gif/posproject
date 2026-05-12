@@ -19,12 +19,16 @@ document.addEventListener("DOMContentLoaded", () => {
   const pageCurrentEl = document.getElementById("dnrPageCurrent");
   const pageTotalEl = document.getElementById("dnrPageTotal");
   const newBtn = document.getElementById("dnrNewBtn");
+  const statusSortTh = document.getElementById("dnrListStatusSortTh");
+  const statusSortMenu = document.getElementById("dnrListStatusSortMenu");
 
   if (!tbody || !statusFilter) return;
 
   let allRows = [];
   let filteredRows = [];
   let currentPage = 1;
+  let currentSortMode = "";
+  let statusSortHideTimer = null;
 
   /** Body-attached hover fly menu (same pattern as delivery-note.js) */
   let dnrFlyEl = null;
@@ -119,6 +123,64 @@ document.addEventListener("DOMContentLoaded", () => {
 
   window.addEventListener("scroll", () => removeDnrFly(), true);
   window.addEventListener("resize", () => removeDnrFly());
+
+  function openDnrListStatusSortMenu() {
+    clearTimeout(statusSortHideTimer);
+    statusSortTh?.classList.add("open");
+  }
+
+  function scheduleDnrListStatusSortMenuClose() {
+    clearTimeout(statusSortHideTimer);
+    statusSortHideTimer = setTimeout(() => {
+      statusSortTh?.classList.remove("open");
+    }, 160);
+  }
+
+  function syncDnrListSortMenuActive() {
+    if (!statusSortMenu) return;
+    statusSortMenu.querySelectorAll("button[data-sort]").forEach((b) => {
+      b.classList.toggle("dnr-list-sort-option--active", b.dataset.sort === currentSortMode);
+    });
+  }
+
+  function dnrListRowDateMs(row) {
+    const dateVal = getField(row, "dnr_date", "dnrDate", "date");
+    const dt = toDateObj(dateVal);
+    return dt && !isNaN(dt.getTime()) ? dt.getTime() : 0;
+  }
+
+  function dnrListStatusRank(statusRaw) {
+    const s = norm(statusRaw);
+    if (s === "draft") return 0;
+    if (s === "submitted") return 1;
+    if (s === "cancelled" || s === "canceled") return 2;
+    return 99;
+  }
+
+  function applyDnrListStatusSort(mode) {
+    currentSortMode = mode || "";
+    syncDnrListSortMenuActive();
+    if (!Array.isArray(filteredRows) || !filteredRows.length) return;
+    const sorted = [...filteredRows];
+    if (mode === "newest") {
+      sorted.sort((a, b) => dnrListRowDateMs(b) - dnrListRowDateMs(a));
+    } else if (mode === "oldest") {
+      sorted.sort((a, b) => dnrListRowDateMs(a) - dnrListRowDateMs(b));
+    } else if (mode === "progress") {
+      sorted.sort(
+        (a, b) =>
+          dnrListStatusRank(getField(a, "status", "dnr_status")) -
+          dnrListStatusRank(getField(b, "status", "dnr_status"))
+      );
+    } else if (mode === "reverse") {
+      sorted.sort(
+        (a, b) =>
+          dnrListStatusRank(getField(b, "status", "dnr_status")) -
+          dnrListStatusRank(getField(a, "status", "dnr_status"))
+      );
+    }
+    filteredRows = sorted;
+  }
 
   const esc = (s) =>
     String(s ?? "")
@@ -225,6 +287,7 @@ document.addEventListener("DOMContentLoaded", () => {
     return true;
   });
 
+  applyDnrListStatusSort(currentSortMode);
   render();
 }
   function totalPages() {
@@ -311,7 +374,7 @@ document.addEventListener("DOMContentLoaded", () => {
   clearBtn?.addEventListener("click", () => {
     searchInput.value = "";
     statusFilter.value = "all";
-   
+
     fromDate.value = "";
     toDate.value = "";
     currentPage = 1;
@@ -332,6 +395,33 @@ document.addEventListener("DOMContentLoaded", () => {
   if (newBtn) {
     newBtn.addEventListener("click", () => {
       window.location.href = "/deliverynote_return/new";
+    });
+  }
+
+  if (statusSortTh && statusSortMenu) {
+    statusSortTh.addEventListener("mouseenter", openDnrListStatusSortMenu);
+    statusSortTh.addEventListener("mouseleave", scheduleDnrListStatusSortMenuClose);
+    statusSortMenu.addEventListener("mouseenter", openDnrListStatusSortMenu);
+    statusSortMenu.addEventListener("mouseleave", scheduleDnrListStatusSortMenuClose);
+
+    statusSortTh.addEventListener("click", (e) => {
+      if (e.target.closest("#dnrListStatusSortMenu")) return;
+      statusSortTh.classList.toggle("open");
+    });
+
+    document.addEventListener("click", (e) => {
+      if (!e.target.closest("#dnrListStatusSortTh")) {
+        statusSortTh.classList.remove("open");
+      }
+    });
+
+    statusSortMenu.addEventListener("click", (e) => {
+      const btn = e.target.closest("button[data-sort]");
+      if (!btn) return;
+      applyDnrListStatusSort(btn.getAttribute("data-sort") || "");
+      currentPage = 1;
+      render();
+      statusSortTh.classList.remove("open");
     });
   }
 

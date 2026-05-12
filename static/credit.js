@@ -24,6 +24,14 @@ function escapeHtml(v) {
     .replace(/'/g, "&#39;");
 }
 
+function creditStatusBadgeClass(status) {
+  const s = norm(status);
+  if (s === "draft") return "credit-status-draft";
+  if (s === "submitted") return "credit-status-submitted";
+  if (s === "cancelled" || s === "canceled") return "credit-status-cancelled";
+  return "credit-status-draft";
+}
+
 function creditConfirm(message) {
   return new Promise((resolve) => {
     const overlay = document.createElement("div");
@@ -60,19 +68,25 @@ document.addEventListener("DOMContentLoaded", () => {
   const searchInput = document.getElementById("creditSearchInput");
   const clearBtn = document.getElementById("creditClearBtn");
   const statusFilter = document.getElementById("creditStatusFilter");
-  const customerFilter = document.getElementById("creditCustomerFilter");
+  const paymentFilter = document.getElementById("creditPaymentFilter");
+  const fromDateInput = document.getElementById("creditFromDate");
+  const toDateInput = document.getElementById("creditToDate");
   const tbody = document.getElementById("creditTbody");
   const showingText = document.getElementById("creditShowingText");
   const pageText = document.getElementById("creditPageText");
   const prevBtn = document.getElementById("creditPrevBtn");
   const nextBtn = document.getElementById("creditNextBtn");
+  const statusSortTh = document.getElementById("creditStatusSortTh");
+  const statusSortMenu = document.getElementById("creditStatusSortMenu");
 
   const ROWS_PER_PAGE = 10;
   let allRows = [];
   let filteredRows = [];
   let currentPage = 1;
+  let currentSortMode = "";
   let flyEl = null;
   let hideTimer = null;
+  let statusSortHideTimer = null;
   function removeFly() {
     if (flyEl) {
       flyEl.remove();
@@ -87,6 +101,18 @@ document.addEventListener("DOMContentLoaded", () => {
   function scheduleFlyHide() {
     clearTimeout(hideTimer);
     hideTimer = setTimeout(() => removeFly(), 120);
+  }
+
+  function openStatusSortMenu() {
+    clearTimeout(statusSortHideTimer);
+    statusSortTh?.classList.add("open");
+  }
+
+  function scheduleStatusSortMenuClose() {
+    clearTimeout(statusSortHideTimer);
+    statusSortHideTimer = setTimeout(() => {
+      statusSortTh?.classList.remove("open");
+    }, 160);
   }
 
   function buildFlyMenu(row, anchorBtn) {
@@ -116,7 +142,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!res.ok) throw new Error("Delete failed");
         allRows = allRows.filter((r) => r.crn_id !== row.crn_id);
         applyFilters();
-        creditShowToast("Credit note deleted", "success");
+        creditShowToast(`Credit note ${row.crn_id} deleted`, "success");
       } catch (err) {
         console.error(err);
         creditShowToast("Failed to delete credit note", "error");
@@ -163,12 +189,12 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function fillFilterOptions() {
-    if (!statusFilter || !customerFilter) return;
+    if (!statusFilter || !paymentFilter) return;
     const statusSet = new Set(["all"]);
-    const customerSet = new Set(["all"]);
+    const paymentSet = new Set(["all"]);
     allRows.forEach((r) => {
       if (r.status) statusSet.add(r.status);
-      if (r.customer_name) customerSet.add(r.customer_name);
+      if (r.payment_status) paymentSet.add(r.payment_status);
     });
 
     const currentStatus = statusFilter.value || "all";
@@ -181,19 +207,48 @@ document.addEventListener("DOMContentLoaded", () => {
     });
     statusFilter.value = statusSet.has(currentStatus) ? currentStatus : "all";
 
-    const currentCustomer = customerFilter.value || "all";
-    customerFilter.innerHTML = "";
-    Array.from(customerSet).forEach((c) => {
+    const currentPayment = paymentFilter.value || "all";
+    paymentFilter.innerHTML = "";
+    Array.from(paymentSet).forEach((p) => {
       const opt = document.createElement("option");
-      opt.value = c;
-      opt.textContent = c === "all" ? "All" : c;
-      customerFilter.appendChild(opt);
+      opt.value = p;
+      opt.textContent = p === "all" ? "All" : p;
+      paymentFilter.appendChild(opt);
     });
-    customerFilter.value = customerSet.has(currentCustomer) ? currentCustomer : "all";
+    paymentFilter.value = paymentSet.has(currentPayment) ? currentPayment : "all";
   }
 
   function totalPages() {
     return filteredRows.length ? Math.ceil(filteredRows.length / ROWS_PER_PAGE) : 0;
+  }
+
+  function creditStatusRank(status) {
+    const s = norm(status);
+    if (s === "draft") return 0;
+    if (s === "submitted") return 1;
+    if (s === "cancelled" || s === "canceled") return 2;
+    return 99;
+  }
+
+  function parseDateValue(v) {
+    const t = Date.parse(String(v || "").trim());
+    return Number.isNaN(t) ? 0 : t;
+  }
+
+  function applyStatusSort(mode) {
+    if (!Array.isArray(filteredRows) || !filteredRows.length) return;
+    currentSortMode = mode || "";
+    const sorted = [...filteredRows];
+    if (mode === "newest") {
+      sorted.sort((a, b) => parseDateValue(b.credit_note_date) - parseDateValue(a.credit_note_date));
+    } else if (mode === "oldest") {
+      sorted.sort((a, b) => parseDateValue(a.credit_note_date) - parseDateValue(b.credit_note_date));
+    } else if (mode === "progress") {
+      sorted.sort((a, b) => creditStatusRank(a.status) - creditStatusRank(b.status));
+    } else if (mode === "reverse") {
+      sorted.sort((a, b) => creditStatusRank(b.status) - creditStatusRank(a.status));
+    }
+    filteredRows = sorted;
   }
 
   function renderTable() {
@@ -212,14 +267,15 @@ document.addEventListener("DOMContentLoaded", () => {
     const startIdx = (currentPage - 1) * ROWS_PER_PAGE;
     const pageRows = filteredRows.slice(startIdx, startIdx + ROWS_PER_PAGE);
     pageRows.forEach((r) => {
+      const statusClass = creditStatusBadgeClass(r.status);
       const tr = document.createElement("tr");
       tr.innerHTML = `
-        <td class="credit-td-check"><input type="checkbox" class="credit-row-check"></td>
+        <td class="credit-td-check"><input type="checkbox" class="credit-row-check" aria-label="Select credit note"></td>
         <td>${escapeHtml(r.crn_id)}</td>
         <td>${escapeHtml(r.invoice_ref_id)}</td>
         <td>${escapeHtml(r.customer_name)}</td>
         <td>${escapeHtml(r.credit_note_date)}</td>
-        <td>${escapeHtml(r.status)}</td>
+        <td><span class="credit-status-badge ${statusClass}">${escapeHtml(r.status)}</span></td>
         <td>${escapeHtml(r.payment_status)}</td>
         <td class="credit-td-action"><button type="button" class="credit-action-btn">⋮</button></td>
       `;
@@ -246,7 +302,9 @@ document.addEventListener("DOMContentLoaded", () => {
   function applyFilters() {
     const q = norm(searchInput?.value);
     const s = statusFilter?.value || "all";
-    const c = customerFilter?.value || "all";
+    const p = paymentFilter?.value || "all";
+    const fromDate = (fromDateInput?.value || "").trim();
+    const toDate = (toDateInput?.value || "").trim();
 
     filteredRows = allRows.filter((r) => {
       const matchQ =
@@ -254,9 +312,13 @@ document.addEventListener("DOMContentLoaded", () => {
         norm(r.invoice_ref_id).includes(q) ||
         norm(r.customer_name).includes(q);
       const matchS = s === "all" || r.status === s;
-      const matchC = c === "all" || r.customer_name === c;
-      return matchQ && matchS && matchC;
+      const matchP = p === "all" || r.payment_status === p;
+      const rowDate = (r.credit_note_date || "").trim();
+      const matchFrom = !fromDate || (rowDate && rowDate >= fromDate);
+      const matchTo = !toDate || (rowDate && rowDate <= toDate);
+      return matchQ && matchS && matchP && matchFrom && matchTo;
     });
+    applyStatusSort(currentSortMode);
     currentPage = 1;
     renderTable();
   }
@@ -281,11 +343,35 @@ document.addEventListener("DOMContentLoaded", () => {
 
   searchInput?.addEventListener("input", applyFilters);
   statusFilter?.addEventListener("change", applyFilters);
-  customerFilter?.addEventListener("change", applyFilters);
+  paymentFilter?.addEventListener("change", applyFilters);
+  fromDateInput?.addEventListener("change", applyFilters);
+  toDateInput?.addEventListener("change", applyFilters);
+  statusSortMenu?.querySelectorAll("button[data-sort]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      const mode = e.currentTarget?.getAttribute("data-sort") || "";
+      applyStatusSort(mode);
+      currentPage = 1;
+      renderTable();
+      statusSortTh?.classList.remove("open");
+    });
+  });
+
+  statusSortTh?.addEventListener("mouseenter", openStatusSortMenu);
+  statusSortTh?.addEventListener("mouseleave", scheduleStatusSortMenuClose);
+  statusSortMenu?.addEventListener("mouseenter", openStatusSortMenu);
+  statusSortMenu?.addEventListener("mouseleave", scheduleStatusSortMenuClose);
+
+  statusSortTh?.addEventListener("click", (e) => {
+    if (e.target.closest(".credit-sort-menu")) return;
+    statusSortTh.classList.toggle("open");
+  });
+
   clearBtn?.addEventListener("click", () => {
     if (searchInput) searchInput.value = "";
     if (statusFilter) statusFilter.value = "all";
-    if (customerFilter) customerFilter.value = "all";
+    if (paymentFilter) paymentFilter.value = "all";
+    if (fromDateInput) fromDateInput.value = "";
+    if (toDateInput) toDateInput.value = "";
     applyFilters();
   });
   prevBtn?.addEventListener("click", () => {

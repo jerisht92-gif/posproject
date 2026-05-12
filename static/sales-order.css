@@ -303,6 +303,15 @@
 .so-check-td {
   width: 44px;
   text-align: center;
+  vertical-align: middle;
+}
+
+.sales-order-page .table thead th.so-check-th {
+  text-align: center !important;
+}
+
+.sales-order-page .table tbody td.so-check-td {
+  text-align: center !important;
 }
 
 .so-check-td input,
@@ -483,7 +492,7 @@
 }
 
 /* =========================================================
-   STATUS SORT MENU
+   STATUS SORT MENU (match credit note list styling)
 ========================================================= */
 .so-sort-th {
   position: relative;
@@ -491,10 +500,26 @@
   user-select: none;
 }
 
+.so-sort-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #7a1d1d;
+  font-weight: 700;
+}
+
 .so-sort-caret {
-  margin-left: 6px;
-  font-size: 12px;
-  opacity: 0.7;
+  margin-left: 0;
+  font-size: 16px;
+  line-height: 1;
+  color: #7a1d1d;
+  opacity: 0.95;
+  transition: transform 0.2s ease;
+}
+
+.so-sort-th:hover .so-sort-caret,
+.so-sort-th.open .so-sort-caret {
+  transform: translateY(-1px);
 }
 
 .so-sort-menu {
@@ -529,8 +554,16 @@
   cursor: pointer;
 }
 
-.so-sort-menu button:hover {
-  background: rgba(161, 40, 40, 0.08);
+.so-sort-menu button:hover,
+.so-sort-menu button:focus-visible {
+  background: #e3bdbd;
+  color: #2e1b1b;
+}
+
+.so-sort-menu button.so-sort-option--active {
+  background: #e3bdbd;
+  color: #2e1b1b;
+  font-weight: 600;
 }
 
 .so-status-badge{

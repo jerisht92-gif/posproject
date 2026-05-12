@@ -39,12 +39,15 @@
     </div>
 
     <div class="form-group">
-      <label>Customer Name</label>
-      <select id="customerSelect" >
-        <option value="">Select Customer</option>
-      </select>
-      <span class="field-error" id="customerSelectLiveError" aria-live="polite"></span>
-    </div>
+  <label>Customer Name</label>
+  <select id="customerSelect">
+    <option value="">Select Customer</option>
+  </select>
+  <span class="field-error" id="customerSelectLiveError" aria-live="polite"></span>
+</div>
+
+<!-- Hidden field to store the selected customer's email -->
+<input type="hidden" id="selectedCustomerEmail" value="">
 
     <div class="form-group">
       <label>Customer PO Reference</label>

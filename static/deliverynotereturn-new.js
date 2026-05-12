@@ -25,6 +25,9 @@ const dnrId = params.get("dnr_id") || params.get("id");
 /** URL ?mode= + server default; drives edit vs view chrome */
 const pageMode = params.get("mode") || window.DNR_PAGE_MODE || "new";
 
+/** Full comment list for save; Comments tab renders the latest entry only. */
+let dnrFormComments = [];
+
 /** True when opening a new DNR (no dnr_id in URL). False for Edit/View from list — skip noisy IR load toasts. */
 function isBrandNewDnrFromUrl() {
   return !(dnrId && String(dnrId).trim());
@@ -274,6 +277,68 @@ function attachValidationListenersToRow(row) {
 // =========================================
 // COMMENTS
 // =========================================
+function dnrParseCommentTimestampMs(raw) {
+  if (!raw || typeof raw !== "object") return 0;
+  if (raw.at != null && Number.isFinite(Number(raw.at))) return Number(raw.at);
+  const t = String(raw.time || "")
+    .replace(/^\s*[–-]\s*/, "")
+    .trim();
+  const ms = Date.parse(t);
+  return Number.isFinite(ms) ? ms : 0;
+}
+
+function renderDnrCommentListLatest() {
+  const commentList = document.getElementById("commentList");
+  const commentsEmpty = document.getElementById("commentsEmpty");
+  if (!commentList || !commentsEmpty) return;
+  commentList.innerHTML = "";
+  if (dnrFormComments.length === 0) {
+    commentsEmpty.style.display = "block";
+    validateSubmitButton();
+    return;
+  }
+  const latest = [...dnrFormComments].sort((a, b) => b.at - a.at)[0];
+  const displayTime =
+    latest.time && String(latest.time).trim().length
+      ? latest.time
+      : new Date(latest.at).toLocaleString();
+  const row = document.createElement("div");
+  row.className = "so-ch-row";
+  row.innerHTML = `
+    <div class="so-ch-row-meta">
+      <span class="so-ch-row-user">${escapeHtml(latest.user)}</span>
+      <span class="so-ch-row-time">– ${escapeHtml(displayTime)}</span>
+    </div>
+    <div class="so-ch-row-msg"></div>
+  `;
+  row.querySelector(".so-ch-row-msg").textContent = latest.message;
+  commentList.appendChild(row);
+  commentsEmpty.style.display = "none";
+  validateSubmitButton();
+}
+
+function dnrReplaceCommentsFromLoadedList(existingComments) {
+  dnrFormComments.length = 0;
+  if (!Array.isArray(existingComments)) {
+    renderDnrCommentListLatest();
+    return;
+  }
+  existingComments.forEach((raw, idx) => {
+    const msg = String(raw?.message || "").trim();
+    if (!msg) return;
+    let at = dnrParseCommentTimestampMs(raw);
+    if (!at) at = idx + 1;
+    dnrFormComments.push({
+      user: String(raw.user || "").trim() || "User",
+      message: msg,
+      time: String(raw.time || "").trim(),
+      at,
+    });
+  });
+  dnrFormComments.sort((a, b) => a.at - b.at);
+  renderDnrCommentListLatest();
+}
+
 function updateCommentButtonState() {
   const commentInput = document.getElementById("commentInput");
   const addCommentBtn = document.getElementById("addCommentBtn");
@@ -290,84 +355,90 @@ function addComment() {
   if (!isDnrCommentsEditable()) return;
 
   const commentInput = document.getElementById("commentInput");
-  const commentList = document.getElementById("commentList");
   const commentsEmpty = document.getElementById("commentsEmpty");
 
-  if (!commentInput || !commentList || !commentsEmpty) return;
+  if (!commentInput || !commentsEmpty) return;
 
   const commentText = commentInput.value.trim();
   if (!commentText) return;
 
-  const now = new Date();
-  const timeString = now.toLocaleString();
+  const at = Date.now();
+  const timeString = new Date(at).toLocaleString();
 
-  const row = document.createElement("div");
-  row.className = "so-ch-row";
-  const userName = window.currentUserName || "User";
+  dnrFormComments.push({
+    user: window.currentUserName || "User",
+    message: commentText,
+    time: timeString,
+    at,
+  });
 
-  row.innerHTML = `
-    <div class="so-ch-row-meta">
-      <span class="so-ch-row-user">${escapeHtml(userName)}</span>
-      <span class="so-ch-row-time">– ${escapeHtml(timeString)}</span>
-    </div>
-    <div class="so-ch-row-msg"></div>
-  `;
-  row.querySelector(".so-ch-row-msg").textContent = commentText;
-
-  commentList.prepend(row);
   commentInput.value = "";
-  commentsEmpty.style.display = "none";
+  renderDnrCommentListLatest();
   updateCommentButtonState();
-  validateSubmitButton();
   showToast("Comment added successfully", "success");
 }
 
 async function loadHistory() {
-
   const historyList = document.getElementById("historyList");
   const historyEmpty = document.getElementById("historyEmpty");
 
   if (!historyList) return;
 
-  const dnrId = document.getElementById("dnrId")?.value;
+  historyList.innerHTML = "";
 
-if (!dnrId) {
-  console.log("No DNR ID found");
-  return;
-}
+  const dnrId = (document.getElementById("dnrId")?.value || "").trim();
+  let apiHistory = [];
 
-  try {
-    const res = await fetch(`/api/dnr-history/${dnrId}`);
-    const data = await res.json();
-
-    historyList.innerHTML = "";
-
-    if (!data.success || !data.history || data.history.length === 0) {
-      if (historyEmpty) historyEmpty.style.display = "block";
-      return;
+  if (dnrId) {
+    try {
+      const res = await fetch(`/api/dnr-history/${encodeURIComponent(dnrId)}`);
+      const data = await res.json();
+      if (data.success && Array.isArray(data.history)) {
+        apiHistory = data.history;
+      }
+    } catch (err) {
+      console.error("History load failed", err);
     }
+  }
 
-    if (historyEmpty) historyEmpty.style.display = "none";
+  apiHistory.forEach((item) => {
+    const row = document.createElement("div");
+    row.className = "so-ch-row";
 
-    data.history.forEach(item => {
-      const row = document.createElement("div");
-      row.className = "so-ch-row";
-
-      row.innerHTML = `
+    row.innerHTML = `
         <div class="so-ch-row-meta">
           <span class="so-ch-row-user">${escapeHtml(item.user || "")}</span>
           <span class="so-ch-row-time">– ${escapeHtml(item.time || "")}</span>
         </div>
         <div class="so-ch-row-msg"></div>
       `;
-      row.querySelector(".so-ch-row-msg").textContent = item.action || "";
+    row.querySelector(".so-ch-row-msg").textContent = item.action || "";
 
+    historyList.appendChild(row);
+  });
+
+  [...dnrFormComments]
+    .sort((a, b) => a.at - b.at)
+    .forEach((c) => {
+      const row = document.createElement("div");
+      row.className = "so-ch-row";
+      const displayTime =
+        c.time && String(c.time).trim().length
+          ? c.time
+          : new Date(c.at).toLocaleString();
+      row.innerHTML = `
+        <div class="so-ch-row-meta">
+          <span class="so-ch-row-user">${escapeHtml(c.user || "")}</span>
+          <span class="so-ch-row-time">– ${escapeHtml(displayTime)}</span>
+        </div>
+        <div class="so-ch-row-msg"></div>
+      `;
+      row.querySelector(".so-ch-row-msg").textContent = c.message || "";
       historyList.appendChild(row);
     });
 
-  } catch (err) {
-    console.error("History load failed", err);
-  }
+  const hasAny = apiHistory.length > 0 || dnrFormComments.length > 0;
+  if (historyEmpty) historyEmpty.style.display = hasAny ? "none" : "block";
 }
 
 // =========================================
@@ -901,10 +972,7 @@ function validateSubmitButton() {
   // COMMENT CHECK (new mode only)
   // =========================================
   if (pageMode === "new") {
-    const commentList = document.getElementById("commentList");
-    const hasAddedComment =
-      commentList && commentList.querySelectorAll(".so-ch-row").length > 0;
-    if (!hasAddedComment) isValid = false;
+    if (dnrFormComments.length === 0) isValid = false;
   }
 
   submitBtn.disabled = !isValid;
@@ -973,13 +1041,17 @@ function buildDnrPayload(status, options = {}) {
   };
   if (syncComments) {
     const comments = [];
-    document.querySelectorAll("#commentList .so-ch-row").forEach((row) => {
-      comments.push({
-        user: row.querySelector(".so-ch-row-user")?.innerText,
-        message: row.querySelector(".so-ch-row-msg")?.innerText,
-        time: row.querySelector(".so-ch-row-time")?.innerText,
+    [...dnrFormComments]
+      .sort((a, b) => a.at - b.at)
+      .forEach((c) => {
+        comments.push({
+          user: c.user,
+          message: c.message,
+          time: String(c.time || "").trim().startsWith("–")
+            ? c.time
+            : `– ${c.time}`,
+        });
       });
-    });
     data.comments = comments;
   } else {
     data.sync_comments = false;
@@ -1592,37 +1664,7 @@ function handleMode() {
 }
 
 function loadComments(existingComments) {
-
-  const commentList = document.getElementById("commentList");
-  const commentsEmpty = document.getElementById("commentsEmpty");
-
-  if (!existingComments || existingComments.length === 0) {
-    if (commentList) commentList.innerHTML = "";
-    if (commentsEmpty) commentsEmpty.style.display = "block";
-    validateSubmitButton();
-    return;
-  }
-
-  commentList.innerHTML = "";
-
-  existingComments.forEach(c => {
-    const row = document.createElement("div");
-    row.className = "so-ch-row";
-
-    row.innerHTML = `
-      <div class="so-ch-row-meta">
-        <span class="so-ch-row-user">${escapeHtml(c.user || "")}</span>
-        <span class="so-ch-row-time">– ${escapeHtml(c.time || "")}</span>
-      </div>
-      <div class="so-ch-row-msg"></div>
-    `;
-    row.querySelector(".so-ch-row-msg").textContent = c.message || "";
-
-    commentList.appendChild(row);
-  });
-
-  if (commentsEmpty) commentsEmpty.style.display = "none";
-  validateSubmitButton();
+  dnrReplaceCommentsFromLoadedList(existingComments);
 }
 
 // =========================================================

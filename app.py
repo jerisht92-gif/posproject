@@ -11013,413 +11013,7 @@ def update_quotation_status():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
-#=============================================
-# PDF GENERATION TABLAB
-# =========================================
-@app.route('/generate-pdf/<quotation_id>')
-def generate_pdf(quotation_id):
-    try:
-        # Get quotation data
-        with open(QUOTATION_FILE, 'r') as f:
-            quotations = json.load(f)
-        
-        quotation = next((q for q in quotations if q['quotation_id'] == quotation_id), None)
-        
-        if not quotation:
-            return jsonify({'success': False, 'error': 'Quotation not found'}), 404
-        
-        # Get status for behavior control
-        status = quotation.get('status', 'draft').lower()
-        
-        # Get currency code from JSON
-        currency_code = quotation.get('currency', 'USD')
-        
-        # DYNAMIC CURRENCY MAP - Add all currencies you need
-        currency_map = {
-            'USD': '$', 'EUR': '€', 'GBP': '£', 'JPY': '¥', 'IND': '₹',
-            'SGD': 'S$', 'CAD': 'C$', 'AUD': 'A$', 'CHF': 'Fr', 'CNY': '¥',
-            'HKD': 'HK$', 'NZD': 'NZ$', 'KRW': '₩', 'MXN': 'Mex$', 'BRL': 'R$',
-            'RUB': '₽', 'ZAR': 'R', 'TRY': '₺', 'PLN': 'zł', 'THB': '฿',
-            'IDR': 'Rp', 'MYR': 'RM', 'PHP': '₱', 'CZK': 'Kč', 'HUF': 'Ft',
-            'ILS': '₪', 'SAR': '﷼', 'AED': 'د.إ', 'SEK': 'kr', 'NOK': 'kr',
-            'DKK': 'kr', 'RON': 'lei', 'BGN': 'лв', 'HRK': 'kn', 'ISK': 'kr',
-            'TRY': '₺', 'NGN': '₦', 'EGP': 'E£', 'PKR': '₨', 'LKR': 'Rs',
-            'NPR': 'रू', 'BDT': '৳', 'VND': '₫', 'ARS': '$', 'CLP': '$',
-            'COP': '$', 'PEN': 'S/', 'UYU': '$U', 'PYG': '₲', 'BOB': 'Bs',
-            'GTQ': 'Q', 'HNL': 'L', 'NIO': 'C$', 'CRC': '₡', 'PAB': 'B/.'
-        }
-        
-        # Get the correct symbol based on currency code
-        currency_symbol = currency_map.get(currency_code, currency_code)
-        
-        # Create PDF buffer
-        buffer = io.BytesIO()
-        doc = SimpleDocTemplate(buffer, pagesize=A4,
-                                rightMargin=72, leftMargin=72,
-                                topMargin=72, bottomMargin=72)
-        
-        elements = []
-        styles = getSampleStyleSheet()
-        
-        # Styles
-        title_style = ParagraphStyle(
-            'CustomTitle',
-            parent=styles['Heading1'],
-            fontSize=24,
-            textColor=colors.HexColor('#2C3E50'),
-            alignment=1,
-            spaceAfter=20
-        )
-        
-        heading_style = ParagraphStyle(
-            'Heading2',
-            parent=styles['Heading2'],
-            fontSize=14,
-            textColor=colors.HexColor('#34495E'),
-            spaceAfter=10,
-            spaceBefore=20
-        )
-        
-        normal_style = styles['Normal']
-        
-        # Company Header
-        elements.append(Paragraph("STACKLY", title_style))
-        elements.append(Paragraph("MMR Complex, Chinna Thirupathi, near Chinna Muniyappan Kovil, Salem, Tamil Nadu - 636008", normal_style))
-        elements.append(Paragraph("Phone: +917010792745 ", normal_style))
-        elements.append(Paragraph("Email: info@stackly.com", normal_style))
 
-        elements.append(Spacer(1, 20))
-        
-        # Quotation Title with Status
-        status_display = quotation.get('status', 'draft').upper()
-        status_color = {
-            'DRAFT': colors.orange,
-            'SENT': colors.blue,
-            'SEND': colors.blue,
-            'SUBMITTED': colors.blue,
-            'APPROVED': colors.green,
-            'REJECTED': colors.red,
-            'EXPIRED': colors.HexColor('#FFA500'),
-            'CANCELLED': colors.gray
-        }.get(status_display, colors.black)
-        
-        elements.append(Paragraph(f"QUOTATION - {status_display}", ParagraphStyle(
-            'Status',
-            parent=styles['Heading1'],
-            fontSize=18,
-            textColor=status_color,
-            alignment=1,
-            spaceAfter=30
-        )))
-        
-        # ============================================
-        # ADD WATERMARK FOR REJECTED/EXPIRED (VIEW-ONLY)
-        # ============================================
-        if status in ['rejected', 'expired']:
-            watermark_text = "⚠️ REJECTED - FOR REFERENCE ONLY ⚠️" if status == 'rejected' else "⚠️ EXPIRED - FOR REFERENCE ONLY ⚠️"
-            watermark_color = colors.red if status == 'rejected' else colors.orange
-            
-            elements.append(Paragraph(
-                watermark_text,
-                ParagraphStyle(
-                    'Watermark',
-                    parent=styles['Normal'],
-                    fontSize=16,
-                    textColor=watermark_color,
-                    alignment=1,
-                    spaceAfter=20,
-                    spaceBefore=10,
-                    backColor=colors.lightgrey
-                )
-            ))
-            elements.append(Spacer(1, 10))
-        
-        # Quotation Info Table
-        info_data = [
-            ['Quotation Number:', quotation['quotation_id'], 'Date:', quotation.get('quotation_date', '')],
-            ['Customer:', quotation.get('customer_name', ''), 'Expiry Date:', quotation.get('expiry_date', '')],
-            ['Sales Rep:', quotation.get('sales_rep', ''), 'Currency:', f"{currency_code} ({currency_symbol})"],
-            ['PO Reference:', quotation.get('customer_po', 'N/A'), 'Payment Terms:', quotation.get('payment_term', 'N/A')],
-        ]
-        
-        info_table = Table(info_data, colWidths=[100, 150, 100, 150])
-        info_table.setStyle(TableStyle([
-            ('FONTNAME', (0, 0), (-1, -1), 'DejaVuSans'),
-            ('FONTSIZE', (0, 0), (-1, -1), 10),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-            ('BACKGROUND', (0, 0), (0, -1), colors.lightgrey),
-            ('BACKGROUND', (2, 0), (2, -1), colors.lightgrey),
-            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ('PADDING', (0, 0), (-1, -1), 6),
-        ]))
-        elements.append(info_table)
-        elements.append(Spacer(1, 30))
-        
-        # Items Table
-        if quotation.get('items') and len(quotation['items']) > 0:
-            elements.append(Paragraph("QUOTATION ITEMS", heading_style))
-            
-            # Table headers
-            table_data = [['S.No', 'Product Name', 'Qty', 'UOM', 'Unit Price', 'Tax %', 'Disc %', 'Total']]
-            
-            for item in quotation['items']:
-                sl_no = str(item.get('sl_no', ''))
-                product_name = item.get('product_name', '')
-                
-                # Get EXACT values from JSON
-                quantity = float(item.get('quantity', 0))
-                uom = item.get('uom', '')
-                unit_price = float(item.get('unit_price', 0))
-                tax_percent = float(item.get('tax', 0))
-                discount_percent = float(item.get('discount', 0))
-                
-                # Use stored line total if available
-                if 'total' in item and item['total']:
-                    line_total = float(item['total'])
-                else:
-                    # Calculate if not stored
-                    line_subtotal = quantity * unit_price
-                    discount_amount = line_subtotal * (discount_percent / 100) if discount_percent > 0 else 0
-                    line_after_discount = line_subtotal - discount_amount
-                    tax_amount = line_after_discount * (tax_percent / 100) if tax_percent > 0 else 0
-                    line_total = line_after_discount + tax_amount
-                
-                table_data.append([
-                    sl_no,
-                    product_name,
-                    f"{quantity:.2f}",
-                    uom,
-                    f"{currency_symbol}{unit_price:.2f}",
-                    f"{tax_percent:.1f}%" if tax_percent > 0 else "-",
-                    f"{discount_percent:.1f}%" if discount_percent > 0 else "-",
-                    f"{currency_symbol}{line_total:.2f}"
-                ])
-            
-            # Create items table
-            items_table = Table(table_data, colWidths=[40, 150, 50, 45, 80, 55, 55, 80])
-            items_table.setStyle(TableStyle([
-                ('FONTNAME', (0, 0), (-1, -1), 'DejaVuSans'),
-                ('FONTSIZE', (0, 0), (-1, -1), 9),
-                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2C3E50')),
-                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-                ('ALIGN', (4, 1), (4, -1), 'RIGHT'),
-                ('ALIGN', (7, 1), (7, -1), 'RIGHT'),
-                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-                ('PADDING', (0, 0), (-1, -1), 6),
-            ]))
-            elements.append(items_table)
-            
-            elements.append(Spacer(1, 20))
-            
-            # ============================================
-            # TAX AND TOTALS SUMMARY - FIXED FOR IND
-            # ============================================
-            elements.append(Paragraph("TAX AND TOTALS SUMMARY", heading_style))
-            
-            # Get values from the nested 'totals' object
-            totals = quotation.get('totals', {})
-            
-            # DEBUG: Print totals to see what's coming from JSON
-            print(f"Totals for {quotation_id}: {totals}")
-            
-            # SIMPLIFIED extract_value function - handles IND specifically
-            def extract_value(value_str):
-                if not value_str:
-                    return 0.0
-                
-                # Convert to string
-                cleaned = str(value_str)
-                
-                # Remove currency symbols - including IND ₹
-                cleaned = cleaned.replace('S$', '').replace('$', '').replace('€', '').replace('£', '')
-                cleaned = cleaned.replace('¥', '').replace('₹', '').replace('C$', '').replace('A$', '')
-                cleaned = cleaned.replace('HK$', '').replace('NZ$', '').replace('Mex$', '').replace('R$', '')
-                cleaned = cleaned.replace('₽', '').replace('R', '').replace('₺', '').replace('zł', '')
-                cleaned = cleaned.replace('฿', '').replace('Rp', '').replace('RM', '').replace('₱', '')
-                cleaned = cleaned.replace('Kč', '').replace('Ft', '').replace('₪', '').replace('﷼', '')
-                cleaned = cleaned.replace('د.إ', '').replace('kr', '').replace('lei', '').replace('лв', '')
-                cleaned = cleaned.replace('kn', '').replace('₦', '').replace('E£', '').replace('₨', '')
-                cleaned = cleaned.replace('Rs', '').replace('रू', '').replace('৳', '').replace('₫', '')
-                cleaned = cleaned.replace('S/', '').replace('$U', '').replace('₲', '').replace('Bs', '')
-                cleaned = cleaned.replace('Q', '').replace('L', '').replace('C$', '').replace('₡', '')
-                cleaned = cleaned.replace('B/.', '')
-                
-                # Remove commas and spaces
-                cleaned = cleaned.replace(',', '').strip()
-                
-                try:
-                    result = float(cleaned)
-                    print(f"Extracted value: '{value_str}' -> {result}")  # Debug
-                    return result
-                except:
-                    print(f"Failed to extract: '{value_str}'")
-                    return 0.0
-            
-            # Extract EXACT values from JSON
-            subtotal = extract_value(totals.get('subtotal', 0))
-            total_tax = extract_value(totals.get('tax_summary', 0))
-            shipping_charge = extract_value(totals.get('shipping_charge', 0))
-            grand_total = extract_value(totals.get('grand_total', 0))
-            
-            # Get global discount percentage
-            global_discount_percent = 0.0
-            if totals.get('global_discount_percent'):
-                try:
-                    global_discount_percent = float(totals['global_discount_percent'])
-                    print(f"Global discount percent: {global_discount_percent}")
-                except:
-                    global_discount_percent = 0.0
-            
-            # Get rounding adjustment
-            rounding_adjustment = extract_value(totals.get('rounding_adjustment', 0))
-            
-            # Calculate global discount amount
-            global_discount_amount = subtotal * (global_discount_percent / 100) if global_discount_percent > 0 else 0
-            
-            # Calculate item level discount from items
-            total_discount = 0.0
-            for item in quotation.get('items', []):
-                quantity = float(item.get('quantity', 0))
-                unit_price = float(item.get('unit_price', 0))
-                discount_percent = float(item.get('discount', 0))
-                
-                if discount_percent > 0:
-                    line_subtotal = quantity * unit_price
-                    discount_amount = line_subtotal * (discount_percent / 100)
-                    total_discount += discount_amount
-            
-            # DEBUG: Print all values before creating table
-            print(f"subtotal: {subtotal}, shipping: {shipping_charge}, global%: {global_discount_percent}, grand_total: {grand_total}")
-            
-            # Create summary data with DYNAMIC currency symbol
-            summary_data = [
-                ['Subtotal:', f"{currency_symbol}{subtotal:.2f}"],
-                ['Total Discount (Item Level):', f"{currency_symbol}{total_discount:.2f}"],
-                ['Total Tax:', f"{currency_symbol}{total_tax:.2f}"],
-            ]
-            
-            # ✅ ADD SHIPPING CHARGE - Make sure it's added regardless of currency
-            if shipping_charge >= 0:
-                summary_data.append(['Shipping Charge:', f"{currency_symbol}{shipping_charge:.2f}"])
-                print(f"Added Shipping Charge: {shipping_charge}")
-            else:
-                print(f"Shipping charge is 0 or not found: {shipping_charge}")
-            
-            # ✅ ADD GLOBAL DISCOUNT - Make sure it's added regardless of currency
-            if global_discount_percent >= 0:
-                summary_data.append([f'Global Discount ({global_discount_percent:.1f}%):', f"-{currency_symbol}{global_discount_amount:.2f}"])
-                print(f"Added Global Discount: {global_discount_percent}%, amount: {global_discount_amount}")
-            else:
-                print(f"Global discount percent is 0 or not found: {global_discount_percent}")
-            
-            # Add Rounding Adjustment if not zero
-            if rounding_adjustment != 0:
-                sign = "+" if rounding_adjustment > 0 else ""
-                summary_data.append(['Rounding Adjustment:', f"{sign}{currency_symbol}{abs(rounding_adjustment):.2f}"])
-            
-            # Add separator
-            summary_data.append(['-' * 30, '-' * 15])
-            
-            # Grand Total - use EXACT value from JSON
-            summary_data.append(['GRAND TOTAL:', f"{currency_symbol}{grand_total:.2f}"])
-            
-            # Create summary table
-            summary_table = Table(summary_data, colWidths=[200, 150])
-            
-            # Table styling
-            table_style = [
-                ('FONTNAME', (0, 0), (-1, -1), 'DejaVuSans'),
-                ('FONTSIZE', (0, 0), (-1, -2), 10),
-                ('FONTSIZE', (0, -1), (-1, -1), 12),
-                ('ALIGN', (0, 0), (0, -1), 'LEFT'),
-                ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
-                ('BACKGROUND', (0, -2), (1, -2), colors.lightgrey),
-                ('BACKGROUND', (0, -1), (1, -1), colors.HexColor('#2C3E50')),
-                ('TEXTCOLOR', (0, -1), (1, -1), colors.whitesmoke),
-                ('FONTWEIGHT', (0, -1), (1, -1), 'BOLD'),
-                ('LINEABOVE', (0, -2), (1, -2), 1, colors.black),
-                ('LINEBELOW', (0, -2), (1, -2), 1, colors.black),
-                ('LINEABOVE', (0, -1), (1, -1), 2, colors.black),
-                ('PADDING', (0, 0), (-1, -1), 8),
-            ]
-            
-            summary_table.setStyle(TableStyle(table_style))
-            
-            # Color code rounding adjustment
-            if rounding_adjustment != 0:
-                summary_table.setStyle(TableStyle([
-                    ('TEXTCOLOR', (1, -3), (1, -3), colors.green if rounding_adjustment > 0 else colors.red),
-                ]))
-            
-            # Right-align the summary table
-            summary_container = Table([[summary_table]], colWidths=[350])
-            summary_container.setStyle(TableStyle([
-                ('ALIGN', (0, 0), (0, 0), 'RIGHT'),
-            ]))
-            
-            elements.append(summary_container)
-        
-        elements.append(Spacer(1, 30))
-        
-        # Terms and Conditions
-        elements.append(Paragraph("Terms and Conditions", heading_style))
-        terms_text = """
-        1. This quotation is valid until the expiry date mentioned above.<br/>
-        2. Prices are subject to change without prior notice.<br/>
-        3. Payment terms as agreed upon.<br/>
-        4. Delivery charges extra if not specified.<br/>
-        5. Goods once sold will not be taken back.<br/>
-        6. All taxes and duties as applicable.
-        """
-        elements.append(Paragraph(terms_text, normal_style))
-        
-        elements.append(Spacer(1, 30))
-        
-        # Footer
-        footer_text = f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-        elements.append(Paragraph(footer_text, normal_style))
-        
-        # Build PDF
-        doc.build(elements)
-        
-        # Get PDF from buffer
-        pdf = buffer.getvalue()
-        buffer.close()
-        
-        # Create response
-        response = make_response(pdf)
-        response.headers['Content-Type'] = 'application/pdf'
-        
-        # ============================================
-        # PROFESSIONAL ERP: STATUS-BASED CONTENT-DISPOSITION
-        # ============================================
-        if status == 'draft':
-            # Draft should not have PDF at all (handled by JS)
-            return jsonify({'success': False, 'error': 'PDF not available for draft quotations'}), 403
-            
-        elif status in ['rejected', 'expired']:
-            # REJECTED and EXPIRED - VIEW ONLY (inline with reference filename)
-            response.headers['Content-Disposition'] = f'inline; filename=quotation_{quotation_id}_REFERENCE.pdf'
-            print(f"📄 View-only PDF for {status} quotation: {quotation_id}")
-            
-        else:  # send, submitted, approved
-            # SENT, SUBMITTED, APPROVED - Full access (attachment for download)
-            response.headers['Content-Disposition'] = f'attachment; filename=quotation_{quotation_id}.pdf'
-            print(f"📄 Downloadable PDF for {status} quotation: {quotation_id}")
-        
-        # Add this right after getting totals
-        print(f"Raw totals for {quotation_id}: {totals}")
-        print(f"shipping_charge raw: {totals.get('shipping_charge')}")
-        print(f"global_discount_percent raw: {totals.get('global_discount_percent')}")
-        return response
-        
-    except Exception as e:
-        print(f"Error generating PDF: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'success': False, 'error': str(e)}), 500
     
 
 # ===================================================
@@ -11664,510 +11258,650 @@ def send_otp_email(email, otp, quotation_id=None):
 # ===================================================
 # SINGLE SOURCE OF TRUTH - ONE PDF GENERATOR FOR ALL
 # ===================================================
-
-def generate_quotation_pdf(quotation, quotation_id):
-    """Single PDF generator used by both route and email"""
+def generate_quotation_pdf(quotation, quotation_id=None):
+    """Generate PDF from quotation dict (already fetched from DB) – INR only."""
     try:
         import io
         from reportlab.lib.pagesizes import A4
         from reportlab.lib import colors
-        from reportlab.lib.units import inch, mm
         from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
         from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
         from datetime import datetime
-        
+
         buffer = io.BytesIO()
-        doc = SimpleDocTemplate(buffer, pagesize=A4,
-                                rightMargin=72, leftMargin=72,
-                                topMargin=72, bottomMargin=72)
-        
-        elements = []
+        doc = SimpleDocTemplate(
+            buffer,
+            pagesize=A4,
+            rightMargin=18,
+            leftMargin=18,
+            topMargin=16,
+            bottomMargin=18,
+        )
+
         styles = getSampleStyleSheet()
-        
-        # Get currency code and symbol
-        currency_code = quotation.get('currency', 'USD')
-        currency_map = {
-            'USD': '$', 'EUR': '€', 'GBP': '£', 'JPY': '¥', 'IND': '₹',
-            'SGD': 'S$', 'CAD': 'C$', 'AUD': 'A$', 'CHF': 'Fr', 'CNY': '¥',
-            'HKD': 'HK$', 'NZD': 'NZ$', 'KRW': '₩', 'MXN': 'Mex$', 'BRL': 'R$',
-            'RUB': '₽', 'ZAR': 'R', 'TRY': '₺', 'PLN': 'zł', 'THB': '฿',
-            'IDR': 'Rp', 'MYR': 'RM', 'PHP': '₱', 'CZK': 'Kč', 'HUF': 'Ft',
-            'ILS': '₪', 'SAR': '﷼', 'AED': 'د.إ', 'SEK': 'kr', 'NOK': 'kr',
-            'DKK': 'kr', 'RON': 'lei', 'BGN': 'лв', 'HRK': 'kn', 'ISK': 'kr',
-            'TRY': '₺', 'NGN': '₦', 'EGP': 'E£', 'PKR': '₨', 'LKR': 'Rs',
-            'NPR': 'रू', 'BDT': '৳', 'VND': '₫', 'ARS': '$', 'CLP': '$',
-            'COP': '$', 'PEN': 'S/', 'UYU': '$U', 'PYG': '₲', 'BOB': 'Bs',
-            'GTQ': 'Q', 'HNL': 'L', 'NIO': 'C$', 'CRC': '₡', 'PAB': 'B/.'
-        }
-        currency_symbol = currency_map.get(currency_code, currency_code)
-        
-        # Helper function to extract numeric values
-        def extract_value(value_str):
-            if not value_str:
-                return 0.0
-            cleaned = str(value_str)
-            # Remove all currency symbols
-            for symbol in currency_map.values():
-                cleaned = cleaned.replace(symbol, '')
-            cleaned = cleaned.replace(',', '').strip()
+
+        # ---------- Custom styles (matching DNR) ----------
+        company_style = ParagraphStyle(
+            name="Quot_CompanyName",
+            parent=styles["Normal"],
+            fontName="DejaVuSans-Bold",
+            fontSize=20,
+            leading=24,
+            textColor=colors.HexColor("#8c1f1f"),
+            alignment=TA_CENTER,
+            spaceAfter=4,
+        )
+
+        company_info_style = ParagraphStyle(
+            name="Quot_CompanyInfo",
+            parent=styles["Normal"],
+            fontName="DejaVuSans",
+            fontSize=9,
+            leading=12,
+            textColor=colors.black,
+            alignment=TA_CENTER,
+            spaceAfter=1,
+        )
+
+        page_title_style = ParagraphStyle(
+            name="Quot_PageTitle",
+            parent=styles["Heading1"],
+            fontName="DejaVuSans-Bold",
+            fontSize=16,
+            leading=20,
+            textColor=colors.green,
+            alignment=TA_CENTER,
+            spaceBefore=12,
+            spaceAfter=12,
+        )
+
+        section_style = ParagraphStyle(
+            name="Quot_Section",
+            parent=styles["Heading3"],
+            fontName="DejaVuSans-Bold",
+            fontSize=11,
+            leading=14,
+            textColor=colors.HexColor("#8c1f1f"),
+            spaceAfter=6,
+            spaceBefore=10,
+        )
+
+        label_style = ParagraphStyle(
+            name="Quot_Label",
+            parent=styles["Normal"],
+            fontName="DejaVuSans-Bold",
+            fontSize=8.5,
+            leading=11,
+            textColor=colors.HexColor("#6b1a1a"),
+        )
+
+        value_style = ParagraphStyle(
+            name="Quot_Value",
+            parent=styles["Normal"],
+            fontName="DejaVuSans",
+            fontSize=8.5,
+            leading=11,
+            textColor=colors.black,
+        )
+
+        header_small_style = ParagraphStyle(
+            name="Quot_HeaderSmall",
+            parent=styles["Normal"],
+            fontName="DejaVuSans-Bold",
+            fontSize=8,
+            leading=10,
+            textColor=colors.white,
+            alignment=TA_CENTER,
+        )
+
+        terms_style = ParagraphStyle(
+            name="Quot_Terms",
+            parent=styles["Normal"],
+            fontName="DejaVuSans",
+            fontSize=8,
+            leading=11,
+            textColor=colors.black,
+            leftIndent=8,
+        )
+
+        # ---------- Helper functions ----------
+        def safe_str(val, default="-"):
+            if val is None:
+                return default
+            s = str(val).strip()
+            return s if s else default
+
+        def safe_float(val, default=0.0):
             try:
-                return float(cleaned)
-            except:
-                return 0.0
-        
-        # Get totals
+                if val in (None, ""):
+                    return default
+                return float(val)
+            except Exception:
+                return default
+
+        elements = []
+
+        currency_symbol = "₹"
+        currency_code = "IND"
+
         totals = quotation.get('totals', {})
-        
-        # Extract all values
-        subtotal_value = extract_value(totals.get('subtotal', 0))
-        total_tax = extract_value(totals.get('tax_summary', 0))
-        shipping_charge = extract_value(totals.get('shipping_charge', 0))
-        grand_total_value = extract_value(totals.get('grand_total', 0))
-        
-        # Get global discount
-        global_discount_percent = 0.0
-        if totals.get('global_discount_percent'):
-            try:
-                global_discount_percent = float(totals['global_discount_percent'])
-            except:
-                global_discount_percent = 0.0
-        
-        # Get rounding adjustment
-        rounding_adjustment = extract_value(totals.get('rounding_adjustment', 0))
-        
-        # Calculate global discount amount
-        global_discount_amount = subtotal_value * (global_discount_percent / 100) if global_discount_percent > 0 else 0
-        
-        # Calculate item level discount
+        subtotal = safe_float(totals.get('subtotal', 0))
+        total_tax = safe_float(totals.get('tax_summary', 0))
+        shipping = safe_float(totals.get('shipping_charge', 0))
+        grand_total = safe_float(totals.get('grand_total', 0))
+        global_discount_pct = safe_float(totals.get('global_discount_percent', 0))
+        rounding = safe_float(totals.get('rounding_adjustment', 0))
+        global_discount_amt = subtotal * (global_discount_pct / 100) if global_discount_pct else 0
+
+        # Calculate item-level discount total
         total_discount = 0.0
         for item in quotation.get('items', []):
-            quantity = float(item.get('quantity', 0))
-            unit_price = float(item.get('unit_price', 0))
-            discount_percent = float(item.get('discount', 0))
-            if discount_percent > 0:
-                line_subtotal = quantity * unit_price
-                discount_amount = line_subtotal * (discount_percent / 100)
-                total_discount += discount_amount
-        
-        # Styles
-        title_style = ParagraphStyle(
-            'CustomTitle',
-            parent=styles['Heading1'],
-            fontSize=24,
-            textColor=colors.HexColor('#2C3E50'),
-            alignment=1,
-            spaceAfter=20
-        )
-        
-        heading_style = ParagraphStyle(
-            'Heading2',
-            parent=styles['Heading2'],
-            fontSize=14,
-            textColor=colors.HexColor('#34495E'),
-            spaceAfter=10,
-            spaceBefore=20
-        )
-        
-        normal_style = styles['Normal']
-        
-        # Company Header
-        elements.append(Paragraph("STACKLY", title_style))
-        elements.append(Paragraph("Address:MMR Complex, Chinna Thirupathi, near Chinna Muniyappan Kovil, Salem, Tamil Nadu - 636008", normal_style))
-        elements.append(Paragraph("Phone: + 917010792745", normal_style))
-        elements.append(Paragraph("Eamil: info@stackly.com", normal_style))
+            qty = safe_float(item.get('quantity', 0))
+            price = safe_float(item.get('unit_price', 0))
+            disc_pct = safe_float(item.get('discount', 0))
+            if disc_pct > 0:
+                total_discount += qty * price * (disc_pct / 100)
 
-        elements.append(Spacer(1, 20))
-        
-        # Quotation Title with Status
+        # ---------- Company header (same as DNR) ----------
+        elements.append(Paragraph("STACKLY", company_style))
+        elements.append(Paragraph(
+            "MMR Complex, Chinna Thirupathi, near Chinna Muniyappan Kovil, Salem, Tamil Nadu - 636008",
+            company_info_style,
+        ))
+        elements.append(Paragraph("Phone: +91 7010792745", company_info_style))
+        elements.append(Paragraph("Email: info@stackly.com", company_info_style))
+        elements.append(Spacer(1, 10))
+
         status = quotation.get('status', 'draft').upper()
-        status_color = {
-            'DRAFT': colors.orange,
-            'SENT': colors.blue,
-            'SEND': colors.blue,
-            'SUBMITTED': colors.blue,
-            'APPROVED': colors.green,
-            'REJECTED': colors.red,
-            'EXPIRED': colors.HexColor('#FFA500'),
-            'CANCELLED': colors.gray
-        }.get(status, colors.black)
-        
-        elements.append(Paragraph(f"QUOTATION - {status}", ParagraphStyle(
-            'Status',
-            parent=styles['Heading1'],
-            fontSize=18,
-            textColor=status_color,
-            alignment=1,
-            spaceAfter=30
-        )))
-        
-        # Quotation Info Table
-        info_data = [
-            ['Quotation Number:', quotation['quotation_id'], 'Date:', quotation.get('quotation_date', '')],
-            ['Customer:', quotation.get('customer_name', ''), 'Expiry Date:', quotation.get('expiry_date', '')],
-            ['Sales Rep:', quotation.get('sales_rep', ''), 'Currency:', f"{currency_code} ({currency_symbol})"],
-            ['PO Reference:', quotation.get('customer_po', 'N/A'), 'Payment Terms:', quotation.get('payment_term', 'N/A')],
+        page_title_text = f"QUOTATION - {status}"
+        elements.append(Paragraph(page_title_text, page_title_style))
+        elements.append(Spacer(1, 2))
+
+        # ---------- Watermark for rejected/expired (preserve original behavior) ----------
+        if status.lower() in ['rejected', 'expired']:
+            watermark_text = "⚠️ REJECTED - FOR REFERENCE ONLY ⚠️" if status.lower() == 'rejected' else "⚠️ EXPIRED - FOR REFERENCE ONLY ⚠️"
+            watermark_color = colors.red if status.lower() == 'rejected' else colors.orange
+            watermark_para = Paragraph(
+                watermark_text,
+                ParagraphStyle(
+                    'Watermark',
+                    parent=styles["Normal"],
+                    fontName="DejaVuSans-Bold",
+                    fontSize=12,
+                    textColor=watermark_color,
+                    alignment=TA_CENTER,
+                    spaceAfter=10,
+                    backColor=colors.HexColor("#f9f9f9"),
+                )
+            )
+            elements.append(watermark_para)
+            elements.append(Spacer(1, 4))
+
+        # ---------- Quotation details table (label/value pairs, same style as DNR) ----------
+        quot_date = safe_str(quotation.get('quotation_date', ''))
+        expiry = safe_str(quotation.get('expiry_date', ''))
+        sales_rep = safe_str(quotation.get('sales_rep', ''))
+        po_ref = safe_str(quotation.get('customer_po', 'N/A'))
+        payment_terms = safe_str(quotation.get('payment_terms', 'N/A'))
+
+        details_data = [
+            [
+                Paragraph("<b>Quotation No:</b>", label_style),
+                Paragraph(safe_str(quotation.get('quotation_id')), value_style),
+                Paragraph("<b>Date:</b>", label_style),
+                Paragraph(quot_date, value_style),
+            ],
+            [
+                Paragraph("<b>Customer:</b>", label_style),
+                Paragraph(safe_str(quotation.get('customer_name')), value_style),
+                Paragraph("<b>Expiry Date:</b>", label_style),
+                Paragraph(expiry, value_style),
+            ],
+            [
+                Paragraph("<b>Sales Rep:</b>", label_style),
+                Paragraph(sales_rep, value_style),
+                Paragraph("<b>Currency:</b>", label_style),
+                Paragraph(f"{currency_code} ({currency_symbol})", value_style),
+            ],
+            [
+                Paragraph("<b>PO Reference:</b>", label_style),
+                Paragraph(po_ref, value_style),
+                Paragraph("<b>Payment Terms:</b>", label_style),
+                Paragraph(payment_terms, value_style),
+            ],
         ]
-        
-        info_table = Table(info_data, colWidths=[100, 150, 100, 150])
-        info_table.setStyle(TableStyle([
-            ('FONTNAME', (0, 0), (-1, -1), 'DejaVuSans'),
-            ('FONTSIZE', (0, 0), (-1, -1), 10),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-            ('BACKGROUND', (0, 0), (0, -1), colors.lightgrey),
-            ('BACKGROUND', (2, 0), (2, -1), colors.lightgrey),
-            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ('PADDING', (0, 0), (-1, -1), 6),
-        ]))
-        elements.append(info_table)
-        elements.append(Spacer(1, 30))
-        
-        # Items Table
-        if quotation.get('items') and len(quotation['items']) > 0:
-            elements.append(Paragraph("QUOTATION ITEMS", heading_style))
-            
-            # Table headers
-            table_data = [['S.No', 'Product Name', 'Qty', 'UOM', 'Unit Price', 'Tax %', 'Disc %', 'Total']]
-            
-            for idx, item in enumerate(quotation['items'], 1):
-                sl_no = str(idx)
-                product_name = item.get('product_name', '')
-                
-                # Get EXACT values from JSON
-                quantity = float(item.get('quantity', 0))
-                uom = item.get('uom', '')
-                unit_price = float(item.get('unit_price', 0))
-                tax_percent = float(item.get('tax', 0))
-                discount_percent = float(item.get('discount', 0))
-                
-                # Use stored line total if available
-                if 'total' in item and item['total']:
-                    line_total = float(extract_value(item['total']))
-                else:
-                    # Calculate if not stored
-                    line_subtotal = quantity * unit_price
-                    discount_amount = line_subtotal * (discount_percent / 100) if discount_percent > 0 else 0
-                    line_after_discount = line_subtotal - discount_amount
-                    tax_amount = line_after_discount * (tax_percent / 100) if tax_percent > 0 else 0
-                    line_total = line_after_discount + tax_amount
-                
-                table_data.append([
-                    sl_no,
-                    product_name,
-                    f"{quantity:.2f}",
-                    uom,
-                    f"{currency_symbol}{unit_price:.2f}",
-                    f"{tax_percent:.1f}%" if tax_percent > 0 else "-",
-                    f"{discount_percent:.1f}%" if discount_percent > 0 else "-",
-                    f"{currency_symbol}{line_total:.2f}"
-                ])
-            
-            # Create items table
-            items_table = Table(table_data, colWidths=[40, 150, 50, 45, 80, 55, 55, 80])
-            items_table.setStyle(TableStyle([
-                ('FONTNAME', (0, 0), (-1, -1), 'DejaVuSans'),
-                ('FONTSIZE', (0, 0), (-1, -1), 9),
-                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2C3E50')),
-                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-                ('ALIGN', (4, 1), (4, -1), 'RIGHT'),
-                ('ALIGN', (7, 1), (7, -1), 'RIGHT'),
-                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-                ('PADDING', (0, 0), (-1, -1), 6),
-            ]))
-            elements.append(items_table)
-            
-            elements.append(Spacer(1, 20))
-            
-            # TAX AND TOTALS SUMMARY
-            elements.append(Paragraph("TAX AND TOTALS SUMMARY", heading_style))
-            
-            # Create summary data
-            summary_data = [
-                ['Subtotal:', f"{currency_symbol}{subtotal_value:.2f}"],
-                ['Total Discount (Item Level):', f"{currency_symbol}{total_discount:.2f}"],
-                ['Total Tax:', f"{currency_symbol}{total_tax:.2f}"],
+
+        details_table = Table(details_data, colWidths=[110, 170, 95, 145])
+        details_table.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f3f3f3")),
+                    ("BOX", (0, 0), (-1, -1), 0.8, colors.HexColor("#8a8a8a")),
+                    ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#a5a5a5")),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 6),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                    ("TOPPADDING", (0, 0), (-1, -1), 5),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+                ]
+            )
+        )
+        elements.append(details_table)
+        elements.append(Spacer(1, 16))
+
+        # ---------- Quotation items table ----------
+        elements.append(Paragraph("QUOTATION ITEMS", section_style))
+        elements.append(Spacer(1, 2))
+
+        items = quotation.get('items', []) or []
+
+        # Table header
+        item_data = [
+            [
+                Paragraph("S.No", header_small_style),
+                Paragraph("Product Name", header_small_style),
+                Paragraph("Qty", header_small_style),
+                Paragraph("UOM", header_small_style),
+                Paragraph("Unit Price", header_small_style),
+                Paragraph("Tax %", header_small_style),
+                Paragraph("Disc %", header_small_style),
+                Paragraph("Total", header_small_style),
             ]
-            
-            # Add Shipping Charge
-            if shipping_charge >= 0:
-                summary_data.append(['Shipping Charge:', f"{currency_symbol}{shipping_charge:.2f}"])
-            
-            # Add Global Discount
-            if global_discount_percent >= 0:
-                summary_data.append([f'Global Discount ({global_discount_percent:.1f}%):', f"-{currency_symbol}{global_discount_amount:.2f}"])
-            
-            # Add Rounding Adjustment
-            if rounding_adjustment != 0:
-                sign = "+" if rounding_adjustment > 0 else ""
-                summary_data.append(['Rounding Adjustment:', f"{sign}{currency_symbol}{abs(rounding_adjustment):.2f}"])
-            
-            # Add separator
-            summary_data.append(['-' * 30, '-' * 15])
-            
-            # Grand Total
-            summary_data.append(['GRAND TOTAL:', f"{currency_symbol}{grand_total_value:.2f}"])
-            
-            # Create summary table
-            summary_table = Table(summary_data, colWidths=[200, 150])
-            
-            # Table styling
-            table_style = [
-                ('FONTNAME', (0, 0), (-1, -1), 'DejaVuSans'),
-                ('FONTSIZE', (0, 0), (-1, -2), 10),
-                ('FONTSIZE', (0, -1), (-1, -1), 12),
-                ('ALIGN', (0, 0), (0, -1), 'LEFT'),
-                ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
-                ('BACKGROUND', (0, -2), (1, -2), colors.lightgrey),
-                ('BACKGROUND', (0, -1), (1, -1), colors.HexColor('#2C3E50')),
-                ('TEXTCOLOR', (0, -1), (1, -1), colors.whitesmoke),
-                ('FONTWEIGHT', (0, -1), (1, -1), 'BOLD'),
-                ('LINEABOVE', (0, -2), (1, -2), 1, colors.black),
-                ('LINEBELOW', (0, -2), (1, -2), 1, colors.black),
-                ('LINEABOVE', (0, -1), (1, -1), 2, colors.black),
-                ('PADDING', (0, 0), (-1, -1), 8),
-            ]
-            
-            summary_table.setStyle(TableStyle(table_style))
-            
-            # Color code rounding adjustment
-            if rounding_adjustment != 0:
-                summary_table.setStyle(TableStyle([
-                    ('TEXTCOLOR', (1, -3), (1, -3), colors.green if rounding_adjustment > 0 else colors.red),
-                ]))
-            
-            # Right-align the summary table
-            summary_container = Table([[summary_table]], colWidths=[350])
-            summary_container.setStyle(TableStyle([
-                ('ALIGN', (0, 0), (0, 0), 'RIGHT'),
-            ]))
-            
-            elements.append(summary_container)
-        
-        elements.append(Spacer(1, 30))
-        
-        # Terms and Conditions
-        elements.append(Paragraph("Terms and Conditions", heading_style))
-        terms_text = """
-        1. This quotation is valid until the expiry date mentioned above.<br/>
-        2. Prices are subject to change without prior notice.<br/>
-        3. Payment terms as agreed upon.<br/>
-        4. Delivery charges extra if not specified.<br/>
-        5. Goods once sold will not be taken back.<br/>
-        6. All taxes and duties as applicable.
-        """
-        elements.append(Paragraph(terms_text, normal_style))
-        
-        elements.append(Spacer(1, 30))
-        
-        # Footer
+        ]
+
+        for idx, item in enumerate(items, start=1):
+            product_name = safe_str(item.get("product_name"))
+            qty = safe_float(item.get("quantity", 0))
+            uom = safe_str(item.get("uom"))
+            price = safe_float(item.get("unit_price", 0))
+            tax = safe_float(item.get("tax", 0))
+            disc = safe_float(item.get("discount", 0))
+            line_total = safe_float(item.get("total", 0))
+            if line_total == 0:
+                line_subtotal = qty * price
+                disc_amt = line_subtotal * (disc / 100) if disc > 0 else 0
+                after_disc = line_subtotal - disc_amt
+                tax_amt = after_disc * (tax / 100) if tax > 0 else 0
+                line_total = after_disc + tax_amt
+
+            item_data.append(
+                [
+                    Paragraph(str(idx), value_style),
+                    Paragraph(product_name, value_style),
+                    Paragraph(f"{qty:.2f}".rstrip('0').rstrip('.'), value_style),
+                    Paragraph(uom, value_style),
+                    Paragraph(f"{currency_symbol}{price:.2f}", value_style),
+                    Paragraph(f"{tax:.1f}%" if tax > 0 else "-", value_style),
+                    Paragraph(f"{disc:.1f}%" if disc > 0 else "-", value_style),
+                    Paragraph(f"{currency_symbol}{line_total:.2f}", value_style),
+                ]
+            )
+
+        if len(item_data) == 1:
+            item_data.append(
+                [
+                    Paragraph("-", value_style),
+                    Paragraph("No line items available", value_style),
+                    Paragraph("-", value_style),
+                    Paragraph("-", value_style),
+                    Paragraph("-", value_style),
+                    Paragraph("-", value_style),
+                    Paragraph("-", value_style),
+                    Paragraph("-", value_style),
+                ]
+            )
+
+        items_table = Table(
+            item_data,
+            colWidths=[35, 140, 45, 40, 65, 45, 45, 75],
+            repeatRows=1,
+        )
+        items_table.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#a12828")),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                    ("FONTNAME", (0, 0), (-1, 0), "DejaVuSans-Bold"),
+                    ("FONTNAME", (0, 1), (-1, -1), "DejaVuSans"),
+                    ("FONTSIZE", (0, 0), (-1, -1), 7.5),
+                    ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                    ("ALIGN", (1, 1), (2, -1), "LEFT"),
+                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                    ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#999999")),
+                    ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f7f7f7")]),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 4),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+                    ("TOPPADDING", (0, 0), (-1, -1), 5),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+                ]
+            )
+        )
+        elements.append(items_table)
+        elements.append(Spacer(1, 16))
+
+        # ---------- Tax and Totals Summary (styled as a table) ----------
+        elements.append(Paragraph("TAX AND TOTALS SUMMARY", section_style))
+
+        summary_data = []
+        summary_data.append([Paragraph("Subtotal:", label_style), Paragraph(f"{currency_symbol}{subtotal:.2f}", value_style)])
+        summary_data.append([Paragraph("Total Discount (Item Level):", label_style), Paragraph(f"{currency_symbol}{total_discount:.2f}", value_style)])
+        summary_data.append([Paragraph("Total Tax:", label_style), Paragraph(f"{currency_symbol}{total_tax:.2f}", value_style)])
+        if shipping >= 0:
+            summary_data.append([Paragraph("Shipping Charge:", label_style), Paragraph(f"{currency_symbol}{shipping:.2f}", value_style)])
+        if global_discount_pct >= 0:
+            summary_data.append([Paragraph(f"Global Discount ({global_discount_pct:.1f}%):", label_style), Paragraph(f"-{currency_symbol}{global_discount_amt:.2f}", value_style)])
+        if rounding != 0:
+            sign = "+" if rounding > 0 else ""
+            rounding_para = Paragraph(f"{sign}{currency_symbol}{abs(rounding):.2f}", value_style)
+            if rounding > 0:
+                rounding_para = Paragraph(f"{sign}{currency_symbol}{abs(rounding):.2f}", ParagraphStyle(name="RoundPos", parent=value_style, textColor=colors.green))
+            elif rounding < 0:
+                rounding_para = Paragraph(f"{sign}{currency_symbol}{abs(rounding):.2f}", ParagraphStyle(name="RoundNeg", parent=value_style, textColor=colors.red))
+            summary_data.append([Paragraph("Rounding Adjustment:", label_style), rounding_para])
+        summary_data.append([Paragraph("", label_style), Paragraph("", value_style)])  # separator row
+        summary_data.append([Paragraph("<b>GRAND TOTAL:</b>", label_style), Paragraph(f"<b>{currency_symbol}{grand_total:.2f}</b>", value_style)])
+
+        summary_table = Table(summary_data, colWidths=[200, 150])
+        summary_table.setStyle(
+            TableStyle(
+                [
+                    ("FONTNAME", (0, 0), (-1, -1), "DejaVuSans"),
+                    ("FONTSIZE", (0, 0), (-1, -3), 9),
+                    ("FONTSIZE", (0, -1), (-1, -1), 10),
+                    ("ALIGN", (0, 0), (0, -1), "LEFT"),
+                    ("ALIGN", (1, 0), (1, -1), "RIGHT"),
+                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 6),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                    ("TOPPADDING", (0, 0), (-1, -1), 4),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                    ("LINEABOVE", (0, -2), (-1, -2), 0.5, colors.HexColor("#999999")),
+                    ("LINEBELOW", (0, -2), (-1, -2), 0.5, colors.HexColor("#999999")),
+                    ("LINEABOVE", (0, -1), (-1, -1), 1.5, colors.HexColor("#8c1f1f")),
+                    ("LINEBELOW", (0, -1), (-1, -1), 1.5, colors.HexColor("#8c1f1f")),
+                    ("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#faf0f0")),
+                ]
+            )
+        )
+        elements.append(summary_table)
+        elements.append(Spacer(1, 16))
+
+        # ---------- Terms and Conditions ----------
+        elements.append(Paragraph("Terms and Conditions", section_style))
+        terms_list = [
+            "1. This quotation is valid until the expiry date mentioned above.",
+            "2. Prices are subject to change without prior notice.",
+            "3. Payment terms as agreed upon.",
+            "4. Delivery charges extra if not specified.",
+            "5. Goods once sold will not be taken back.",
+            "6. All taxes and duties as applicable.",
+        ]
+        for term in terms_list:
+            elements.append(Paragraph(term, terms_style))
+        elements.append(Spacer(1, 12))
+
+        # ---------- Generation footer ----------
         footer_text = f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-        elements.append(Paragraph(footer_text, normal_style))
-        
-        # Build PDF
+        elements.append(Paragraph(footer_text, ParagraphStyle(name="Footer", parent=value_style, fontSize=7, alignment=TA_CENTER)))
+
         doc.build(elements)
-        
         pdf = buffer.getvalue()
         buffer.close()
-        
         return pdf
-        
+
+    except Exception as e:
+        print(f"PDF generation error: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+@app.route('/generate-pdf/<quotation_id>')
+def generate_pdf(quotation_id):
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+
+        # fetch quotation header & totals
+        cur.execute("""
+            SELECT 
+                q.quotation_id, q.status, q.quotation_date, q.expiry_date,
+                q.customer_name, q.sales_rep, q.customer_po, q.payment_terms as payment_term,
+                COALESCE(t.subtotal, 0) as subtotal,
+                COALESCE(t.global_discount_percent, 0) as global_discount_percent,
+                COALESCE(t.tax_summary, 0) as tax_summary,
+                COALESCE(t.shipping_charge, 0) as shipping_charge,
+                COALESCE(t.rounding_adjustment, 0) as rounding_adjustment,
+                COALESCE(t.grand_total, 0) as grand_total
+            FROM quotations q
+            LEFT JOIN quotation_totals t ON q.quotation_id = t.quotation_id
+            WHERE q.quotation_id = %s
+        """, (quotation_id,))
+        quotation = cur.fetchone()
+
+        if not quotation:
+            cur.close()
+            conn.close()
+            return jsonify({'success': False, 'error': 'Quotation not found'}), 404
+
+        # fetch items
+        cur.execute("""
+            SELECT 
+                item_id, product_name, quantity, uom, unit_price,
+                tax_percent as tax, discount_percent as discount, total
+            FROM quotation_items
+            WHERE quotation_id = %s
+            ORDER BY item_id
+        """, (quotation_id,))
+        items = cur.fetchall()
+
+        # convert numeric fields to float
+        for item in items:
+            for key in ['quantity', 'unit_price', 'tax', 'discount', 'total']:
+                if item.get(key) is not None:
+                    item[key] = float(item[key])
+
+        for idx, item in enumerate(items, 1):
+            item['sl_no'] = idx
+
+        quotation['items'] = items
+        quotation['totals'] = {
+            'subtotal': float(quotation.get('subtotal', 0)),
+            'global_discount_percent': float(quotation.get('global_discount_percent', 0)),
+            'tax_summary': float(quotation.get('tax_summary', 0)),
+            'shipping_charge': float(quotation.get('shipping_charge', 0)),
+            'rounding_adjustment': float(quotation.get('rounding_adjustment', 0)),
+            'grand_total': float(quotation.get('grand_total', 0))
+        }
+
+        cur.close()
+        conn.close()
+
+        # generate PDF
+        pdf_bytes = generate_quotation_pdf(quotation)
+
+        from flask import make_response
+        response = make_response(pdf_bytes)
+        response.headers['Content-Type'] = 'application/pdf'
+
+        status_text = quotation.get('status', 'draft').upper()
+        if status_text == "DRAFT":
+            return jsonify({'success': False, 'error': 'PDF not available for draft quotations'}), 403
+        elif status_text in ["REJECTED", "EXPIRED"]:
+            response.headers['Content-Disposition'] = f'inline; filename=quotation_{quotation_id}_REFERENCE.pdf'
+        else:
+            response.headers['Content-Disposition'] = f'attachment; filename=quotation_{quotation_id}.pdf'
+
+        return response
+
     except Exception as e:
         print(f"Error generating PDF: {str(e)}")
         import traceback
         traceback.print_exc()
-        return None
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 from email.message import EmailMessage
 
-
-def get_quotation_data(quotation_id):
-    """
-    Fetch a quotation by ID from your JSON file.
-    Replace 'quotations.json' with the path to your JSON database.
-    """
+def get_quotation_from_db(quotation_id):
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
     try:
-        with open("quotations.json", "r", encoding="utf-8") as f:
-            data = json.load(f)
-        return data.get(quotation_id, None)
-    except FileNotFoundError:
-        return None
-    except json.JSONDecodeError:
-        return None
-
-# Your existing generate_quotation_pdf function here
-# Your get_quotation_data function to fetch from JSON
-
+        cur.execute("""
+            SELECT q.*, 
+                   COALESCE(t.subtotal,0) as subtotal,
+                   COALESCE(t.global_discount_percent,0) as global_discount_percent,
+                   COALESCE(t.tax_summary,0) as tax_summary,
+                   COALESCE(t.shipping_charge,0) as shipping_charge,
+                   COALESCE(t.rounding_adjustment,0) as rounding_adjustment,
+                   COALESCE(t.grand_total,0) as grand_total
+            FROM quotations q
+            LEFT JOIN quotation_totals t ON q.quotation_id = t.quotation_id
+            WHERE q.quotation_id = %s
+        """, (quotation_id,))
+        quotation = cur.fetchone()
+        if not quotation:
+            return None
+        # Fetch items
+        cur.execute("SELECT * FROM quotation_items WHERE quotation_id = %s", (quotation_id,))
+        items = cur.fetchall()
+        for item in items:
+            for col in ['quantity','unit_price','tax_percent','discount_percent','total']:
+                if item.get(col) is not None:
+                    item[col] = float(item[col])
+        quotation['items'] = items
+        quotation['totals'] = {
+            'subtotal': float(quotation.get('subtotal',0)),
+            'global_discount_percent': float(quotation.get('global_discount_percent',0)),
+            'tax_summary': float(quotation.get('tax_summary',0)),
+            'shipping_charge': float(quotation.get('shipping_charge',0)),
+            'rounding_adjustment': float(quotation.get('rounding_adjustment',0)),
+            'grand_total': float(quotation.get('grand_total',0))
+        }
+        return quotation
+    finally:
+        cur.close()
+        conn.close()
 @app.route("/send-quotation/<quotation_id>", methods=["POST"])
 def send_quotation(quotation_id):
-    # Fetch quotation data from JSON
-    quotation = get_quotation_data(quotation_id)
+    quotation = get_quotation_from_db(quotation_id)
     if not quotation:
         return jsonify({"success": False, "message": "Quotation not found"}), 404
 
-    # Generate PDF
-    pdf_bytes = generate_quotation_pdf(quotation, quotation_id)
+    pdf_bytes = generate_quotation_pdf(quotation)   # your INR‑only PDF generator
     if not pdf_bytes:
         return jsonify({"success": False, "message": "Error generating PDF"}), 500
 
-    # Get customer email from JSON
-    customer_email = quotation.get("customer_email")
+    customer_email = quotation.get("customer_email")   # make sure 'customer_email' exists in DB or use customer_name lookup
     if not customer_email:
         return jsonify({"success": False, "message": "Customer email not found"}), 400
 
+
+def send_otp_email(email, otp, quotation_id=None):
+    """Send OTP via email (plain text)"""
     try:
-        # Create email
-        msg = EmailMessage()
-        msg['Subject'] = f"Quotation {quotation_id}"
-        msg['From'] = 'yourcompany@example.com'
-        msg['To'] = customer_email
-        msg.set_content(f"Dear {quotation.get('customer_name', 'Customer')},\n\nPlease find attached your quotation {quotation_id}.\n\nBest regards,\nYour Company")
-
-        # Attach PDF
-        msg.add_attachment(pdf_bytes, maintype='application', subtype='pdf', filename=f"Quotation_{quotation_id}.pdf")
-
-        # Send email via SMTP
-        with smtplib.SMTP('smtp.example.com', 587) as smtp:
-            smtp.starttls()
-            smtp.login('your_email@example.com', 'your_password')
-            smtp.send_message(msg)
-
-        return jsonify({"success": True, "message": f"Quotation sent to {customer_email}"})
-
-    except Exception as e:
-        return jsonify({"success": False, "message": str(e)}), 500
-
-
-def log_email_sent(quotation_id, recipient, status):
-    log_entry = {
-        'timestamp': datetime.now().isoformat(),
-        'quotation_id': quotation_id,
-        'recipient': recipient,
-        'status': status
-    }
-    
-    # Append to email log file
-    with open('email_log.json', 'a') as f:
-        f.write(json.dumps(log_entry) + '\n')        
-# ===================================================
-# SEND QUOTATION EMAIL WITH PDF
-# ===================================================
-def send_quotation_email_internal(quotation_id, recipient_email):
-    """Send quotation email with PDF attachment"""
-    try:
-        # Get quotation data
-        with open(QUOTATION_FILE, 'r') as f:
-            quotations = json.load(f)
-        
-        quotation = next((q for q in quotations if q['quotation_id'] == quotation_id), None)
-        
-        if not quotation:
-            return {'success': False, 'error': 'Quotation not found'}
-        
-        # Generate PDF attachment using the SAME common function
-        pdf_attachment = generate_quotation_pdf(quotation, quotation_id)
-        
-        # Generate HTML email
-        html_body = render_template(
-            'email_quotation.html', 
-            quotation=quotation,
-            now=datetime.now(),
-            recipient_email=recipient_email
-        )
-        
-        # Create email
-        msg = MIMEMultipart('mixed')
-        msg['Subject'] = f"Quotation {quotation_id} from Your Company"
+        msg = MIMEMultipart()
+        msg['Subject'] = f"Your OTP for Quotation {quotation_id}" if quotation_id else "Your OTP for Quotation"
         msg['From'] = SENDER_EMAIL
-        msg['To'] = recipient_email
-        
-        # Plain text version
-        text_body = f"""
-        Hi {quotation.get('customer_name', 'Customer')},
-        
-        Your quotation {quotation_id} has been generated.
-        
-        Please find the attached PDF.
-        """
-        
-        msg_alternative = MIMEMultipart('alternative')
-        msg_alternative.attach(MIMEText(text_body, 'plain'))
-        msg_alternative.attach(MIMEText(html_body, 'html'))
-        msg.attach(msg_alternative)
-        
-        # Attach PDF (generated by common function)
-        if pdf_attachment:
-            attachment = MIMEApplication(pdf_attachment, _subtype="pdf")
-            attachment.add_header('Content-Disposition', 'attachment', 
-                                filename=f"Quotation_{quotation_id}.pdf")
-            msg.attach(attachment)
-        
-        # Send email
+        msg['To'] = email
+        body = f"Your OTP for verification is: {otp}\n\nThis OTP is valid for {OTP_EXPIRY_MINUTES} minutes."
+        msg.attach(MIMEText(body, 'plain'))
         with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
             server.starttls()
             server.login(SENDER_EMAIL, SENDER_PASSWORD)
             server.send_message(msg)
-        
+        print(f"✅ OTP sent to {email}")
+        return True
+    except Exception as e:
+        print(f"❌ OTP email error: {e}")
+        return False
+
+import ssl
+def send_quotation_email_internal(quotation_id, recipient_email=None):
+    """Send quotation PDF by email – simple style like DNR, no external template"""
+    try:
+        # 1. Fetch quotation from PostgreSQL
+        quotation = get_full_quotation_from_db(quotation_id)
+        if not quotation:
+            return {'success': False, 'error': 'Quotation not found'}
+
+        # If recipient email not provided, use from DB
+        if not recipient_email:
+            recipient_email = quotation.get('email')
+        if not recipient_email:
+            return {'success': False, 'error': 'No recipient email available'}
+
+        # 2. Generate PDF (using your existing function)
+        pdf_attachment = generate_quotation_pdf(quotation)
+        if not pdf_attachment:
+            return {'success': False, 'error': 'PDF generation failed'}
+
+        customer_name = quotation.get('customer_name', 'Customer')
+        now = datetime.now()
+
+        # 3. Simple inline HTML (exactly like DNR email)
+        html_body = f"""
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"></head>
+<body style="font-family: Arial, sans-serif; color: #333;">
+    <p>Dear {customer_name},</p>
+    <p>Please find attached the quotation (<strong>{quotation_id}</strong>) for your requested items.</p>
+    <p>Please let us know if you have any questions.</p>
+    <br>
+    <p>Regards,<br>Stackly Team</p>
+</body>
+</html>
+"""
+
+        text_body = f"""Dear {customer_name},
+
+Please find attached the quotation ({quotation_id}) for your requested items.
+
+Please let us know if you have any questions.
+
+Regards,
+Stackly Team"""
+
+        # Build email
+        msg = MIMEMultipart('mixed')
+        msg['Subject'] = f"Quotation {quotation_id} from Stackly"
+        msg['From'] = SENDER_EMAIL
+        msg['To'] = recipient_email
+
+        msg_alternative = MIMEMultipart('alternative')
+        msg_alternative.attach(MIMEText(text_body, 'plain'))
+        msg_alternative.attach(MIMEText(html_body, 'html'))
+        msg.attach(msg_alternative)
+
+        # Attach PDF
+        attachment = MIMEApplication(pdf_attachment, _subtype="pdf")
+        attachment.add_header('Content-Disposition', 'attachment',
+                              filename=f"Quotation_{quotation_id}.pdf")
+        msg.attach(attachment)
+
+        # 4. Send with dual SMTP fallback
+        try:
+            context = ssl.create_default_context()
+            with smtplib.SMTP_SSL(SMTP_SERVER, 465, context=context, timeout=30) as server:
+                server.login(SENDER_EMAIL, SENDER_PASSWORD)
+                server.send_message(msg)
+        except Exception as ssl_err:
+            print(f"SSL port 465 failed: {ssl_err}, trying STARTTLS on 587...")
+            with smtplib.SMTP(SMTP_SERVER, 587, timeout=30) as server:
+                server.starttls()
+                server.login(SENDER_EMAIL, SENDER_PASSWORD)
+                server.send_message(msg)
+
         print(f"✅ Quotation {quotation_id} sent to {recipient_email}")
         return {'success': True, 'message': f'Quotation sent to {recipient_email}'}
-        
     except Exception as e:
-        print(f"❌ Error: {e}")
         import traceback
         traceback.print_exc()
         return {'success': False, 'error': str(e)}
 # ===================================================
 # API ROUTES
 # ===================================================
-
-@app.route('/api/check-email-limit', methods=['POST'])
-def api_check_email_limit():
-    """Check if email can be sent"""
-    try:
-        data = request.json
-        quotation_id = data.get('quotation_id')
-        recipient_email = data.get('recipient')
-        
-        customer_email = session.get('user_email', 'unknown@example.com')
-        
-        allowed, reason, requires_approval = check_email_limits(
-            quotation_id, customer_email, recipient_email
-        )
-        
-        return jsonify({
-            'success': True,
-            'allowed': allowed,
-            'reason': reason if not allowed else None,
-            'requires_approval': requires_approval
-        })
-        
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
-
-
-@app.route('/api/send-quotation-email', methods=['POST'])
-def api_send_quotation_email():
-    """API endpoint to send quotation email directly (no OTP modal)."""
-    try:
-        data = request.get_json(silent=True) or {}
-        quotation_id = data.get('quotation_id')
-        email = (data.get('email') or '').strip()
-
-        if not quotation_id or not email:
-            return jsonify({'success': False, 'error': 'Missing quotation ID or email'}), 400
-
-        # Basic email format check
-        if '@' not in email or '.' not in email.split('@')[-1]:
-            return jsonify({'success': False, 'error': 'Invalid email address'}), 400
-
-        # Use existing logic (limits + sending) via internal helper
-        result = send_quotation_email_internal(quotation_id, email)
-        if result.get('success'):
-            return jsonify({'success': True, 'message': 'Quotation sent successfully'})
-        return jsonify({'success': False, 'error': result.get('error')}), 500
-    except Exception as e:
-        print(f"❌ Error in api_send_quotation_email: {e}")
-        return jsonify({'success': False, 'error': str(e)}), 500
-
 @app.route('/api/request-approval', methods=['POST'])
 def api_request_approval():
     """Request manager approval"""
@@ -12184,170 +11918,139 @@ def api_request_approval():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
+
+@app.route('/api/send-quotation-email', methods=['POST'])
+def api_send_quotation_email():
+    """Send quotation email directly (no OTP)"""
+    try:
+        data = request.get_json(silent=True) or {}
+        quotation_id = data.get('quotation_id')
+        email = (data.get('email') or '').strip()
+        if not quotation_id or not email:
+            return jsonify({'success': False, 'error': 'Missing quotation ID or email'}), 400
+        if '@' not in email or '.' not in email.split('@')[-1]:
+            return jsonify({'success': False, 'error': 'Invalid email address'}), 400
+
+        customer_email = session.get('user_email', 'unknown@example.com')
+        allowed, reason, requires_approval = check_email_limits(quotation_id, customer_email, email)
+        if not allowed:
+            return jsonify({'success': False, 'error': reason}), 400
+
+        result = send_quotation_email_internal(quotation_id, email)
+        if result.get('success'):
+            record_email_sent(quotation_id, customer_email, email, approved=not requires_approval)
+            return jsonify({'success': True, 'message': 'Quotation sent successfully'})
+        return jsonify({'success': False, 'error': result.get('error')}), 500
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @app.route('/api/otp/send', methods=['POST'])
 def api_send_otp():
-    """Send OTP email"""
     try:
         data = request.json
         email = data.get('email')
         quotation_id = data.get('quotation_id')
-        
         if not email or '@' not in email:
             return jsonify({'success': False, 'error': 'Invalid email'}), 400
-        
-        # Check OTP limits
+
         allowed, reason, attempts_left = check_otp_limits(email, quotation_id)
-        
         if not allowed:
             return jsonify({'success': False, 'error': reason, 'attempts_left': 0}), 429
-        
-        # Generate and store OTP
-        otp = generate_otp()
-        
-        session[f'otp_{email}'] = {
-            'otp': otp,
-            'quotation_id': quotation_id,
-            'created_at': datetime.now().isoformat()
-        }
-        
-        # Send OTP email
-        result = send_otp_email(email, otp, quotation_id)
-        
-        if result:
+
+        otp = generate_otp()  # you have this function
+        session[f'otp_{email}_{quotation_id}'] = {'otp': otp, 'created_at': datetime.now().isoformat()}
+        if send_otp_email(email, otp, quotation_id):
             record_otp_attempt(email, quotation_id, True)
-            return jsonify({
-                'success': True, 
-                'message': 'OTP sent successfully',
-                'attempts_left': attempts_left
-            })
-        else:
-            return jsonify({'success': False, 'error': 'Failed to send OTP'}), 500
-        
+            return jsonify({'success': True, 'message': 'OTP sent', 'attempts_left': attempts_left})
+        return jsonify({'success': False, 'error': 'Failed to send OTP'}), 500
     except Exception as e:
-        print(f"❌ Error: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/otp/verify', methods=['POST'])
 def api_verify_otp():
-    """Verify OTP and send quotation"""
     try:
         data = request.json
         email = data.get('email')
         otp = data.get('otp')
         quotation_id = data.get('quotation_id')
-        
-        # Check OTP limits
-        allowed, reason, attempts_left = check_otp_limits(email, quotation_id)
+
+        allowed, reason, _ = check_otp_limits(email, quotation_id)
         if not allowed:
             return jsonify({'success': False, 'error': reason}), 429
-        
-        otp_data = session.get(f'otp_{email}')
-        
-        if not otp_data:
+
+        stored = session.get(f'otp_{email}_{quotation_id}')
+        if not stored:
             record_otp_attempt(email, quotation_id, False)
             return jsonify({'success': False, 'error': 'OTP not found'}), 400
-        
-        # Check expiry
-        created = datetime.fromisoformat(otp_data['created_at'])
+
+        created = datetime.fromisoformat(stored['created_at'])
         if datetime.now() - created > timedelta(minutes=OTP_EXPIRY_MINUTES):
-            session.pop(f'otp_{email}', None)
+            session.pop(f'otp_{email}_{quotation_id}', None)
             record_otp_attempt(email, quotation_id, False)
             return jsonify({'success': False, 'error': 'OTP expired'}), 400
-        
-        # Verify OTP
-        if otp_data['otp'] != otp:
+
+        if stored['otp'] != otp:
             record_otp_attempt(email, quotation_id, False)
-            new_attempts_left = get_otp_attempts_left(email, quotation_id)
-            
-            if new_attempts_left <= 0:
-                return jsonify({'success': False, 'error': 'Maximum attempts exceeded'}), 429
-            
-            return jsonify({
-                'success': False, 
-                'error': f'Invalid OTP. {new_attempts_left} attempts left.'
-            }), 400
-        
+            left = get_otp_attempts_left(email, quotation_id)
+            return jsonify({'success': False, 'error': f'Invalid OTP. {left} attempts left'}), 400
+
         # OTP verified
         record_otp_attempt(email, quotation_id, True)
-        session.pop(f'otp_{email}', None)
-        
-        # Check email limits
+        session.pop(f'otp_{email}_{quotation_id}', None)
+
         customer_email = session.get('user_email', 'unknown@example.com')
-        allowed, reason, requires_approval = check_email_limits(
-            quotation_id, customer_email, email
-        )
-        
-        if not allowed:
-            return jsonify({'success': False, 'error': reason}), 400
-        
-        # Send quotation email
+        allowed2, reason2, requires_approval = check_email_limits(quotation_id, customer_email, email)
+        if not allowed2:
+            return jsonify({'success': False, 'error': reason2}), 400
+
         result = send_quotation_email_internal(quotation_id, email)
-        
         if result.get('success'):
-            record_email_sent(quotation_id, customer_email, email)
+            record_email_sent(quotation_id, customer_email, email, approved=not requires_approval)
             return jsonify({'success': True, 'message': 'Quotation sent successfully'})
-        else:
-            return jsonify({'success': False, 'error': result.get('error')}), 500
-        
+        return jsonify({'success': False, 'error': result.get('error')}), 500
     except Exception as e:
-        print(f"❌ Error: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/otp/resend', methods=['POST'])
-def api_resend_otp():
-    """Resend OTP"""
+def api_resend_otp(): 
     try:
         data = request.json
         email = data.get('email')
         quotation_id = data.get('quotation_id')
-        
-        # Check resend limits
-        allowed, reason, attempts_left = check_resend_limits(email, quotation_id)
-        
+
+        allowed, reason, left = check_resend_limits(email, quotation_id)
         if not allowed:
             return jsonify({'success': False, 'error': reason}), 429
-        
-        # Generate new OTP
+
         otp = generate_otp()
-        
-        session[f'otp_{email}'] = {
-            'otp': otp,
-            'quotation_id': quotation_id,
-            'created_at': datetime.now().isoformat()
-        }
-        
-        # Send OTP email
-        result = send_otp_email(email, otp, quotation_id)
-        
-        if result:
-            remaining = record_resend_attempt(email, quotation_id)
-            return jsonify({
-                'success': True,
-                'message': 'OTP resent successfully',
-                'resend_attempts_left': remaining
-            })
-        else:
-            return jsonify({'success': False, 'error': 'Failed to resend OTP'}), 500
-        
+        session[f'otp_{email}_{quotation_id}'] = {'otp': otp, 'created_at': datetime.now().isoformat()}
+        if send_otp_email(email, otp, quotation_id):
+            record_resend_attempt(email, quotation_id)
+            return jsonify({'success': True, 'resend_attempts_left': left})
+        return jsonify({'success': False, 'error': 'Failed to resend OTP'}), 500
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/check-email-limit', methods=['POST'])
+def api_check_email_limit():
+    try:
+        data = request.json
+        quotation_id = data.get('quotation_id')
+        recipient_email = data.get('recipient')
+        customer_email = session.get('user_email', 'unknown@example.com')
+        allowed, reason, requires_approval = check_email_limits(quotation_id, customer_email, recipient_email)
+        return jsonify({'success': True, 'allowed': allowed, 'reason': reason if not allowed else None, 'requires_approval': requires_approval})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/get-email-count/<quotation_id>')
 def get_email_count_route(quotation_id):
-    """Get email count for a quotation"""
     try:
         customer_email = session.get('user_email', 'unknown@example.com')
         count = get_email_count(quotation_id, customer_email)
-        
-        return jsonify({
-            'success': True,
-            'count': count,
-            'max': RATE_LIMIT_CONFIG['max_emails_per_quotation']
-        })
-        
+        return jsonify({'success': True, 'count': count, 'max': RATE_LIMIT_CONFIG['max_emails_per_quotation']})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
-
 # ===================================================
 # DIAGNOSTIC ROUTES
 # ===================================================
@@ -12376,216 +12079,63 @@ def test_smtp_connection():
 
 
 
-def find_quotation_by_id(quotations, quotation_id):
-    """Find quotation by ID"""
-    for i, q in enumerate(quotations):
-        if q.get('quotation_id') == quotation_id:
-            return i, q
-    return None, None
-
-
-# ===================================================
-# EXPIRED QUOTATION CHECK - BACKEND
-# ===================================================
-
-def check_and_update_expired_quotations():
-    """
-    Check all quotations and update expired ones in JSON
-    This runs when loading the quotations list
-    """
-    
-    # Use the existing QUOTATION_FILE variable
-    json_file_path = QUOTATION_FILE  # ← USING YOUR EXISTING VARIABLE
-    
-    # Check if file exists
-    if not os.path.exists(json_file_path):
-        print(f"⚠️ Quotation file not found: {json_file_path}")
-        return []
-    
-    try:
-        # Load existing quotations
-        with open(json_file_path, 'r') as file:
-            quotations = json.load(file)
-    except json.JSONDecodeError:
-        print("❌ Error reading JSON file")
-        return []
-    except Exception as e:
-        print(f"❌ Unexpected error: {e}")
-        return []
-    
-    # Get today's date
-    today = datetime.now().date()
-    updated = False
-    
-    # Check each quotation
-    for quotation in quotations:
-        # Get current status
-        current_status = quotation.get('status', '').lower()
-        
-        # Only check Sent quotations (send, sent, submitted)
-        if current_status in ['send', 'sent', 'submitted']:
-            
-            # Get expiry date
-            expiry_date_str = quotation.get('expiry_date')
-            if not expiry_date_str:
-                continue
-            
-            try:
-                # Parse expiry date
-                expiry_date = datetime.strptime(expiry_date_str, '%Y-%m-%d').date()
-                
-                # Check if expired
-                if expiry_date < today:
-                    print(f"✅ Quotation {quotation.get('quotation_id')} expired - updating")
-                    
-                    # Update status
-                    quotation['status'] = 'expired'
-                    
-                    # Add to history
-                    if 'status_history' not in quotation:
-                        quotation['status_history'] = []
-                    
-                    quotation['status_history'].append({
-                        'status': 'expired',
-                        'date': today.strftime('%Y-%m-%d'),
-                        'time': datetime.now().strftime('%H:%M:%S'),
-                        'reason': 'Auto-expired',
-                        'notes': f'Expired on {today.strftime("%Y-%m-%d")} (valid until {expiry_date_str})'
-                    })
-                    
-                    # Add expired date
-                    quotation['expired_date'] = today.strftime('%Y-%m-%d')
-                    
-                    updated = True
-                    
-            except ValueError as e:
-                print(f"❌ Date parsing error for {quotation.get('quotation_id')}: {e}")
-                continue
-            except Exception as e:
-                print(f"❌ Error processing {quotation.get('quotation_id')}: {e}")
-                continue
-    
-    # Save changes if any
-    if updated:
-        try:
-            with open(json_file_path, 'w') as file:
-                json.dump(quotations, file, indent=2)
-            print(f"✅ Expired quotations updated in {json_file_path}")
-        except Exception as e:
-            print(f"❌ Error saving JSON: {e}")
-    
-    return quotations
-
-
 # ===================================================
 # API ENDPOINTS
 # ===================================================
 
-@app.route('/api/quotations', methods=['GET'])
-def get_quotations():
-    """
-    Get all quotations with automatic expiry check
-    This runs every time user opens the quotations list
-    """
-    try:
-        quotations = check_and_update_expired_quotations()
-        return jsonify({
-            'success': True,
-            'items': quotations,
-            'count': len(quotations)
-        })
-    except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
-
 
 @app.route('/get-quotation/<quotation_id>', methods=['GET'])
 def get_single_quotation(quotation_id):
-    """
-    Get single quotation and check expiry
-    """
     try:
-        # First update all expired (optional but safe)
-        quotations = check_and_update_expired_quotations()
-        
-        # Find the specific quotation
-        quotation = None
-        for q in quotations:
-            if q.get('quotation_id') == quotation_id:
-                quotation = q
-                break
-        
+        quotation = get_full_quotation_from_db(quotation_id)
         if not quotation:
-            return jsonify({
-                'success': False,
-                'error': 'Quotation not found'
-            }), 404
-        
-        return jsonify({
-            'success': True,
-            'quotation': quotation
-        })
-        
+            return jsonify({'success': False, 'error': 'Quotation not found'}), 404
+        return jsonify({'success': True, 'quotation': quotation})
     except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @app.route('/check-expired-now', methods=['POST'])
 def manual_expiry_check():
-    """
-    Manual endpoint to trigger expiry check
-    Can be called from frontend button
-    """
     try:
-        quotations = check_and_update_expired_quotations()
-        
-        # Count expired
-        expired_count = sum(1 for q in quotations if q.get('status') == 'expired')
-        
+        expired_ids = check_and_update_expired_quotations_db()
         return jsonify({
             'success': True,
             'message': f'Expiry check completed',
-            'expired_count': expired_count,
-            'total': len(quotations)
+            'expired_count': len(expired_ids),
+            'total': None   # optional
         })
     except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
-
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 # ===================================================
 # OPTIONAL: Daily Scheduler (Run via cron)
 # ===================================================
-
 def daily_expiry_check():
     """
     Run this once per day via cron job
-    Example cron: 0 0 * * * python3 daily_expiry.py
+    Example cron: 0 0 * * * python3 /path/to/your/app.py
     """
     print(f"🕒 Daily expiry check started at {datetime.now()}")
     
-    quotations = check_and_update_expired_quotations()
+    # Use the DB version – returns list of expired quotation IDs
+    expired_ids = check_and_update_expired_quotations_db()
     
-    expired = [q for q in quotations if q.get('status') == 'expired']
-    sent = [q for q in quotations if q.get('status') in ['send', 'sent', 'submitted']]
+    # Optional: fetch counts from DB for summary
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(*) FROM quotations")
+    total = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM quotations WHERE status IN ('send','sent','submitted')")
+    sent = cur.fetchone()[0]
+    cur.close()
+    conn.close()
     
     print(f"📊 Summary:")
-    print(f"   - Total quotations: {len(quotations)}")
-    print(f"   - Still valid (Sent): {len(sent)}")
-    print(f"   - Expired: {len(expired)}")
+    print(f"   - Total quotations: {total}")
+    print(f"   - Still valid (Sent): {sent}")
+    print(f"   - Expired (just updated): {len(expired_ids)}")
     print(f"✅ Daily expiry check completed")
-
-# Run daily check if script executed directly
-if __name__ == '__main__':
-    daily_expiry_check()
-
 
 
 # ===================================================
@@ -16248,361 +15798,955 @@ def update_invoice(invoice_id):
 # ---------------------------------------------------------------------
 # PDF GENERATION FUNCTION
 # ---------------------------------------------------------------------
+
 def generate_invoice_pdf_bytes(invoice, items, summary):
     """
-    Generate PDF bytes for an invoice with ALL fields displayed.
+    Generate PDF bytes for an invoice using the same styling as Delivery Note Return PDF.
     invoice: dict with invoice header data
     items: list of item dicts
     summary: dict with summary totals
     """
     buffer = BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4,
-                            rightMargin=72, leftMargin=72,
-                            topMargin=72, bottomMargin=72)
 
-    elements = []
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        rightMargin=18,
+        leftMargin=18,
+        topMargin=16,
+        bottomMargin=18,
+    )
+
     styles = getSampleStyleSheet()
 
-    # Currency mapping
-    currency_code = invoice.get('currency', 'USD')
+    # ---------- custom styles (matching DNR PDF) ----------
+    company_style = ParagraphStyle(
+        name="Invoice_CompanyName",
+        parent=styles["Normal"],
+        fontName="DejaVuSans-Bold",
+        fontSize=20,
+        leading=24,
+        textColor=colors.HexColor("#8c1f1f"),
+        alignment=TA_CENTER,
+        spaceAfter=4,
+    )
+
+    company_info_style = ParagraphStyle(
+        name="Invoice_CompanyInfo",
+        parent=styles["Normal"],
+        fontName="DejaVuSans",
+        fontSize=9,
+        leading=12,
+        textColor=colors.black,
+        alignment=TA_CENTER,
+        spaceAfter=1,
+    )
+
+    page_title_style = ParagraphStyle(
+        name="Invoice_PageTitle",
+        parent=styles["Heading1"],
+        fontName="DejaVuSans-Bold",
+        fontSize=16,
+        leading=20,
+        textColor=colors.green,
+        alignment=TA_CENTER,
+        spaceBefore=12,
+        spaceAfter=12,
+    )
+
+    section_style = ParagraphStyle(
+        name="Invoice_Section",
+        parent=styles["Heading3"],
+        fontName="DejaVuSans-Bold",
+        fontSize=11,
+        leading=14,
+        textColor=colors.HexColor("#8c1f1f"),
+        spaceAfter=6,
+        spaceBefore=10,
+    )
+
+    label_style = ParagraphStyle(
+        name="Invoice_Label",
+        parent=styles["Normal"],
+        fontName="DejaVuSans-Bold",
+        fontSize=8.5,
+        leading=11,
+        textColor=colors.HexColor("#6b1a1a"),
+    )
+
+    value_style = ParagraphStyle(
+        name="Invoice_Value",
+        parent=styles["Normal"],
+        fontName="DejaVuSans",
+        fontSize=8.5,
+        leading=11,
+        textColor=colors.black,
+    )
+
+    header_small_style = ParagraphStyle(
+        name="Invoice_HeaderSmall",
+        parent=styles["Normal"],
+        fontName="DejaVuSans-Bold",
+        fontSize=8,
+        leading=10,
+        textColor=colors.white,
+        alignment=TA_CENTER,
+    )
+
+    terms_style = ParagraphStyle(
+        name="Invoice_Terms",
+        parent=styles["Normal"],
+        fontName="DejaVuSans",
+        fontSize=8,
+        leading=11,
+        textColor=colors.black,
+        leftIndent=8,
+    )
+
+    # helpers (safe conversion)
+    def safe_str(val, default="-"):
+        if val is None:
+            return default
+        s = str(val).strip()
+        return s if s else default
+
+    def safe_float(val, default=0.0):
+        try:
+            if val in (None, ""):
+                return default
+            return float(val)
+        except Exception:
+            return default
+
+    elements = []
+
+    # company header (same as DNR)
+    elements.append(Paragraph("STACKLY", company_style))
+    elements.append(
+        Paragraph(
+            "MMR Complex, Chinna Thirupathi, near Chinna Muniyappan Kovil, Salem, Tamil Nadu - 636008",
+            company_info_style,
+        )
+    )
+    elements.append(Paragraph("Phone: +91 7010792745", company_info_style))
+    elements.append(Paragraph("Email: info@stackly.com", company_info_style))
+    elements.append(Spacer(1, 10))
+
+    # status & watermark
+    status_text = safe_str(invoice.get("status") or "DRAFT").upper()
+    elements.append(Paragraph(f"INVOICE - {status_text}", page_title_style))
+
+    if status_text in ['CANCELLED', 'OVERDUE']:
+        watermark_text = "CANCELLED - FOR REFERENCE ONLY" if status_text == 'CANCELLED' else "OVERDUE - PAYMENT REQUIRED"
+        watermark_color = colors.red if status_text == 'CANCELLED' else colors.HexColor("#FFA500")
+        watermark_style = ParagraphStyle(
+            "Invoice_Watermark",
+            parent=styles["Normal"],
+            fontName="DejaVuSans-Bold",
+            fontSize=14,
+            textColor=watermark_color,
+            alignment=TA_CENTER,
+            backColor=colors.HexColor("#f9f2f2") if status_text == 'CANCELLED' else colors.HexColor("#fff5e6"),
+            spaceAfter=12,
+            spaceBefore=6,
+            leading=18,
+        )
+        elements.append(Paragraph(f"⚠️ {watermark_text} ⚠️", watermark_style))
+        elements.append(Spacer(1, 6))
+
+    # ---------- 1. INVOICE INFORMATION ----------
+    elements.append(Paragraph("INVOICE INFORMATION", section_style))
+    inv_data = [
+        [
+            Paragraph("<b>Invoice Number:</b>", label_style),
+            Paragraph(safe_str(invoice.get("invoice_id")), value_style),
+            Paragraph("<b>Invoice Date:</b>", label_style),
+            Paragraph(safe_str(invoice.get("invoice_date")), value_style),
+        ],
+        [
+            Paragraph("<b>Sale Order Ref:</b>", label_style),
+            Paragraph(safe_str(invoice.get("sale_order_ref")), value_style),
+            Paragraph("<b>Due Date:</b>", label_style),
+            Paragraph(safe_str(invoice.get("due_date")), value_style),
+        ],
+        [
+            Paragraph("<b>Invoice Status:</b>", label_style),
+            Paragraph(safe_str(invoice.get("status")), value_style),
+            Paragraph("<b>Payment Terms:</b>", label_style),
+            Paragraph(safe_str(invoice.get("payment_terms")), value_style),
+        ],
+        [
+            Paragraph("<b>Customer Ref No:</b>", label_style),
+            Paragraph(safe_str(invoice.get("customer_ref_no")), value_style),
+            Paragraph("<b>Invoice Tags:</b>", label_style),
+            Paragraph(safe_str(invoice.get("invoice_tags")), value_style),
+        ],
+    ]
+    inv_table = Table(inv_data, colWidths=[110, 160, 95, 135])
+    inv_table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f3f3f3")),
+                ("BOX", (0, 0), (-1, -1), 0.8, colors.HexColor("#8a8a8a")),
+                ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#a5a5a5")),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 6),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                ("TOPPADDING", (0, 0), (-1, -1), 5),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+            ]
+        )
+    )
+    elements.append(inv_table)
+    elements.append(Spacer(1, 12))
+
+    # ---------- 2. CUSTOMER INFORMATION ----------
+    elements.append(Paragraph("CUSTOMER INFORMATION", section_style))
+    currency_code = invoice.get("currency", "USD")
     currency_map = {
         'USD': '$', 'EUR': '€', 'GBP': '£', 'JPY': '¥', 'IND': '₹', 'INR': '₹',
         'SGD': 'S$', 'CAD': 'C$', 'AUD': 'A$', 'CHF': 'Fr', 'CNY': '¥'
     }
     currency_symbol = currency_map.get(currency_code, currency_code)
-
-    # Styles
-    title_style = ParagraphStyle(
-        'CustomTitle',
-        parent=styles['Heading1'],
-        fontSize=24,
-        textColor=colors.HexColor('#2C3E50'),
-        alignment=1,
-        spaceAfter=20
-    )
-    company_style = ParagraphStyle(
-        'Company',
-        parent=styles['Normal'],
-        fontSize=9,
-        leading=12,
-        textColor=colors.black,
-        alignment=1,
-        spaceAfter=2,
-        fontName='DejaVuSans'
-    )
-    status_style = ParagraphStyle(
-        'Status',
-        parent=styles['Heading2'],
-        fontSize=14,
-        leading=18,
-        alignment=1,
-        spaceAfter=14,
-        fontName='DejaVuSans-Bold'
-    )
-    heading_style = ParagraphStyle(
-        'Heading2',
-        parent=styles['Heading2'],
-        fontSize=11,
-        leading=14,
-        textColor=colors.HexColor('#2C3E50'),
-        spaceBefore=8,
-        spaceAfter=8,
-        fontName='DejaVuSans-Bold'
-    )
-    table_cell_style = ParagraphStyle(
-        'TableCell',
-        parent=styles['Normal'],
-        fontSize=7.6,
-        leading=9,
-        fontName='DejaVuSans',
-        wordWrap='CJK'
-    )
-    terms_heading_style = ParagraphStyle(
-        'TermsHeading',
-        parent=styles['Heading2'],
-        fontSize=10,
-        leading=13,
-        textColor=colors.HexColor('#2C3E50'),
-        spaceAfter=6,
-        fontName='DejaVuSans-Bold'
-    )
-    terms_style = ParagraphStyle(
-        'Terms',
-        parent=styles['Normal'],
-        fontSize=7.4,
-        leading=10,
-        fontName='DejaVuSans'
-    )
-    footer_style = ParagraphStyle(
-        'Footer',
-        parent=styles['Normal'],
-        fontSize=7.5,
-        textColor=colors.HexColor('#555555'),
-        alignment=0
-    )
-
-    # Company header
-    elements.append(Paragraph("STACKLY", title_style))
-    elements.append(Paragraph("MMR Complex, Chinna Thirupathi, near Chinna Muniyappan Kovil, Salem, Tamil Nadu - 636008", company_style))
-    elements.append(Paragraph("Phone: +91 7010792745", company_style))
-    elements.append(Paragraph("Email: info@stackly.com", company_style))
-    elements.append(Spacer(1, 10))
-
-    # Status and watermark
-    status_text = invoice.get('status', 'DRAFT').upper()
-    status_color = {
-        'DRAFT': colors.orange,
-        'SENT': colors.blue,
-        'PAID': colors.green,
-        'CANCELLED': colors.red,
-        'OVERDUE': colors.HexColor('#FFA500')
-    }.get(status_text, colors.black)
-    elements.append(Paragraph(f"INVOICE - {status_text}", status_style))
-
-    if status_text in ['CANCELLED', 'OVERDUE']:
-        watermark_text = "⚠️ CANCELLED - FOR REFERENCE ONLY ⚠️" if status_text == 'CANCELLED' else "⚠️ OVERDUE - PAYMENT REQUIRED ⚠️"
-        watermark_color = colors.red if status_text == 'CANCELLED' else colors.HexColor('#FFA500')
-        elements.append(Paragraph(
-            watermark_text,
-            ParagraphStyle(
-                'Watermark',
-                parent=styles['Normal'],
-                fontSize=16,
-                textColor=watermark_color,
-                alignment=1,
-                spaceAfter=20,
-                spaceBefore=10,
-                backColor=colors.lightgrey
-            )
-        ))
-        elements.append(Spacer(1, 10))
-
-    # ===========================================
-    # SECTION 1: INVOICE BASIC INFORMATION
-    # =========================================
-    elements.append(Paragraph("INVOICE INFORMATION", heading_style))
-    info_data = [
-        ['Invoice Number:', invoice.get('invoice_id', '-'), 'Invoice Date:', invoice.get('invoice_date', '-')],
-        ['Sale Order Reference:', invoice.get('sale_order_ref', '-'), 'Due Date:', invoice.get('due_date', '-')],
-        ['Invoice Status:', invoice.get('status', '-'), 'Payment Terms:', invoice.get('payment_terms', '-')],
-        ['Customer Ref No:', invoice.get('customer_ref_no', '-'), 'Invoice Tags:', invoice.get('invoice_tags', '-')],
+    cust_data = [
+        [
+            Paragraph("<b>Customer Name:</b>", label_style),
+            Paragraph(safe_str(invoice.get("customer_name")), value_style),
+            Paragraph("<b>Customer ID:</b>", label_style),
+            Paragraph(safe_str(invoice.get("customer_id")), value_style),
+        ],
+        [
+            Paragraph("<b>Email:</b>", label_style),
+            Paragraph(safe_str(invoice.get("email")), value_style),
+            Paragraph("<b>Phone:</b>", label_style),
+            Paragraph(safe_str(invoice.get("phone")), value_style),
+        ],
+        [
+            Paragraph("<b>Contact Person:</b>", label_style),
+            Paragraph(safe_str(invoice.get("contact_person")), value_style),
+            Paragraph("<b>Currency:</b>", label_style),
+            Paragraph(f"{currency_code} ({currency_symbol})", value_style),
+        ],
     ]
-    
-    info_table = Table(info_data, colWidths=[120, 160, 100, 130])
-    info_table.setStyle(TableStyle([
-        ('FONTNAME', (0,0), (-1,-1), 'DejaVuSans'),
-        ('FONTSIZE', (0,0), (-1,-1), 9),
-        ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
-        ('BACKGROUND', (0,0), (0,-1), colors.lightgrey),
-        ('BACKGROUND', (2,0), (2,-1), colors.lightgrey),
-        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-        ('PADDING', (0,0), (-1,-1), 6),
-    ]))
-    elements.append(info_table)
-    elements.append(Spacer(1, 15))
+    cust_table = Table(cust_data, colWidths=[110, 170, 95, 145])
+    cust_table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f3f3f3")),
+                ("BOX", (0, 0), (-1, -1), 0.8, colors.HexColor("#8a8a8a")),
+                ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#a5a5a5")),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 6),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                ("TOPPADDING", (0, 0), (-1, -1), 5),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+            ]
+        )
+    )
+    elements.append(cust_table)
+    elements.append(Spacer(1, 12))
 
-    # ===========================================
-    # SECTION 2: CUSTOMER INFORMATION
-    # =========================================
-    elements.append(Paragraph("CUSTOMER INFORMATION", heading_style))
-    customer_data = [
-        ['Customer Name:', invoice.get('customer_name', '-'), 'Customer ID:', invoice.get('customer_id', '-')],
-        ['Email:', invoice.get('email', '-'), 'Phone:', invoice.get('phone', '-')],
-        ['Contact Person:', invoice.get('contact_person', '-'), 'Currency:', f"{currency_code} ({currency_symbol})"],
-    ]
-    
-    customer_table = Table(customer_data, colWidths=[120, 180, 100, 110])
-    customer_table.setStyle(TableStyle([
-        ('FONTNAME', (0,0), (-1,-1), 'DejaVuSans'),
-        ('FONTSIZE', (0,0), (-1,-1), 9),
-        ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
-        ('BACKGROUND', (0,0), (0,-1), colors.lightgrey),
-        ('BACKGROUND', (2,0), (2,-1), colors.lightgrey),
-        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-        ('PADDING', (0,0), (-1,-1), 6),
-    ]))
-    elements.append(customer_table)
-    elements.append(Spacer(1, 15))
-
-    # ===========================================
-    # SECTION 3: ADDRESS INFORMATION
-    # =========================================
-    if invoice.get('billing_address') or invoice.get('shipping_address'):
-        elements.append(Paragraph("ADDRESS INFORMATION", heading_style))
-        address_data = [
-            ['Billing Address:', invoice.get('billing_address', '-'), 'Shipping Address:', invoice.get('shipping_address', '-')],
+    # ---------- 3. ADDRESS INFORMATION ----------
+    if invoice.get("billing_address") or invoice.get("shipping_address"):
+        elements.append(Paragraph("ADDRESS INFORMATION", section_style))
+        addr_data = [
+            [
+                Paragraph("<b>Billing Address:</b>", label_style),
+                Paragraph(safe_str(invoice.get("billing_address")), value_style),
+                Paragraph("<b>Shipping Address:</b>", label_style),
+                Paragraph(safe_str(invoice.get("shipping_address")), value_style),
+            ],
         ]
-        
-        address_table = Table(address_data, colWidths=[120, 200, 100, 110])
-        address_table.setStyle(TableStyle([
-            ('FONTNAME', (0,0), (-1,-1), 'DejaVuSans'),
-            ('FONTSIZE', (0,0), (-1,-1), 9),
-            ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
-            ('BACKGROUND', (0,0), (0,0), colors.lightgrey),
-            ('BACKGROUND', (2,0), (2,0), colors.lightgrey),
-            ('VALIGN', (0,0), (-1,-1), 'TOP'),
-            ('PADDING', (0,0), (-1,-1), 6),
-        ]))
-        elements.append(address_table)
-        elements.append(Spacer(1, 15))
+        addr_table = Table(addr_data, colWidths=[110, 170, 95, 145])
+        addr_table.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f3f3f3")),
+                    ("BOX", (0, 0), (-1, -1), 0.8, colors.HexColor("#8a8a8a")),
+                    ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#a5a5a5")),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 6),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                    ("TOPPADDING", (0, 0), (-1, -1), 5),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+                ]
+            )
+        )
+        elements.append(addr_table)
+        elements.append(Spacer(1, 12))
 
-    # ===========================================
-    # SECTION 4: PAYMENT INFORMATION
-    # =========================================
-    elements.append(Paragraph("PAYMENT INFORMATION", heading_style))
-    payment_data = [
-        ['Payment Method:', invoice.get('payment_method', '-'), 'Payment Status:', invoice.get('payment_status', '-')],
-        ['Payment Ref No:', invoice.get('payment_ref_no', '-'), 'Transaction Date:', invoice.get('transaction_date', '-')],
-        ['Amount Paid:', f"{currency_symbol}{invoice.get('amount_paid', 0):.2f}", 'Balance Due:', f"{currency_symbol}{summary.get('balance_due', 0):.2f}"],
+    # ---------- 4. PAYMENT INFORMATION ----------
+    elements.append(Paragraph("PAYMENT INFORMATION", section_style))
+    pay_data = [
+        [
+            Paragraph("<b>Payment Method:</b>", label_style),
+            Paragraph(safe_str(invoice.get("payment_method")), value_style),
+            Paragraph("<b>Payment Status:</b>", label_style),
+            Paragraph(safe_str(invoice.get("payment_status")), value_style),
+        ],
+        [
+            Paragraph("<b>Payment Ref No:</b>", label_style),
+            Paragraph(safe_str(invoice.get("payment_ref_no")), value_style),
+            Paragraph("<b>Transaction Date:</b>", label_style),
+            Paragraph(safe_str(invoice.get("transaction_date")), value_style),
+        ],
+        [
+            Paragraph("<b>Amount Paid:</b>", label_style),
+            Paragraph(f"{currency_symbol}{safe_float(invoice.get('amount_paid')):.2f}", value_style),
+            Paragraph("<b>Balance Due:</b>", label_style),
+            Paragraph(f"{currency_symbol}{safe_float(summary.get('balance_due')):.2f}", value_style),
+        ],
     ]
-    
-    payment_table = Table(payment_data, colWidths=[120, 180, 100, 110])
-    payment_table.setStyle(TableStyle([
-        ('FONTNAME', (0,0), (-1,-1), 'DejaVuSans'),
-        ('FONTSIZE', (0,0), (-1,-1), 9),
-        ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
-        ('BACKGROUND', (0,0), (0,-1), colors.lightgrey),
-        ('BACKGROUND', (2,0), (2,-1), colors.lightgrey),
-        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-        ('PADDING', (0,0), (-1,-1), 6),
-    ]))
-    elements.append(payment_table)
-    elements.append(Spacer(1, 20))
+    pay_table = Table(pay_data, colWidths=[110, 170, 95, 145])
+    pay_table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f3f3f3")),
+                ("BOX", (0, 0), (-1, -1), 0.8, colors.HexColor("#8a8a8a")),
+                ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#a5a5a5")),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 6),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                ("TOPPADDING", (0, 0), (-1, -1), 5),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+            ]
+        )
+    )
+    elements.append(pay_table)
+    elements.append(Spacer(1, 16))
 
-    # ===========================================
-    # SECTION 5: INVOICE ITEMS
-    # =========================================
+    # ---------- 5. INVOICE ITEMS ----------
     if items:
-        elements.append(Paragraph("INVOICE ITEMS", heading_style))
-        table_data = [['S.No', 'Product Name', 'Product ID', 'Qty', 'UOM', 'Unit Price', 'Tax %', 'Disc %', 'Total']]
+        elements.append(Paragraph("INVOICE ITEMS", section_style))
+        item_header = [
+            Paragraph("S.No", header_small_style),
+            Paragraph("Product Name", header_small_style),
+            Paragraph("Product ID", header_small_style),
+            Paragraph("Qty", header_small_style),
+            Paragraph("UOM", header_small_style),
+            Paragraph("Unit Price", header_small_style),
+            Paragraph("Tax %", header_small_style),
+            Paragraph("Disc %", header_small_style),
+            Paragraph("Total", header_small_style),
+        ]
+        item_data = [item_header]
+
         for idx, it in enumerate(items, 1):
-            table_data.append([
-                str(idx),
-                it.get('product_name', '-'),
-                it.get('product_id', '-'),
-                f"{it.get('quantity', 0):.2f}",
-                it.get('uom', '-'),
-                f"{currency_symbol}{it.get('unit_price', 0):.2f}",
-                f"{it.get('tax_pct', 0):.1f}%" if it.get('tax_pct', 0) > 0 else '-',
-                f"{it.get('disc_pct', 0):.1f}%" if it.get('disc_pct', 0) > 0 else '-',
-                f"{currency_symbol}{it.get('total', 0):.2f}"
+            qty = safe_float(it.get("quantity"))
+            unit_price = safe_float(it.get("unit_price"))
+            tax_pct = safe_float(it.get("tax_pct"))
+            disc_pct = safe_float(it.get("disc_pct"))
+            total = safe_float(it.get("total"))
+
+            item_data.append([
+                Paragraph(str(idx), value_style),
+                Paragraph(safe_str(it.get("product_name")), value_style),
+                Paragraph(safe_str(it.get("product_id")), value_style),
+                Paragraph(f"{qty:.2f}".rstrip('0').rstrip('.'), value_style),
+                Paragraph(safe_str(it.get("uom")), value_style),
+                Paragraph(f"{currency_symbol}{unit_price:.2f}", value_style),
+                Paragraph(f"{tax_pct:.1f}%" if tax_pct > 0 else "-", value_style),
+                Paragraph(f"{disc_pct:.1f}%" if disc_pct > 0 else "-", value_style),
+                Paragraph(f"{currency_symbol}{total:.2f}", value_style),
             ])
-        
-        items_table = Table(table_data, colWidths=[30, 100, 80, 35, 35, 60, 40, 40, 60])
-        items_table.setStyle(TableStyle([
-            ('FONTNAME', (0,0), (-1,-1), 'DejaVuSans'),
-            ('FONTSIZE', (0,0), (-1,-1), 7),
-            ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
-            ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#2C3E50')),
-            ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
-            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-            ('ALIGN', (5,1), (8,1), 'RIGHT'),
-            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-            ('PADDING', (0,0), (-1,-1), 4),
-        ]))
+
+        col_widths = [35, 118, 58, 38, 38, 60, 40, 40, 65]
+        items_table = Table(item_data, colWidths=col_widths, repeatRows=1)
+        items_table.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#a12828")),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                    ("FONTNAME", (0, 0), (-1, 0), "DejaVuSans-Bold"),
+                    ("FONTNAME", (0, 1), (-1, -1), "DejaVuSans"),
+                    ("FONTSIZE", (0, 0), (-1, -1), 7.5),
+                    ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                    ("ALIGN", (1, 1), (2, -1), "LEFT"),
+                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                    ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#999999")),
+                    ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f7f7f7")]),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 4),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+                    ("TOPPADDING", (0, 0), (-1, -1), 5),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+                ]
+            )
+        )
         elements.append(items_table)
-        elements.append(Spacer(1, 20))
+        elements.append(Spacer(1, 16))
 
-    # ===========================================
-    # SECTION 6: TAX AND TOTALS SUMMARY
-    # =========================================
-    elements.append(Paragraph("TAX AND TOTALS SUMMARY", heading_style))
+    # ---------- 6. TAX AND TOTALS SUMMARY ----------
+    elements.append(Paragraph("TAX AND TOTALS SUMMARY", section_style))
 
-    # Calculate item-level discount
+    # Compute item-level discount total
     total_discount = 0.0
     for it in items:
-        line_sub = it.get('quantity', 0) * it.get('unit_price', 0)
-        total_discount += line_sub * (it.get('disc_pct', 0) / 100)
+        line_sub = safe_float(it.get("quantity")) * safe_float(it.get("unit_price"))
+        disc_pct = safe_float(it.get("disc_pct"))
+        total_discount += line_sub * (disc_pct / 100)
 
-    sub_total = summary.get('sub_total', 0)
-    tax_total = summary.get('tax_total', 0)
-    shipping = summary.get('shipping_charges', 0)
-    rounding = summary.get('rounding_adjustment', 0)
-    grand_total = summary.get('grand_total', 0)
-    amount_paid = summary.get('amount_paid', 0)
-    balance_due = summary.get('balance_due', 0)
-    global_discount_pct = summary.get('global_discount_pct', 0)
-    global_discount_amt = sub_total * (global_discount_pct / 100) if global_discount_pct > 0 else 0
+    sub_total = safe_float(summary.get("sub_total"))
+    tax_total = safe_float(summary.get("tax_total"))
+    shipping = safe_float(summary.get("shipping_charges"))
+    rounding = safe_float(summary.get("rounding_adjustment"))
+    grand_total = safe_float(summary.get("grand_total"))
+    amount_paid = safe_float(summary.get("amount_paid"))
+    balance_due = safe_float(summary.get("balance_due"))
+    global_disc_pct = safe_float(summary.get("global_discount_pct"))
+    global_disc_amt = sub_total * (global_disc_pct / 100) if global_disc_pct > 0 else 0
 
-    # Build summary rows
-    summary_data = [
-        ['Subtotal:', f"{currency_symbol}{sub_total:.2f}"],
-        ['Item Level Discount:', f"-{currency_symbol}{total_discount:.2f}"],
-        ['Total Tax:', f"{currency_symbol}{tax_total:.2f}"],
-        ['Shipping Charge:', f"{currency_symbol}{shipping:.2f}"],
-    ]
-    
-    if global_discount_pct > 0:
-        summary_data.append([f'Global Discount ({global_discount_pct:.1f}%):', f"-{currency_symbol}{global_discount_amt:.2f}"])
-    
+    summary_rows = []
+    summary_rows.append([Paragraph("<b>Subtotal:</b>", label_style), Paragraph(f"{currency_symbol}{sub_total:.2f}", value_style)])
+    if total_discount > 0:
+        summary_rows.append([Paragraph("<b>Item Level Discount:</b>", label_style), Paragraph(f"-{currency_symbol}{total_discount:.2f}", value_style)])
+    if global_disc_pct > 0:
+        summary_rows.append([Paragraph(f"<b>Global Discount ({global_disc_pct:.1f}%):</b>", label_style), Paragraph(f"-{currency_symbol}{global_disc_amt:.2f}", value_style)])
+    summary_rows.append([Paragraph("<b>Total Tax:</b>", label_style), Paragraph(f"{currency_symbol}{tax_total:.2f}", value_style)])
+    summary_rows.append([Paragraph("<b>Shipping Charge:</b>", label_style), Paragraph(f"{currency_symbol}{shipping:.2f}", value_style)])
     if rounding != 0:
         sign = '+' if rounding > 0 else ''
-        summary_data.append(['Rounding Adjustment:', f"{sign}{currency_symbol}{abs(rounding):.2f}"])
-    
-    summary_data.append(['─' * 25, '─' * 15])
-    summary_data.append(['GRAND TOTAL:', f"{currency_symbol}{grand_total:.2f}"])
-    summary_data.append(['Amount Paid:', f"{currency_symbol}{amount_paid:.2f}"])
-    summary_data.append(['BALANCE DUE:', f"{currency_symbol}{balance_due:.2f}"])
+        summary_rows.append([Paragraph("<b>Rounding Adjustment:</b>", label_style), Paragraph(f"{sign}{currency_symbol}{abs(rounding):.2f}", value_style)])
+    summary_rows.append([Paragraph("<b>GRAND TOTAL:</b>", label_style), Paragraph(f"{currency_symbol}{grand_total:.2f}", value_style)])
+    summary_rows.append([Paragraph("<b>Amount Paid:</b>", label_style), Paragraph(f"{currency_symbol}{amount_paid:.2f}", value_style)])
+    summary_rows.append([Paragraph("<b>BALANCE DUE:</b>", label_style), Paragraph(f"{currency_symbol}{balance_due:.2f}", value_style)])
 
-    summary_table = Table(summary_data, colWidths=[200, 150])
-    table_style = [
-        ('FONTNAME', (0,0), (-1,-5), 'DejaVuSans'),
-        ('FONTSIZE', (0,0), (-1,-5), 9),
-        ('FONTNAME', (0,-3), (-1,-3), 'DejaVuSans-Bold'),
-        ('FONTSIZE', (0,-3), (-1,-3), 11),
-        ('FONTNAME', (0,-1), (-1,-1), 'DejaVuSans-Bold'),
-        ('FONTSIZE', (0,-1), (-1,-1), 11),
-        ('ALIGN', (0,0), (0,-1), 'LEFT'),
-        ('ALIGN', (1,0), (1,-1), 'RIGHT'),
-        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-        ('LEFTPADDING', (0,0), (-1,-1), 6),
-        ('RIGHTPADDING', (0,0), (-1,-1), 6),
-        ('TOPPADDING', (0,0), (-1,-1), 5),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 5),
-        ('BACKGROUND', (0,-3), (1,-3), colors.lightgrey),
-        ('BACKGROUND', (0,-1), (1,-1), colors.HexColor('#2C3E50')),
-        ('TEXTCOLOR', (0,-1), (1,-1), colors.whitesmoke),
-        ('LINEABOVE', (0,-3), (1,-3), 1, colors.black),
-        ('LINEBELOW', (0,-3), (1,-3), 1, colors.black),
-    ]
-    summary_table.setStyle(TableStyle(table_style))
-
+    summary_table = Table(summary_rows, colWidths=[180, 120])
+    summary_table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, -4), colors.HexColor("#fafafa")),
+                ("BOX", (0, 0), (-1, -1), 0.8, colors.HexColor("#8a8a8a")),
+                ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#cccccc")),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 8),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+                ("TOPPADDING", (0, 0), (-1, -1), 5),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+                ("FONTNAME", (0, 0), (-1, -4), "DejaVuSans"),
+                ("FONTSIZE", (0, 0), (-1, -1), 9),
+                ("BACKGROUND", (0, -3), (-1, -3), colors.HexColor("#e6e6e6")),
+                ("FONTNAME", (0, -3), (-1, -3), "DejaVuSans-Bold"),
+                ("BACKGROUND", (0, 0), (-1, -4), colors.HexColor("#fafafa")),
+                ("TEXTCOLOR", (0, -1), (-1, -1), colors.white),
+                ("FONTNAME", (0, -1), (-1, -1), "DejaVuSans-Bold"),
+                ("ALIGN", (1, 0), (1, -1), "RIGHT"),
+                ("ALIGN", (0, 0), (0, -1), "LEFT"),
+            ]
+        )
+    )
     elements.append(summary_table)
-    elements.append(Spacer(1, 20))
+    elements.append(Spacer(1, 16))
 
-    # ===========================================
-    # SECTION 7: TERMS AND CONDITIONS
-    # =========================================
-    elements.append(Paragraph("Terms and Conditions", terms_heading_style))
-    
-    # Get terms from invoice or use default
-    terms_text = invoice.get('terms_conditions', '')
-    if terms_text:
-        terms_lines = terms_text.split('\n')
-        for line in terms_lines:
-            if line.strip():
-                elements.append(Paragraph(f"• {line.strip()}", terms_style))
-    else:
-        default_terms = [
+    # ---------- 7. TERMS AND CONDITIONS ----------
+    elements.append(Paragraph("Terms and Conditions", section_style))
+    # terms_text = invoice.get("terms_conditions", "")
+    # if terms_text:
+        # for line in terms_text.split("\n"):
+            # if line.strip():
+                #  elements.append(Paragraph(line.strip(), terms_style))   # <-- no bullet
+
+    # else:
+    default_terms = [
             "1. This invoice is valid until the due date mentioned above.",
             "2. Payment terms as agreed upon.",
             "3. Goods once sold will not be taken back.",
             "4. All taxes and duties as applicable.",
             "5. Please quote invoice number when making payment.",
             "6. Late payment may incur additional charges.",
-        ]
-        for line in default_terms:
-            elements.append(Paragraph(line, terms_style))
+    ]
+    for term in default_terms:
+        elements.append(Paragraph(term, terms_style))
+    elements.append(Spacer(1, 14))
 
-    elements.append(Spacer(1, 18))
-
-    # ===========================================
-    # SECTION 8: FOOTER
-    # =========================================
+    # ---------- 8. FOOTER ----------
+    footer_style = ParagraphStyle(
+        name="Invoice_Footer",
+        parent=styles["Normal"],
+        fontSize=7.5,
+        textColor=colors.HexColor("#555555"),
+        alignment=TA_CENTER,
+    )
     generated_on = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     elements.append(Paragraph(f"Generated on: {generated_on}", footer_style))
     elements.append(Paragraph("This is a system generated invoice - valid without signature", footer_style))
 
+    # build PDF
+    doc.build(elements)
+    pdf_bytes = buffer.getvalue()
+    buffer.close()
+    return pdf_bytes
+def generate_invoice_pdf_bytes(invoice, items, summary):
+    """
+    Generate PDF bytes for an invoice using the same styling as Delivery Note Return PDF.
+    invoice: dict with invoice header data
+    items: list of item dicts
+    summary: dict with summary totals
+    """
+    buffer = BytesIO()
+
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        rightMargin=18,
+        leftMargin=18,
+        topMargin=16,
+        bottomMargin=18,
+    )
+
+    styles = getSampleStyleSheet()
+
+    # ---------- custom styles (matching DNR PDF) ----------
+    company_style = ParagraphStyle(
+        name="Invoice_CompanyName",
+        parent=styles["Normal"],
+        fontName="DejaVuSans-Bold",
+        fontSize=20,
+        leading=24,
+        textColor=colors.HexColor("#8c1f1f"),
+        alignment=TA_CENTER,
+        spaceAfter=4,
+    )
+
+    company_info_style = ParagraphStyle(
+        name="Invoice_CompanyInfo",
+        parent=styles["Normal"],
+        fontName="DejaVuSans",
+        fontSize=9,
+        leading=12,
+        textColor=colors.black,
+        alignment=TA_CENTER,
+        spaceAfter=1,
+    )
+
+    page_title_style = ParagraphStyle(
+        name="Invoice_PageTitle",
+        parent=styles["Heading1"],
+        fontName="DejaVuSans-Bold",
+        fontSize=16,
+        leading=20,
+        textColor=colors.green,
+        alignment=TA_CENTER,
+        spaceBefore=12,
+        spaceAfter=12,
+    )
+
+    section_style = ParagraphStyle(
+        name="Invoice_Section",
+        parent=styles["Heading3"],
+        fontName="DejaVuSans-Bold",
+        fontSize=11,
+        leading=14,
+        textColor=colors.HexColor("#8c1f1f"),
+        spaceAfter=6,
+        spaceBefore=10,
+    )
+
+    label_style = ParagraphStyle(
+        name="Invoice_Label",
+        parent=styles["Normal"],
+        fontName="DejaVuSans-Bold",
+        fontSize=8.5,
+        leading=11,
+        textColor=colors.HexColor("#6b1a1a"),
+    )
+
+    value_style = ParagraphStyle(
+        name="Invoice_Value",
+        parent=styles["Normal"],
+        fontName="DejaVuSans",
+        fontSize=8.5,
+        leading=11,
+        textColor=colors.black,
+    )
+
+    header_small_style = ParagraphStyle(
+        name="Invoice_HeaderSmall",
+        parent=styles["Normal"],
+        fontName="DejaVuSans-Bold",
+        fontSize=8,
+        leading=10,
+        textColor=colors.white,
+        alignment=TA_CENTER,
+    )
+
+    terms_style = ParagraphStyle(
+        name="Invoice_Terms",
+        parent=styles["Normal"],
+        fontName="DejaVuSans",
+        fontSize=8,
+        leading=11,
+        textColor=colors.black,
+        leftIndent=8,
+    )
+
+    # helpers (safe conversion)
+    def safe_str(val, default="-"):
+        if val is None:
+            return default
+        s = str(val).strip()
+        return s if s else default
+
+    def safe_float(val, default=0.0):
+        try:
+            if val in (None, ""):
+                return default
+            return float(val)
+        except Exception:
+            return default
+
+    elements = []
+
+    # company header (same as DNR)
+    elements.append(Paragraph("STACKLY", company_style))
+    elements.append(
+        Paragraph(
+            "MMR Complex, Chinna Thirupathi, near Chinna Muniyappan Kovil, Salem, Tamil Nadu - 636008",
+            company_info_style,
+        )
+    )
+    elements.append(Paragraph("Phone: +91 7010792745", company_info_style))
+    elements.append(Paragraph("Email: info@stackly.com", company_info_style))
+    elements.append(Spacer(1, 10))
+
+    # status & watermark
+    status_text = safe_str(invoice.get("status") or "DRAFT").upper()
+    elements.append(Paragraph(f"INVOICE - {status_text}", page_title_style))
+
+    if status_text in ['CANCELLED', 'OVERDUE']:
+        watermark_text = "CANCELLED - FOR REFERENCE ONLY" if status_text == 'CANCELLED' else "OVERDUE - PAYMENT REQUIRED"
+        watermark_color = colors.red if status_text == 'CANCELLED' else colors.HexColor("#FFA500")
+        watermark_style = ParagraphStyle(
+            "Invoice_Watermark",
+            parent=styles["Normal"],
+            fontName="DejaVuSans-Bold",
+            fontSize=14,
+            textColor=watermark_color,
+            alignment=TA_CENTER,
+            backColor=colors.HexColor("#f9f2f2") if status_text == 'CANCELLED' else colors.HexColor("#fff5e6"),
+            spaceAfter=12,
+            spaceBefore=6,
+            leading=18,
+        )
+        elements.append(Paragraph(f"⚠️ {watermark_text} ⚠️", watermark_style))
+        elements.append(Spacer(1, 6))
+
+    # ---------- 1. INVOICE INFORMATION ----------
+    elements.append(Paragraph("INVOICE INFORMATION", section_style))
+    inv_data = [
+        [
+            Paragraph("<b>Invoice Number:</b>", label_style),
+            Paragraph(safe_str(invoice.get("invoice_id")), value_style),
+            Paragraph("<b>Invoice Date:</b>", label_style),
+            Paragraph(safe_str(invoice.get("invoice_date")), value_style),
+        ],
+        [
+            Paragraph("<b>Sale Order Ref:</b>", label_style),
+            Paragraph(safe_str(invoice.get("sale_order_ref")), value_style),
+            Paragraph("<b>Due Date:</b>", label_style),
+            Paragraph(safe_str(invoice.get("due_date")), value_style),
+        ],
+        [
+            Paragraph("<b>Invoice Status:</b>", label_style),
+            Paragraph(safe_str(invoice.get("status")), value_style),
+            Paragraph("<b>Payment Terms:</b>", label_style),
+            Paragraph(safe_str(invoice.get("payment_terms")), value_style),
+        ],
+        [
+            Paragraph("<b>Customer Ref No:</b>", label_style),
+            Paragraph(safe_str(invoice.get("customer_ref_no")), value_style),
+            Paragraph("<b>Invoice Tags:</b>", label_style),
+            Paragraph(safe_str(invoice.get("invoice_tags")), value_style),
+        ],
+    ]
+    inv_table = Table(inv_data, colWidths=[110, 160, 95, 135])
+    inv_table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f3f3f3")),
+                ("BOX", (0, 0), (-1, -1), 0.8, colors.HexColor("#8a8a8a")),
+                ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#a5a5a5")),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 6),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                ("TOPPADDING", (0, 0), (-1, -1), 5),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+            ]
+        )
+    )
+    elements.append(inv_table)
+    elements.append(Spacer(1, 12))
+
+    # ---------- 2. CUSTOMER INFORMATION ----------
+    elements.append(Paragraph("CUSTOMER INFORMATION", section_style))
+    currency_code = invoice.get("currency", "USD")
+    currency_map = {
+        'USD': '$', 'EUR': '€', 'GBP': '£', 'JPY': '¥', 'IND': '₹', 'INR': '₹',
+        'SGD': 'S$', 'CAD': 'C$', 'AUD': 'A$', 'CHF': 'Fr', 'CNY': '¥'
+    }
+    currency_symbol = currency_map.get(currency_code, currency_code)
+    cust_data = [
+        [
+            Paragraph("<b>Customer Name:</b>", label_style),
+            Paragraph(safe_str(invoice.get("customer_name")), value_style),
+            Paragraph("<b>Customer ID:</b>", label_style),
+            Paragraph(safe_str(invoice.get("customer_id")), value_style),
+        ],
+        [
+            Paragraph("<b>Email:</b>", label_style),
+            Paragraph(safe_str(invoice.get("email")), value_style),
+            Paragraph("<b>Phone:</b>", label_style),
+            Paragraph(safe_str(invoice.get("phone")), value_style),
+        ],
+        [
+            Paragraph("<b>Contact Person:</b>", label_style),
+            Paragraph(safe_str(invoice.get("contact_person")), value_style),
+            Paragraph("<b>Currency:</b>", label_style),
+            Paragraph(f"{currency_code} ({currency_symbol})", value_style),
+        ],
+    ]
+    cust_table = Table(cust_data, colWidths=[110, 170, 95, 145])
+    cust_table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f3f3f3")),
+                ("BOX", (0, 0), (-1, -1), 0.8, colors.HexColor("#8a8a8a")),
+                ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#a5a5a5")),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 6),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                ("TOPPADDING", (0, 0), (-1, -1), 5),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+            ]
+        )
+    )
+    elements.append(cust_table)
+    elements.append(Spacer(1, 12))
+
+    # ---------- 3. ADDRESS INFORMATION ----------
+    if invoice.get("billing_address") or invoice.get("shipping_address"):
+        elements.append(Paragraph("ADDRESS INFORMATION", section_style))
+        addr_data = [
+            [
+                Paragraph("<b>Billing Address:</b>", label_style),
+                Paragraph(safe_str(invoice.get("billing_address")), value_style),
+                Paragraph("<b>Shipping Address:</b>", label_style),
+                Paragraph(safe_str(invoice.get("shipping_address")), value_style),
+            ],
+        ]
+        addr_table = Table(addr_data, colWidths=[110, 170, 95, 145])
+        addr_table.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f3f3f3")),
+                    ("BOX", (0, 0), (-1, -1), 0.8, colors.HexColor("#8a8a8a")),
+                    ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#a5a5a5")),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 6),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                    ("TOPPADDING", (0, 0), (-1, -1), 5),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+                ]
+            )
+        )
+        elements.append(addr_table)
+        elements.append(Spacer(1, 12))
+
+    # ---------- 4. PAYMENT INFORMATION ----------
+    elements.append(Paragraph("PAYMENT INFORMATION", section_style))
+    pay_data = [
+        [
+            Paragraph("<b>Payment Method:</b>", label_style),
+            Paragraph(safe_str(invoice.get("payment_method")), value_style),
+            Paragraph("<b>Payment Status:</b>", label_style),
+            Paragraph(safe_str(invoice.get("payment_status")), value_style),
+        ],
+        [
+            Paragraph("<b>Payment Ref No:</b>", label_style),
+            Paragraph(safe_str(invoice.get("payment_ref_no")), value_style),
+            Paragraph("<b>Transaction Date:</b>", label_style),
+            Paragraph(safe_str(invoice.get("transaction_date")), value_style),
+        ],
+        [
+            Paragraph("<b>Amount Paid:</b>", label_style),
+            Paragraph(f"{currency_symbol}{safe_float(invoice.get('amount_paid')):.2f}", value_style),
+            Paragraph("<b>Balance Due:</b>", label_style),
+            Paragraph(f"{currency_symbol}{safe_float(summary.get('balance_due')):.2f}", value_style),
+        ],
+    ]
+    pay_table = Table(pay_data, colWidths=[110, 170, 95, 145])
+    pay_table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f3f3f3")),
+                ("BOX", (0, 0), (-1, -1), 0.8, colors.HexColor("#8a8a8a")),
+                ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#a5a5a5")),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 6),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                ("TOPPADDING", (0, 0), (-1, -1), 5),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+            ]
+        )
+    )
+    elements.append(pay_table)
+    elements.append(Spacer(1, 16))
+
+    # ---------- 5. INVOICE ITEMS ----------
+    if items:
+        elements.append(Paragraph("INVOICE ITEMS", section_style))
+        item_header = [
+            Paragraph("S.No", header_small_style),
+            Paragraph("Product Name", header_small_style),
+            Paragraph("Product ID", header_small_style),
+            Paragraph("Qty", header_small_style),
+            Paragraph("UOM", header_small_style),
+            Paragraph("Unit Price", header_small_style),
+            Paragraph("Tax %", header_small_style),
+            Paragraph("Disc %", header_small_style),
+            Paragraph("Total", header_small_style),
+        ]
+        item_data = [item_header]
+
+        for idx, it in enumerate(items, 1):
+            qty = safe_float(it.get("quantity"))
+            unit_price = safe_float(it.get("unit_price"))
+            tax_pct = safe_float(it.get("tax_pct"))
+            disc_pct = safe_float(it.get("disc_pct"))
+            total = safe_float(it.get("total"))
+
+            item_data.append([
+                Paragraph(str(idx), value_style),
+                Paragraph(safe_str(it.get("product_name")), value_style),
+                Paragraph(safe_str(it.get("product_id")), value_style),
+                Paragraph(f"{qty:.2f}".rstrip('0').rstrip('.'), value_style),
+                Paragraph(safe_str(it.get("uom")), value_style),
+                Paragraph(f"{currency_symbol}{unit_price:.2f}", value_style),
+                Paragraph(f"{tax_pct:.1f}%" if tax_pct > 0 else "-", value_style),
+                Paragraph(f"{disc_pct:.1f}%" if disc_pct > 0 else "-", value_style),
+                Paragraph(f"{currency_symbol}{total:.2f}", value_style),
+            ])
+
+        col_widths = [35, 118, 58, 38, 38, 60, 40, 40, 65]
+        items_table = Table(item_data, colWidths=col_widths, repeatRows=1)
+        items_table.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#a12828")),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                    ("FONTNAME", (0, 0), (-1, 0), "DejaVuSans-Bold"),
+                    ("FONTNAME", (0, 1), (-1, -1), "DejaVuSans"),
+                    ("FONTSIZE", (0, 0), (-1, -1), 7.5),
+                    ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                    ("ALIGN", (1, 1), (2, -1), "LEFT"),
+                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                    ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#999999")),
+                    ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f7f7f7")]),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 4),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+                    ("TOPPADDING", (0, 0), (-1, -1), 5),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+                ]
+            )
+        )
+        elements.append(items_table)
+        elements.append(Spacer(1, 16))
+
+    # ---------- 6. TAX AND TOTALS SUMMARY ----------
+    elements.append(Paragraph("TAX AND TOTALS SUMMARY", section_style))
+
+    # Compute item-level discount total
+    total_discount = 0.0
+    for it in items:
+        line_sub = safe_float(it.get("quantity")) * safe_float(it.get("unit_price"))
+        disc_pct = safe_float(it.get("disc_pct"))
+        total_discount += line_sub * (disc_pct / 100)
+
+    sub_total = safe_float(summary.get("sub_total"))
+    tax_total = safe_float(summary.get("tax_total"))
+    shipping = safe_float(summary.get("shipping_charges"))
+    rounding = safe_float(summary.get("rounding_adjustment"))
+    grand_total = safe_float(summary.get("grand_total"))
+    amount_paid = safe_float(summary.get("amount_paid"))
+    balance_due = safe_float(summary.get("balance_due"))
+    global_disc_pct = safe_float(summary.get("global_discount_pct"))
+    global_disc_amt = sub_total * (global_disc_pct / 100) if global_disc_pct > 0 else 0
+
+    summary_rows = []
+    summary_rows.append([Paragraph("<b>Subtotal:</b>", label_style), Paragraph(f"{currency_symbol}{sub_total:.2f}", value_style)])
+    if total_discount > 0:
+        summary_rows.append([Paragraph("<b>Item Level Discount:</b>", label_style), Paragraph(f"-{currency_symbol}{total_discount:.2f}", value_style)])
+    if global_disc_pct > 0:
+        summary_rows.append([Paragraph(f"<b>Global Discount ({global_disc_pct:.1f}%):</b>", label_style), Paragraph(f"-{currency_symbol}{global_disc_amt:.2f}", value_style)])
+    summary_rows.append([Paragraph("<b>Total Tax:</b>", label_style), Paragraph(f"{currency_symbol}{tax_total:.2f}", value_style)])
+    summary_rows.append([Paragraph("<b>Shipping Charge:</b>", label_style), Paragraph(f"{currency_symbol}{shipping:.2f}", value_style)])
+    if rounding != 0:
+        sign = '+' if rounding > 0 else ''
+        summary_rows.append([Paragraph("<b>Rounding Adjustment:</b>", label_style), Paragraph(f"{sign}{currency_symbol}{abs(rounding):.2f}", value_style)])
+    summary_rows.append([Paragraph("<b>GRAND TOTAL:</b>", label_style), Paragraph(f"{currency_symbol}{grand_total:.2f}", value_style)])
+    summary_rows.append([Paragraph("<b>Amount Paid:</b>", label_style), Paragraph(f"{currency_symbol}{amount_paid:.2f}", value_style)])
+    summary_rows.append([Paragraph("<b>BALANCE DUE:</b>", label_style), Paragraph(f"{currency_symbol}{balance_due:.2f}", value_style)])
+
+    summary_table = Table(summary_rows, colWidths=[180, 120])
+    summary_table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, -4), colors.HexColor("#fafafa")),
+                ("BOX", (0, 0), (-1, -1), 0.8, colors.HexColor("#8a8a8a")),
+                ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#cccccc")),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 8),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+                ("TOPPADDING", (0, 0), (-1, -1), 5),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+                ("FONTNAME", (0, 0), (-1, -4), "DejaVuSans"),
+                ("FONTSIZE", (0, 0), (-1, -1), 9),
+                ("BACKGROUND", (0, -3), (-1, -3), colors.HexColor("#e6e6e6")),
+                ("FONTNAME", (0, -3), (-1, -3), "DejaVuSans-Bold"),
+                ("BACKGROUND", (0, 0), (-1, -4), colors.HexColor("#fafafa")),
+                ("TEXTCOLOR", (0, -1), (-1, -1), colors.white),
+                ("FONTNAME", (0, -1), (-1, -1), "DejaVuSans-Bold"),
+                ("ALIGN", (1, 0), (1, -1), "RIGHT"),
+                ("ALIGN", (0, 0), (0, -1), "LEFT"),
+            ]
+        )
+    )
+    elements.append(summary_table)
+    elements.append(Spacer(1, 16))
+
+    # ---------- 7. TERMS AND CONDITIONS ----------
+    elements.append(Paragraph("Terms and Conditions", section_style))
+    # terms_text = invoice.get("terms_conditions", "")
+    # if terms_text:
+        # for line in terms_text.split("\n"):
+            # if line.strip():
+                #  elements.append(Paragraph(line.strip(), terms_style))   # <-- no bullet
+
+    # else:
+    default_terms = [
+            "1. This invoice is valid until the due date mentioned above.",
+            "2. Payment terms as agreed upon.",
+            "3. Goods once sold will not be taken back.",
+            "4. All taxes and duties as applicable.",
+            "5. Please quote invoice number when making payment.",
+            "6. Late payment may incur additional charges.",
+    ]
+    for term in default_terms:
+        elements.append(Paragraph(term, terms_style))
+    elements.append(Spacer(1, 14))
+
+    # ---------- 8. FOOTER ----------
+    footer_style = ParagraphStyle(
+        name="Invoice_Footer",
+        parent=styles["Normal"],
+        fontSize=7.5,
+        textColor=colors.HexColor("#555555"),
+        alignment=TA_CENTER,
+    )
+    generated_on = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    elements.append(Paragraph(f"Generated on: {generated_on}", footer_style))
+    elements.append(Paragraph("This is a system generated invoice - valid without signature", footer_style))
+
+    # build PDF
     doc.build(elements)
     pdf_bytes = buffer.getvalue()
     buffer.close()
@@ -16733,332 +16877,47 @@ def invoice_pdf(invoice_id):
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
-
 def send_invoice_email(recipient_email, invoice_data, items, summary, custom_message=""):
     """
-    Send invoice email with HTML body and PDF attachment.
-    Displays ALL invoice fields in the email body.
+    Send invoice email with PDF attachment – exactly like the DNR message style.
+    No summary in body – just a simple message.
     """
-    # Generate PDF bytes (reuse your existing function)
+    # Generate PDF using your existing function
     pdf_bytes = generate_invoice_pdf_bytes(invoice_data, items, summary)
 
-    # Currency symbol
-    currency_code = invoice_data.get('currency', 'USD')
-    currency_map = {
-        'USD': '$', 'EUR': '€', 'GBP': '£', 'JPY': '¥', 'IND': '₹', 'INR': '₹',
-        'SGD': 'S$', 'CAD': 'C$', 'AUD': 'A$', 'CHF': 'Fr', 'CNY': '¥'
-    }
-    currency_symbol = currency_map.get(currency_code, currency_code)
+    invoice_id = invoice_data.get('invoice_id', 'N/A')
+    customer_name = invoice_data.get('customer_name', 'Customer')
 
-    # HTML template with ALL fields
-    html_template = """
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="UTF-8">
-        <style>
-            body { font-family: Arial, sans-serif; margin: 0; padding: 20px; color: #333; }
-            .container { max-width: 800px; margin: auto; background: #f9f9f9; border-radius: 8px; padding: 20px; }
-            .header { text-align: center; border-bottom: 2px solid #a12828; padding-bottom: 10px; margin-bottom: 20px; }
-            .logo { font-size: 28px; font-weight: bold; color: #a12828; }
-            .success { background: #d4edda; color: #155724; padding: 10px; border-radius: 5px; margin: 15px 0; text-align: center; }
-            .warning { background: #fff3cd; color: #856404; padding: 10px; border-radius: 5px; margin: 15px 0; text-align: center; }
-            .info-section { margin: 20px 0; padding: 15px; background: white; border-radius: 5px; border: 1px solid #ddd; }
-            .info-section h3 { margin-top: 0; color: #a12828; border-bottom: 1px solid #eee; padding-bottom: 8px; }
-            .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-            .info-item { margin-bottom: 8px; }
-            .info-label { font-weight: bold; color: #555; }
-            .info-value { color: #333; }
-            .items-table { width: 100%; border-collapse: collapse; margin: 15px 0; }
-            .items-table th, .items-table td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-            .items-table th { background: #f2f2f2; }
-            .summary { margin-top: 20px; text-align: right; }
-            .footer { margin-top: 30px; font-size: 12px; text-align: center; color: #777; border-top: 1px solid #eee; padding-top: 15px; }
-            .note { background: #fff3cd; padding: 10px; border-radius: 5px; margin: 15px 0; font-size: 13px; }
-            .badge { display: inline-block; padding: 3px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; }
-            .badge-paid { background: #d4edda; color: #155724; }
-            .badge-unpaid { background: #f8d7da; color: #721c24; }
-            .badge-overdue { background: #fff3cd; color: #856404; }
-            .badge-draft { background: #e2e3e5; color: #383d41; }
-            .badge-sent { background: #d1ecf1; color: #0c5460; }
-            .badge-cancelled { background: #f8d7da; color: #721c24; }
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <div class="header">
-                <div class="logo">STACKLY</div>
-                <div>MMR Complex, Chinna Thirupathi, near Chinna Muniyappan Kovil, Salem, Tamil Nadu - 636008</div>
-            </div>
-            
-            <!-- Status Badge -->
-            {% if invoice.status == 'Paid' %}
-            <div class="success">✅ INVOICE PAID</div>
-            {% elif invoice.status == 'Overdue' %}
-            <div class="warning">⚠️ OVERDUE INVOICE - Payment Required Immediately</div>
-            {% elif invoice.status == 'Sent' %}
-            <div class="success">📨 Invoice Sent Successfully</div>
-            {% else %}
-            <div class="success">✔ Invoice Generated Successfully</div>
-            {% endif %}
-            
-            <p>Hi {{ invoice.customer_name }},</p>
-            <p>Your invoice has been created. Please find the attached PDF for complete details.</p>
-            
-            <!-- ========================================= -->
-            <!-- SECTION 1: INVOICE INFORMATION -->
-            <!-- ========================================= -->
-            <div class="info-section">
-                <h3>📄 Invoice Information</h3>
-                <div class="info-grid">
-                    <div class="info-item">
-                        <span class="info-label">Invoice Number:</span>
-                        <span class="info-value">{{ invoice.invoice_id }}</span>
-                    </div>
-                    <div class="info-item">
-                        <span class="info-label">Invoice Date:</span>
-                        <span class="info-value">{{ invoice.invoice_date }}</span>
-                    </div>
-                    <div class="info-item">
-                        <span class="info-label">Sale Order Reference:</span>
-                        <span class="info-value">{{ invoice.sale_order_ref or 'N/A' }}</span>
-                    </div>
-                    <div class="info-item">
-                        <span class="info-label">Due Date:</span>
-                        <span class="info-value">{{ invoice.due_date }}</span>
-                    </div>
-                    <div class="info-item">
-                        <span class="info-label">Invoice Status:</span>
-                        <span class="info-value">
-                            <span class="badge badge-{{ invoice.status|lower }}">{{ invoice.status }}</span>
-                        </span>
-                    </div>
-                    <div class="info-item">
-                        <span class="info-label">Payment Terms:</span>
-                        <span class="info-value">{{ invoice.payment_terms or 'N/A' }}</span>
-                    </div>
-                    <div class="info-item">
-                        <span class="info-label">Customer Ref No:</span>
-                        <span class="info-value">{{ invoice.customer_ref_no or 'N/A' }}</span>
-                    </div>
-                    <div class="info-item">
-                        <span class="info-label">Invoice Tags:</span>
-                        <span class="info-value">{{ invoice.invoice_tags or 'N/A' }}</span>
-                    </div>
-                </div>
-            </div>
-            
-            <!-- ========================================= -->
-            <!-- SECTION 2: CUSTOMER INFORMATION -->
-            <!-- ========================================= -->
-            <div class="info-section">
-                <h3>👤 Customer Information</h3>
-                <div class="info-grid">
-                    <div class="info-item">
-                        <span class="info-label">Customer Name:</span>
-                        <span class="info-value">{{ invoice.customer_name }}</span>
-                    </div>
-                    <div class="info-item">
-                        <span class="info-label">Customer ID:</span>
-                        <span class="info-value">{{ invoice.customer_id or 'N/A' }}</span>
-                    </div>
-                    <div class="info-item">
-                        <span class="info-label">Email:</span>
-                        <span class="info-value">{{ invoice.email or 'N/A' }}</span>
-                    </div>
-                    <div class="info-item">
-                        <span class="info-label">Phone:</span>
-                        <span class="info-value">{{ invoice.phone or 'N/A' }}</span>
-                    </div>
-                    <div class="info-item">
-                        <span class="info-label">Contact Person:</span>
-                        <span class="info-value">{{ invoice.contact_person or 'N/A' }}</span>
-                    </div>
-                    <div class="info-item">
-                        <span class="info-label">Currency:</span>
-                        <span class="info-value">{{ invoice.currency }} ({{ currency_symbol }})</span>
-                    </div>
-                </div>
-            </div>
-            
-            <!-- ========================================= -->
-            <!-- SECTION 3: ADDRESS INFORMATION -->
-            <!-- ========================================= -->
-            {% if invoice.billing_address or invoice.shipping_address %}
-            <div class="info-section">
-                <h3>📍 Address Information</h3>
-                <div class="info-grid">
-                    <div class="info-item">
-                        <span class="info-label">Billing Address:</span>
-                        <span class="info-value">{{ invoice.billing_address or 'N/A' }}</span>
-                    </div>
-                    <div class="info-item">
-                        <span class="info-label">Shipping Address:</span>
-                        <span class="info-value">{{ invoice.shipping_address or 'N/A' }}</span>
-                    </div>
-                </div>
-            </div>
-            {% endif %}
-            
-            <!-- ========================================= -->
-            <!-- SECTION 4: PAYMENT INFORMATION -->
-            <!-- ========================================= -->
-            <div class="info-section">
-                <h3>💳 Payment Information</h3>
-                <div class="info-grid">
-                    <div class="info-item">
-                        <span class="info-label">Payment Method:</span>
-                        <span class="info-value">{{ invoice.payment_method or 'Not specified' }}</span>
-                    </div>
-                    <div class="info-item">
-                        <span class="info-label">Payment Status:</span>
-                        <span class="info-value">
-                            <span class="badge badge-{{ invoice.payment_status|lower }}">{{ invoice.payment_status or 'Pending' }}</span>
-                        </span>
-                    </div>
-                    <div class="info-item">
-                        <span class="info-label">Payment Ref No:</span>
-                        <span class="info-value">{{ invoice.payment_ref_no or 'N/A' }}</span>
-                    </div>
-                    <div class="info-item">
-                        <span class="info-label">Transaction Date:</span>
-                        <span class="info-value">{{ invoice.transaction_date or 'N/A' }}</span>
-                    </div>
-                    <div class="info-item">
-                        <span class="info-label">Amount Paid:</span>
-                        <span class="info-value">{{ currency_symbol }}{{ invoice.amount_paid|round(2) }}</span>
-                    </div>
-                    <div class="info-item">
-                        <span class="info-label">Balance Due:</span>
-                        <span class="info-value">{{ currency_symbol }}{{ summary.balance_due|round(2) }}</span>
-                    </div>
-                </div>
-            </div>
-            
-            <!-- ========================================= -->
-            <!-- SECTION 5: INVOICE ITEMS -->
-            <!-- ========================================= -->
-            <h3>🛒 Invoice Items</h3>
-            <table class="items-table">
-                <thead>
-                    <tr>
-                        <th>S.No</th>
-                        <th>Product Name</th>
-                        <th>Product ID</th>
-                        <th>Qty</th>
-                        <th>UOM</th>
-                        <th>Unit Price</th>
-                        <th>Tax%</th>
-                        <th>Disc%</th>
-                        <th>Total</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for it in items %}
-                    <tr>
-                        <td>{{ loop.index }}</td>
-                        <td>{{ it.product_name }}</td>
-                        <td>{{ it.product_id or '-' }}</td>
-                        <td>{{ it.quantity }}</td>
-                        <td>{{ it.uom or '-' }}</td>
-                        <td>{{ currency_symbol }}{{ it.unit_price|round(2) }}</td>
-                        <td>{{ it.tax_pct }}%</td>
-                        <td>{{ it.disc_pct }}%</td>
-                        <td>{{ currency_symbol }}{{ it.total|round(2) }}</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-            
-            <!-- ========================================= -->
-            <!-- SECTION 6: TAX AND TOTALS SUMMARY -->
-            <!-- ========================================= -->
-            <div class="summary">
-                <p><strong>Sub Total:</strong> {{ currency_symbol }}{{ summary.sub_total|round(2) }}</p>
-                <p><strong>Item Level Discount:</strong> -{{ currency_symbol }}{{ (summary.sub_total * 0)|round(2) }}</p>
-                <p><strong>Total Tax:</strong> {{ currency_symbol }}{{ summary.tax_total|round(2) }}</p>
-                <p><strong>Shipping Charge:</strong> {{ currency_symbol }}{{ summary.shipping_charges|round(2) }}</p>
-                {% if summary.global_discount_pct > 0 %}
-                <p><strong>Global Discount ({{ summary.global_discount_pct }}%):</strong> -{{ currency_symbol }}{{ (summary.sub_total * summary.global_discount_pct / 100)|round(2) }}</p>
-                {% endif %}
-                {% if summary.rounding_adjustment != 0 %}
-                <p><strong>Rounding Adjustment:</strong> {{ currency_symbol }}{{ summary.rounding_adjustment|round(2) }}</p>
-                {% endif %}
-                <p><strong>──────────────</strong></p>
-                <p><strong>GRAND TOTAL:</strong> <span style="font-size: 18px; color: #a12828;">{{ currency_symbol }}{{ summary.grand_total|round(2) }}</span></p>
-                <p><strong>Amount Paid:</strong> {{ currency_symbol }}{{ summary.amount_paid|round(2) }}</p>
-                <p><strong>Balance Due:</strong> {{ currency_symbol }}{{ summary.balance_due|round(2) }}</p>
-            </div>
-            
-            <!-- ========================================= -->
-            <!-- SECTION 7: NOTES & MESSAGES -->
-            <!-- ========================================= -->
-            <div class="note">
-                <strong>⚠️ Please Note:</strong><br>
-                - The detailed invoice is attached as a PDF with this email.<br>
-                - This invoice is valid until {{ invoice.due_date }}.<br>
-                - Prices are subject to change without prior notice.<br>
-                - Please quote invoice number when making payment.<br>
-                {% if invoice.status == 'Overdue' %}
-                - ⚠️ This invoice is OVERDUE. Please arrange payment immediately.<br>
-                {% endif %}
-            </div>
-            
-            {% if invoice.terms_conditions %}
-            <div class="info-section">
-                <h3>📋 Terms & Conditions</h3>
-                <p>{{ invoice.terms_conditions }}</p>
-            </div>
-            {% endif %}
-            
-            {% if custom_message %}
-            <div class="info-section">
-                <h3>💬 Message from us</h3>
-                <p>{{ custom_message }}</p>
-            </div>
-            {% endif %}
-            
-            <div class="footer">
-                <strong>STACKLY</strong><br>
-                MMR Complex, Chinna Thirupathi, near Chinna Muniyappan Kovil, Salem, Tamil Nadu - 636008<br>
-                For any questions, contact us at <a href="mailto:support@stackly.com">support@stackly.com</a><br>
-                Call: +91 7010792745<br>
-                © 2028 Stackly. All rights reserved.
-            </div>
-        </div>
-    </body>
-    </html>
-    """
-
-    html_body = render_template_string(html_template,
-                                       invoice=invoice_data,
-                                       items=items,
-                                       summary=summary,
-                                       currency_symbol=currency_symbol,
-                                       custom_message=custom_message)
-
+    # Plain text body – exactly like DNR email (no numbers, no bullets)
     text_body = f"""
-    Hi {invoice_data['customer_name']},
+Dear {customer_name},
 
-    Your invoice {invoice_data['invoice_id']} has been generated.
+Please find attached the invoice ({invoice_id}) for your recent purchase.
 
-    Invoice Details:
-    - Invoice Number: {invoice_data['invoice_id']}
-    - Invoice Date: {invoice_data['invoice_date']}
-    - Due Date: {invoice_data['due_date']}
-    - Status: {invoice_data['status']}
-    - Grand Total: {currency_symbol}{summary['grand_total']:.2f}
-    - Balance Due: {currency_symbol}{summary['balance_due']:.2f}
+Please let us know if you have any questions.
 
-    Please find the attached PDF for complete details.
+Regards,
+Stackly Team
+"""
 
-    Best regards,
-    Stackly Team
-    """
+    # Minimal HTML version – same simple message
+    html_body = f"""
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"></head>
+<body style="font-family: Arial, sans-serif; color: #333;">
+    <p>Dear {customer_name},</p>
+    <p>Please find attached the invoice (<strong>{invoice_id}</strong>) for your recent purchase.</p>
+    <p>Please let us know if you have any questions.</p>
+    <br>
+    <p>Regards,<br>Stackly Team</p>
+</body>
+</html>
+"""
 
     # Build email
     msg = MIMEMultipart('mixed')
-    msg['Subject'] = f"Invoice {invoice_data['invoice_id']} from Stackly"
+    msg['Subject'] = f"Invoice {invoice_id} from Stackly"
     msg['From'] = os.getenv("EMAIL_ADDRESS")
     msg['To'] = recipient_email
 
@@ -17068,10 +16927,10 @@ def send_invoice_email(recipient_email, invoice_data, items, summary, custom_mes
     msg.attach(msg_alternative)
 
     pdf_attachment = MIMEApplication(pdf_bytes, _subtype='pdf')
-    pdf_attachment.add_header('Content-Disposition', 'attachment', filename=f"Invoice_{invoice_data['invoice_id']}.pdf")
+    pdf_attachment.add_header('Content-Disposition', 'attachment', filename=f"Invoice_{invoice_id}.pdf")
     msg.attach(pdf_attachment)
 
-    # Send email
+    # Send
     try:
         smtp_server = os.getenv("SMTP_SERVER", "smtp.gmail.com")
         smtp_port = int(os.getenv("SMTP_PORT", "587"))
@@ -17081,7 +16940,7 @@ def send_invoice_email(recipient_email, invoice_data, items, summary, custom_mes
             server.send_message(msg)
         return True
     except Exception as e:
-        print("Email send error:", e)
+        print(f"Invoice email send error: {e}")
         return False
 
 @app.route('/api/invoice/<invoice_id>/send-email', methods=['POST'])
@@ -17849,420 +17708,7 @@ def update_overdue_invoices():
     return updated_count
 
 
-# =======================================
-# Stock Reciept
-# =========================================
 
-# ------------------------
-# Purchase order page
-# ------------------------
-PURCHASE_FILE = os.path.join(BASE_DIR, "purchase.json")
-SALES_FILE = os.path.join(BASE_DIR, "sales_orders.json")
-CURRENCY = "₹"
-
-
-# ------------------------
-# JSON helpers
-# ------------------------
-def read_json(file_path):
-    if not os.path.exists(file_path):
-        return []
-    try:
-        with open(file_path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return []
-
-
-def write_json(file_path, data):
-    with open(file_path, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=4)
-
-
-def generate_po_id(data):
-    if not data:
-        return "PO-0001"
-    last_id = data[-1]["po_number"]
-    num = int(last_id.split("-")[1]) + 1
-    return f"PO-{num:04d}"
-
-
-# =========================
-# PURCHASE PAGE
-# =========================
-@app.route("/purchase", endpoint="purchase")
-def purchase_page():
-    purchase_orders = read_json(PURCHASE_FILE)
-    return render_template("purchase.html", orders=purchase_orders)
-
-
-# =========================
-# PURCHASE ORDER PAGE (GET + POST)
-# =========================
-@app.route("/purchase-order", methods=["GET", "POST"])
-def purchase_order():
-    if request.method == "POST":
-        po_number = request.form.get("po_number")
-        supplier = request.form.get("supplier")
-        so_id = request.form.get("so_id")
-        customer = request.form.get("customer", "")
-        status = request.form.get("status", "Draft")  # comes from button
-        items = json.loads(request.form.get("items", "[]"))
-        today = datetime.now().date().isoformat()
-        pdate = request.form.get("pdate") or today
-        ddate = request.form.get("ddate") or today
-        payment = request.form.get("payment")
-
-        new_entry = {
-            "po_number": po_number,
-            "supplier": supplier,
-            "so_id": so_id,
-            "customer": customer,
-            "status": status,
-            "pdate": pdate,
-            "ddate": ddate,
-            "payment": payment,
-            "items": items,
-        }
-
-        data = read_json(PURCHASE_FILE)
-        data.append(new_entry)
-        write_json(PURCHASE_FILE, data)
-        return redirect("/purchase")
-
-    # GET -> generate new PO number and today's date
-    data = read_json(PURCHASE_FILE)
-    po_number = generate_po_id(data)
-    sales_orders = read_json(SALES_FILE)
-    today = datetime.now().date().isoformat()  # YYYY-MM-DD
-
-    return render_template(
-        "purchase-order.html",
-        po_number=po_number,
-        sales_orders=sales_orders,
-        today=today,
-    )
-
-
-# =========================
-# SAVE PURCHASE ORDER (API)
-# =========================
-@app.route("/api/save-po", methods=["POST"])
-def save_po():
-    data = request.json
-
-    purchase_list = read_json(PURCHASE_FILE)
-    total_value = 0
-
-    for i in data.get("items", []):
-        qty = float(i.get("qty", 0))
-        price = float(i.get("price", 0))
-        tax = float(i.get("tax", 0))
-        disc = float(i.get("discount", 0))
-
-        base = qty * price
-        discount_amt = base * (disc / 100)
-        net = base - discount_amt
-        tax_amt = net * (tax / 100)
-
-        total_value += net + tax_amt
-
-    data["value"] = round(total_value, 2)
-
-    existing = next((po for po in purchase_list if po["po_number"] == data["po_number"]), None)
-
-    if existing:
-        current_status = existing.get("status", "Draft")
-
-        if current_status == "Approved":
-            return jsonify({"error": "Already approved. Cannot modify"}), 400
-
-        if current_status == "Draft" and data["status"] in ["Approved", "Rejected"]:
-            return jsonify({"error": "Submit before approval"}), 400
-
-        existing.update(data)
-    else:
-        purchase_list.append(data)
-
-    write_json(PURCHASE_FILE, purchase_list)
-    return jsonify({"message": "Saved successfully"})
-
-
-# =========================
-# GET ALL PURCHASE ORDERS (API)
-# =========================
-@app.route("/api/purchase-list", methods=["GET"])
-def purchase_list_api():
-    return jsonify(read_json(PURCHASE_FILE))
-
-
-# =========================
-# DELETE PURCHASE ORDER (API)
-# =========================
-@app.route("/delete_po/<po_number>", methods=["DELETE"])
-def delete_po(po_number):
-    data = read_json(PURCHASE_FILE)
-
-    # Find the PO
-    po_to_delete = next((po for po in data if po["po_number"] == po_number), None)
-
-    if not po_to_delete:
-        return jsonify({"success": False, "message": "PO not found"}), 404
-
-    if po_to_delete["status"] != "Draft":
-        return jsonify({"success": False, "message": "Only Draft POs can be deleted"}), 400
-
-    # Delete the PO
-    data = [po for po in data if po["po_number"] != po_number]
-    write_json(PURCHASE_FILE, data)
-
-    return jsonify({"success": True, "message": f"PO {po_number} deleted successfully!"})
-
-
-# =========================
-# SALES ORDER PAGE
-# =========================
-@app.route("/sales-order")
-def sales_order_page():
-    data = read_json(SALES_FILE)
-    if data:
-        last_so = data[-1]["so_id"]
-        last_number = int(last_so.split("-")[1]) + 1
-    else:
-        last_number = 1
-    so_id = f"SO-{last_number:04d}"
-    return render_template("sales-order.html", so_id=so_id)
-
-
-# =========================
-# SAVE SALES ORDER
-# =========================
-@app.route("/save-sales-order", methods=["POST"])
-def save_sales_order():
-    so_id = request.form.get("so_id")
-    customer = request.form.get("customer")
-    status = request.form.get("status")
-
-    new_entry = {"so_id": so_id, "customer": customer, "status": status}
-
-    data = read_json(SALES_FILE)
-    data.append(new_entry)
-    write_json(SALES_FILE, data)
-    return redirect("/sales-order")
-
-
-# =========================
-# GET PRODUCTS FOR PURCHASE (API)
-# =========================
-@app.route("/api/purchase-products", methods=["GET"])
-def get_purchase_products_api():
-    products = read_json(PRODUCT_FILE)
-    return jsonify({"products": products})
-
-
-# =========================
-# GENERATE PURCHASE PDF
-# =========================
-@app.route("/generate-purchase-pdf", methods=["POST"])
-def generate_purchase_pdf():
-    data = request.get_json()
-    po_id = data.get("po_id", "")
-    supplier = data.get("supplier", "")
-    items = data.get("items", [])
-
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4)
-    elements = []
-
-    styles = getSampleStyleSheet()
-    heading_style = styles["Heading1"]
-    normal_style = styles["Normal"]
-
-    elements.append(Paragraph("PURCHASE ORDER", heading_style))
-    elements.append(Spacer(1, 12))
-    elements.append(Paragraph(f"<b>PO ID:</b> {po_id}", normal_style))
-    elements.append(Paragraph(f"<b>Supplier:</b> {supplier}", normal_style))
-    elements.append(Spacer(1, 12))
-
-    # Table header
-    table_data = [["S.No", "Product Name", "Product ID", "Qty", "UOM", "Unit Price", "Tax %", "Disc %", "Line Total"]]
-    subtotal = total_discount = total_tax = 0
-
-    for idx, item in enumerate(items, start=1):
-        qty = float(item.get("qty", 0))
-        unit_price = float(item.get("price", 0))
-        discount_pct = float(item.get("discount", 0))
-        tax_pct = float(item.get("tax", 0))
-
-        base = qty * unit_price
-        discount_amt = base * (discount_pct / 100)
-        net = base - discount_amt
-        tax_amt = net * (tax_pct / 100)
-        line_total = net + tax_amt
-
-        subtotal += net
-        total_discount += discount_amt
-        total_tax += tax_amt
-
-        table_data.append(
-            [
-                idx,
-                item.get("name", ""),
-                item.get("product_id", ""),
-                qty,
-                item.get("uom", "-"),
-                f"{CURRENCY} {unit_price:.2f}",
-                f"{tax_pct:.2f}",
-                f"{discount_pct:.2f}",
-                f"{CURRENCY} {line_total:.2f}",
-            ]
-        )
-
-    table = Table(table_data, repeatRows=1)
-    table.setStyle(
-        TableStyle(
-            [
-                ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
-                ("GRID", (0, 0), (-1, -1), 0.5, colors.black),
-                ("ALIGN", (3, 1), (-1, -1), "CENTER"),
-                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-            ]
-        )
-    )
-    elements.append(table)
-    elements.append(Spacer(1, 12))
-
-    # Totals
-    grand_total = subtotal + total_tax
-    totals_data = [
-        ["Subtotal", f"{CURRENCY} {subtotal:.2f}"],
-        ["Total Discount", f"{CURRENCY} {total_discount:.2f}"],
-        ["Total Tax", f"{CURRENCY} {total_tax:.2f}"],
-        ["Grand Total", f"{CURRENCY} {grand_total:.2f}"],
-    ]
-    totals_table = Table(totals_data, colWidths=[400, 100])
-    totals_table.setStyle(
-        TableStyle(
-            [
-                ("GRID", (0, 0), (-1, -1), 0.5, colors.black),
-                ("BACKGROUND", (0, -1), (-1, -1), colors.lightgrey),
-                ("ALIGN", (1, 0), (-1, -1), "RIGHT"),
-                ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
-            ]
-        )
-    )
-    elements.append(totals_table)
-    elements.append(Spacer(1, 12))
-    elements.append(Paragraph("Notes:", styles["Heading3"]))
-    elements.append(Paragraph("Thank you for your business!", normal_style))
-
-    doc.build(elements)
-    buffer.seek(0)
-    return send_file(
-        buffer,
-        as_attachment=True,
-        download_name="purchase_order.pdf",
-        mimetype="application/pdf",
-    )
-
-
-# =========================
-# SEND EMAIL WITH PURCHASE PDF
-# =========================
-@app.route("/purchase/send-email", methods=["POST"])
-def purchase_send_email():
-    data = request.json
-    email_to = data.get("email")
-    po_id = data.get("po_id", "PO-001")
-    pdf_bytes = data.get("pdf_bytes", "")
-
-    if not email_to:
-        return jsonify({"success": False, "message": "Email is required"}), 400
-
-    try:
-        pdf_data = base64.b64decode(pdf_bytes)
-        msg = EmailMessage()
-        msg["Subject"] = f"Purchase Order {po_id}"
-        msg["From"] = "your_email@example.com"
-        msg["To"] = email_to
-        msg.set_content(f"Please find attached Purchase Order {po_id}.")
-        msg.add_attachment(
-            pdf_data,
-            maintype="application",
-            subtype="pdf",
-            filename=f"{po_id}.pdf",
-        )
-
-        smtp_server = "smtp.gmail.com"
-        smtp_port = 587
-        smtp_user = "your_email@gmail.com"
-        smtp_pass = "your_app_password"
-
-        with smtplib.SMTP(smtp_server, smtp_port) as server:
-            server.starttls()
-            server.login(smtp_user, smtp_pass)
-            server.send_message(msg)
-
-        return jsonify({"success": True, "message": "Email sent successfully!"})
-    except Exception as e:
-        print(e)
-        return jsonify({"success": False, "message": "Failed to send email"}), 500
-
-
-@app.route("/purchase/view/<path:po_number>")
-def view_po(po_number):
-    data = read_json(PURCHASE_FILE)
-    po = next((x for x in data if x["po_number"] == po_number), None)
-
-    if not po:
-        return f"PO Not Found: {po_number}", 404
-
-    sales_orders = read_json(SALES_FILE)
-    return render_template("purchase-order.html", po_data=po, sales_orders=sales_orders, mode="view")
-
-
-@app.route("/purchase/edit/<path:po_number>")
-def edit_po(po_number):
-    data = read_json(PURCHASE_FILE)
-    po = next((x for x in data if x["po_number"] == po_number), None)
-
-    if not po:
-        return "PO Not Found", 404
-
-    sales_orders = read_json(SALES_FILE)
-    return render_template("purchase-order.html", po_data=po, sales_orders=sales_orders, mode="edit")
- 
-@app.route('/stock-receipt')
-def stock_receipt():
-    data = [
-        {
-            "grn": "GRN-0001",
-            "po": "PO-0001",
-            "supplier": "Vasu",
-            "date": "10-01-2026",
-            "total": 20,
-            "status": "Draft",
-            "received_by": "Mandy",
-            "qc_by": "Sans"
-        },
-        {
-            "grn": "GRN-0002",
-            "po": "PO-0002",
-            "supplier": "Srinu",
-            "date": "10-01-2026",
-            "total": 20,
-            "status": "Submitted",
-            "received_by": "Mandy",
-            "qc_by": "Sans"
-        }
-    ]
- 
-    return render_template(
-        'stock-reciept.html',   # ✅ EXACT match
-        data=data,
-        page='stock_receipt'
-    )
 
 # =========================================
 # INVOICE RETURN MODULE
@@ -21077,8 +20523,2686 @@ def dnr_delete_attachment(att_id):
 
 
 
+# ========================================
+# Purchase order page
+# ========================================
+@app.route("/api/purchase-list", methods=["GET"])
+def purchase_list_api():
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    try:
+
+        cur.execute("""
+            SELECT
+                id,
+                po_number,
+                supplier_name,
+                pdate,
+                ddate,
+                status,
+                payment_terms,
+                p_value
+            FROM purchase_orders
+            ORDER BY id DESC
+        """)
+
+        rows = cur.fetchall()
+
+        orders = []
+
+        for r in rows:
+
+            orders.append({
+                "id": r[0],
+                "po_number": r[1] or "",
+                "supplier": r[2] or "",
+                "pdate": str(r[3]) if r[3] else "",
+                "ddate": str(r[4]) if r[4] else "",
+                "status": r[5] or "Draft",
+                "payment_terms": r[6] or "",
+                "grand_total": float(r[7] or 0)
+            })
+
+        return jsonify(orders)
+
+    except Exception as e:
+
+        print("purchase_list_api error:", e)
+
+        return jsonify([]), 500
+
+    finally:
+
+        cur.close()
+        conn.close()
+
+@app.route("/purchase")
+def purchase_page():
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    try:
+
+        cur.execute("""
+
+            SELECT
+                id,
+                po_number,
+                supplier_name,
+                pdate,
+                ddate,
+                status,
+                payment_terms,
+                COALESCE(p_value, 0) AS p_value
+            FROM purchase_orders
+            ORDER BY id DESC
+        """)
+
+        rows = cur.fetchall()
+
+        orders = []
+
+        for r in rows:
+
+            orders.append({
+                "id": r[0],
+                "po_number": r[1],
+                "supplier": r[2] or "-",
+                "pdate": str(r[3]) if r[3] else "",
+                "ddate": str(r[4]) if r[4] else "",
+                "status": r[5] or "Draft",
+                "payment_terms": r[6] or "-",
+                "grand_total": float(r[7]) if r[7] is not None else 0
+            })
+
+        cur.execute("""
+            SELECT
+                supplier_id,
+                supplier_name,
+                email
+            FROM suppliers
+            ORDER BY supplier_name ASC
+        """)
+
+        supplier_rows = cur.fetchall()
+
+        suppliers = []
+
+        for s in supplier_rows:
+
+            suppliers.append({
+                "supplier_id": s[0],
+                "supplier_name": s[1],
+                "email": s[2]
+            })
+
+        return render_template(
+            "purchase.html",
+            orders=orders,
+            suppliers=suppliers,
+            page="purchase"
+        )
+
+    except Exception as e:
+
+        print("PURCHASE PAGE ERROR:", e)
+
+        return "ERROR", 500
+
+    finally:
+
+        cur.close()
+        conn.close()
+
+@app.route("/purchase-order")
+def purchase_order():
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    po_number = generate_po_number()
+
+    today = date.today().isoformat()
+
+    # SALES ORDERS
+
+    cur.execute("""
+        SELECT so_id
+        FROM sales_orders
+        ORDER BY so_id DESC
+    """)
+
+    sales_orders = [r[0] for r in cur.fetchall()]
+
+    # SUPPLIERS
+
+    cur.execute("""
+        SELECT
+            supplier_id,
+            supplier_name,
+            email
+        FROM suppliers
+        ORDER BY supplier_name
+    """)
+
+    suppliers = []
+
+    for r in cur.fetchall():
+
+        suppliers.append({
+            "id": r[0],
+            "name": r[1],
+            "email": r[2]
+        })
+
+    cur.close()
+    conn.close()
+
+    return render_template(
+        "purchase-order.html",
+        po_number=po_number,
+        today=today,
+        sales_orders=sales_orders,
+        suppliers=suppliers
+    )
+
+# ========================================
+# GENERATE PO NUMBER
+# ========================================
+
+def generate_po_number():
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT po_number
+        FROM purchase_orders
+        ORDER BY id DESC
+        LIMIT 1
+    """)
+
+    row = cur.fetchone()
+
+    if row and row[0]:
+
+        last_po = row[0]
+
+        try:
+
+            last_num = int(last_po.split("-")[1])
+
+        except:
+
+            last_num = 0
+
+        new_num = last_num + 1
+
+    else:
+
+        new_num = 1
+
+    cur.close()
+    conn.close()
+
+    return f"PO-{new_num:03d}"
+
+# Sales Order id
+
+@app.route("/api/sales-order-purchase/<so_id>")
+def get_sales_order_purchase(so_id):
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    try:
+
+        cur.execute("""
+            SELECT
+                product_id,
+                product_name,
+                qty,
+                uom,
+                price,
+                tax_pct,
+                disc_pct
+            FROM sales_order_items
+            WHERE so_id=%s
+        """, (so_id,))
+
+        rows = cur.fetchall()
+
+        items = []
+
+        for r in rows:
+
+            items.append({
+                "product_id": r[0],
+                "product_name": r[1],
+                "qty": r[2],
+                "uom": r[3],
+                "price": r[4],
+                "tax_pct": r[5],
+                "disc_pct": r[6]
+            })
+
+        return jsonify({
+            "items": items
+        })
+
+    except Exception as e:
+
+        print("SO FETCH ERROR:", e)
+
+        return jsonify({"items": []}), 500
+
+    finally:
+
+        cur.close()
+        conn.close()
 
 
+
+
+
+# ========================================
+# SUPPLIER API
+# ========================================
+
+@app.route("/api/suppliers")
+def get_suppliers():
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    try:
+
+        cur.execute("""
+            SELECT
+                supplier_id,
+                supplier_name,
+                email
+            FROM suppliers
+            ORDER BY supplier_id ASC
+        """)
+
+        rows = cur.fetchall()
+
+        suppliers = []
+
+        for row in rows:
+
+            suppliers.append({
+                "id": row[0],
+                "name": row[1],
+                "email": row[2]
+            })
+
+        return jsonify(suppliers)
+
+    except Exception as e:
+
+        print("SUPPLIER ERROR:", e)
+
+        return jsonify([]), 500
+
+    finally:
+
+        cur.close()
+        conn.close()
+
+        
+@app.route("/api/products-new")
+def get_products_new():
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT
+            product_id,
+            product_name,
+            unit_price,
+            tax_percent,
+            uom_name,
+            stock_level
+        FROM products
+    """)
+
+    rows = cur.fetchall()
+
+    cur.close()
+    conn.close()
+
+    return jsonify([
+
+        {
+            "product_id": r[0],
+            "product_name": r[1],
+            "unit_price": float(r[2] or 0),
+            "tax_percent": float(r[3] or 0),
+            "uom_name": r[4],
+            "stock_level": r[5]
+        }
+
+        for r in rows
+
+    ])
+
+# ========================================
+# SALES ORDER IDS API
+# ========================================
+
+@app.get("/api/sales-orders/ids")
+def get_sales_order_ids():
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    try:
+
+        cur.execute("""
+            SELECT so_id
+            FROM sales_orders
+            ORDER BY so_id DESC
+        """)
+
+        rows = cur.fetchall()
+
+        sales_order_ids = [r[0] for r in rows]
+
+        return jsonify(sales_order_ids)
+
+    except Exception as e:
+
+        print("SALES ORDER LIST ERROR:", e)
+
+        return jsonify([]), 500
+
+    finally:
+
+        cur.close()
+        conn.close()
+
+
+@app.route("/api/save-po-purchase", methods=["POST"])
+def save_po_purchase():
+
+    conn = None
+    cur = None
+
+    try:
+
+        data = request.json
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        po_number = (data.get("po_number") or "").strip()
+
+        if not po_number:
+
+            po_number = generate_po_number()
+
+        supplier_id = data.get("supplier_id")
+        supplier_name = data.get("supplier_name")
+        supplier_email = data.get("supplier_email")
+
+        so_id = data.get("so_id")
+
+        pdate = data.get("pdate")
+        ddate = data.get("ddate")
+
+        payment_terms = data.get("payment_terms")
+
+        status = data.get("status", "Draft")
+
+        items = data.get("items", [])
+
+        # =================================
+        # CALCULATE TOTAL
+        # =================================
+
+        total_value = float(data.get("grand_total", 0))
+
+        # =================================
+        # CHECK EXISTING
+        # =================================
+
+        cur.execute("""
+            SELECT id
+            FROM purchase_orders
+            WHERE po_number=%s
+        """, (po_number,))
+
+        existing = cur.fetchone()
+
+        # =================================
+        # INSERT
+        # =================================
+
+        if not existing:
+
+            cur.execute("""
+                INSERT INTO purchase_orders
+                (
+                    po_number,
+                    supplier_id,
+                    supplier_name,
+                    supplier_email,
+                    so_id,
+                    pdate,
+                    ddate,
+                    p_value,
+                    status,
+                    payment_terms,
+                    created_at
+                )
+                VALUES
+                (
+                    %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW()
+                )
+                RETURNING id
+            """, (
+                po_number,
+                supplier_id,
+                supplier_name,
+                supplier_email,
+                so_id,
+                pdate,
+                ddate,
+                round(total_value, 2),
+                status,
+                payment_terms
+            ))
+
+            po_id = cur.fetchone()[0]
+
+        # =================================
+        # UPDATE
+        # =================================
+
+        else:
+
+            po_id = existing[0]
+
+            cur.execute("""
+                UPDATE purchase_orders
+                SET
+                    supplier_id=%s,
+                    supplier_name=%s,
+                    supplier_email=%s,
+                    so_id=%s,
+                    pdate=%s,
+                    ddate=%s,
+                    p_value=%s,
+                    status=%s,
+                    payment_terms=%s
+                WHERE po_number=%s
+            """, (
+                supplier_id,
+                supplier_name,
+                supplier_email,
+                so_id,
+                pdate,
+                ddate,
+                round(total_value, 2),
+                status,
+                payment_terms,
+                po_number
+            ))
+
+        # =================================
+        # DELETE OLD ITEMS
+        # =================================
+
+        cur.execute("""
+            DELETE FROM purchase_items
+            WHERE po_id=%s
+        """, (po_id,))
+
+        # =================================
+        # INSERT ITEMS
+        # =================================
+
+        for item in items:
+
+            cur.execute("""
+                INSERT INTO purchase_items
+                (
+                    po_id,
+                    product_id,
+                    product_name,
+                    qty,
+                    price,
+                    tax_pct,
+                    disc_pct,
+                    uom
+                )
+                VALUES
+                (
+                    %s,%s,%s,%s,%s,%s,%s,%s
+                )
+            """, (
+
+                po_id,
+                item.get("product_id"),
+                item.get("product_name"),
+                float(item.get("qty", 0)),
+                float(item.get("price", 0)),
+                float(item.get("tax_pct", 0)),
+                float(item.get("disc_pct", 0)),
+                item.get("uom")
+
+            ))
+
+        conn.commit()
+
+        return jsonify({
+
+            "success": True,
+            "message": "Purchase Order Saved Successfully",
+            "po_number": po_number,
+            "status": status
+
+        })
+
+    except Exception as e:
+
+        if conn:
+            conn.rollback()
+
+        print("SAVE PO ERROR:", e)
+
+        return jsonify({
+
+            "success": False,
+            "error": str(e)
+
+        }), 500
+
+    finally:
+
+        if cur:
+            cur.close()
+
+        if conn:
+            conn.close()
+
+# ========================================
+# DELETE PURCHASE ORDER
+# ========================================
+
+@app.route("/delete_po/<string:po_number>", methods=["DELETE"])
+def delete_po(po_number):
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    try:
+
+        cur.execute("""
+            SELECT
+                id,
+                status
+            FROM purchase_orders
+            WHERE po_number=%s
+        """, (po_number,))
+
+        po = cur.fetchone()
+
+        if not po:
+
+            return jsonify({
+                "error": "PO Not Found"
+            }), 404
+
+        po_id, status = po
+
+        if status != "Draft":
+
+            return jsonify({
+                "error": "Only Draft PO Can Delete"
+            }), 400
+
+        cur.execute("""
+            DELETE FROM purchase_items
+            WHERE po_id=%s
+        """, (po_id,))
+
+        cur.execute("""
+            DELETE FROM purchase_orders
+            WHERE po_number=%s
+        """, (po_number,))
+
+        conn.commit()
+
+        return jsonify({
+            "success": True
+        })
+
+    except Exception as e:
+
+        print("DELETE ERROR:", e)
+
+        return jsonify({
+            "error": str(e)
+        }), 500
+
+    finally:
+
+        cur.close()
+        conn.close()
+
+@app.route("/generate-purchase-pdf", methods=["POST"])
+def generate_purchase_pdf():
+
+    data = request.json
+
+    buffer = BytesIO()
+
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        rightMargin=30,
+        leftMargin=30,
+        topMargin=20,
+        bottomMargin=20
+    )
+
+    styles = getSampleStyleSheet()
+
+    # =========================================
+    # STYLES
+    # =========================================
+
+    company_style = ParagraphStyle(
+        "CompanyStyle",
+        parent=styles["Heading1"],
+        fontName="DejaVuSans-Bold",
+        fontSize=24,
+        leading=28,
+        alignment=TA_CENTER,
+        textColor=colors.darkred,
+        spaceAfter=5,
+    )
+
+    address_style = ParagraphStyle(
+        "AddressStyle",
+        parent=styles["Normal"],
+        fontName="DejaVuSans",
+        fontSize=10,
+        leading=14,
+        alignment=TA_CENTER,
+    )
+
+    title_style = ParagraphStyle(
+        "TitleStyle",
+        parent=styles["Heading2"],
+        fontName="DejaVuSans-Bold",
+        fontSize=20,
+        leading=24,
+        alignment=TA_CENTER,
+        textColor=colors.green,
+        spaceAfter=20,
+    )
+
+    section_style = ParagraphStyle(
+        "SectionStyle",
+        parent=styles["Heading3"],
+        fontName="DejaVuSans-Bold",
+        fontSize=14,
+        textColor=colors.darkred,
+        spaceAfter=10,
+    )
+
+    normal_style = ParagraphStyle(
+        "NormalStyle",
+        parent=styles["Normal"],
+        fontName="DejaVuSans",
+        fontSize=10,
+    )
+
+    elements = []
+
+    # =========================================
+    # COMPANY HEADER
+    # =========================================
+
+    elements.append(Paragraph("STACKLY", company_style))
+
+    elements.append(Paragraph(
+        "MMR Complex, Chinna Tirupathi, Salem, Tamil Nadu - 636008",
+        address_style
+    ))
+
+    elements.append(Paragraph(
+        "Phone: +91 7010792745",
+        address_style
+    ))
+
+    elements.append(Paragraph(
+        "Email: info@stackly.com",
+        address_style
+    ))
+
+    elements.append(Spacer(1, 25))
+
+    # =========================================
+    # TITLE
+    # =========================================
+
+    elements.append(Paragraph("PURCHASE ORDER", title_style))
+
+    # =========================================
+    # INFO TABLE
+    # =========================================
+
+    info_data = [
+        ["PO Number:", data.get("po_number"), "Date:", data.get("pdate")],
+        ["Supplier:", data.get("supplier"), "Delivery Date:", data.get("ddate")],
+        ["Status:", data.get("status"), "Payment Terms:", data.get("payment_terms")]
+    ]
+
+    info_table = Table(
+        info_data,
+        colWidths=[120, 170, 120, 140]
+    )
+
+    info_table.setStyle(TableStyle([
+
+        ("FONTNAME", (0, 0), (-1, -1), "DejaVuSans"),
+        ("FONTNAME", (0, 0), (0, -1), "DejaVuSans-Bold"),
+        ("FONTNAME", (2, 0), (2, -1), "DejaVuSans-Bold"),
+
+        ("GRID", (0, 0), (-1, -1), 0.8, colors.grey),
+
+        ("BACKGROUND", (0, 0), (0, -1), colors.whitesmoke),
+        ("BACKGROUND", (2, 0), (2, -1), colors.whitesmoke),
+
+        ("TEXTCOLOR", (0, 0), (0, -1), colors.darkred),
+        ("TEXTCOLOR", (2, 0), (2, -1), colors.darkred),
+
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
+        ("TOPPADDING", (0, 0), (-1, -1), 10),
+
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+    ]))
+
+    elements.append(info_table)
+
+    elements.append(Spacer(1, 25))
+
+    # =========================================
+    # ITEMS TITLE
+    # =========================================
+
+    elements.append(Paragraph("PURCHASE ORDER ITEMS", section_style))
+
+    # =========================================
+    # ITEMS TABLE
+    # =========================================
+
+    table_data = [[
+        "S.No",
+        "Product Name",
+        "Qty",
+        "Price",
+        "Tax %",
+        "Disc %",
+        "Total"
+    ]]
+
+    for i, item in enumerate(data.get("items", []), start=1):
+
+        qty = float(item.get("qty", 0))
+        price = float(item.get("price", 0))
+
+        total = qty * price
+
+        table_data.append([
+            str(i),
+            item.get("product_name"),
+            str(item.get("qty")),
+            f"₹ {price:.2f}",
+            str(item.get("tax")),
+            str(item.get("discount")),
+            f"₹ {total:.2f}"
+        ])
+
+    item_table = Table(
+        table_data,
+        repeatRows=1,
+        colWidths=[45, 180, 55, 75, 55, 60, 90]
+    )
+
+    item_table.setStyle(TableStyle([
+
+        ("FONTNAME", (0, 0), (-1, -1), "DejaVuSans"),
+        ("FONTNAME", (0, 0), (-1, 0), "DejaVuSans-Bold"),
+
+        ("BACKGROUND", (0, 0), (-1, 0), colors.darkred),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+
+        ("GRID", (0, 0), (-1, -1), 0.8, colors.grey),
+
+        ("BOTTOMPADDING", (0, 0), (-1, 0), 10),
+        ("TOPPADDING", (0, 0), (-1, 0), 10),
+
+        ("BOTTOMPADDING", (0, 1), (-1, -1), 8),
+        ("TOPPADDING", (0, 1), (-1, -1), 8),
+
+        ("BACKGROUND", (0, 1), (-1, -1), colors.white),
+    ]))
+
+    elements.append(item_table)
+
+    elements.append(Spacer(1, 25))
+
+    # =========================================
+    # TOTALS TABLE
+    # =========================================
+
+    totals_data = [
+        ["Subtotal", data.get("subtotal")],
+        ["Tax", data.get("tax")],
+        ["Rounding", data.get("rounding")],
+        ["Grand Total", data.get("grand_total")],
+    ]
+
+    totals_table = Table(
+        totals_data,
+        colWidths=[450, 110]
+    )
+
+    totals_table.setStyle(TableStyle([
+
+        ("FONTNAME", (0, 0), (-1, -1), "DejaVuSans"),
+        ("FONTNAME", (0, -1), (-1, -1), "DejaVuSans-Bold"),
+
+        ("GRID", (0, 0), (-1, -1), 0.8, colors.grey),
+
+        ("ALIGN", (1, 0), (1, -1), "RIGHT"),
+
+        ("BACKGROUND", (0, -1), (-1, -1), colors.lightgrey),
+
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
+        ("TOPPADDING", (0, 0), (-1, -1), 10),
+    ]))
+
+    elements.append(totals_table)
+
+    elements.append(Spacer(1, 25))
+
+    # =========================================
+    # NOTES
+    # =========================================
+
+    elements.append(Paragraph("Notes", section_style))
+
+    notes = data.get("notes") or "Thank you for your business!"
+
+    elements.append(Paragraph(notes, normal_style))
+
+    # =========================================
+    # BUILD PDF
+    # =========================================
+
+    doc.build(elements)
+
+    buffer.seek(0)
+
+    return send_file(
+        buffer,
+        as_attachment=True,
+        download_name=f"{data.get('po_number')}.pdf",
+        mimetype="application/pdf"
+    )
+
+@app.route("/api/purchase-orders/<po_number>/email", methods=["POST"])
+def email_purchase_order(po_number):
+
+    try:
+        data = request.json
+        data["po_number"] = po_number
+
+        supplier_email = data.get("supplier_email")
+
+        if not supplier_email:
+
+            return jsonify({
+                "success": False,
+                "message": "Supplier email missing"
+            })
+
+        # =========================================
+        # GENERATE PDF
+        # =========================================
+        pdf_bytes = build_purchase_order_pdf(data)
+        # =========================================
+        # EMAIL CONTENT
+        # =========================================
+
+        subject = f"Purchase Order - {po_number}"
+
+        body = f"""
+Dear Supplier,
+
+We hope this message finds you well.
+
+Please find attached the official Purchase Order issued by our company for your processing.
+
+Purchase Order Information:
+- PO Number: {po_number}
+
+We request you to acknowledge receipt of this order and proceed with the necessary arrangements.
+
+Should you require any clarification, please do not hesitate to contact us.
+
+Regards,
+Procurement Department
+Stackly
+"""
+
+        # =========================================
+        # SEND EMAIL
+        # =========================================
+
+        success = send_email_with_pdf(
+            to_email=supplier_email,
+            subject=subject,
+            body=body,
+            pdf_bytes=pdf_bytes,
+            pdf_filename=f"{po_number}.pdf"
+        )
+
+        if success:
+            return jsonify({"success": True})
+
+        else:
+            return jsonify({
+                "success": False,
+                "message": "Email send failed"
+            })
+
+    except Exception as e:
+
+        print("EMAIL ERROR:", str(e))
+
+        return jsonify({
+            "success": False,
+            "message": str(e)
+        })
+
+def send_email_with_pdf(
+    to_email,
+    subject,
+    body,
+    pdf_bytes,
+    pdf_filename="purchase_order.pdf"
+):
+
+    try:
+
+        msg = MIMEMultipart()
+
+        msg["From"] = EMAIL_ADDRESS
+        msg["To"] = to_email
+        msg["Subject"] = subject
+
+        # ✅ BODY (this is your subject/body you mentioned)
+        msg.attach(MIMEText(body, "plain"))
+
+        # ✅ PDF ATTACHMENT
+        part = MIMEApplication(pdf_bytes, _subtype="pdf")
+        part.add_header(
+            "Content-Disposition",
+            "attachment",
+            filename=pdf_filename
+        )
+        msg.attach(part)
+
+        # ✅ SMTP SEND
+        server = smtplib.SMTP("smtp.gmail.com", 587)
+        server.starttls()
+        server.login(EMAIL_ADDRESS, EMAIL_PASSWORD)
+
+        server.send_message(msg)   # IMPORTANT
+
+        server.quit()
+
+        return True
+
+    except Exception as e:
+        print("Email send error:", e)
+        return False
+def build_purchase_order_pdf(data):
+
+    buffer = BytesIO()
+
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        rightMargin=30,
+        leftMargin=30,
+        topMargin=20,
+        bottomMargin=20
+    )
+
+    styles = getSampleStyleSheet()
+
+    # =========================================
+    # STYLES
+    # =========================================
+
+    company_style = ParagraphStyle(
+        "CompanyStyle",
+        parent=styles["Heading1"],
+        fontName="DejaVuSans-Bold",
+        fontSize=24,
+        leading=28,
+        alignment=TA_CENTER,
+        textColor=colors.darkred,
+        spaceAfter=5,
+    )
+
+    address_style = ParagraphStyle(
+        "AddressStyle",
+        parent=styles["Normal"],
+        fontName="DejaVuSans",
+        fontSize=10,
+        leading=14,
+        alignment=TA_CENTER,
+    )
+
+    title_style = ParagraphStyle(
+        "TitleStyle",
+        parent=styles["Heading2"],
+        fontName="DejaVuSans-Bold",
+        fontSize=20,
+        leading=24,
+        alignment=TA_CENTER,
+        textColor=colors.green,
+        spaceAfter=20,
+    )
+
+    section_style = ParagraphStyle(
+        "SectionStyle",
+        parent=styles["Heading3"],
+        fontName="DejaVuSans-Bold",
+        fontSize=14,
+        textColor=colors.darkred,
+        spaceAfter=10,
+    )
+
+    normal_style = ParagraphStyle(
+        "NormalStyle",
+        parent=styles["Normal"],
+        fontName="DejaVuSans",
+        fontSize=10,
+    )
+
+    elements = []
+
+    # =========================================
+    # COMPANY HEADER
+    # =========================================
+
+    elements.append(Paragraph("STACKLY", company_style))
+
+    elements.append(Paragraph(
+        "MMR Complex, Chinna Tirupathi, Salem, Tamil Nadu - 636008",
+        address_style
+    ))
+
+    elements.append(Paragraph(
+        "Phone: +91 7010792745",
+        address_style
+    ))
+
+    elements.append(Paragraph(
+        "Email: info@stackly.com",
+        address_style
+    ))
+
+    elements.append(Spacer(1, 25))
+
+    # =========================================
+    # TITLE
+    # =========================================
+
+    elements.append(Paragraph("PURCHASE ORDER", title_style))
+
+    # =========================================
+    # INFO TABLE
+    # =========================================
+
+    po_number = data.get("po_number", "")
+    po_number = po_number.replace("PO ", "").strip()
+
+    info_data = [
+        ["PO Number:", po_number, "Date:", data.get("pdate")],
+        ["Supplier:", data.get("supplier"), "Delivery Date:", data.get("ddate")],
+        ["Status:", data.get("status"), "Payment Terms:", data.get("payment_terms")]
+    ]
+
+    info_table = Table(
+        info_data,
+        colWidths=[120, 170, 120, 140]
+    )
+
+    info_table.setStyle(TableStyle([
+
+        ("FONTNAME", (0, 0), (-1, -1), "DejaVuSans"),
+        ("FONTNAME", (0, 0), (0, -1), "DejaVuSans-Bold"),
+        ("FONTNAME", (2, 0), (2, -1), "DejaVuSans-Bold"),
+
+        ("GRID", (0, 0), (-1, -1), 0.8, colors.grey),
+
+        ("BACKGROUND", (0, 0), (0, -1), colors.whitesmoke),
+        ("BACKGROUND", (2, 0), (2, -1), colors.whitesmoke),
+
+        ("TEXTCOLOR", (0, 0), (0, -1), colors.darkred),
+        ("TEXTCOLOR", (2, 0), (2, -1), colors.darkred),
+
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
+        ("TOPPADDING", (0, 0), (-1, -1), 10),
+
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+    ]))
+
+    elements.append(info_table)
+
+    elements.append(Spacer(1, 25))
+
+    # =========================================
+    # ITEMS TITLE
+    # =========================================
+
+    elements.append(Paragraph("PURCHASE ORDER ITEMS", section_style))
+
+    # =========================================
+    # ITEMS TABLE
+    # =========================================
+
+    table_data = [[
+        "S.No",
+        "Product Name",
+        "Qty",
+        "Price",
+        "Tax %",
+        "Disc %",
+        "Total"
+    ]]
+
+    for i, item in enumerate(data.get("items", []), start=1):
+
+        qty = float(item.get("qty", 0))
+        price = float(item.get("price", 0))
+        tax = float(item.get("tax", 0))
+        discount = float(item.get("discount", 0))
+
+        total = qty * price
+
+        table_data.append([
+            str(i),
+            item.get("product_name"),
+            str(item.get("qty")),
+            f"₹ {price:.2f}",
+            f"{tax:.2f}",
+            f"{discount:.2f}",
+            f"₹ {total:.2f}"
+        ])
+
+    item_table = Table(
+        table_data,
+        repeatRows=1,
+        colWidths=[45, 180, 55, 75, 55, 60, 90]
+    )
+
+    item_table.setStyle(TableStyle([
+
+        ("FONTNAME", (0, 0), (-1, -1), "DejaVuSans"),
+        ("FONTNAME", (0, 0), (-1, 0), "DejaVuSans-Bold"),
+
+        ("BACKGROUND", (0, 0), (-1, 0), colors.darkred),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+
+        ("GRID", (0, 0), (-1, -1), 0.8, colors.grey),
+
+        ("BOTTOMPADDING", (0, 0), (-1, 0), 10),
+        ("TOPPADDING", (0, 0), (-1, 0), 10),
+
+        ("BOTTOMPADDING", (0, 1), (-1, -1), 8),
+        ("TOPPADDING", (0, 1), (-1, -1), 8),
+
+        ("BACKGROUND", (0, 1), (-1, -1), colors.white),
+    ]))
+
+    elements.append(item_table)
+
+    elements.append(Spacer(1, 25))
+
+    # =========================================
+    # ORDER SUMMARY / TOTALS
+    # =========================================
+
+
+
+    subtotal = float(data.get("subtotal") or 0)
+    tax_total = float(data.get("tax") or 0)
+    discount_total = float(data.get("discount_total") or 0)
+    rounding = float(data.get("rounding") or 0)
+    grand_total = float(data.get("grand_total") or 0)
+
+    totals_data = [
+        ["Subtotal", f"₹ {subtotal:.2f}"],
+        ["Tax", f"₹ {tax_total:.2f}"],
+        ["Discount", f"₹ {discount_total:.2f}"],
+        ["Rounding", f"₹ {rounding:.2f}"],
+        ["Grand Total", f"₹ {grand_total:.2f}"],
+    ]
+
+    totals_table = Table(
+        totals_data,
+        colWidths=[450, 110]
+    )
+
+    totals_table.setStyle(TableStyle([
+
+        ("FONTNAME", (0, 0), (-1, -1), "DejaVuSans"),
+        ("FONTNAME", (0, -1), (-1, -1), "DejaVuSans-Bold"),
+
+        ("GRID", (0, 0), (-1, -1), 0.8, colors.grey),
+
+        ("ALIGN", (1, 0), (1, -1), "RIGHT"),
+
+        ("BACKGROUND", (0, -1), (-1, -1), colors.lightgrey),
+
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
+        ("TOPPADDING", (0, 0), (-1, -1), 10),
+
+        ("TEXTCOLOR", (0, -1), (-1, -1), colors.black),
+    ]))
+
+    elements.append(totals_table)
+    elements.append(Spacer(1, 25))
+
+    # =========================================
+    # NOTES
+    # =========================================
+
+    elements.append(Paragraph("Notes", section_style))
+
+    notes = data.get("notes") or "Thank you for your business!"
+
+    elements.append(Paragraph(notes, normal_style))
+
+    # =========================================
+    # BUILD PDF
+    # =========================================
+
+    doc.build(elements)
+
+    buffer.seek(0)
+
+    return buffer.read()
+
+
+@app.route("/purchase/view/<po_number>")
+def view_po(po_number):
+    from psycopg2.extras import RealDictCursor
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        cur.execute("SELECT id FROM purchase_orders WHERE po_number=%s", (po_number,))
+        po_row = cur.fetchone()
+        if not po_row:
+            return "PO Not Found", 404
+        po_id = po_row["id"]
+        
+        cur.execute("""
+            SELECT po.*, s.email as supplier_email
+            FROM purchase_orders po
+            LEFT JOIN suppliers s ON po.supplier_id = s.supplier_id
+            WHERE po.id=%s
+        """, (po_id,))
+        po = cur.fetchone()
+        
+        cur.execute("SELECT * FROM purchase_items WHERE po_id=%s", (po_id,))
+        items = cur.fetchall()
+        
+        po_dict = dict(po)
+        po_dict["items"] = [dict(i) for i in items]
+        po_dict["pdate"] = str(po_dict["pdate"]) if po_dict.get("pdate") else ""
+        po_dict["ddate"] = str(po_dict["ddate"]) if po_dict.get("ddate") else ""
+        
+        # fetch sales orders for dropdown
+        try:
+            cur.execute("SELECT so_id FROM sales_orders ORDER BY so_id DESC")
+            sales_orders = [r["so_id"] for r in cur.fetchall()]
+        except Exception:
+            sales_orders = []
+        
+        return render_template(
+            "purchase-order.html",
+            po_number=po_dict["po_number"],
+            today=str(po_dict.get("pdate", "")),
+            sales_orders=sales_orders,
+            po_data=po_dict,
+            mode="view",
+            page="purchase",
+        )
+    except Exception as e:
+        print(f"view_po error:", e)
+        import traceback; traceback.print_exc()
+        return str(e), 500
+    finally:
+        cur.close()
+        conn.close()
+
+@app.route("/purchase/edit/<po_number>")
+def edit_po(po_number):
+    from psycopg2.extras import RealDictCursor
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        cur.execute("SELECT id FROM purchase_orders WHERE po_number=%s", (po_number,))
+        po_row = cur.fetchone()
+        if not po_row:
+            return "PO Not Found", 404
+        po_id = po_row["id"]
+        
+        cur.execute("""
+            SELECT po.*, s.email as supplier_email
+            FROM purchase_orders po
+            LEFT JOIN suppliers s ON po.supplier_id = s.supplier_id
+            WHERE po.id=%s
+        """, (po_id,))
+        po = cur.fetchone()
+        
+        cur.execute("SELECT * FROM purchase_items WHERE po_id=%s", (po_id,))
+        items = cur.fetchall()
+        
+        po_dict = dict(po)
+        po_dict["items"] = [dict(i) for i in items]
+        po_dict["pdate"] = str(po_dict["pdate"]) if po_dict.get("pdate") else ""
+        po_dict["ddate"] = str(po_dict["ddate"]) if po_dict.get("ddate") else ""
+        
+        # fetch sales orders for dropdown
+        try:
+            cur.execute("SELECT so_id FROM sales_orders ORDER BY so_id DESC")
+            sales_orders = [r["so_id"] for r in cur.fetchall()]
+        except Exception:
+            sales_orders = []
+        
+        return render_template(
+            "purchase-order.html",
+            po_number=po_dict["po_number"],
+            today=str(po_dict.get("pdate", "")),
+            sales_orders=sales_orders,
+            po_data=po_dict,
+            mode="edit",
+            page="purchase",
+        )
+    except Exception as e:
+        print(f"edit_po error:", e)
+        import traceback; traceback.print_exc()
+        return str(e), 500
+    finally:
+        cur.close()
+        conn.close()
+
+# ========================================
+# Comments
+# ========================================
+@app.route("/api/purchase-comments", methods=["POST"])
+def add_purchase_comment():
+    try:
+        data = request.json
+
+        po_number = data.get("po_number")
+        comment = data.get("comment")
+        created_by = data.get("created_by", "Admin")
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        cur.execute("""
+            INSERT INTO purchase_comments (po_number, comment, created_by)
+            VALUES (%s, %s, %s)
+        """, (po_number, comment, created_by))
+
+        conn.commit()
+        cur.close()
+        conn.close()
+
+        return jsonify({"success": True, "message": "Comment added"})
+
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+# ========================================
+# Attachments
+# ========================================
+
+UPLOAD_FOLDER = "uploads/purchase_attachments"
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+@app.route("/api/purchase-attachments", methods=["POST"])
+def upload_purchase_attachment():
+    try:
+        po_number = request.form.get("po_number")
+        file = request.files.get("file")
+
+        if not file:
+            return jsonify({"success": False, "message": "No file uploaded"}), 400
+
+        filename = secure_filename(file.filename)
+        save_path = os.path.join(UPLOAD_FOLDER, filename)
+        file.save(save_path)
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        cur.execute("""
+            INSERT INTO purchase_attachments (po_number, file_name, file_path)
+            VALUES (%s, %s, %s)
+        """, (po_number, filename, save_path))
+
+        conn.commit()
+        cur.close()
+        conn.close()
+
+        return jsonify({
+            "success": True,
+            "file_name": filename,
+            "file_path": save_path
+        })
+
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route("/api/purchase-comments/<po_number>")
+def get_purchase_comments(po_number):
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT comment, created_by, created_at
+        FROM purchase_comments
+        WHERE po_number = %s
+        ORDER BY created_at DESC
+    """, (po_number,))
+
+    rows = cur.fetchall()
+
+    cur.close()
+    conn.close()
+
+    return jsonify(rows)
+
+@app.route("/api/purchase-attachments/<po_number>")
+def get_purchase_attachments(po_number):
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT file_name, file_path, uploaded_at
+        FROM purchase_attachments
+        WHERE po_number = %s
+        ORDER BY uploaded_at DESC
+    """, (po_number,))
+
+    rows = cur.fetchall()
+
+    cur.close()
+    conn.close()
+
+    return jsonify(rows)
+
+
+# ========================================
+# Stock-reciept
+# ========================================
+
+@app.route("/stock-receipt")
+def stock_receipt():
+
+    return render_template(
+        "stock-reciept.html",
+        page="stock_receipt"
+    )
+
+@app.route("/stock-new")
+def stock_new():
+
+    return render_template(
+        "stock-new.html",
+        page="stock_new"
+    )
+
+@app.route("/api/generate-grn")
+def generate_grn():
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT grn_number
+        FROM stock_receipts
+        ORDER BY id DESC
+        LIMIT 1
+    """)
+
+    last = cur.fetchone()
+
+    if last:
+
+        last_no = int(last[0].split("-")[1])
+
+        new_no = last_no + 1
+
+    else:
+
+        new_no = 1
+
+    grn = f"GRN-{new_no:03d}"
+
+    cur.close()
+    conn.close()
+
+    return jsonify({
+        "grn_number": grn
+    })
+
+@app.route("/api/purchase/<po_number>")
+def get_purchase(po_number):
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    # HEADER
+    cur.execute("""
+        SELECT
+            po_number,
+            supplier_name,
+            supplier_email
+        FROM purchase_orders
+        WHERE po_number = %s
+    """, (po_number,))
+
+    po = cur.fetchone()
+
+    if not po:
+
+        return jsonify({
+            "error": "PO not found"
+        }), 404
+
+    # ITEMS
+    cur.execute("""
+        SELECT
+            product_id,
+            product_name,
+            qty,
+            price,
+            tax_pct,
+            disc_pct,
+            uom
+        FROM purchase_items
+        WHERE po_id = (
+            SELECT id
+            FROM purchase_orders
+            WHERE po_number = %s
+        )
+    """, (po_number,))
+
+    items = cur.fetchall()
+
+    item_list = []
+
+    for item in items:
+
+        item_list.append({
+
+            "product_id": item[0],
+            "product_name": item[1],
+            "qty": float(item[2]),
+            "price": float(item[3]),
+            "tax_pct": float(item[4]),
+            "disc_pct": float(item[5]),
+            "uom": item[6]
+
+        })
+
+    cur.close()
+    conn.close()
+
+    return jsonify({
+
+        "po_number": po[0],
+
+        "supplier_name": po[1],
+        "supplier_email": po[2],
+
+        "items": item_list
+
+    })
+
+@app.route("/api/save-stock", methods=["POST"])
+def save_stock():
+
+    data = request.json
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    try:
+
+        # =========================================
+        # INSERT STOCK RECEIPT HEADER
+        # =========================================
+        cur.execute("""
+
+            INSERT INTO stock_receipts (
+
+                grn_number,
+                po_number,
+                supplier_id,
+                supplier_name,
+                supplier_email,
+                received_date,
+                supplier_dn_no,
+                supplier_invoice_no,
+                received_by,
+                qc_done_by,
+                grand_total,
+                status
+
+            )
+
+            VALUES (
+
+                %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s
+
+            )
+
+            RETURNING id
+
+        """, (
+
+            data.get("grn_number"),
+            data.get("po_number"),
+            data.get("supplier_id"),
+            data.get("supplier_name"),
+            data.get("supplier_email"),
+            data.get("received_date"),
+            data.get("supplier_dn_no"),
+            data.get("supplier_invoice_no"),
+            data.get("received_by"),
+            data.get("qc_done_by"),
+            data.get("grand_total", 0),
+            data.get("status", "Draft")
+
+        ))
+
+        stock_receipt_id = cur.fetchone()[0]
+
+        # =========================================
+        # INSERT STOCK RECEIPT ITEMS
+        # =========================================
+        for item in data.get("items", []):
+
+            cur.execute("""
+
+                INSERT INTO stock_receipt_items (
+
+                    stock_receipt_id,
+                    product_id,
+                    product_name,
+                    uom,
+                    qty_ordered,
+                    qty_received,
+                    accepted_qty,
+                    rejected_qty,
+                    qty_returned,
+                    stock_in,
+                    warehouse,
+                    unit_price,
+                    tax_pct,
+                    disc_pct,
+                    total
+
+                )
+
+                VALUES (
+
+                    %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s
+
+                )
+
+            """, (
+
+                stock_receipt_id,
+                item.get("product_id"),
+                item.get("product_name"),
+                item.get("uom"),
+                item.get("qty_ordered", 0),
+                item.get("qty_received", 0),
+                item.get("accepted_qty", 0),
+                item.get("rejected_qty", 0),
+                item.get("qty_returned", 0),
+                item.get("stock_in"),
+                item.get("warehouse"),
+                item.get("unit_price", 0),
+                item.get("tax_pct", 0),
+                item.get("disc_pct", 0),
+                item.get("total", 0)
+
+            ))
+
+        conn.commit()
+
+        return jsonify({
+
+            "success": True,
+            "message": "Stock Receipt Saved Successfully",
+            "grn_number": data.get("grn_number"),
+            "stock_receipt_id": stock_receipt_id
+
+        })
+
+    except Exception as e:
+
+        conn.rollback()
+
+        import traceback
+        traceback.print_exc()
+
+        return jsonify({
+
+            "success": False,
+            "error": str(e)
+
+        }), 500
+
+    finally:
+
+        cur.close()
+        conn.close()
+
+@app.route("/api/stock-receipts", methods=["GET"])
+def stock_receipts():
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    try:
+
+        cur.execute("""
+
+            SELECT
+
+                grn_number,
+                po_number,
+                supplier_name,
+                supplier_email,
+                received_date,
+                grand_total,
+                status,
+                received_by,
+                qc_done_by
+
+            FROM stock_receipts
+
+            ORDER BY id DESC
+
+        """)
+
+        rows = cur.fetchall()
+
+        result = []
+
+        for row in rows:
+
+            result.append({
+
+                "grn_number": row[0],
+                "po_number": row[1],
+                "supplier_name": row[2],
+                "supplier_email": row[3],
+                "received_date": str(row[4]) if row[4] else "",
+                "grand_total": float(row[5] or 0),
+                "status": row[6],
+                "received_by": row[7],
+                "qc_done_by": row[8]
+
+            })
+
+        return jsonify(result)
+
+    except Exception as e:
+
+        return jsonify({
+            "error": str(e)
+        }), 500
+
+    finally:
+
+        cur.close()
+        conn.close()
+
+@app.route("/api/stock-receipt/<grn>", methods=["GET"])
+def view_stock(grn):
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    try:
+
+        # =========================================
+        # GET HEADER
+        # =========================================
+        cur.execute("""
+
+            SELECT
+
+                id,
+                grn_number,
+                po_number,
+                supplier_id,
+                supplier_name,
+                supplier_email,
+                received_date,
+                supplier_dn_no,
+                supplier_invoice_no,
+                received_by,
+                qc_done_by,
+                grand_total,
+                status
+
+            FROM stock_receipts
+
+            WHERE grn_number = %s
+
+        """, (grn,))
+
+        stock = cur.fetchone()
+
+        if not stock:
+
+            return jsonify({
+                "error": "Stock Receipt Not Found"
+            }), 404
+
+        stock_receipt_id = stock[0]
+
+        # =========================================
+        # GET ITEMS
+        # =========================================
+        cur.execute("""
+
+            SELECT
+
+                product_id,
+                product_name,
+                uom,
+                qty_ordered,
+                qty_received,
+                accepted_qty,
+                rejected_qty,
+                qty_returned,
+                stock_in,
+                warehouse,
+                unit_price,
+                tax_pct,
+                disc_pct,
+                total
+
+            FROM stock_receipt_items
+
+            WHERE stock_receipt_id = %s
+
+        """, (stock_receipt_id,))
+
+        items = cur.fetchall()
+
+        item_list = []
+
+        for item in items:
+
+            item_list.append({
+
+                "product_id": item[0],
+                "product_name": item[1],
+                "uom": item[2],
+                "qty_ordered": float(item[3] or 0),
+                "qty_received": float(item[4] or 0),
+                "accepted_qty": float(item[5] or 0),
+                "rejected_qty": float(item[6] or 0),
+                "qty_returned": float(item[7] or 0),
+                "stock_in": item[8],
+                "warehouse": item[9],
+                "unit_price": float(item[10] or 0),
+                "tax_pct": float(item[11] or 0),
+                "disc_pct": float(item[12] or 0),
+                "total": float(item[13] or 0)
+
+            })
+
+        return jsonify({
+
+            "grn_number": stock[1],
+            "po_number": stock[2],
+            "supplier_id": stock[3],
+            "supplier_name": stock[4],
+            "supplier_email": stock[5],
+            "received_date": str(stock[6]) if stock[6] else "",
+            "supplier_dn_no": stock[7],
+            "supplier_invoice_no": stock[8],
+            "received_by": stock[9],
+            "qc_done_by": stock[10],
+            "grand_total": float(stock[11] or 0),
+            "status": stock[12],
+            "items": item_list
+
+        })
+
+    except Exception as e:
+
+        return jsonify({
+            "error": str(e)
+        }), 500
+
+    finally:
+
+        cur.close()
+        conn.close()
+
+@app.route("/api/stock-receipt-pdf/<grn>")
+def stock_receipt_pdf(grn):
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    try:
+
+        # =========================================
+        # HEADER
+        # =========================================
+        cur.execute("""
+
+            SELECT
+                grn_number,
+                po_number,
+                supplier_name,
+                supplier_email,
+                received_date,
+                received_by,
+                qc_done_by,
+                grand_total,
+                status
+
+            FROM stock_receipts
+
+            WHERE grn_number = %s
+
+        """, (grn,))
+
+        stock = cur.fetchone()
+
+        if not stock:
+
+            return jsonify({
+                "error": "Stock Receipt Not Found"
+            }), 404
+
+        # =========================================
+        # ITEMS
+        # =========================================
+        cur.execute("""
+
+            SELECT
+                product_id,
+                product_name,
+                qty_received,
+                accepted_qty,
+                rejected_qty,
+                warehouse,
+                total
+
+            FROM stock_receipt_items
+
+            WHERE stock_receipt_id = (
+
+                SELECT id
+                FROM stock_receipts
+                WHERE grn_number = %s
+
+            )
+
+        """, (grn,))
+
+        items = cur.fetchall()
+
+        # =========================================
+        # PDF START
+        # =========================================
+        buffer = BytesIO()
+
+        doc = SimpleDocTemplate(
+            buffer,
+            pagesize=A4,
+            rightMargin=30,
+            leftMargin=30,
+            topMargin=20,
+            bottomMargin=20
+        )
+
+        styles = getSampleStyleSheet()
+
+        # =========================================
+        # STYLES
+        # =========================================
+
+        company_style = ParagraphStyle(
+            "CompanyStyle",
+            parent=styles["Heading1"],
+            fontName="DejaVuSans-Bold", 
+            fontSize=24,
+            leading=28,
+            alignment=TA_CENTER,
+            textColor=colors.darkred,
+            spaceAfter=5,
+        )
+
+        address_style = ParagraphStyle(
+            "AddressStyle",
+            parent=styles["Normal"],
+            fontName="DejaVuSans",
+            fontSize=10,
+            leading=14,
+            alignment=TA_CENTER,
+        )
+
+        title_style = ParagraphStyle(
+            "TitleStyle",
+            parent=styles["Heading2"],
+            fontName="DejaVuSans-Bold",
+            fontSize=20,
+            leading=24,
+            alignment=TA_CENTER,
+            textColor=colors.green,
+            spaceAfter=20,
+        )
+
+        section_style = ParagraphStyle(
+            "SectionStyle",
+            parent=styles["Heading3"],
+            fontName="DejaVuSans",
+            fontSize=14,
+            textColor=colors.darkred,
+            spaceAfter=10,
+        )
+
+        normal_style = ParagraphStyle(
+            "NormalStyle",
+            parent=styles["Normal"],
+            fontName="DejaVuSans",
+            fontSize=10,
+        )
+
+        elements = []
+
+        # =========================================
+        # COMPANY HEADER
+        # =========================================
+
+        elements.append(Paragraph("STACKLY", company_style))
+
+        elements.append(Paragraph(
+            "MMR Complex, Chinna Tirupathi, Salem, Tamil Nadu - 636008",
+            address_style
+        ))
+
+        elements.append(Paragraph(
+            "Phone: +91 7010792745",
+            address_style
+        ))
+
+        elements.append(Paragraph(
+            "Email: info@stackly.com",
+            address_style
+        ))
+
+        elements.append(Spacer(1, 25))
+
+        # =========================================
+        # TITLE
+        # =========================================
+
+        elements.append(Paragraph("STOCK RECEIPT", title_style))
+
+        # =========================================
+        # INFO TABLE
+        # =========================================
+
+        info_data = [
+
+            ["GRN Number:", stock[0], "Date:", str(stock[4])],
+            ["PO Number:", stock[1], "Supplier:", stock[2]],
+            ["Received By:", stock[5], "QC Done By:", stock[6]],
+            ["Status:", stock[8], "Grand Total:", f"₹ {stock[7]}"]
+
+        ]
+
+        info_table = Table(
+            info_data,
+            colWidths=[120, 170, 120, 140]
+        )
+
+        info_table.setStyle(TableStyle([
+
+            ("FONTNAME", (0, 0), (-1, -1), "DejaVuSans"),
+            ("FONTNAME", (0, 0), (0, -1), "DejaVuSans-Bold"),
+            ("FONTNAME", (2, 0), (2, -1), "DejaVuSans-Bold"),
+
+            ("GRID", (0, 0), (-1, -1), 0.8, colors.grey),
+
+            ("BACKGROUND", (0, 0), (0, -1), colors.whitesmoke),
+            ("BACKGROUND", (2, 0), (2, -1), colors.whitesmoke),
+
+            ("TEXTCOLOR", (0, 0), (0, -1), colors.darkred),
+            ("TEXTCOLOR", (2, 0), (2, -1), colors.darkred),
+
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
+            ("TOPPADDING", (0, 0), (-1, -1), 10),
+
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+
+        ]))
+
+        elements.append(info_table)
+
+        elements.append(Spacer(1, 25))
+
+        # =========================================
+        # ITEMS TITLE
+        # =========================================
+
+        elements.append(Paragraph("STOCK RECEIPT ITEMS", section_style))
+
+        # =========================================
+        # ITEMS TABLE
+        # =========================================
+
+        table_data = [[
+
+            "S.No",
+            "Product ID",
+            "Product Name",
+            "Qty Received",
+            "Accepted",
+            "Rejected",
+            "Warehouse",
+            "Total"
+
+        ]]
+
+        for i, item in enumerate(items, start=1):
+
+            table_data.append([
+
+                str(i),
+                item[0],
+                item[1],
+                str(item[2]),
+                str(item[3]),
+                str(item[4]),
+                item[5],
+                f"₹ {float(item[6]):.2f}"
+
+            ])
+
+        item_table = Table(
+            table_data,
+            repeatRows=1,
+            colWidths=[35, 70, 130, 55, 55, 55, 70, 80]
+        )
+
+        item_table.setStyle(TableStyle([
+
+            ("FONTNAME", (0, 0), (-1, -1), "DejaVuSans"),
+            ("FONTNAME", (0, 0), (-1, 0), "DejaVuSans-Bold"),
+
+            ("FONTSIZE", (0, 0), (-1, -1), 8),
+
+            ("BACKGROUND", (0, 0), (-1, 0), colors.darkred),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+
+            ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+
+            ("GRID", (0, 0), (-1, -1), 0.8, colors.grey),
+
+            ("BOTTOMPADDING", (0, 0), (-1, 0), 10),
+            ("TOPPADDING", (0, 0), (-1, 0), 10),
+
+            ("BOTTOMPADDING", (0, 1), (-1, -1), 8),
+            ("TOPPADDING", (0, 1), (-1, -1), 8),
+
+            ("BACKGROUND", (0, 1), (-1, -1), colors.white),
+
+        ]))
+
+        elements.append(item_table)
+
+        elements.append(Spacer(1, 25))
+
+        # =========================================
+        # NOTES
+        # =========================================
+
+        elements.append(Paragraph("Notes", section_style))
+
+        elements.append(Paragraph(
+            "Stock Receipt Generated Successfully.",
+            normal_style
+        ))
+
+        # =========================================
+        # BUILD PDF
+        # =========================================
+
+        doc.build(elements)
+
+        buffer.seek(0)
+
+        return send_file(
+            buffer,
+            as_attachment=True,
+            download_name=f"{grn}.pdf",
+            mimetype="application/pdf"
+        )
+
+    except Exception as e:
+
+        return jsonify({
+            "error": str(e)
+        }), 500
+
+    finally:
+
+        cur.close()
+        conn.close() 
+
+@app.route("/api/stock-receipts/<grn>/email", methods=["POST"])
+def email_stock_receipt(grn):
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    try:
+
+        data = request.json
+        po_number = data.get("po_number")
+
+        # GET EMAIL
+        cur.execute("""
+            SELECT supplier_email
+            FROM stock_receipts
+            WHERE grn_number = %s
+        """, (grn,))
+
+        row = cur.fetchone()
+
+        if not row:
+            return jsonify({"success": False, "message": "Not found"})
+
+        supplier_email = row[0]
+
+        # 🔥 SAME PDF USED HERE
+        pdf_bytes = build_stock_receipt_pdf(grn)
+
+        subject = f"Stock Receipt - {grn}"
+
+        body = f"""
+Dear Supplier,
+
+Please find attached Stock Receipt.
+
+GRN: {grn}
+PO: {po_number}
+
+Regards,
+Stackly
+"""
+
+        success = send_email_with_pdf(
+            to_email=supplier_email,
+            subject=subject,
+            body=body,
+            pdf_bytes=pdf_bytes,
+            pdf_filename=f"{grn}.pdf"
+        )
+
+        return jsonify({"success": success})
+
+    finally:
+        cur.close()
+        conn.close()
+
+@app.route("/api/stock-receipt-pdf/<grn>")
+def stock_receipt_pdf_email(grn):
+
+    buffer = build_stock_receipt_pdf(grn, return_buffer=True)
+
+    return send_file(
+        buffer,
+        as_attachment=True,
+        download_name=f"{grn}.pdf",
+        mimetype="application/pdf"
+    )
+
+
+def build_stock_receipt_pdf(grn, return_buffer=False):
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    try:
+
+        # =========================
+        # HEADER
+        # =========================
+        cur.execute("""
+            SELECT grn_number, po_number, supplier_name,
+                   supplier_email, received_date,
+                   received_by, qc_done_by,
+                   grand_total, status
+            FROM stock_receipts
+            WHERE grn_number = %s
+        """, (grn,))
+
+        stock = cur.fetchone()
+
+        if not stock:
+            return None
+
+        # =========================
+        # ITEMS
+        # =========================
+        cur.execute("""
+            SELECT product_id, product_name,
+                   qty_received, accepted_qty,
+                   rejected_qty, warehouse, total
+            FROM stock_receipt_items
+            WHERE stock_receipt_id = (
+                SELECT id FROM stock_receipts
+                WHERE grn_number = %s
+            )
+        """, (grn,))
+
+        items = cur.fetchall()
+
+        # =========================
+        # PDF SETUP
+        # =========================
+        buffer = BytesIO()
+
+        doc = SimpleDocTemplate(
+            buffer,
+            pagesize=A4,
+            rightMargin=30,
+            leftMargin=30,
+            topMargin=20,
+            bottomMargin=20
+        )
+
+        styles = getSampleStyleSheet()
+
+        # SAME STYLES AS YOUR PDF
+        company_style = ParagraphStyle(
+            "CompanyStyle",
+            parent=styles["Heading1"],
+            fontName="DejaVuSans-Bold",
+            fontSize=24,
+            alignment=TA_CENTER,
+            textColor=colors.darkred
+        )
+
+        address_style = ParagraphStyle(
+            "AddressStyle",
+            parent=styles["Normal"],
+            fontName="DejaVuSans",
+            fontSize=10,
+            alignment=TA_CENTER,
+        )
+
+        title_style = ParagraphStyle(
+            "TitleStyle",
+            parent=styles["Heading2"],
+            fontName="DejaVuSans-Bold",
+            fontSize=20,
+            alignment=TA_CENTER,
+            textColor=colors.green,
+        )
+
+        normal_style = ParagraphStyle(
+            "NormalStyle",
+            parent=styles["Normal"],
+            fontName="DejaVuSans",
+            fontSize=10,
+        )
+
+        elements = []
+
+        # =========================
+        # HEADER
+        # =========================
+        elements.append(Paragraph("STACKLY", company_style))
+        elements.append(Paragraph("MMR Complex, Salem", address_style))
+        elements.append(Spacer(1, 20))
+
+        elements.append(Paragraph("STOCK RECEIPT", title_style))
+        elements.append(Spacer(1, 15))
+
+        # =========================
+        # INFO TABLE
+        # =========================
+        info_data = [
+            ["GRN", stock[0], "PO", stock[1]],
+            ["Supplier", stock[2], "Date", str(stock[4])],
+            ["Received By", stock[5], "QC", stock[6]],
+            ["Status", stock[8], "Total", f"₹ {stock[7]}"],
+        ]
+
+        info_table = Table(info_data, colWidths=[80, 150, 80, 150])
+
+        info_table.setStyle(TableStyle([
+            ("FONTNAME", (0, 0), (-1, -1), "DejaVuSans"),
+            ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+            ("FONTSIZE", (0, 0), (-1, -1), 9),
+            ("BACKGROUND", (0, 0), (-1, -1), colors.whitesmoke),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ]))
+
+        elements.append(info_table)
+        elements.append(Spacer(1, 15))
+
+        # =========================
+        # ITEMS TABLE
+        # =========================
+        table_data = [[
+            "S.No", "Product", "Qty", "Accepted",
+            "Rejected", "Warehouse", "Total"
+        ]]
+
+        for i, item in enumerate(items, 1):
+            table_data.append([
+                str(i),
+                item[1],
+                str(item[2]),
+                str(item[3]),
+                str(item[4]),
+                item[5],
+                f"₹ {float(item[6]):.2f}"
+            ])
+
+        item_table = Table(table_data, colWidths=[30, 120, 50, 60, 60, 70, 70])
+
+        item_table.setStyle(TableStyle([
+            ("FONTNAME", (0, 0), (-1, -1), "DejaVuSans"),
+            ("FONTNAME", (0, 0), (-1, 0), "DejaVuSans-Bold"),
+            ("FONTSIZE", (0, 0), (-1, -1), 8),
+            ("BACKGROUND", (0, 0), (-1, 0), colors.darkred),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+        ]))
+
+        elements.append(item_table)
+
+        # =========================
+        # BUILD PDF
+        # =========================
+        doc.build(elements)
+
+        buffer.seek(0)
+
+        # 🔥 IMPORTANT: SAME OUTPUT FOR BOTH
+        return buffer if return_buffer else buffer.getvalue()
+
+    finally:
+        cur.close()
+        conn.close()
+
+@app.route("/api/stock-comments", methods=["POST"])
+def add_stock_comment():
+    try:
+        data = request.json
+
+        grn_number = data.get("grn_number")
+        comment = data.get("comment")
+        created_by = data.get("created_by", "Admin")
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        cur.execute("""
+            INSERT INTO stock_comments (grn_number, comment, created_by)
+            VALUES (%s, %s, %s)
+        """, (grn_number, comment, created_by))
+
+        conn.commit()
+        cur.close()
+        conn.close()
+
+        return jsonify({"success": True})
+
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route("/api/stock-comments/<grn_number>")
+def get_stock_comments(grn_number):
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT comment, created_by, created_at
+        FROM stock_comments
+        WHERE grn_number = %s
+        ORDER BY created_at DESC
+    """, (grn_number,))
+
+    rows = cur.fetchall()
+
+    cur.close()
+    conn.close()
+
+    result = []
+
+    for r in rows:
+        result.append({
+            "comment": r[0],
+            "created_by": r[1],
+            "created_at": str(r[2])
+        })
+
+    return jsonify(result)
+
+
+UPLOAD_FOLDER = "uploads/stock_attachments"
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+@app.route("/api/stock-attachments", methods=["POST"])
+def upload_stock_attachment():
+
+    try:
+        grn_number = request.form.get("grn_number")
+        file = request.files.get("file")
+
+        if not file:
+            return jsonify({"success": False, "message": "No file uploaded"}), 400
+
+        filename = secure_filename(file.filename)
+        path = os.path.join(UPLOAD_FOLDER, filename)
+        file.save(path)
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        cur.execute("""
+            INSERT INTO stock_attachments (grn_number, file_name, file_path)
+            VALUES (%s, %s, %s)
+        """, (grn_number, filename, path))
+
+        conn.commit()
+        cur.close()
+        conn.close()
+
+        return jsonify({"success": True})
+
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route("/api/stock-attachments/<grn_number>")
+def get_stock_attachments(grn_number):
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT id, file_name, file_path, uploaded_at
+        FROM stock_attachments
+        WHERE grn_number = %s
+        ORDER BY uploaded_at DESC
+    """, (grn_number,))
+
+    rows = cur.fetchall()
+
+    cur.close()
+    conn.close()
+
+    result = []
+
+    for r in rows:
+        result.append({
+            "id": r[0],
+            "file_name": r[1],
+            "file_path": r[2],
+            "uploaded_at": str(r[3])
+        })
+
+    return jsonify(result)
 
 
 
@@ -21121,16 +23245,60 @@ def new_credit_note():
             user_name = u.get("name") or "User"
             break
 
-    # Mode (new / edit)
-    mode = (request.args.get("mode") or "new").strip().lower()
+    # Prefer explicit credit id from the query string. If `mode` is omitted but an id is present,
+    # default to "view" — otherwise `mode` defaulted to "new" and we generated a fresh CRN-###,
+    # causing GET /api/credit-notes/<wrong-id> to 404 (broken status pill + "Failed to load" toast).
+    raw_mode = request.args.get("mode")
+    credit_param = (request.args.get("credit_note_id") or request.args.get("crn_id") or "").strip()
 
-    # ✅ FIX: always assign credit_id
-    if mode == "new":
-        credit_id = generate_credit_note_id()
+    if credit_param:
+        credit_id = credit_param
+        if raw_mode is None or str(raw_mode).strip() == "":
+            mode = "view"
+        else:
+            mode = str(raw_mode).strip().lower()
     else:
-        credit_id = (request.args.get("credit_note_id") or "").strip()
-
-    print("Credit ID:", credit_id)  # debug
+        if raw_mode is None or str(raw_mode).strip() == "":
+            mode = "new"
+        else:
+            mode = str(raw_mode).strip().lower()
+        if mode == "new":
+            conn = None
+            cur = None
+            last_num_row = None
+            try:
+                conn = get_db_connection()
+                cur = conn.cursor()
+                _ensure_credit_notes_table(cur)
+                cur.execute(
+                    """
+                    SELECT COALESCE(
+                        MAX(CAST(SUBSTRING(credit_note_id FROM 'CRN-(\d+)$') AS INT)),
+                        0
+                    )
+                    FROM credit_notes
+                    """
+                )
+                last_num_row = cur.fetchone()
+            finally:
+                try:
+                    if cur:
+                        cur.close()
+                except Exception:
+                    pass
+                try:
+                    if conn:
+                        conn.close()
+                except Exception:
+                    pass
+            try:
+                new_num = int((last_num_row[0] if last_num_row else 0) or 0) + 1
+            except Exception as e:
+                print("generate_credit_note_id error:", e)
+                new_num = 1
+            credit_id = f"CRN-{str(new_num).zfill(3)}"
+        else:
+            credit_id = ""
 
     return render_template(
         "credit-new.html",
@@ -21143,42 +23311,7 @@ def new_credit_note():
     )
 
 
-# -------------------------------
-# AUTO GENERATE CREDIT NOTE ID
-# -------------------------------
-def generate_credit_note_id():
-    conn = get_db_connection()
-    cur = conn.cursor()
-
-    cur.execute("""
-        SELECT credit_note_id
-        FROM credit_notes
-        ORDER BY credit_note_id DESC
-        LIMIT 1
-    """)
-    last = cur.fetchone()
-
-    print("DB RESULT:", last)   
-
-    try:
-        if last and last[0]:
-            print("Last ID:", last[0])
-            last_num = int(last[0].split("-")[1])
-            new_num = last_num + 1
-        else:
-            print("No data found, starting from 1")
-            new_num = 1
-    except Exception as e:
-        print("ERROR:", e)
-        new_num = 1
-
-    new_id = f"CRN-{str(new_num).zfill(3)}"
-    print("Generated ID:", new_id)
-
-    return new_id
-
-@app.get("/api/invoices-credit")
-def get_invoices_credit():
+def _credit_invoice_data(invoice_id=None):
     last_err = None
     for _ in range(2):
         conn = None
@@ -21186,46 +23319,21 @@ def get_invoices_credit():
         try:
             conn = get_db_connection()
             cur = conn.cursor()
-            cur.execute("""
-                SELECT invoice_id
-                FROM invoices
-                ORDER BY id DESC
-            """)
-            rows = cur.fetchall()
-            invoice_list = [r[0] for r in rows]
-            return {"invoices": invoice_list}
-        except Exception as e:
-            last_err = e
-            if "SSL connection has been closed unexpectedly" not in str(e):
-                break
-        finally:
-            try:
-                if cur:
-                    cur.close()
-            except Exception:
-                pass
-            try:
-                if conn:
-                    conn.close()
-            except Exception:
-                pass
-    return jsonify({"invoices": [], "success": False, "message": str(last_err or "Failed to load invoices")}), 500
-
-
-@app.get("/api/invoice-details-credit/<invoice_id>")
-def get_invoice_details_credit(invoice_id):
-    last_err = None
-    for _ in range(2):
-        conn = None
-        cur = None
-        try:
-            conn = get_db_connection()
-            cur = conn.cursor()
+            if not invoice_id:
+                cur.execute("""
+                    SELECT invoice_id
+                    FROM invoices
+                    ORDER BY id DESC
+                """)
+                rows = cur.fetchall()
+                invoice_list = [r[0] for r in rows]
+                return {"invoices": invoice_list}
             cur.execute("""
                 SELECT i.invoice_id, i.customer_name, i.customer_id,
                        i.billing_address, i.phone, i.invoice_date,
                        i.due_date, i.payment_terms, i.status,
-                       i.payment_status, COALESCE(s.grand_total, 0)
+                       i.payment_status, COALESCE(s.grand_total, 0),
+                       COALESCE(s.amount_paid, 0), COALESCE(s.balance_due, 0)
                 FROM invoices i
                 LEFT JOIN invoice_summary s ON s.invoice_id = i.invoice_id
                 WHERE i.invoice_id = %s
@@ -21276,6 +23384,8 @@ def get_invoice_details_credit(invoice_id):
                     "status": row[8] or "",
                     "payment_status": row[9] or "",
                     "grand_total": float(row[10] or 0),
+                    "amount_paid": float(row[11] or 0),
+                    "balance_due": float(row[12] or 0),
                 },
                 "items": items
             })
@@ -21294,9 +23404,20 @@ def get_invoice_details_credit(invoice_id):
                     conn.close()
             except Exception:
                 pass
-
+    if not invoice_id:
+        return jsonify({"invoices": [], "success": False, "message": str(last_err or "Failed to load invoices")}), 500
     print(f"get_invoice_details_credit error: {last_err}")
     return jsonify({"success": False, "message": str(last_err)}), 500
+
+
+@app.get("/api/invoices-credit")
+def get_invoices_credit():
+    return _credit_invoice_data()
+
+
+@app.get("/api/invoice-details-credit/<invoice_id>")
+def get_invoice_details_credit(invoice_id):
+    return _credit_invoice_data(invoice_id)
 
 @app.get("/api/invoice-return-items/<invoice_id>")
 def get_return_items(invoice_id):
@@ -21312,7 +23433,10 @@ def get_return_items(invoice_id):
             queries = [
             """
             SELECT iri.product_name, iri.product_id, iri.return_quantity, iri.uom,
-                   iri.return_reason, iri.unit_price, 0 AS tax_percent, 0 AS discount, iri.total
+                   iri.return_reason, iri.unit_price,
+                   COALESCE(iri.tax_pct, 0) AS tax_percent,
+                   COALESCE(iri.disc_pct, 0) AS discount,
+                   iri.total
             FROM invoice_return_items iri
             INNER JOIN invoice_return ir ON ir.invoice_return_id = iri.invoice_return_id
             WHERE ir.invoice_id = %s
@@ -21380,6 +23504,11 @@ def get_return_items(invoice_id):
 
 
 def _ensure_credit_notes_table(cur):
+    """Ensure credit_notes exists. ALTERs run under SAVEPOINT so a timeout/lock error
+    cannot abort the outer transaction (which would break INSERT/UPDATE on this conn)."""
+    # Schema checks/ALTERs are expensive; run once per process.
+    if getattr(_ensure_credit_notes_table, "_checked", False):
+        return
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS credit_notes (
@@ -21406,14 +23535,152 @@ def _ensure_credit_notes_table(cur):
             refund_mode TEXT,
             refund_paid NUMERIC,
             refund_date DATE,
-            adjusted_invoice_reference TEXT,
             status TEXT DEFAULT 'Draft',
-            items_json JSONB DEFAULT '[]'::jsonb,
             created_at TIMESTAMP DEFAULT NOW(),
             updated_at TIMESTAMP DEFAULT NOW()
         )
         """
     )
+    _skip_audit_alters = False
+    try:
+        cur.execute(
+            """
+            SELECT COUNT(*)::int FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = 'credit_notes'
+              AND column_name IN ('created_at', 'updated_at')
+            """
+        )
+        _audit_cols = cur.fetchone()
+        if _audit_cols and int(_audit_cols[0] or 0) >= 2:
+            _skip_audit_alters = True
+    except Exception as _ex:
+        print(f"_ensure_credit_notes_table column probe: {_ex}")
+
+    if not _skip_audit_alters:
+        for _alter in (
+            "ALTER TABLE credit_notes ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()",
+            "ALTER TABLE credit_notes ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW()",
+        ):
+            cur.execute("SAVEPOINT cn_credit_schema")
+            try:
+                cur.execute(_alter)
+                cur.execute("RELEASE SAVEPOINT cn_credit_schema")
+            except Exception as _ex:
+                print(f"_ensure_credit_notes_table audit columns: {_ex}")
+                cur.execute("ROLLBACK TO SAVEPOINT cn_credit_schema")
+
+    # Keep refund_mode constraints aligned with current UI/API values.
+    cur.execute("SAVEPOINT cn_credit_refund_mode_schema")
+    try:
+        # Migrate legacy value before tightening the check constraint.
+        cur.execute(
+            """
+            UPDATE credit_notes
+            SET refund_mode = 'bank_transfer'
+            WHERE COALESCE(refund_mode, '') = 'bank'
+            """
+        )
+        cur.execute(
+            """
+            DO $$
+            DECLARE c RECORD;
+            BEGIN
+                FOR c IN
+                    SELECT conname
+                    FROM pg_constraint
+                    WHERE conrelid = 'credit_notes'::regclass
+                      AND contype = 'c'
+                      AND pg_get_constraintdef(oid) ILIKE '%refund_mode%'
+                LOOP
+                    EXECUTE format('ALTER TABLE credit_notes DROP CONSTRAINT IF EXISTS %I', c.conname);
+                END LOOP;
+
+                ALTER TABLE credit_notes
+                ADD CONSTRAINT credit_notes_refund_mode_check
+                CHECK (COALESCE(refund_mode, '') IN ('', 'cash', 'bank_transfer', 'upi', 'cheque'));
+            END $$;
+            """
+        )
+        cur.execute("RELEASE SAVEPOINT cn_credit_refund_mode_schema")
+    except Exception as _ex:
+        print(f"_ensure_credit_notes_table refund_mode constraint: {_ex}")
+        cur.execute("ROLLBACK TO SAVEPOINT cn_credit_refund_mode_schema")
+    _ensure_credit_notes_table._checked = True
+
+def _normalize_credit_note_status(value):
+    s = str(value or "").strip().lower()
+    if s in {"", "draft"}:
+        return "Draft"
+    if s == "submitted":
+        return "Submitted"
+    if s in {"cancelled", "canceled"}:
+        return "Cancelled"
+    return None
+
+def _ensure_credit_note_items_table(cur):
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS credit_note_items (
+            item_id SERIAL PRIMARY KEY,
+            credit_note_id VARCHAR(50) NOT NULL REFERENCES credit_notes(credit_note_id) ON DELETE CASCADE,
+            line_no INT,
+            product_id VARCHAR(100),
+            product_name VARCHAR(200),
+            description TEXT,
+            returned_qty NUMERIC(12,2) DEFAULT 0 CHECK (returned_qty >= 0),
+            uom VARCHAR(50),
+            unit_price NUMERIC(12,2) DEFAULT 0 CHECK (unit_price >= 0),
+            discount_percent NUMERIC(5,2) DEFAULT 0 CHECK (discount_percent >= 0),
+            tax_percent NUMERIC(5,2) DEFAULT 0 CHECK (tax_percent >= 0),
+            line_total NUMERIC(12,2) DEFAULT 0 CHECK (line_total >= 0),
+            return_reason TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    try:
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_credit_note_items_credit_note_id ON credit_note_items (credit_note_id)"
+        )
+    except Exception as _ex:
+        print(f"_ensure_credit_note_items_table index: {_ex}")
+    # Existing live tables may have been created before `line_no` was introduced.
+    # Add missing columns safely without breaking the current transaction.
+    for _alter in (
+        "ALTER TABLE credit_note_items ADD COLUMN IF NOT EXISTS line_no INT",
+        "ALTER TABLE credit_note_items ADD COLUMN IF NOT EXISTS description TEXT",
+        "ALTER TABLE credit_note_items ADD COLUMN IF NOT EXISTS return_reason TEXT",
+        "ALTER TABLE credit_note_items ADD COLUMN IF NOT EXISTS line_total NUMERIC(12,2) DEFAULT 0",
+    ):
+        cur.execute("SAVEPOINT cn_items_schema")
+        try:
+            cur.execute(_alter)
+            cur.execute("RELEASE SAVEPOINT cn_items_schema")
+        except Exception as _ex:
+            print(f"_ensure_credit_note_items_table alter: {_ex}")
+            cur.execute("ROLLBACK TO SAVEPOINT cn_items_schema")
+
+
+def _ensure_credit_note_activity_table(cur):
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS credit_note_activity (
+            activity_id SERIAL PRIMARY KEY,
+            credit_note_id VARCHAR(50) NOT NULL REFERENCES credit_notes(credit_note_id) ON DELETE CASCADE,
+            activity_type VARCHAR(20) NOT NULL CHECK (activity_type IN ('COMMENT', 'HISTORY')),
+            message TEXT NOT NULL,
+            created_by VARCHAR(100),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    try:
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_credit_note_activity_credit_note_id ON credit_note_activity (credit_note_id)"
+        )
+    except Exception as _ex:
+        print(f"_ensure_credit_note_activity_table index: {_ex}")
 
 
 @app.get("/api/credit-notes")
@@ -21422,6 +23689,10 @@ def get_credit_notes():
         conn = get_db_connection()
         cur = conn.cursor()
         _ensure_credit_notes_table(cur)
+        try:
+            conn.commit()
+        except Exception:
+            pass
         cur.execute("""
             SELECT
                 credit_note_id,
@@ -21439,12 +23710,13 @@ def get_credit_notes():
 
         items = []
         for r in rows:
+            status_norm = _normalize_credit_note_status(r[4]) or "Draft"
             items.append({
                 "crn_id": r[0] or "",
                 "invoice_ref_id": r[1] or "",
                 "customer_name": r[2] or "",
                 "credit_note_date": str(r[3]) if r[3] else "",
-                "status": r[4] or "Draft",
+                "status": status_norm,
                 "payment_status": r[5] or "Unpaid",
             })
 
@@ -21454,45 +23726,112 @@ def get_credit_notes():
         return jsonify({"success": False, "message": str(e)}), 500
 
 
-def _get_credit_note_row(credit_note_id):
-    conn = get_db_connection()
-    cur = conn.cursor()
-    _ensure_credit_notes_table(cur)
-    cur.execute("""
+def _get_credit_note_items(cur, credit_note_id):
+    cur.execute(
+        """
         SELECT
-            credit_note_id, credit_note_date, invoice_ref_id, created_by, branch, currency,
-            customer_name, customer_id, billing_address, phone, invoice_date, due_date,
-            payment_terms, invoice_status, payment_status, invoice_total, amount_paid,
-            balance_due, invoice_return_amount, balance_to_refund, refund_mode, refund_paid,
-            refund_date, adjusted_invoice_reference, status, items_json
-        FROM credit_notes
+            line_no, product_name, product_id, returned_qty, uom, return_reason,
+            unit_price, tax_percent, discount_percent, line_total
+        FROM credit_note_items
         WHERE credit_note_id = %s
-        LIMIT 1
-    """, (credit_note_id,))
-    row = cur.fetchone()
-    cur.close()
-    conn.close()
-    return row
+        ORDER BY COALESCE(line_no, 999999), item_id
+        """,
+        (credit_note_id,),
+    )
+    rows = cur.fetchall() or []
+    out = []
+    for r in rows:
+        out.append(
+            {
+                "sno": int(r[0]) if r[0] is not None else None,
+                "product_name": r[1] or "",
+                "product_id": r[2] or "",
+                "returned_qty": float(r[3] or 0),
+                "uom": r[4] or "",
+                "reason": r[5] or "",
+                "unit_price": float(r[6] or 0),
+                "tax_percent": float(r[7] or 0),
+                "discount": float(r[8] or 0),
+                "total": float(r[9] or 0),
+            }
+        )
+    return out
 
 
 @app.get("/api/credit-notes/<credit_note_id>")
 def get_credit_note_by_id(credit_note_id):
     try:
-        row = _get_credit_note_row(credit_note_id)
-
+        conn = get_db_connection()
+        cur = conn.cursor()
+        _ensure_credit_notes_table(cur)
+        _ensure_credit_note_items_table(cur)
+        _ensure_credit_note_activity_table(cur)
+        try:
+            conn.commit()
+        except Exception:
+            pass
+        cur.execute(
+            """
+            SELECT
+                credit_note_id, credit_note_date, invoice_ref_id, created_by, branch, currency,
+                customer_name, customer_id, billing_address, phone, invoice_date, due_date,
+                payment_terms, invoice_status, payment_status, invoice_total, amount_paid,
+                balance_due, invoice_return_amount, balance_to_refund, refund_mode, refund_paid,
+                refund_date, status,
+                created_at, updated_at
+            FROM credit_notes
+            WHERE credit_note_id = %s
+            LIMIT 1
+            """,
+            (credit_note_id,),
+        )
+        row = cur.fetchone()
         if not row:
+            cur.close()
+            conn.close()
             return jsonify({"success": False, "message": "Credit note not found"}), 404
-
-        raw_items = row[25]
-        if isinstance(raw_items, list):
-            items = raw_items
-        elif isinstance(raw_items, str):
+        items = _get_credit_note_items(cur, credit_note_id)
+        cur.execute(
+            """
+            SELECT activity_type, message, created_by, created_at
+            FROM credit_note_activity
+            WHERE credit_note_id = %s
+            ORDER BY created_at DESC, activity_id DESC
+            """,
+            (credit_note_id,),
+        )
+        comments_rows = cur.fetchall() or []
+        comments = []
+        for activity_type, message, created_by, created_at in comments_rows:
+            msg = str(message or "").strip()
+            if not msg:
+                continue
+            at_ms = None
             try:
-                items = json.loads(raw_items)
+                if created_at and hasattr(created_at, "timestamp"):
+                    at_ms = int(created_at.timestamp() * 1000)
             except Exception:
-                items = []
-        else:
-            items = []
+                at_ms = None
+            comments.append(
+                {
+                    "type": activity_type or "COMMENT",
+                    "user": str(created_by or "User").strip() or "User",
+                    "message": msg,
+                    "at": at_ms,
+                }
+            )
+        cur.close()
+        conn.close()
+
+        def _ts_cell(v):
+            if v is None:
+                return ""
+            if hasattr(v, "isoformat"):
+                try:
+                    return v.isoformat()
+                except Exception:
+                    return str(v)
+            return str(v)
 
         return jsonify({
             "success": True,
@@ -21520,9 +23859,11 @@ def get_credit_note_by_id(credit_note_id):
                 "refund_mode": row[20] or "",
                 "refund_paid": float(row[21] or 0),
                 "refund_date": str(row[22]) if row[22] else "",
-                "adjusted_invoice_reference": row[23] or "",
-                "status": row[24] or "Draft",
+                "status": _normalize_credit_note_status(row[23]) or "Draft",
                 "items": items,
+                "comments": comments if isinstance(comments, list) else [],
+                "created_at": _ts_cell(row[24]) if len(row) > 24 else "",
+                "updated_at": _ts_cell(row[25]) if len(row) > 25 else "",
             }
         })
     except Exception as e:
@@ -21668,11 +24009,13 @@ def generate_credit_note_pdf_bytes(cn):
 
     summary_data = [
         [Paragraph("<b>Invoice Total:</b>", label_style), Paragraph(s(cn.get("invoice_total"), "0"), value_style)],
-        [Paragraph("<b>Amount Paid:</b>", label_style), Paragraph(s(cn.get("amount_paid"), "0"), value_style)],
+        [Paragraph("<b>Amount Paid by Customer:</b>", label_style), Paragraph(s(cn.get("amount_paid"), "0"), value_style)],
         [Paragraph("<b>Balance Due:</b>", label_style), Paragraph(s(cn.get("balance_due"), "0"), value_style)],
         [Paragraph("<b>Invoice Return Amount:</b>", label_style), Paragraph(s(cn.get("invoice_return_amount"), "0"), value_style)],
         [Paragraph("<b>Balance to Refund:</b>", label_style), Paragraph(s(cn.get("balance_to_refund"), "0"), value_style)],
+        [Paragraph("<b>Refund Mode:</b>", label_style), Paragraph(s(cn.get("refund_mode")), value_style)],
         [Paragraph("<b>Refund Paid:</b>", label_style), Paragraph(s(cn.get("refund_paid"), "0"), value_style)],
+        [Paragraph("<b>Refund Date:</b>", label_style), Paragraph(s(cn.get("refund_date")), value_style)],
     ]
     summary_table = Table(summary_data, colWidths=[190, 120])
     summary_table.setStyle(TableStyle([
@@ -21705,20 +24048,37 @@ def generate_credit_note_pdf_bytes(cn):
 @app.get("/api/credit-notes/<credit_note_id>/pdf")
 def credit_note_pdf(credit_note_id):
     try:
-        row = _get_credit_note_row(credit_note_id)
+        conn = get_db_connection()
+        cur = conn.cursor()
+        _ensure_credit_notes_table(cur)
+        _ensure_credit_note_items_table(cur)
+        try:
+            conn.commit()
+        except Exception:
+            pass
+        cur.execute(
+            """
+            SELECT
+                credit_note_id, credit_note_date, invoice_ref_id, created_by, branch, currency,
+                customer_name, customer_id, billing_address, phone, invoice_date, due_date,
+                payment_terms, invoice_status, payment_status, invoice_total, amount_paid,
+                balance_due, invoice_return_amount, balance_to_refund, refund_mode, refund_paid,
+                refund_date, status,
+                created_at, updated_at
+            FROM credit_notes
+            WHERE credit_note_id = %s
+            LIMIT 1
+            """,
+            (credit_note_id,),
+        )
+        row = cur.fetchone()
         if not row:
+            cur.close()
+            conn.close()
             return jsonify({"success": False, "message": "Credit note not found"}), 404
-
-        raw_items = row[25]
-        if isinstance(raw_items, list):
-            items = raw_items
-        elif isinstance(raw_items, str):
-            try:
-                items = json.loads(raw_items)
-            except Exception:
-                items = []
-        else:
-            items = []
+        items = _get_credit_note_items(cur, credit_note_id)
+        cur.close()
+        conn.close()
 
         cn = {
             "credit_note_id": row[0] or "",
@@ -21744,8 +24104,7 @@ def credit_note_pdf(credit_note_id):
             "refund_mode": row[20] or "",
             "refund_paid": float(row[21] or 0),
             "refund_date": str(row[22]) if row[22] else "",
-            "adjusted_invoice_reference": row[23] or "",
-            "status": row[24] or "Draft",
+            "status": row[23] or "Draft",
             "items": items,
         }
 
@@ -21764,25 +24123,93 @@ def credit_note_pdf(credit_note_id):
 @app.post("/api/credit-notes/<credit_note_id>/email")
 def credit_note_email(credit_note_id):
     try:
-        row = _get_credit_note_row(credit_note_id)
-        if not row:
-            return jsonify({"success": False, "message": "Credit note not found"}), 404
-
         payload = request.get_json(silent=True) or {}
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+        _ensure_credit_notes_table(cur)
+        _ensure_credit_note_items_table(cur)
+        try:
+            conn.commit()
+        except Exception:
+            pass
+        cur.execute(
+            """
+            SELECT
+                credit_note_id, credit_note_date, invoice_ref_id, created_by, branch, currency,
+                customer_name, customer_id, billing_address, phone, invoice_date, due_date,
+                payment_terms, invoice_status, payment_status, invoice_total, amount_paid,
+                balance_due, invoice_return_amount, balance_to_refund, refund_mode, refund_paid,
+                refund_date, status,
+                created_at, updated_at
+            FROM credit_notes
+            WHERE credit_note_id = %s
+            LIMIT 1
+            """,
+            (credit_note_id,),
+        )
+        row = cur.fetchone()
+        if not row:
+            cur.close()
+            conn.close()
+            return jsonify({"success": False, "message": "Credit note not found"}), 404
         recipient = (payload.get("email") or "").strip()
         if not recipient:
-            return jsonify({"success": False, "message": "Recipient email required"}), 400
+            invoice_ref_id = (row[2] or "").strip()
+            customer_id = (row[7] or "").strip()
+            customer_row = None
 
-        raw_items = row[25]
-        if isinstance(raw_items, list):
-            items = raw_items
-        elif isinstance(raw_items, str):
-            try:
-                items = json.loads(raw_items)
-            except Exception:
-                items = []
-        else:
-            items = []
+            # 1) Exact recipient from linked invoice master email (if maintained there).
+            if invoice_ref_id:
+                customer_row = fetch_one(
+                    """
+                    SELECT i.email
+                    FROM invoices i
+                    WHERE i.invoice_id = %s
+                      AND COALESCE(TRIM(i.email), '') <> ''
+                    LIMIT 1
+                    """,
+                    (invoice_ref_id,),
+                )
+
+            # 2) Exact recipient from invoice -> customer join.
+            if (not customer_row) and invoice_ref_id:
+                customer_row = fetch_one(
+                    """
+                    SELECT c.email
+                    FROM invoices i
+                    JOIN customers c ON c.customer_id = i.customer_id
+                    WHERE i.invoice_id = %s
+                      AND COALESCE(TRIM(c.email), '') <> ''
+                    LIMIT 1
+                    """,
+                    (invoice_ref_id,),
+                )
+
+            # 3) Fallback to credit note's customer_id only.
+            if (not customer_row) and customer_id:
+                customer_row = fetch_one(
+                    """
+                    SELECT email
+                    FROM customers
+                    WHERE customer_id = %s
+                      AND COALESCE(TRIM(email), '') <> ''
+                    LIMIT 1
+                    """,
+                    (customer_id,),
+                )
+            recipient = ((customer_row or {}).get("email") or "").strip()
+        if not recipient:
+            return jsonify(
+                {
+                    "success": False,
+                    "message": "Customer email not found for this invoice/customer. Update email in invoice or customer master.",
+                }
+            ), 400
+
+        items = _get_credit_note_items(cur, credit_note_id)
+        cur.close()
+        conn.close()
 
         cn = {
             "credit_note_id": row[0] or "",
@@ -21808,8 +24235,7 @@ def credit_note_email(credit_note_id):
             "refund_mode": row[20] or "",
             "refund_paid": float(row[21] or 0),
             "refund_date": str(row[22]) if row[22] else "",
-            "adjusted_invoice_reference": row[23] or "",
-            "status": row[24] or "Draft",
+            "status": row[23] or "Draft",
             "items": items,
         }
 
@@ -21831,15 +24257,18 @@ def credit_note_email(credit_note_id):
         )
         if not ok:
             return jsonify({"success": False, "message": "Email sending failed"}), 500
-        return jsonify({"success": True, "message": "Email sent successfully"})
+        return jsonify({"success": True, "message": f"Email sent successfully to {recipient}"})
     except Exception as e:
         print(f"credit_note_email error: {e}")
         return jsonify({"success": False, "message": str(e)}), 500
 
 
-@app.post("/api/credit-notes")
-def save_credit_note():
+def persist_credit_note_from_dict(data):
+    """Insert or update credit_notes from a payload dict. Do not nest Flask request contexts."""
     try:
+        if not isinstance(data, dict):
+            data = {}
+
         def _to_num(v):
             try:
                 if v is None:
@@ -21866,34 +24295,151 @@ def save_credit_note():
             if refund_paid > refundable_base:
                 refund_paid = refundable_base
 
-            balance_due = max(invoice_total - amount_paid, 0.0)
+            # Balance Due = Invoice Total - Invoice Return Amount - Amount Paid
+            balance_due = max(invoice_total - invoice_return_amount - amount_paid, 0.0)
             balance_to_refund = max(refundable_base - refund_paid, 0.0)
             return invoice_total, amount_paid, balance_due, invoice_return_amount, balance_to_refund, refund_paid
 
-        data = request.get_json(silent=True) or {}
+        def _resolve_credit_note_email(cur, invoice_ref_id, customer_id):
+            invoice_ref_id = (invoice_ref_id or "").strip()
+            customer_id = (customer_id or "").strip()
+            row = None
+            if invoice_ref_id:
+                row = fetch_one(
+                    """
+                    SELECT i.email
+                    FROM invoices i
+                    WHERE i.invoice_id = %s
+                      AND COALESCE(TRIM(i.email), '') <> ''
+                    LIMIT 1
+                    """,
+                    (invoice_ref_id,),
+                )
+            if (not row) and invoice_ref_id:
+                row = fetch_one(
+                    """
+                    SELECT c.email
+                    FROM invoices i
+                    JOIN customers c ON c.customer_id = i.customer_id
+                    WHERE i.invoice_id = %s
+                      AND COALESCE(TRIM(c.email), '') <> ''
+                    LIMIT 1
+                    """,
+                    (invoice_ref_id,),
+                )
+            if (not row) and customer_id:
+                row = fetch_one(
+                    """
+                    SELECT email
+                    FROM customers
+                    WHERE customer_id = %s
+                      AND COALESCE(TRIM(email), '') <> ''
+                    LIMIT 1
+                    """,
+                    (customer_id,),
+                )
+            return ((row or {}).get("email") or "").strip()
+
         credit_note_id = (data.get("credit_note_id") or "").strip()
         if not credit_note_id:
             return jsonify({"success": False, "message": "credit_note_id is required"}), 400
 
+        # Validate Created By: 3-30 chars, letters and spaces only.
+        created_by_raw = str(data.get("created_by") or "").strip()
+        created_by = re.sub(r"[^A-Za-z ]+", "", created_by_raw)
+        created_by = re.sub(r"\s+", " ", created_by).strip()
+        if not created_by or len(created_by) < 3 or len(created_by) > 30 or not re.fullmatch(r"[A-Za-z ]+", created_by):
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "message": "Created By must be 3 to 30 characters (letters and spaces only).",
+                    }
+                ),
+                400,
+            )
+        data["created_by"] = created_by
+
+        # Validate and normalize refund mode values server-side.
+        refund_mode = str(data.get("refund_mode") or "").strip().lower()
+        if refund_mode == "bank":
+            refund_mode = "bank_transfer"
+        if refund_mode not in {"", "cash", "bank_transfer", "upi", "cheque"}:
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "message": "Invalid refund mode. Allowed: cash, bank_transfer, upi, cheque.",
+                    }
+                ),
+                400,
+            )
+        data["refund_mode"] = refund_mode
+
+        status_norm = _normalize_credit_note_status(data.get("status"))
+        if status_norm is None:
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "message": "Invalid status. Allowed values are Draft, Submitted, Cancelled.",
+                    }
+                ),
+                400,
+            )
+        data["status"] = status_norm
+
         invoice_total, amount_paid, balance_due, invoice_return_amount, balance_to_refund, refund_paid = _normalized_amounts(data)
+        comments_norm = []
+        raw_comments = data.get("comments")
+        if isinstance(raw_comments, list):
+            now_ms = int(time.time() * 1000)
+            for c in raw_comments[:200]:
+                if not isinstance(c, dict):
+                    continue
+                u = str(c.get("user") or c.get("author") or "").strip() or "User"
+                m = str(c.get("message") or c.get("text") or c.get("comment") or "").strip()
+                if not m:
+                    continue
+                if len(m) > 4000:
+                    m = m[:4000]
+                at = c.get("at")
+                try:
+                    at_i = int(float(at)) if at is not None else None
+                except (TypeError, ValueError):
+                    at_i = None
+                if at_i is None or at_i <= 0:
+                    at_i = now_ms
+                comments_norm.append({"user": u, "message": m, "at": at_i})
+        raw_items = data.get("items")
+        items_norm = raw_items if isinstance(raw_items, list) else []
 
         conn = get_db_connection()
         cur = conn.cursor()
         _ensure_credit_notes_table(cur)
+        # Existing live schemas may miss this optional snapshot column.
+        cur.execute("ALTER TABLE credit_notes ADD COLUMN IF NOT EXISTS email VARCHAR(100)")
+        _ensure_credit_note_items_table(cur)
+        _ensure_credit_note_activity_table(cur)
+        email_value = (data.get("email") or "").strip() or _resolve_credit_note_email(
+            cur,
+            data.get("invoice_ref_id") or "",
+            data.get("customer_id") or "",
+        )
 
         cur.execute("""
             INSERT INTO credit_notes (
                 credit_note_id, credit_note_date, invoice_ref_id, created_by, branch, currency,
-                customer_name, customer_id, billing_address, phone, invoice_date, due_date,
+                customer_name, customer_id, email, billing_address, phone, invoice_date, due_date,
                 payment_terms, invoice_status, payment_status, invoice_total, amount_paid,
                 balance_due, invoice_return_amount, balance_to_refund, refund_mode, refund_paid,
-                refund_date, adjusted_invoice_reference, status, items_json, updated_at
+                refund_date, status, updated_at
             ) VALUES (
                 %s, NULLIF(%s, '')::date, %s, %s, %s, %s,
-                %s, %s, %s, %s, NULLIF(%s, '')::date, NULLIF(%s, '')::date,
+                %s, %s, %s, %s, %s, NULLIF(%s, '')::date, NULLIF(%s, '')::date,
                 %s, %s, %s, %s, %s,
                 %s, %s, %s, %s, %s,
-                NULLIF(%s, '')::date, %s, %s, %s::jsonb, NOW()
+                NULLIF(%s, '')::date, %s, NOW()
             )
             ON CONFLICT (credit_note_id) DO UPDATE SET
                 credit_note_date = EXCLUDED.credit_note_date,
@@ -21903,6 +24449,7 @@ def save_credit_note():
                 currency = EXCLUDED.currency,
                 customer_name = EXCLUDED.customer_name,
                 customer_id = EXCLUDED.customer_id,
+                email = EXCLUDED.email,
                 billing_address = EXCLUDED.billing_address,
                 phone = EXCLUDED.phone,
                 invoice_date = EXCLUDED.invoice_date,
@@ -21918,9 +24465,7 @@ def save_credit_note():
                 refund_mode = EXCLUDED.refund_mode,
                 refund_paid = EXCLUDED.refund_paid,
                 refund_date = EXCLUDED.refund_date,
-                adjusted_invoice_reference = EXCLUDED.adjusted_invoice_reference,
                 status = EXCLUDED.status,
-                items_json = EXCLUDED.items_json,
                 updated_at = NOW()
         """, (
             credit_note_id,
@@ -21931,6 +24476,7 @@ def save_credit_note():
             data.get("currency") or "INR",
             data.get("customer_name") or "",
             data.get("customer_id") or "",
+            email_value,
             data.get("billing_address") or "",
             data.get("phone") or "",
             data.get("invoice_date") or "",
@@ -21946,10 +24492,55 @@ def save_credit_note():
             data.get("refund_mode") or "",
             refund_paid,
             data.get("refund_date") or "",
-            data.get("adjusted_invoice_reference") or "",
             data.get("status") or "Draft",
-            json.dumps(data.get("items") or []),
         ))
+
+        cur.execute("DELETE FROM credit_note_items WHERE credit_note_id = %s", (credit_note_id,))
+        for idx, item in enumerate(items_norm, start=1):
+            if not isinstance(item, dict):
+                continue
+            cur.execute(
+                """
+                INSERT INTO credit_note_items (
+                    credit_note_id, line_no, product_id, product_name, description,
+                    returned_qty, uom, unit_price, discount_percent, tax_percent, line_total, return_reason
+                ) VALUES (
+                    %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s, %s
+                )
+                """,
+                (
+                    credit_note_id,
+                    idx,
+                    str(item.get("product_id") or "").strip(),
+                    str(item.get("product_name") or "").strip(),
+                    str(item.get("description") or "").strip(),
+                    max(_to_num(item.get("returned_qty") if item.get("returned_qty") is not None else item.get("return_qty")), 0.0),
+                    str(item.get("uom") or "").strip(),
+                    max(_to_num(item.get("unit_price")), 0.0),
+                    max(_to_num(item.get("discount") if item.get("discount") is not None else item.get("discount_percent")), 0.0),
+                    max(_to_num(item.get("tax_percent")), 0.0),
+                    max(_to_num(item.get("total") if item.get("total") is not None else item.get("line_total")), 0.0),
+                    str(item.get("reason") if item.get("reason") is not None else item.get("return_reason") or "").strip(),
+                ),
+            )
+
+        cur.execute(
+            "DELETE FROM credit_note_activity WHERE credit_note_id = %s AND activity_type IN ('COMMENT','HISTORY')",
+            (credit_note_id,),
+        )
+        for c in comments_norm:
+            user = str(c.get("user") or "User").strip() or "User"
+            msg = str(c.get("message") or "").strip()
+            if not msg:
+                continue
+            cur.execute(
+                """
+                INSERT INTO credit_note_activity (credit_note_id, activity_type, message, created_by, created_at)
+                VALUES (%s, 'COMMENT', %s, %s, NOW())
+                """,
+                (credit_note_id, msg, user),
+            )
         conn.commit()
         cur.close()
         conn.close()
@@ -21957,6 +24548,11 @@ def save_credit_note():
     except Exception as e:
         print(f"save_credit_note error: {e}")
         return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.post("/api/credit-notes")
+def save_credit_note():
+    return persist_credit_note_from_dict(request.get_json(silent=True) or {})
 
 
 @app.post("/api/credit-notes/<credit_note_id>/mark-paid")
@@ -21988,13 +24584,27 @@ def mark_credit_note_paid(credit_note_id):
             if refund_paid > refundable_base:
                 refund_paid = refundable_base
 
-            balance_due = max(invoice_total - amount_paid, 0.0)
+            # Balance Due = Invoice Total - Invoice Return Amount - Amount Paid
+            balance_due = max(invoice_total - invoice_return_amount - amount_paid, 0.0)
             balance_to_refund = max(refundable_base - refund_paid, 0.0)
             return amount_paid, balance_due, invoice_return_amount, balance_to_refund, refund_paid
 
         data = request.get_json(silent=True) or {}
+        # Validate Created By: keep consistent with draft save validation.
+        created_by_raw = str(data.get("created_by") or "").strip()
+        created_by = re.sub(r"[^A-Za-z ]+", "", created_by_raw)
+        created_by = re.sub(r"\s+", " ", created_by).strip()
+        if not created_by or len(created_by) < 3 or len(created_by) > 30 or not re.fullmatch(r"[A-Za-z ]+", created_by):
+            return jsonify({"success": False, "message": "Created By must be 3 to 30 characters (letters and spaces only)."}), 400
+        data["created_by"] = created_by
+        refund_mode = str(data.get("refund_mode") or "").strip().lower()
+        if refund_mode == "bank":
+            refund_mode = "bank_transfer"
+        if refund_mode not in {"", "cash", "bank_transfer", "upi", "cheque"}:
+            return jsonify({"success": False, "message": "Invalid refund mode. Allowed: cash, bank_transfer, upi, cheque."}), 400
+        data["refund_mode"] = refund_mode
         data["credit_note_id"] = credit_note_id
-        data["status"] = "Approved"
+        data["status"] = "Submitted"
         data["payment_status"] = "Paid"
         amount_paid, balance_due, invoice_return_amount, balance_to_refund, refund_paid = _normalized_amounts(data)
 
@@ -22010,12 +24620,7 @@ def mark_credit_note_paid(credit_note_id):
         conn.close()
 
         if not exists:
-            with app.test_request_context(
-                "/api/credit-notes",
-                method="POST",
-                json=data,
-            ):
-                return save_credit_note()
+            return persist_credit_note_from_dict(data)
 
         conn = get_db_connection()
         cur = conn.cursor()
@@ -22023,7 +24628,7 @@ def mark_credit_note_paid(credit_note_id):
         cur.execute("""
             UPDATE credit_notes
             SET
-                status = 'Approved',
+                status = 'Submitted',
                 payment_status = 'Paid',
                 amount_paid = %s,
                 balance_due = %s,
@@ -22032,7 +24637,6 @@ def mark_credit_note_paid(credit_note_id):
                 refund_mode = %s,
                 refund_paid = %s,
                 refund_date = NULLIF(%s, '')::date,
-                adjusted_invoice_reference = %s,
                 updated_at = NOW()
             WHERE credit_note_id = %s
         """, (
@@ -22043,15 +24647,475 @@ def mark_credit_note_paid(credit_note_id):
             data.get("refund_mode") or "",
             refund_paid,
             data.get("refund_date") or "",
-            data.get("adjusted_invoice_reference") or "",
             credit_note_id,
         ))
         conn.commit()
         cur.close()
         conn.close()
-        return jsonify({"success": True, "credit_note_id": credit_note_id, "status": "Approved"})
+        return jsonify({"success": True, "credit_note_id": credit_note_id, "status": "Submitted"})
     except Exception as e:
         print(f"mark_credit_note_paid error: {e}")
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+def _ensure_credit_note_attachment_table(cur=None):
+    # Schema checks/ALTERs are expensive; run once per process.
+    if getattr(_ensure_credit_note_attachment_table, "_checked", False):
+        return
+    try:
+        os.makedirs(os.path.join(UPLOAD_FOLDER, "credit_note_attachments"), exist_ok=True)
+    except OSError:
+        pass
+    own_conn = None
+    own_cur = None
+    if cur is None:
+        own_conn = get_db_connection()
+        own_cur = own_conn.cursor()
+        cur = own_cur
+    _ensure_credit_notes_table(cur)
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS credit_note_attachments (
+            id SERIAL PRIMARY KEY,
+            credit_note_id TEXT NOT NULL,
+            file_name TEXT NOT NULL,
+            file_path TEXT NOT NULL,
+            uploaded_at TIMESTAMP DEFAULT NOW()
+        )
+        """
+    )
+    try:
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_credit_note_attachments_cnid ON credit_note_attachments (credit_note_id)"
+        )
+    except Exception as _ex:
+        print(f"credit_note_attachments index: {_ex}")
+    cur.execute("SAVEPOINT cn_attach_fk_schema")
+    try:
+        cur.execute(
+            """
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM pg_constraint
+                    WHERE conrelid = 'credit_note_attachments'::regclass
+                      AND contype = 'f'
+                      AND conname = 'credit_note_attachments_credit_note_id_fkey'
+                ) THEN
+                    ALTER TABLE credit_note_attachments
+                    ADD CONSTRAINT credit_note_attachments_credit_note_id_fkey
+                    FOREIGN KEY (credit_note_id)
+                    REFERENCES credit_notes(credit_note_id)
+                    ON DELETE CASCADE
+                    NOT VALID;
+                END IF;
+            END $$;
+            """
+        )
+        cur.execute("RELEASE SAVEPOINT cn_attach_fk_schema")
+    except Exception as _ex:
+        print(f"_ensure_credit_note_attachment_table fk: {_ex}")
+        cur.execute("ROLLBACK TO SAVEPOINT cn_attach_fk_schema")
+    # Backward-compatible schema upgrades for older environments.
+    for _alter in (
+        "ALTER TABLE credit_note_attachments ADD COLUMN IF NOT EXISTS file_name TEXT",
+        "ALTER TABLE credit_note_attachments ADD COLUMN IF NOT EXISTS file_path TEXT",
+        "ALTER TABLE credit_note_attachments ADD COLUMN IF NOT EXISTS uploaded_at TIMESTAMP DEFAULT NOW()",
+    ):
+        cur.execute("SAVEPOINT cn_attach_schema")
+        try:
+            cur.execute(_alter)
+            cur.execute("RELEASE SAVEPOINT cn_attach_schema")
+        except Exception as _ex:
+            print(f"_ensure_credit_note_attachment_table alter: {_ex}")
+            cur.execute("ROLLBACK TO SAVEPOINT cn_attach_schema")
+
+    # If legacy columns exist, copy data into the canonical columns.
+    def _column_exists(col_name):
+        cur.execute(
+            """
+            SELECT 1
+            FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = 'credit_note_attachments'
+              AND column_name = %s
+            LIMIT 1
+            """,
+            (col_name,),
+        )
+        return cur.fetchone() is not None
+
+    try:
+        if _column_exists("original_filename"):
+            cur.execute(
+                """
+                UPDATE credit_note_attachments
+                SET file_name = COALESCE(NULLIF(file_name, ''), original_filename)
+                WHERE COALESCE(file_name, '') = ''
+                """
+            )
+        if _column_exists("filename"):
+            cur.execute(
+                """
+                UPDATE credit_note_attachments
+                SET file_name = COALESCE(NULLIF(file_name, ''), filename)
+                WHERE COALESCE(file_name, '') = ''
+                """
+            )
+        if _column_exists("stored_filename"):
+            cur.execute(
+                """
+                UPDATE credit_note_attachments
+                SET file_path = COALESCE(NULLIF(file_path, ''), stored_filename)
+                WHERE COALESCE(file_path, '') = ''
+                """
+            )
+    except Exception as _ex:
+        print(f"_ensure_credit_note_attachment_table backfill: {_ex}")
+    if own_conn is not None:
+        try:
+            _ensure_credit_notes_table(cur)
+            own_conn.commit()
+        finally:
+            try:
+                own_cur.close()
+            except Exception:
+                pass
+            try:
+                own_conn.close()
+            except Exception:
+                pass
+    _ensure_credit_note_attachment_table._checked = True
+
+
+@app.post("/api/cn-upload-attachment")
+def cn_upload_attachment():
+    """Upload attachment for a saved credit note (same rules as delivery note return)."""
+    try:
+        if "file" not in request.files:
+            return jsonify({"success": False, "error": "No file provided"}), 400
+        file = request.files["file"]
+        credit_note_id = (request.form.get("credit_note_id") or "").strip()
+        if not credit_note_id:
+            return jsonify({"success": False, "error": "credit_note_id required"}), 400
+        if file.filename == "":
+            return jsonify({"success": False, "error": "No file selected"}), 400
+
+        file.seek(0, os.SEEK_END)
+        file_length = file.tell()
+        file.seek(0)
+        if file_length > MAX_FILE_SIZE_BYTES:
+            return jsonify(
+                {"success": False, "error": f"File size exceeds {MAX_FILE_SIZE_MB} MB"}
+            ), 400
+        if not allowed_file(file.filename):
+            return jsonify(
+                {
+                    "success": False,
+                    "error": f'File type not allowed. Allowed: {", ".join(ALLOWED_EXTENSIONS)}',
+                }
+            ), 400
+
+        _ensure_credit_note_attachment_table()
+
+        hdr = fetch_one(
+            "SELECT 1 AS ok FROM credit_notes WHERE credit_note_id = %s",
+            (credit_note_id,),
+        )
+        if not hdr:
+            return jsonify(
+                {
+                    "success": False,
+                    "error": "Save the credit note as draft first, then attach files.",
+                }
+            ), 400
+
+        cnt_row = fetch_one(
+            """
+            SELECT COUNT(*)::int AS c
+            FROM credit_note_attachments
+            WHERE credit_note_id = %s
+            """,
+            (credit_note_id,),
+        )
+        current_count = int((cnt_row or {}).get("c") or 0)
+        if current_count >= MAX_ATTACHMENTS_PER_QUOTATION:
+            return jsonify(
+                {
+                    "success": False,
+                    "error": f"Maximum {MAX_ATTACHMENTS_PER_QUOTATION} files allowed per credit note",
+                }
+            ), 400
+
+        file_ext = file.filename.rsplit(".", 1)[1].lower() if "." in file.filename else ""
+        unique_filename = (
+            f"{credit_note_id}_{uuid.uuid4().hex}.{file_ext}" if file_ext else f"{credit_note_id}_{uuid.uuid4().hex}"
+        )
+        abs_path = os.path.join(os.path.join(UPLOAD_FOLDER, "credit_note_attachments"), unique_filename)
+        file.save(abs_path)
+
+        row = None
+        conn = get_db_connection()
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                _ensure_credit_note_attachment_table(cur)
+                cur.execute(
+                    """
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_schema = current_schema()
+                      AND table_name = 'credit_note_attachments'
+                    """
+                )
+                existing_cols = {str(r.get("column_name") or "").strip() for r in (cur.fetchall() or [])}
+
+                insert_values = {
+                    "credit_note_id": credit_note_id,
+                    "uploaded_at": datetime.now(),
+                }
+                # Canonical schema
+                if "file_name" in existing_cols:
+                    insert_values["file_name"] = file.filename
+                if "file_path" in existing_cols:
+                    insert_values["file_path"] = unique_filename
+                # Legacy schema variants
+                if "original_filename" in existing_cols:
+                    insert_values["original_filename"] = file.filename
+                if "filename" in existing_cols:
+                    insert_values["filename"] = file.filename
+                if "stored_filename" in existing_cols:
+                    insert_values["stored_filename"] = unique_filename
+                if "size" in existing_cols:
+                    insert_values["size"] = int(file_length)
+                if "file_size" in existing_cols:
+                    insert_values["file_size"] = int(file_length)
+                if "uploaded_by" in existing_cols:
+                    insert_values["uploaded_by"] = (session.get("user") or "system")
+
+                cols = list(insert_values.keys())
+                placeholders = ", ".join(["%s"] * len(cols))
+                sql_cols = ", ".join(cols)
+                cur.execute(
+                    f"INSERT INTO credit_note_attachments ({sql_cols}) VALUES ({placeholders}) RETURNING id",
+                    tuple(insert_values[c] for c in cols),
+                )
+                row = cur.fetchone()
+            conn.commit()
+        except Exception:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            if os.path.isfile(abs_path):
+                try:
+                    os.remove(abs_path)
+                except OSError:
+                    pass
+            raise
+        finally:
+            conn.close()
+
+        new_id = row["id"] if row else None
+        return jsonify(
+            {
+                "success": True,
+                "attachment": {
+                    "id": new_id,
+                    "original_filename": file.filename,
+                    "stored_filename": unique_filename,
+                    "size": file_length,
+                    "upload_date": datetime.now().isoformat(),
+                },
+            }
+        )
+    except Exception as e:
+        print(traceback.format_exc())
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.get("/api/cn-attachments/<credit_note_id>")
+def cn_get_attachments(credit_note_id):
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        _ensure_credit_note_attachment_table(cur)
+        cur.execute(
+            """
+            SELECT id, file_name, file_path, uploaded_at
+            FROM credit_note_attachments
+            WHERE credit_note_id = %s
+            ORDER BY id ASC
+            """,
+            (credit_note_id,),
+        )
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+    except Exception as e:
+        print(f"cn_get_attachments: {e}")
+        return jsonify({"success": False, "attachments": [], "error": str(e)}), 500
+
+    attachments = []
+    for r in rows or []:
+        rid, fname, fpath, ts = r[0], r[1], r[2], r[3]
+        tstr = ""
+        if ts is not None:
+            if hasattr(ts, "strftime"):
+                tstr = ts.strftime("%Y-%m-%d %H:%M:%S")
+            else:
+                tstr = str(ts)
+        rel = os.path.basename(str(fpath or ""))
+        sz = 0
+        ap = os.path.join(os.path.join(UPLOAD_FOLDER, "credit_note_attachments"), rel)
+        if rel and os.path.isfile(ap):
+            try:
+                sz = os.path.getsize(ap)
+            except OSError:
+                sz = 0
+        attachments.append(
+            {
+                "id": rid,
+                "original_filename": fname or "",
+                "size": sz,
+                "upload_date": tstr or "—",
+            }
+        )
+    return jsonify({"success": True, "attachments": attachments})
+
+
+def _cn_serve_attachment(att_id, as_download):
+    try:
+        att_id = int(str(att_id).strip())
+    except (TypeError, ValueError):
+        return jsonify({"success": False, "message": "Invalid attachment id"}), 400
+    _ensure_credit_note_attachment_table()
+    row = fetch_one(
+        """
+        SELECT id, credit_note_id, file_name, file_path
+        FROM credit_note_attachments
+        WHERE id = %s
+        """,
+        (att_id,),
+    )
+    if not row:
+        return jsonify({"success": False, "message": "Attachment not found"}), 404
+    row = dict(row)
+    rel = os.path.basename(str(row.get("file_path") or ""))
+    abs_path = os.path.join(os.path.join(UPLOAD_FOLDER, "credit_note_attachments"), rel) if rel else ""
+    if (not abs_path) or (not os.path.isfile(abs_path)):
+        return jsonify({"success": False, "message": "Attachment not found"}), 404
+    return send_file(
+        abs_path,
+        download_name=row.get("file_name") or "file",
+        as_attachment=as_download,
+    )
+
+
+@app.get("/api/cn-attachment/<att_id>/view")
+def cn_view_attachment(att_id):
+    return _cn_serve_attachment(att_id, as_download=False)
+
+
+@app.get("/api/cn-attachment/<att_id>/download")
+def cn_download_attachment(att_id):
+    return _cn_serve_attachment(att_id, as_download=True)
+
+
+@app.delete("/api/cn-attachment/<att_id>")
+def cn_delete_attachment(att_id):
+    try:
+        try:
+            att_id = int(str(att_id).strip())
+        except (TypeError, ValueError):
+            return jsonify({"success": False, "error": "Invalid attachment id"}), 400
+        _ensure_credit_note_attachment_table()
+        row = fetch_one(
+            """
+            SELECT id, file_path
+            FROM credit_note_attachments
+            WHERE id = %s
+            """,
+            (att_id,),
+        )
+        if not row:
+            return jsonify({"success": False, "error": "Attachment not found"}), 404
+        row = dict(row)
+        rel = os.path.basename(str(row.get("file_path") or ""))
+        abs_path = os.path.join(os.path.join(UPLOAD_FOLDER, "credit_note_attachments"), rel) if rel else ""
+
+        conn = get_db_connection()
+        try:
+            with conn.cursor() as cur:
+                _ensure_credit_note_attachment_table(cur)
+                cur.execute("DELETE FROM credit_note_attachments WHERE id = %s", (att_id,))
+            conn.commit()
+        finally:
+            conn.close()
+
+        if abs_path and os.path.isfile(abs_path):
+            try:
+                os.remove(abs_path)
+            except OSError:
+                pass
+        return jsonify({"success": True})
+    except Exception as e:
+        print(traceback.format_exc())
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.post("/api/credit-notes/<credit_note_id>/cancel")
+def cancel_credit_note(credit_note_id):
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        _ensure_credit_notes_table(cur)
+        cur.execute(
+            """
+            SELECT COALESCE(status, ''), COALESCE(payment_status, '')
+            FROM credit_notes
+            WHERE credit_note_id = %s
+            LIMIT 1
+            """,
+            (credit_note_id,),
+        )
+        row = cur.fetchone()
+        if not row:
+            cur.close()
+            conn.close()
+            return jsonify({
+                "success": False,
+                "message": "No saved credit note with this ID. Save Draft first, then cancel it.",
+            })
+        current_status = str(row[0] or "").strip().lower()
+        current_payment_status = str(row[1] or "").strip().lower()
+        if current_status == "submitted" and current_payment_status == "paid":
+            cur.close()
+            conn.close()
+            return jsonify({
+                "success": False,
+                "message": "Submitted + Paid credit note cannot be cancelled.",
+            }), 400
+        cur.execute(
+            """
+            UPDATE credit_notes
+            SET status = 'Cancelled', updated_at = NOW()
+            WHERE credit_note_id = %s
+            """,
+            (credit_note_id,),
+        )
+        conn.commit()
+        updated = cur.rowcount > 0
+        cur.close()
+        conn.close()
+        if updated:
+            return jsonify({"success": True})
+        return jsonify({
+            "success": False,
+            "message": "No saved credit note with this ID. Save Draft first, then cancel it.",
+        })
+    except Exception as e:
+        print(f"cancel_credit_note error: {e}")
         return jsonify({"success": False, "message": str(e)}), 500
 
 
@@ -22061,17 +25125,35 @@ def delete_credit_note(credit_note_id):
         conn = get_db_connection()
         cur = conn.cursor()
         _ensure_credit_notes_table(cur)
+        _ensure_credit_note_attachment_table(cur)
+        cur.execute(
+            "SELECT file_path FROM credit_note_attachments WHERE credit_note_id = %s",
+            (credit_note_id,),
+        )
+        for pr in cur.fetchall() or []:
+            rel = os.path.basename(str(pr[0] or ""))
+            if rel:
+                ap = os.path.join(os.path.join(UPLOAD_FOLDER, "credit_note_attachments"), rel)
+                if os.path.isfile(ap):
+                    try:
+                        os.remove(ap)
+                    except OSError:
+                        pass
+        cur.execute("DELETE FROM credit_note_attachments WHERE credit_note_id = %s", (credit_note_id,))
         cur.execute("DELETE FROM credit_notes WHERE credit_note_id = %s", (credit_note_id,))
         conn.commit()
         deleted = cur.rowcount > 0
         cur.close()
         conn.close()
-        return jsonify({"success": deleted})
+        if deleted:
+            return jsonify({"success": True})
+        return jsonify({
+            "success": False,
+            "message": "No saved credit note with this ID. Save Draft first.",
+        })
     except Exception as e:
         print(f"delete_credit_note error: {e}")
         return jsonify({"success": False, "message": str(e)}), 500
-
-
 # =========================================
 # ✅ RUN APP
 # =========================================

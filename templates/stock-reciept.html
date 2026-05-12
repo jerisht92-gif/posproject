@@ -5,33 +5,75 @@
 {% block content %}
 <link rel="stylesheet" href="{{ url_for('static', filename='stock-reciept.css') }}">
  
+<div class="stock-receipt-container">
  
+   
 <div class="page-header">
     <h2>Stock Receipt Note</h2>
-    <button class="btn">+ New Stock Receipt</button>
+
+    <a href="{{ url_for('stock_new') }}">
+        <button class="btn">+ New Stock Receipt</button>
+    </a>
+</div>
+
+<div class="card">
+ 
+<div class="search-section">
+    <input type="text" id="searchInput" placeholder="Search by ID number">
+    <button class="clear-filter" type="button">Clear Filter</button>
 </div>
  
-<input type="text" placeholder="Search by ID number" style="width:100%; margin-top:15px; padding:8px;">
  
-<div class="filters">
-    <select>
-        <option>Select Status</option>
-        <option>Draft</option>
-        <option>Cancelled</option>
-        <option>Submitted</option>
-        <option>Returned</option>
-    </select>
  
-    <select>
-        <option>Select Supplier</option>
-        <option>Vasu</option>
-        <option>Srinu</option>
-        <option>Praveen</option>
-    </select>
+<!-- Filters -->
+    <div class="filter-row">
  
-    <input type="date">
-    <input type="date">
-</div>
+        <div class="filter-box">
+            <label>Status</label>
+            <div class="custom-select">
+            <select id="stockrecieptstatus">
+                 <option value="all">All</option>
+                <option value="draft">Draft</option>
+                <option value="submitted">Submitted</option>
+                <option value="returned">Returned</option>
+                <option value="cancelled">Cancelled</option>
+            </select>
+            </div>
+        </div>
+ 
+        <div class="filter-box">
+            <label>Supplier Name</label>
+            <div class="custom-select">
+            <select id="suplier">
+
+             <option value="all">All Suppliers</option>
+
+            </select>
+            </div>
+        </div>
+ 
+        <div class="filter-box date-box">
+            <label>Recieved Date</label>
+            <div class="sr-date-wrap">
+            <!-- From -->
+            <div class="sr-date-field">
+                <span class="sr-date-text">From</span>
+                <input type="date" id="srFromDate" class="sr-date-input">
+                <span class="sr-cal">|</span>
+            </div>
+ 
+            <!-- To -->
+            <div class="sr-date-field">
+                <span class="sr-date-text">To</span>
+                <input type="date" id="srToDate" class="sr-date-input">
+                <span class="sr-cal"></span>
+            </div>
+            </div>
+        </div>
+ 
+    </div>
+
+ <div class="table-scroll">
  
 <table>
     <thead>
@@ -45,77 +87,35 @@
             <th>Status</th>
             <th>Received By</th>
             <th>QC Done By</th>
+            <th>Actions</th>
+           
+   
+           
         </tr>
     </thead>
     <tbody id="tableBody">
-        <tr>
-            <td>1</td>
-            <td>GRN-0001</td>
-            <td>PO-0001</td>
-            <td>Vasu</td>
-            <td>10-01-2026</td>
-            <td>20</td>
-            <td><span class="status draft">Draft</span></td>
-            <td>Mandy</td>
-            <td>Sans</td>
-        </tr>
- 
-        <tr>
-            <td>2</td>
-            <td>GRN-0002</td>
-            <td>PO-0002</td>
-            <td>Srinu</td>
-            <td>10-01-2026</td>
-            <td>20</td>
-            <td><span class="status draft">Draft</span></td>
-            <td>Mandy</td>
-            <td>Sans</td>
-        </tr>
- 
-        <tr>
-            <td>3</td>
-            <td>GRN-0003</td>
-            <td>PO-0003</td>
-            <td>Praveen</td>
-            <td>10-01-2026</td>
-            <td>20</td>
-            <td><span class="status cancelled">Cancelled</span></td>
-            <td>Mandy</td>
-            <td>Sans</td>
-        </tr>
- 
-        <tr>
-            <td>4</td>
-            <td>GRN-0004</td>
-            <td>PO-0004</td>
-            <td>Hemanth</td>
-            <td>10-01-2026</td>
-            <td>20</td>
-            <td><span class="status submitted">Submitted</span></td>
-            <td>Mandy</td>
-            <td>Sans</td>
-        </tr>
- 
-        <tr>
-            <td>5</td>
-            <td>GRN-0005</td>
-            <td>PO-0005</td>
-            <td>Dinesh</td>
-            <td>10-01-2026</td>
-            <td>20</td>
-            <td><span class="status returned">Returned</span></td>
-            <td>Mandy</td>
-            <td>Sans</td>
-        </tr>
+        
     </tbody>
 </table>
+ </div>
  
-<div class="pagination">
-    <span>Showing 5 entries</span>
-    <div>
-        <button class="btn" onclick="prevPage()">Prev</button>
-        <button class="btn" onclick="nextPage()">Next</button>
+       <!-- Footer -->
+    <div class="table-footer">
+ 
+        <div class="entries">
+            Showing <span id="showStart">0</span>–<span id="showEnd">0</span>
+            of <span id="totalEntries">0</span> Entries
+        </div>
+ 
+        <div class="pagination">
+            <button class="prev-btn">Prev</button>
+            <span id="pageInfo">Page 1 of 1</span>
+            <button class="next-btn">Next</button>
+        </div>
+ 
     </div>
+</div>
+ 
 </div>
 <script src="{{ url_for('static', filename='stock-reciept.js') }}"></script>
  

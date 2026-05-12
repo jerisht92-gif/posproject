@@ -86,7 +86,6 @@
           <div class="dn-date-field">
             <span class="dn-date-text">From</span>
             <input type="date" id="dnFromDate" class="dn-date-input">
-            <span class="dn-cal">|</span>
           </div>
 
           <!-- To -->
@@ -131,9 +130,12 @@
             <th>Delivery Type</th>
             <th>Delivery Date</th>
 
-            <!-- Status (click to open sort menu) -->
+            <!-- Status (hover / click sort menu) -->
             <th class="dn-sort-th" id="statusSortTh">
-              Delivery Status <span class="dn-sort-caret">▾</span>
+              <span class="dn-sort-trigger">
+                <span>Delivery Status</span>
+                <span class="dn-sort-caret" aria-hidden="true">⇅</span>
+              </span>
 
               <div class="dn-sort-menu" id="statusSortMenu">
                 <button type="button" data-sort="newest">Newest First</button>

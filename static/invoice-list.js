@@ -274,6 +274,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
             // Column 0: Checkbox (Mark)
             const chkCell = row.insertCell(0);
+            chkCell.classList.add("dn-td-check");
             const chk = document.createElement("input");
             chk.type = "checkbox";
             chk.classList.add("invoice-checkbox");

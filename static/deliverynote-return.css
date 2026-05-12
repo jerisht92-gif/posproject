@@ -414,7 +414,79 @@
     width: 180px;
     min-width: 180px;
     max-width: 180px;
-    text-align: center;
+    text-align: left;
+  }
+
+  /* Status column sort (list pages) */
+  .dnr-list-sort-th{
+    position: relative;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .dnr-list-sort-trigger{
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: #7a1d1d;
+    font-weight: 700;
+  }
+
+  .dnr-list-sort-caret{
+    font-size: 16px;
+    line-height: 1;
+    color: #7a1d1d;
+    opacity: 0.95;
+    transition: transform 0.2s ease;
+  }
+
+  .dnr-list-sort-th:hover .dnr-list-sort-caret,
+  .dnr-list-sort-th.open .dnr-list-sort-caret{
+    transform: translateY(-1px);
+  }
+
+  .dnr-list-sort-menu{
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 0;
+    z-index: 50;
+    display: none;
+    flex-direction: column;
+    width: 260px;
+    padding: 8px;
+    background: #fff;
+    border: 1px solid rgba(170, 70, 70, 0.25);
+    border-radius: 10px;
+    box-shadow: 0 12px 30px rgba(70, 10, 10, 0.18);
+  }
+
+  .dnr-list-sort-th.open .dnr-list-sort-menu{
+    display: flex;
+  }
+
+  .dnr-list-sort-menu button{
+    display: block;
+    width: 100%;
+    padding: 10px 10px;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    cursor: pointer;
+    text-align: left;
+    font-size: 13px;
+    color: #4a1f1a;
+  }
+
+  .dnr-list-sort-menu button:hover,
+  .dnr-list-sort-menu button:focus-visible{
+    background: #e3bdbd;
+    color: #2e1b1b;
+  }
+
+  .dnr-list-sort-menu button.dnr-list-sort-option--active{
+    background: #e3bdbd;
+    color: #2e1b1b;
+    font-weight: 600;
   }
   
   .dnr-col-action{
@@ -428,20 +500,28 @@
      HEADER ALIGNMENT
   ========================================================= */
   .dnr-table thead th.dnr-col-mark,
-  .dnr-table thead th.dnr-col-status,
   .dnr-table thead th.dnr-col-action{
     text-align: center !important;
     padding-left: 0;
     padding-right: 0;
+  }
+
+  .dnr-table thead th.dnr-col-status{
+    text-align: left !important;
+    padding: 8px 12px;
   }
   
   /* =========================================================
      BODY ALIGNMENT
   ========================================================= */
   .dnr-table tbody td.dnr-col-mark,
-  .dnr-table tbody td.dnr-col-status,
   .dnr-table tbody td.dnr-col-action{
     text-align: center;
+    vertical-align: middle;
+  }
+
+  .dnr-table tbody td.dnr-col-status{
+    text-align: left;
     vertical-align: middle;
   }
   

@@ -29,6 +29,9 @@ document.addEventListener("DOMContentLoaded", () => {
   const nextBtn = document.getElementById("dnNextBtn");
   const pageText = document.getElementById("dnPageText");
 
+  const statusSortTh = document.getElementById("statusSortTh");
+  const statusSortMenu = document.getElementById("statusSortMenu");
+
   const newBtn = document.getElementById("newDeliveryNoteBtn");
 
   // Generate buttons (enabled when any row checkbox is checked)
@@ -41,6 +44,7 @@ document.addEventListener("DOMContentLoaded", () => {
   let allRows = [];
   let filteredRows = [];
   let page = 1;
+  let currentStatusSortMode = "";
 
   /* =========================================================
      SMALL HELPERS
@@ -172,6 +176,63 @@ function loadDnStatusFilterOptions() {
     return true;
   }
 
+  /* =========================================================
+     STATUS COLUMN SORT (match sales-order list)
+  ========================================================== */
+  const DN_STATUS_SORT_ORDER = [
+    "draft",
+    "delivered",
+    "partially_delivered",
+    "returned",
+    "cancelled",
+  ];
+
+  function dnStatusRank(status) {
+    const key = normalizeStatus(status);
+    const i = DN_STATUS_SORT_ORDER.indexOf(key);
+    return i === -1 ? 999 : i;
+  }
+
+  function parseDeliveryDateMs(d) {
+    const dt = parseISO(d);
+    return dt ? dt.getTime() : 0;
+  }
+
+  function syncStatusSortMenuActive() {
+    if (!statusSortMenu) return;
+    statusSortMenu.querySelectorAll("button[data-sort]").forEach((b) => {
+      b.classList.toggle("dn-sort-option--active", b.dataset.sort === currentStatusSortMode);
+    });
+  }
+
+  function applyStatusSort(mode) {
+    currentStatusSortMode = mode || "";
+    syncStatusSortMenuActive();
+
+    if (!filteredRows.length) {
+      page = 1;
+      render();
+      return;
+    }
+
+    if (mode === "newest") {
+      filteredRows.sort(
+        (a, b) => parseDeliveryDateMs(b.delivery_date) - parseDeliveryDateMs(a.delivery_date)
+      );
+    } else if (mode === "oldest") {
+      filteredRows.sort(
+        (a, b) => parseDeliveryDateMs(a.delivery_date) - parseDeliveryDateMs(b.delivery_date)
+      );
+    } else if (mode === "progress") {
+      filteredRows.sort((a, b) => dnStatusRank(a.status) - dnStatusRank(b.status));
+    } else if (mode === "reverse") {
+      filteredRows.sort((a, b) => dnStatusRank(b.status) - dnStatusRank(a.status));
+    }
+
+    page = 1;
+    render();
+  }
+
   function clearDataRows() {
     if (!tbody) return;
     const rows = Array.from(tbody.querySelectorAll("tr"));
@@ -201,6 +262,7 @@ function loadDnStatusFilterOptions() {
   ========================================================== */
   let flyEl = null;
   let hideTimer = null;
+  let statusSortHideTimer = null;
 
   function removeFly() {
     if (flyEl) {
@@ -216,6 +278,18 @@ function loadDnStatusFilterOptions() {
 
   function keepOpen() {
     clearTimeout(hideTimer);
+  }
+
+  function openStatusSortMenu() {
+    clearTimeout(statusSortHideTimer);
+    statusSortTh?.classList.add("open");
+  }
+
+  function scheduleStatusSortMenuClose() {
+    clearTimeout(statusSortHideTimer);
+    statusSortHideTimer = setTimeout(() => {
+      statusSortTh?.classList.remove("open");
+    }, 160);
   }
 
   function buildFlyMenu(row, anchorBtn) {
@@ -367,7 +441,11 @@ function loadDnStatusFilterOptions() {
     });
 
     if (resetPage) page = 1;
-    render();
+    if (currentStatusSortMode) {
+      applyStatusSort(currentStatusSortMode);
+    } else {
+      render();
+    }
   }
 
   /* =========================================================
@@ -533,9 +611,37 @@ function loadDnStatusFilterOptions() {
     if (typeFilter) typeFilter.value = "all";
     if (fromDate) fromDate.value = "";
     if (toDate) toDate.value = "";
+    currentStatusSortMode = "";
+    syncStatusSortMenuActive();
     applyFilters(true);
     searchInput?.focus();
   });
+
+  if (statusSortTh && statusSortMenu) {
+    statusSortTh.addEventListener("mouseenter", openStatusSortMenu);
+    statusSortTh.addEventListener("mouseleave", scheduleStatusSortMenuClose);
+    statusSortMenu.addEventListener("mouseenter", openStatusSortMenu);
+    statusSortMenu.addEventListener("mouseleave", scheduleStatusSortMenuClose);
+
+    statusSortTh.addEventListener("click", (e) => {
+      if (e.target.closest("#statusSortMenu")) return;
+      statusSortTh.classList.toggle("open");
+    });
+
+    document.addEventListener("click", (e) => {
+      if (!e.target.closest("#statusSortTh")) {
+        statusSortTh.classList.remove("open");
+      }
+    });
+
+    statusSortMenu.addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-sort]");
+      if (!btn) return;
+
+      applyStatusSort(btn.dataset.sort);
+      statusSortTh.classList.remove("open");
+    });
+  }
 
   prevBtn?.addEventListener("click", () => {
     if (prevBtn.classList.contains("disabled")) return;

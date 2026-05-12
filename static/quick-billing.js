@@ -10,7 +10,6 @@ document.addEventListener("DOMContentLoaded", () => {
   // Billing table
   const tbody     = document.getElementById("billingTableBody");
   const noDataRow = document.getElementById("noDataRow");
-  const showingEl = document.getElementById("showingCount");
 
   // Inputs + datalist
   const productCodeInput  = document.getElementById("productCodeInput");
@@ -35,13 +34,6 @@ document.addEventListener("DOMContentLoaded", () => {
   const qbToast    = document.getElementById("qbToast");
   const qbToastMsg = document.getElementById("qbToastMsg");
   let toastTimer = null;
-
-  // Pager (UI only)
-  const prevBtn     = document.getElementById("prevBtn");
-  const nextBtn     = document.getElementById("nextBtn");
-  const pageNowEl   = document.getElementById("pageNow");
-  const pageTotalEl = document.getElementById("pageTotal");
-  const ROWS_PER_PAGE = 10;
 
   // Camera modal
   const cameraModal    = document.getElementById("cameraScannerModal");
@@ -292,43 +284,16 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   /* =========================================================
-     9) PAGINATION UI (UI-ONLY)
+     9) FOOTER UI (no-data row + totals)
   ========================================================= */
 
-  function updatePagerButtons() {
-    const pageNow   = parseInt(pageNowEl?.textContent || "1", 10);
-    const pageTotal = parseInt(pageTotalEl?.textContent || "1", 10);
-
-    if (pageTotal <= 1) {
-      if (prevBtn) prevBtn.disabled = true;
-      if (nextBtn) nextBtn.disabled = true;
-      return;
-    }
-
-    if (prevBtn) prevBtn.disabled = pageNow <= 1;
-    if (nextBtn) nextBtn.disabled = pageNow >= pageTotal;
+  function refreshFooterUI() {
+    updateNoDataRow();
+    updateMiniSummary();
+    // ✅ Payment panel total auto-fill + balance calc
+    qbUpdatePaymentPanel();
+     updateFinalizeState();
   }
-
-  function updateShowingText() {
-    if (!showingEl || !tbody) return;
-
-    const totalRows = tbody.querySelectorAll("tr.data-row").length;
-
-    if (totalRows === 0) {
-      showingEl.textContent = "Showing 0 Entries";
-      return;
-    }
-
-    const currentPage = parseInt(pageNowEl?.textContent || "1", 10);
-    const start = (currentPage - 1) * ROWS_PER_PAGE + 1;
-    const end   = Math.min(start + ROWS_PER_PAGE - 1, totalRows);
-
-    showingEl.textContent = `Showing ${start}–${end} of ${totalRows} Entities`;
-  }
-
-  /* =========================================================
-   QB PAYMENT PANEL: Total auto-fill + Change auto-calc
-========================================================= */
 
 function qbParseNumber(val) {
   return Number(String(val || "").replace(/[^\d.-]/g, "")) || 0;
@@ -402,16 +367,6 @@ function updatePaymentUIByMode() {
   }
 }
 
-
-  function refreshFooterUI() {
-    updateNoDataRow();
-    updatePagerButtons();
-    updateShowingText();
-    updateMiniSummary();
-    // ✅ Payment panel total auto-fill + balance calc
-    qbUpdatePaymentPanel();
-     updateFinalizeState();
-  }
 
   /* =========================================================
      10) PRODUCT DATA + INDEXES
