@@ -243,8 +243,8 @@ function updatePageTitle() {
 }
 
 /**
- * Invoice Reference: display is read-only typing-wise; in draft (not view-only)
- * clicking always opens / toggles the list so the user can pick a different invoice.
+ * Invoice Reference: read-only display. In draft + new return, click opens list to pick/change invoice.
+ * In draft + edit (edit_id), reference is locked. View-only uses viewId guard elsewhere.
  */
 function syncInvoiceRefPickerUi() {
     const display = document.getElementById('saleOrderSelected');
@@ -252,7 +252,7 @@ function syncInvoiceRefPickerUi() {
     if (!display) return;
 
     const statusLower = (currentStatus || '').toLowerCase();
-    const canOpenPicker = !viewId && statusLower === 'draft' && hid && !hid.disabled;
+    const canOpenPicker = !viewId && !editId && statusLower === 'draft' && hid && !hid.disabled;
 
     display.readOnly = true;
     display.disabled = false;
@@ -266,6 +266,11 @@ function syncInvoiceRefPickerUi() {
                 ? 'Click to change invoice reference'
                 : 'Click to select invoice reference'
         );
+    } else if (statusLower === 'draft' && hid && hid.disabled) {
+        display.style.opacity = '0.6';
+        display.style.cursor = 'not-allowed';
+        display.style.pointerEvents = 'none';
+        display.removeAttribute('title');
     } else if (statusLower === 'draft') {
         display.style.opacity = '1';
         display.style.cursor = 'default';
@@ -477,11 +482,11 @@ function updateButtonsByStatus(status) {
     }
 
     
-    // Invoice Reference: read-only display (same as Invoice Return ID). Click field when draft + no ref to open list.
+    // Invoice Reference: editable only when creating a new draft; locked while editing (edit_id).
     const invoiceReferenceID = document.getElementById('invoiceReferenceID');
     if (invoiceReferenceID) {
         if (statusLower === 'draft') {
-            invoiceReferenceID.disabled = false;
+            invoiceReferenceID.disabled = !!editId;
         } else {
             invoiceReferenceID.disabled = true;
         }
@@ -1488,7 +1493,7 @@ if (!window.__irDeleteFileModalBound) {
 // INVOICE REFERENCE DROPDOWN
 // ===================================================
 function toggleSaleOrderDropdown() {
-    if (viewId) {
+    if (viewId || editId) {
         return;
     }
     const hid = document.getElementById('invoiceReferenceID');
@@ -1514,7 +1519,7 @@ function filterSaleOrders() {
 }
 
 function selectSaleOrder(element) {
-    if (viewId) {
+    if (viewId || editId) {
         return;
     }
     const invoiceRef = document.getElementById('invoiceReferenceID');
