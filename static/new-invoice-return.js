@@ -20,6 +20,99 @@ function showToast(message, type = 'info') {
     }, 3000);
 }
 
+// =====================================
+// DATE VALIDATION (same rules + toast as invoice-return-list.js)
+// =====================================
+const INVOICE_RETURN_INVALID_DATE_MSG =
+    "Invalid date. Use format YYYY-MM-DD (e.g. 2026-03-09).";
+
+function isValidReturnDateString(value) {
+    if (!value || typeof value !== "string") return false;
+    const trimmed = value.trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return false;
+    const parts = trimmed.split("-");
+    const y = parseInt(parts[0], 10);
+    const m = parseInt(parts[1], 10) - 1;
+    const d = parseInt(parts[2], 10);
+    if (y < 1900 || y > 2100) return false;
+    const date = new Date(y, m, d);
+    return (
+        date.getFullYear() === y &&
+        date.getMonth() === m &&
+        date.getDate() === d
+    );
+}
+
+function handleInvoiceReturnDateChange() {
+    const field = document.getElementById("invoicereturnDate");
+    if (!field) return;
+    const val = (field.value || "").trim();
+    if (val && !isValidReturnDateString(val)) {
+        showToast(INVOICE_RETURN_INVALID_DATE_MSG, "error");
+        field.value = "";
+    }
+    syncInvoiceReturnFooterButtons();
+}
+
+function hasInvoiceReference() {
+    const ref = document.getElementById("invoiceReferenceID");
+    return !!(ref && ref.value.trim() !== "");
+}
+
+function isInvoiceReturnDateFieldValid() {
+    const field = document.getElementById("invoicereturnDate");
+    if (!field) return false;
+    const val = (field.value || "").trim();
+    return isValidReturnDateString(val);
+}
+
+function hasCustomerBasics() {
+    const name = document.getElementById("customerName");
+    return !!(name && name.value.trim() !== "");
+}
+
+function hasAtLeastOneValidReturnLine() {
+    const rows = document.querySelectorAll("#itemsTableBody tr");
+    let ok = false;
+    rows.forEach((row) => {
+        if (row.cells.length < 13) return;
+        const returnQty = parseFloat(row.cells[4].querySelector(".return-qty-input")?.value || 0);
+        const reasonSelect = row.cells[6].querySelector(".reason-select");
+        const hasReturnQty = returnQty > 0;
+        const hasReason = reasonSelect && reasonSelect.value !== "Select Reason";
+        if (hasReturnQty && hasReason) ok = true;
+    });
+    return ok;
+}
+
+/** Draft Save + Submit: same bar — only on when header, date, customer, and line items are all valid. */
+function isInvoiceReturnFormValidForDraftActions() {
+    return (
+        hasInvoiceReference() &&
+        isInvoiceReturnDateFieldValid() &&
+        hasCustomerBasics() &&
+        hasAtLeastOneValidReturnLine()
+    );
+}
+
+function syncInvoiceReturnFooterButtons() {
+    const saveDraftBtn = document.getElementById("irSaveDraftBtn");
+    const submitBtn = document.getElementById("irSubmitBtn");
+    if (viewId) {
+        if (saveDraftBtn) saveDraftBtn.disabled = true;
+        if (submitBtn) submitBtn.disabled = true;
+        return false;
+    }
+    const statusLower = (currentStatus || "").toLowerCase();
+    if (statusLower !== "draft" && statusLower !== "") {
+        return false;
+    }
+    const ok = isInvoiceReturnFormValidForDraftActions();
+    if (saveDraftBtn) saveDraftBtn.disabled = !ok;
+    if (submitBtn) submitBtn.disabled = !ok;
+    return ok;
+}
+
 // ===================================================
 // GLOBALS
 // ===================================================
@@ -29,6 +122,8 @@ let currentStatus = null;
 let isNewReturn = false;                 // true when creating a new return
 let pendingComments = [];
 let pendingAttachments = [];
+/** Set when user opens delete-attachment modal; cleared on confirm/cancel. */
+let pendingDeleteAttachmentId = null;
 /** Prevents double submit when Save Draft / Submit both fire or user double-clicks */
 let _invoiceReturnSaveInFlight = false;
 
@@ -147,6 +242,42 @@ function updatePageTitle() {
     document.title = title;
 }
 
+/**
+ * Invoice Reference: display is read-only typing-wise; in draft (not view-only)
+ * clicking always opens / toggles the list so the user can pick a different invoice.
+ */
+function syncInvoiceRefPickerUi() {
+    const display = document.getElementById('saleOrderSelected');
+    const hid = document.getElementById('invoiceReferenceID');
+    if (!display) return;
+
+    const statusLower = (currentStatus || '').toLowerCase();
+    const canOpenPicker = !viewId && statusLower === 'draft' && hid && !hid.disabled;
+
+    display.readOnly = true;
+    display.disabled = false;
+    display.style.removeProperty('pointer-events');
+    if (canOpenPicker) {
+        display.style.opacity = '1';
+        display.style.cursor = 'pointer';
+        display.setAttribute(
+            'title',
+            hid && hid.value.trim() !== ''
+                ? 'Click to change invoice reference'
+                : 'Click to select invoice reference'
+        );
+    } else if (statusLower === 'draft') {
+        display.style.opacity = '1';
+        display.style.cursor = 'default';
+        display.removeAttribute('title');
+    } else {
+        display.style.opacity = '0.6';
+        display.style.cursor = 'not-allowed';
+        display.removeAttribute('title');
+    }
+    syncInvoiceReturnFooterButtons();
+}
+
 // ===================================================
 // UPDATE BUTTON STATES BASED ON STATUS
 // ===================================================
@@ -166,8 +297,23 @@ function updateButtonsByStatus(status) {
     const deliverInvoiceBtn = document.getElementById('deliverInvoiceBtn');   // 👈 add this
 
     
-    // Get all form fields to enable/disable
-    const formFields = document.querySelectorAll('#invoiceForm input:not([type="hidden"]), #invoiceForm select, #invoiceForm textarea');
+    // Get all form fields to enable/disable.
+    // The Invoice Return ID, Customer Ref No, and all Contact Information fields
+    // are auto-populated from the selected invoice and must remain non-editable
+    // for every status — exclude them so the HTML `readonly` attribute is never removed.
+    const formFields = document.querySelectorAll(
+        '#invoiceForm input:not([type="hidden"])' +
+            ':not(#invoiceReturnId)' +
+            ':not(#saleOrderSelected)' +
+            ':not(#customerRefNo)' +
+            ':not(#customerName)' +
+            ':not(#customerId)' +
+            ':not(#email)' +
+            ':not(#phone)' +
+            ':not(#contactPerson)' +
+        ', #invoiceForm select' +
+        ', #invoiceForm textarea'
+    );
     const itemDeleteBtns = document.querySelectorAll('.delete-row-btn');
     const returnQtyInputs = document.querySelectorAll('.return-qty-input');
     const serialInputs = document.querySelectorAll('.serial-input');
@@ -175,8 +321,9 @@ function updateButtonsByStatus(status) {
     // updatePageHeading();
     switch(statusLower) {
         case 'draft':
-            if (saveDraftBtn) saveDraftBtn.disabled = false;
-            if (submitBtn) submitBtn.disabled = true; // Will be enabled by checkSubmitButtonStatus
+            // Save Draft / Submit — final enabled state from syncInvoiceReturnFooterButtons()
+            if (saveDraftBtn) saveDraftBtn.disabled = true;
+            if (submitBtn) submitBtn.disabled = true;
             if (cancelInvoiceBtn) cancelInvoiceBtn.disabled = true;
             if (pdfAction) {
                 pdfAction.style.opacity = '0.5';
@@ -286,8 +433,8 @@ function updateButtonsByStatus(status) {
             break;
             
         default:
-            // New record (no status)
-            if (saveDraftBtn) saveDraftBtn.disabled = false;
+            // New record (no status) — same as draft until sync runs
+            if (saveDraftBtn) saveDraftBtn.disabled = true;
             if (submitBtn) submitBtn.disabled = true;
             if (cancelInvoiceBtn) cancelInvoiceBtn.disabled = true;
             if (pdfAction) {
@@ -304,6 +451,25 @@ function updateButtonsByStatus(status) {
             });
     }
 
+    // Invoice Return ID, Customer Ref No, and Contact Information fields are
+    // auto-populated and must stay non-editable for every status.
+    [
+        'invoiceReturnId',
+        'saleOrderSelected',
+        'customerRefNo',
+        'customerName',
+        'customerId',
+        'email',
+        'phone',
+        'contactPerson',
+    ].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.readOnly = true;
+            el.setAttribute('readonly', 'readonly');
+        }
+    });
+
 
         // After the switch, set the deliver button state
     if (deliverInvoiceBtn) {
@@ -311,27 +477,21 @@ function updateButtonsByStatus(status) {
     }
 
     
-    // Disable/enable Invoice Reference dropdown for non‑draft statuses
-    const saleOrderSelected = document.getElementById('saleOrderSelected');
+    // Invoice Reference: read-only display (same as Invoice Return ID). Click field when draft + no ref to open list.
     const invoiceReferenceID = document.getElementById('invoiceReferenceID');
-    if (saleOrderSelected) {
+    if (invoiceReferenceID) {
         if (statusLower === 'draft') {
-            saleOrderSelected.style.pointerEvents = 'auto';
-            saleOrderSelected.style.opacity = '1';
-            saleOrderSelected.style.cursor = 'pointer';
-            if (invoiceReferenceID) invoiceReferenceID.disabled = false;
+            invoiceReferenceID.disabled = false;
         } else {
-            saleOrderSelected.style.pointerEvents = 'none';
-            saleOrderSelected.style.opacity = '0.6';
-            saleOrderSelected.style.cursor = 'not-allowed';
-            if (invoiceReferenceID) invoiceReferenceID.disabled = true;
+            invoiceReferenceID.disabled = true;
         }
     }
+
+    syncInvoiceRefPickerUi();
     
-    // Update submit button status for draft
-    // if (statusLower === 'draft' || !statusLower) {
-    //     checkSubmitButtonStatus();
-    // }
+    if (statusLower === 'draft' || statusLower === '') {
+        syncInvoiceReturnFooterButtons();
+    }
     
     updatePageTitle();
 }
@@ -354,10 +514,12 @@ async function updateItemsAndSummary() {
         return false;
     }
 
+    let hasErrors = false;
     const items = [];
     const itemsTable = document.getElementById("itemsTableBody");
     if (itemsTable) {
         Array.from(itemsTable.rows).forEach(row => {
+            if (row.cells.length < 13) return;
             const returnQty = parseFloat(row.cells[4].querySelector('.return-qty-input')?.value || 0);
             if (returnQty > 0) {
                 const reasonSelect = row.cells[6].querySelector('.reason-select');
@@ -375,7 +537,8 @@ async function updateItemsAndSummary() {
                     return_reason: reasonSelect?.value || "",
                     uom: row.cells[7]?.textContent || "",
                     unit_price: parseFloat(row.getAttribute('data-unit-price') || 0),
-                    disc_pct: 0,
+                    tax_pct: parseFloat(row.getAttribute('data-tax-pct') || 0),
+                    disc_pct: parseFloat(row.getAttribute('data-disc-pct') || 0),
                     total: parseFloat(row.cells[11]?.textContent || 0)
                 });
             }
@@ -439,7 +602,7 @@ async function loadExistingInvoiceReturn(invoiceReturnId, isEditMode, isViewMode
             const saleOrderSelected = document.getElementById('saleOrderSelected');
             const invoiceReferenceID = document.getElementById('invoiceReferenceID');
             if (saleOrderSelected && invoiceReferenceID) {
-                saleOrderSelected.textContent = invoiceReturn.invoice_id;
+                saleOrderSelected.value = invoiceReturn.invoice_id;
                 invoiceReferenceID.value = invoiceReturn.invoice_id;
             }
             
@@ -451,6 +614,7 @@ async function loadExistingInvoiceReturn(invoiceReturnId, isEditMode, isViewMode
             document.getElementById("contactPerson").value = invoiceReturn.contact_person || "";
             document.getElementById("customerRefNo").value = invoiceReturn.customer_ref_no || "";
             document.getElementById("invoicereturnDate").value = invoiceReturn.return_date || "";
+            handleInvoiceReturnDateChange();
             
             // Store original values for summary
             originalGrandTotal = summary.original_total || 0;
@@ -470,15 +634,16 @@ async function loadExistingInvoiceReturn(invoiceReturnId, isEditMode, isViewMode
         console.log(`Item ${index}: maxQty = ${maxQty}`);   // remove after debugging
 
         const unitPrice = item.unit_price || 0;
-        const returnQty = item.return_quantity || 0;
-                    // const returnQty = item.return_quantity || 0;
+        const returnQty = getDefaultReturnQty(maxQty, item.return_quantity);
                     const serialNumber = item.serial_number || '';
-                    const returnReason = item.return_reason || 'Select Reason';
-                    
+                    const taxPct = parseFloat(item.tax_pct) || 0;
+                    const discPct = parseFloat(item.disc_pct) || 0;
+
                     const row = tbody.insertRow();
                     row.setAttribute('data-product-id', item.product_id || '');
                     row.setAttribute('data-unit-price', unitPrice);
-                    row.setAttribute('data-disc-pct', 0);
+                    row.setAttribute('data-tax-pct', taxPct);
+                    row.setAttribute('data-disc-pct', discPct);
                     row.setAttribute('data-invoice-qty', maxQty);
 
                     // COLUMN 0: S.No
@@ -508,22 +673,12 @@ async function loadExistingInvoiceReturn(invoiceReturnId, isEditMode, isViewMode
                     const returnQtyInput = document.createElement('input');
                     returnQtyInput.type = 'number';
                     returnQtyInput.step = 'any';
-                    returnQtyInput.min = '0';
+                    returnQtyInput.min = maxQty > 0 ? '1' : '0';
                     returnQtyInput.max = maxQty;
-                    returnQtyInput.value = returnQty;
+                    returnQtyInput.value = String(returnQty);
                     returnQtyInput.className = 'return-qty-input';
-                    // returnQtyInput.style.width = '80px';
-                    // returnQtyInput.style.textAlign = 'center';
-                    // returnQtyInput.style.border-radius = '4px';
-                                        // returnQtyInput.style.background-color="#523b39"
-
                     returnQtyInput.disabled = isViewMode;
-                    returnQtyInput.addEventListener('input', function() {
-                        validateReturnQty(this, maxQty);
-                        updateItemTotal(row);
-                        updateOrderSummary();
-                        checkSubmitButtonStatus();
-                    });
+                    bindReturnQtyInput(returnQtyInput, row, maxQty);
                     cellReturnQty.appendChild(returnQtyInput);
                     cellReturnQty.style.textAlign = "center";
                     
@@ -533,8 +688,6 @@ async function loadExistingInvoiceReturn(invoiceReturnId, isEditMode, isViewMode
                     serialInput.type = 'text';
                     serialInput.placeholder = 'Enter serial number (Optional)';
                     serialInput.className = 'serial-input';
-                    serialInput.style.width = '120px';
-                    serialInput.style.padding = '5px';
                     serialInput.value = serialNumber;
                     serialInput.disabled = isViewMode;
                     cellSerialNo.appendChild(serialInput);
@@ -544,8 +697,6 @@ async function loadExistingInvoiceReturn(invoiceReturnId, isEditMode, isViewMode
                     const cellReturnReason = row.insertCell(6);
                     const reasonSelect = document.createElement('select');
                     reasonSelect.className = 'reason-select';
-                    reasonSelect.style.width = '130px';
-                    reasonSelect.style.padding = '5px';
                     reasonSelect.disabled = isViewMode;
                     const reasons = ['Select Reason', 'Damaged', 'Wrong Product', 'Quality Issue', 'Expired', 'Customer Request', 'Other'];
                     reasons.forEach(reason => {
@@ -557,7 +708,7 @@ async function loadExistingInvoiceReturn(invoiceReturnId, isEditMode, isViewMode
                         }
                         reasonSelect.appendChild(option);
                     });
-                    reasonSelect.value = returnReason;
+                    applyStoredReturnReason(reasonSelect, item.return_reason);
                     reasonSelect.addEventListener('change', function() {
                         checkSubmitButtonStatus();
                     });
@@ -576,15 +727,15 @@ async function loadExistingInvoiceReturn(invoiceReturnId, isEditMode, isViewMode
                     cellUnitPrice.className = 'unit-price';
                     cellUnitPrice.style.textAlign = "right";
                     
-                    // COLUMN 9: Tax (%) - Display as 0
+                    // COLUMN 9: Tax (%) — fetched from invoice item
                     const cellTax = row.insertCell(9);
-                    cellTax.textContent = '0.00';
+                    cellTax.textContent = taxPct.toFixed(2);
                     cellTax.className = 'tax-pct';
                     cellTax.style.textAlign = "center";
-                    
-                    // COLUMN 10: Discount (%) - Display as 0
+
+                    // COLUMN 10: Discount (%) — fetched from invoice item
                     const cellDisc = row.insertCell(10);
-                    cellDisc.textContent = '0.00';
+                    cellDisc.textContent = discPct.toFixed(2);
                     cellDisc.className = 'disc-pct';
                     cellDisc.style.textAlign = "center";
                     
@@ -612,12 +763,10 @@ async function loadExistingInvoiceReturn(invoiceReturnId, isEditMode, isViewMode
                         deleteBtn.style.cursor = 'not-allowed';
                     }
                     deleteBtn.addEventListener('click', function() {
-                        if (confirm('Remove this item from the return?')) {
-                            row.remove();
-                            updateOrderSummary();
-                            renumberRows();
-                            checkSubmitButtonStatus();
-                        }
+                        row.remove();
+                        updateOrderSummary();
+                        renumberRows();
+                        checkSubmitButtonStatus();
                     });
                     cellAction.appendChild(deleteBtn);
                     cellAction.style.textAlign = "center";
@@ -634,7 +783,7 @@ async function loadExistingInvoiceReturn(invoiceReturnId, isEditMode, isViewMode
                         const div = document.createElement("div");
                         div.classList.add("history-item");
                         div.innerHTML = `
-                            <span class="user">${escapeHtml(comment.author || 'System')}</span>
+                            <span class="user">${escapeHtml(comment.author || 'User')}</span>
                             <span class="time">– ${escapeHtml(comment.created_at || '')}</span>
                             <p>${escapeHtml(comment.text || '')}</p>
                         `;
@@ -851,7 +1000,7 @@ function loadCommentsForReturn(invoiceReturnId, page = 1) {
             data.comments.forEach(item => {
                 const div = document.createElement("div");
                 div.classList.add("history-item");
-                const user = item.author || 'System';
+                const user = item.author || 'User';
                 const time = item.created_at ? new Date(item.created_at).toLocaleString() : '';
                 const comment = item.text || '';
                 div.innerHTML = `
@@ -1200,7 +1349,7 @@ function renderAttachments(files) {
                  <div class="file-actions">
             <button type="button" class="btn-action btn-view" onclick="viewAttachment('${file.id}')" title="View"><i class="fa-regular fa-eye"></i></button>
             <button type="button" class="btn-action btn-download" onclick="downloadAttachment('${file.id}')" title="Download"><i class="fa-solid fa-cloud-arrow-down"></i></button>
-            <button type="button" class="btn-action btn-delete" onclick="deleteAttachment('${file.id}')" title="Delete"><i class="fa-solid fa-trash-can"></i></button>
+            <button type="button" class="btn-action btn-delete" onclick="openDeleteFileModal('${file.id}')" title="Delete"><i class="fa-solid fa-trash-can"></i></button>
         </div>
             </div>
         `;
@@ -1269,8 +1418,21 @@ window.downloadAttachment = function(id) {
     }
 };
 
-window.deleteAttachment = async function(id) {
-    if (!confirm('Are you sure you want to delete this file?')) return;
+window.openDeleteFileModal = function (id) {
+    pendingDeleteAttachmentId = id;
+    const modal = document.getElementById('deleteFileModal');
+    if (!modal) return;
+    modal.style.display = 'flex';
+};
+
+function closeDeleteFileModal() {
+    const modal = document.getElementById('deleteFileModal');
+    if (modal) modal.style.display = 'none';
+    pendingDeleteAttachmentId = null;
+}
+
+/** Performs DELETE after user confirms in modal (no native confirm). */
+window.deleteAttachment = async function (id) {
     const returnIdElem = document.getElementById('invoiceReturnId');
     const returnId = returnIdElem ? returnIdElem.value : null;
     if (!returnId || returnId.startsWith('TEMP_')) {
@@ -1281,12 +1443,10 @@ window.deleteAttachment = async function(id) {
         const response = await fetch(`/api/invoice-return/${returnId}/attachments/${id}`, { method: 'DELETE' });
         const data = await response.json();
         if (data.success) {
-            // Remove the file element from DOM
             const fileItem = document.querySelector(`.file-item[data-id="${id}"]`);
             if (fileItem) fileItem.remove();
-            // Reload attachments to update the count
             loadAttachmentsForReturn(returnId);
-            showToast('✅ File deleted successfully', 'success');
+            showToast(' File deleted successfully', 'success');
         } else {
             showToast('Delete failed: ' + (data.error || 'Unknown error'), 'error');
         }
@@ -1295,6 +1455,27 @@ window.deleteAttachment = async function(id) {
         showToast('Delete failed. Please try again.', 'error');
     }
 };
+
+if (!window.__irDeleteFileModalBound) {
+    const deleteFileCancelBtn = document.getElementById('deleteFileCancelBtn');
+    const deleteFileConfirmBtn = document.getElementById('deleteFileConfirmBtn');
+    const deleteFileModal = document.getElementById('deleteFileModal');
+
+    deleteFileCancelBtn?.addEventListener('click', closeDeleteFileModal);
+
+    deleteFileConfirmBtn?.addEventListener('click', async () => {
+        if (pendingDeleteAttachmentId) {
+            await window.deleteAttachment(pendingDeleteAttachmentId);
+        }
+        closeDeleteFileModal();
+    });
+
+    deleteFileModal?.addEventListener('click', (e) => {
+        if (e.target === deleteFileModal) closeDeleteFileModal();
+    });
+
+    window.__irDeleteFileModalBound = true;
+}
 
 
 
@@ -1307,8 +1488,11 @@ window.deleteAttachment = async function(id) {
 // INVOICE REFERENCE DROPDOWN
 // ===================================================
 function toggleSaleOrderDropdown() {
-    const invoiceRef = document.getElementById('invoiceReferenceID');
-    if (invoiceRef && invoiceRef.disabled) {
+    if (viewId) {
+        return;
+    }
+    const hid = document.getElementById('invoiceReferenceID');
+    if (hid && hid.disabled) {
         showToast('Invoice Reference cannot be changed for this status', 'warning');
         return;
     }
@@ -1330,6 +1514,9 @@ function filterSaleOrders() {
 }
 
 function selectSaleOrder(element) {
+    if (viewId) {
+        return;
+    }
     const invoiceRef = document.getElementById('invoiceReferenceID');
     if (invoiceRef && invoiceRef.disabled) {
         showToast('Invoice Reference cannot be changed for this status', 'warning');
@@ -1340,39 +1527,47 @@ function selectSaleOrder(element) {
 
     const hiddenInput = document.getElementById('invoiceReferenceID');
     hiddenInput.value = selectedValue;
-    document.getElementById('saleOrderSelected').textContent = selectedText;
+    document.getElementById('saleOrderSelected').value = selectedText;
     document.getElementById('saleOrderDropdown').style.display = 'none';
 
     hiddenInput.dispatchEvent(new Event('change', { bubbles: true }));
     loadInvoiceDetails(selectedValue);
+    syncInvoiceRefPickerUi();
 }
 
 // ===================================================
 // CHECK IF SUBMIT BUTTON SHOULD BE ENABLED (Serial NOT mandatory)
 // ===================================================
-function checkSubmitButtonStatus() {
-    const submitBtn = document.getElementById('irSubmitBtn');
-    if (!submitBtn) return;
-    
-    const rows = document.querySelectorAll('#itemsTableBody tr');
-    let hasValidItem = false;
-    
-    rows.forEach(row => {
-        if (row.cells.length < 12) return;
-        
-        const returnQty = parseFloat(row.cells[4].querySelector('.return-qty-input')?.value || 0);
-        const reasonSelect = row.cells[6].querySelector('.reason-select');
-        
-        const hasReturnQty = returnQty > 0;
-        const hasReason = reasonSelect && reasonSelect.value !== 'Select Reason';
-        
-        if (hasReturnQty && hasReason) {
-            hasValidItem = true;
+
+/** Map saved / DB return reason onto the line-item <select> (case-insensitive; unknown → extra option). */
+function applyStoredReturnReason(reasonSelect, storedRaw) {
+    if (!reasonSelect) return;
+    const raw = storedRaw != null ? String(storedRaw).trim() : '';
+    if (!raw) {
+        reasonSelect.value = 'Select Reason';
+        return;
+    }
+    const values = Array.from(reasonSelect.options).map((o) => o.value);
+    if (values.includes(raw)) {
+        reasonSelect.value = raw;
+        return;
+    }
+    const lower = raw.toLowerCase();
+    for (const o of reasonSelect.options) {
+        if (o.value !== 'Select Reason' && o.value.toLowerCase() === lower) {
+            reasonSelect.value = o.value;
+            return;
         }
-    });
-    
-    submitBtn.disabled = !hasValidItem;
-    return hasValidItem;
+    }
+    const opt = document.createElement('option');
+    opt.value = raw;
+    opt.textContent = raw;
+    reasonSelect.appendChild(opt);
+    reasonSelect.value = raw;
+}
+
+function checkSubmitButtonStatus() {
+    return syncInvoiceReturnFooterButtons();
 }
 
 // ===================================================
@@ -1386,9 +1581,46 @@ function loadInvoiceDetails(invoiceId) {
 
     showToast("🔄 Loading invoice details...", 'info');
 
-    fetch(`/get-invoice-details/${invoiceId}`)
+    const ridEl = document.getElementById('invoiceReturnId');
+    const rid = ridEl ? String(ridEl.value || '').trim() : '';
+    const excludeParam =
+        rid && !rid.startsWith('TEMP_')
+            ? `?exclude_return_id=${encodeURIComponent(rid)}`
+            : '';
+
+    fetch(`/get-invoice-details/${encodeURIComponent(invoiceId)}${excludeParam}`)
         .then(res => res.json())
         .then(data => {
+            if (data.error) {
+                showToast(data.error || 'Could not load invoice', 'error');
+                return;
+            }
+
+            const tbody = document.getElementById("itemsTableBody");
+
+            if (data.all_line_items_returned) {
+                /* Invoice Reference label + hidden value were already set by selectSaleOrder;
+                   keep showing e.g. "INV-016 - Akshaya K" instead of replacing with a warning string. */
+                document.getElementById("customerName").value = data.customer_name || "";
+                document.getElementById("customerId").value = data.customer_id || "";
+                document.getElementById("email").value = data.email || "";
+                document.getElementById("phone").value = data.phone || "";
+                document.getElementById("contactPerson").value = data.contact_person || "";
+                document.getElementById("customerRefNo").value = data.customer_ref_no || "";
+                originalGrandTotal = data.summary?.original_total || 0;
+                globalDiscountPct = data.summary?.global_discount_pct || 0;
+                tbody.innerHTML = "";
+                updateOrderSummary();
+                checkSubmitButtonStatus();
+                showToast(
+                    "Every line on this invoice has already been returned. Choose another invoice.",
+                    "warning"
+                );
+                syncInvoiceRefPickerUi();
+                syncInvoiceReturnFooterButtons();
+                return;
+            }
+
             document.getElementById("customerName").value = data.customer_name || "";
             document.getElementById("customerId").value = data.customer_id || "";
             document.getElementById("email").value = data.email || "";
@@ -1399,85 +1631,77 @@ function loadInvoiceDetails(invoiceId) {
             originalGrandTotal = data.summary?.original_total || 0;
             globalDiscountPct = data.summary?.global_discount_pct || 0;
 
-            let tbody = document.getElementById("itemsTableBody");
             tbody.innerHTML = "";
-            
+
             if (data.items && data.items.length) {
-                showToast(` Loaded ${data.items.length} items from invoice ${invoiceId}`, 'success');
-                
-                const isDraft = (currentStatus === 'draft');
-                
+                showToast(`Loaded ${data.items.length} returnable line(s) from ${invoiceId}`, 'success');
+
                 data.items.forEach((item, index) => {
-                    const maxQty = item.quantity || 0;
+                    const invoiceLineQty = Number(item.quantity) || 0;
+                    const maxReturnQty =
+                        item.returnable_quantity != null && item.returnable_quantity !== ""
+                            ? Number(item.returnable_quantity)
+                            : invoiceLineQty;
                     const unitPrice = item.unit_price || 0;
-                    
+                    const taxPct = parseFloat(item.tax_pct) || 0;
+                    const discPct = parseFloat(item.disc_pct) || 0;
+
                     const row = tbody.insertRow();
                     row.setAttribute('data-product-id', item.product_id || '');
                     row.setAttribute('data-unit-price', unitPrice);
-                    row.setAttribute('data-disc-pct', 0);
-                    row.setAttribute('data-invoice-qty', maxQty);   // <-- ADD THIS LINE
+                    row.setAttribute('data-tax-pct', taxPct);
+                    row.setAttribute('data-disc-pct', discPct);
+                    row.setAttribute('data-invoice-qty', String(invoiceLineQty));
 
-                    
                     // COLUMN 0: S.No
                     const cellSNo = row.insertCell(0);
                     cellSNo.textContent = index + 1;
                     cellSNo.style.textAlign = "center";
-                    
+
                     // COLUMN 1: Product Name
                     const cellProductName = row.insertCell(1);
                     cellProductName.textContent = item.product_name || '';
                     cellProductName.className = 'product-name';
-                    
+
                     // COLUMN 2: Product ID
                     const cellProductId = row.insertCell(2);
                     cellProductId.textContent = item.product_id || '';
                     cellProductId.className = 'product-id';
                     cellProductId.style.textAlign = "center";
-                    
-                    // COLUMN 3: Invoice Qty
+
+                    // COLUMN 3: Invoice Qty (original line quantity on invoice)
                     const cellInvoiceQty = row.insertCell(3);
-                    cellInvoiceQty.textContent = maxQty;
+                    cellInvoiceQty.textContent = String(invoiceLineQty);
                     cellInvoiceQty.className = 'invoice-qty';
                     cellInvoiceQty.style.textAlign = "center";
-                    
-                    // COLUMN 4: Return Qty
+
+                    // COLUMN 4: Return Qty (capped by remaining returnable qty)
                     const cellReturnQty = row.insertCell(4);
                     const returnQtyInput = document.createElement('input');
+                    const defaultQty = getDefaultReturnQty(maxReturnQty, null);
                     returnQtyInput.type = 'number';
                     returnQtyInput.step = 'any';
-                    returnQtyInput.min = '0';
-                    returnQtyInput.max = maxQty;
-                    // Auto‑fill if draft, otherwise 0
-                    returnQtyInput.value =  '0';
+                    returnQtyInput.min = maxReturnQty > 0 ? '1' : '0';
+                    returnQtyInput.max = maxReturnQty;
+                    returnQtyInput.value = String(defaultQty);
                     returnQtyInput.className = 'return-qty-input';
-                    returnQtyInput.style.width = '80px';
-                    returnQtyInput.style.textAlign = 'center';
-                    returnQtyInput.addEventListener('input', function() {
-                        validateReturnQty(this, maxQty);
-                        updateItemTotal(row);
-                        updateOrderSummary();
-                        checkSubmitButtonStatus();
-                    });
+                    bindReturnQtyInput(returnQtyInput, row, maxReturnQty);
                     cellReturnQty.appendChild(returnQtyInput);
                     cellReturnQty.style.textAlign = "center";
-                    
+
                     // COLUMN 5: Serial Number (Optional)
                     const cellSerialNo = row.insertCell(5);
                     const serialInput = document.createElement('input');
                     serialInput.type = 'text';
                     serialInput.placeholder = 'Enter serial number (Optional)';
                     serialInput.className = 'serial-input';
-                    serialInput.style.width = '120px';
-                    serialInput.style.padding = '5px';
                     cellSerialNo.appendChild(serialInput);
                     cellSerialNo.style.textAlign = "center";
-                    
+
                     // COLUMN 6: Return Reason
                     const cellReturnReason = row.insertCell(6);
                     const reasonSelect = document.createElement('select');
                     reasonSelect.className = 'reason-select';
-                    reasonSelect.style.width = '130px';
-                    reasonSelect.style.padding = '5px';
                     const reasons = ['Select Reason', 'Damaged', 'Wrong Product', 'Quality Issue', 'Expired', 'Customer Request', 'Other'];
                     reasons.forEach(reason => {
                         const option = document.createElement('option');
@@ -1488,78 +1712,72 @@ function loadInvoiceDetails(invoiceId) {
                         }
                         reasonSelect.appendChild(option);
                     });
-                    // Set default reason if draft, otherwise keep 'Select Reason'
-                    // if (isDraft) {
-                        // reasonSelect.value = 'Customer Request';
-                    // } else {
-                        reasonSelect.value = 'Select Reason';
-                    // }
+                    reasonSelect.value = 'Select Reason';
                     reasonSelect.addEventListener('change', function() {
                         checkSubmitButtonStatus();
                     });
                     cellReturnReason.appendChild(reasonSelect);
                     cellReturnReason.style.textAlign = "center";
-                    
+
                     // COLUMN 7: UOM
                     const cellUom = row.insertCell(7);
                     cellUom.textContent = item.uom || '';
                     cellUom.className = 'uom';
                     cellUom.style.textAlign = "center";
-                    
+
                     // COLUMN 8: Unit Price
                     const cellUnitPrice = row.insertCell(8);
                     cellUnitPrice.textContent = unitPrice.toFixed(2);
                     cellUnitPrice.className = 'unit-price';
                     cellUnitPrice.style.textAlign = "right";
-                    
-                    // COLUMN 9: Tax (%) - Display as 0
+
+                    // COLUMN 9: Tax (%)
                     const cellTax = row.insertCell(9);
-                    cellTax.textContent = '0.00';
+                    cellTax.textContent = taxPct.toFixed(2);
                     cellTax.className = 'tax-pct';
                     cellTax.style.textAlign = "center";
-                    
-                    // COLUMN 10: Discount (%) - Display as 0
+
+                    // COLUMN 10: Discount (%)
                     const cellDisc = row.insertCell(10);
-                    cellDisc.textContent = '0.00';
+                    cellDisc.textContent = discPct.toFixed(2);
                     cellDisc.className = 'disc-pct';
                     cellDisc.style.textAlign = "center";
-                    
+
                     // COLUMN 11: Total
                     const cellTotal = row.insertCell(11);
-                    const initialTotal = (isDraft ? maxQty : 0) * unitPrice;
+                    const initialTotal = defaultQty * unitPrice;
                     cellTotal.textContent = initialTotal.toFixed(2);
                     cellTotal.className = 'row-total';
                     cellTotal.style.textAlign = "right";
                     cellTotal.style.fontWeight = "bold";
-                    
+
                     // COLUMN 12: Action
                     const cellAction = row.insertCell(12);
                     const deleteBtn = document.createElement('button');
                     deleteBtn.innerHTML = '<i class="fa-solid fa-trash-can"></i>';
                     deleteBtn.className = 'delete-row-btn';
                     deleteBtn.title = 'Remove this item from return';
-                    deleteBtn.style.color= '#dc3545';
-                    // deleteBtn.style.color = 'white';
+                    deleteBtn.style.color = '#dc3545';
                     deleteBtn.style.border = 'none';
-                    // deleteBtn.style.borderRadius = '5px';
-                    // deleteBtn.style.padding = '5px 10px';
                     deleteBtn.style.cursor = 'pointer';
                     deleteBtn.addEventListener('click', function() {
-                        if (confirm('Remove this item from the return?')) {
-                            row.remove();
-                            updateOrderSummary();
-                            renumberRows();
-                            checkSubmitButtonStatus();
-                        }
+                        row.remove();
+                        updateOrderSummary();
+                        renumberRows();
+                        checkSubmitButtonStatus();
                     });
                     cellAction.appendChild(deleteBtn);
                     cellAction.style.textAlign = "center";
                 });
                 updateOrderSummary();
-                // checkSubmitButtonStatus();
+                syncInvoiceRefPickerUi();
+                syncInvoiceReturnFooterButtons();
             } else {
-                tbody.innerHTML = '首届<td colspan="13" style="text-align: center;">No items found in this invoice\\';
-                showToast("⚠️ No items found in this invoice", 'warning');
+                tbody.innerHTML =
+                    '<tr><td colspan="13" style="text-align:center;padding:16px;">No returnable line items on this invoice.</td></tr>';
+                showToast("No returnable line items on this invoice.", 'warning');
+                syncInvoiceRefPickerUi();
+                syncInvoiceReturnFooterButtons();
             }
         })
         .catch(err => {
@@ -1567,17 +1785,53 @@ function loadInvoiceDetails(invoiceId) {
             showToast("❌ Failed to load invoice details", 'error');
         });
 }
+const RETURN_QTY_NON_POSITIVE_MSG = "Return Qty value cannot be zero or negative";
+
+/** Default return qty: 1 when invoice qty allows; positive saved qty preserved; 0 when no stock. */
+function getDefaultReturnQty(maxQty, storedQty) {
+    const max = Number(maxQty) || 0;
+    if (storedQty != null && storedQty !== "") {
+        const s = parseFloat(storedQty);
+        if (!isNaN(s) && s > 0) {
+            return Math.min(s, max);
+        }
+    }
+    if (max <= 0) return 0;
+    return Math.min(1, max);
+}
+
+function bindReturnQtyInput(input, row, maxQty) {
+    const handler = () => {
+        validateReturnQty(input, maxQty);
+        updateItemTotal(row);
+        updateOrderSummary();
+        checkSubmitButtonStatus();
+    };
+    input.addEventListener("input", handler);
+    input.addEventListener("blur", handler);
+}
+
 // ===================================================
 // VALIDATE RETURN QUANTITY
 // ===================================================
 function validateReturnQty(input, maxQty) {
-    let value = parseFloat(input.value);
-    if (isNaN(value)) value = 0;
-    if (value < 0) value = 0;
-    if (value > maxQty) {
-        value = maxQty;
-        input.value = value;
-        showToast(`⚠️ Return quantity cannot exceed invoice quantity (${maxQty})`, 'warning');
+    const max = Number(maxQty) || 0;
+    const raw = (input.value ?? "").toString().trim();
+    if (raw === "") return;
+
+    let value = parseFloat(raw);
+    if (isNaN(value)) return;
+
+    if (value <= 0) {
+        showToast(RETURN_QTY_NON_POSITIVE_MSG, "error");
+        const corrected = getDefaultReturnQty(max, null);
+        input.value = corrected === 0 ? "" : String(corrected);
+        return;
+    }
+
+    if (max > 0 && value > max) {
+        input.value = String(max);
+        showToast(`⚠️ Return quantity cannot exceed invoice quantity (${max})`, "warning");
     }
 }
 
@@ -1602,7 +1856,7 @@ function updateOrderSummary() {
     let returnSubtotal = 0;
     
     rows.forEach(row => {
-        if (row.cells.length < 12) return;
+        if (row.cells.length < 13) return;
         
         const returnQty = parseFloat(row.cells[4].querySelector('.return-qty-input')?.value || 0);
         const unitPrice = parseFloat(row.getAttribute('data-unit-price') || 0);
@@ -1611,8 +1865,14 @@ function updateOrderSummary() {
     });
     
     const globalDiscountAmount = (returnSubtotal * globalDiscountPct) / 100;
-    const refundAmount = returnSubtotal - globalDiscountAmount;
-    
+    const rawRefund = returnSubtotal - globalDiscountAmount;
+
+    // Round refund to nearest whole unit; show the delta as the rounding adjustment.
+    // Using Math.round so .50 rounds up, anything below rounds down — same banker
+    // -friendly behavior used elsewhere in the app.
+    const refundAmount = Math.round(rawRefund);
+    const roundingAdjustment = Number((refundAmount - rawRefund).toFixed(2));
+
     const summaryDiv = document.getElementById("tax_total");
     if (summaryDiv) {
         summaryDiv.innerHTML = `
@@ -1620,21 +1880,21 @@ function updateOrderSummary() {
             <div><span>Global Discount (%)</span><span>${globalDiscountPct.toFixed(2)}</span></div>
             <div><span>Return Subtotal</span><span>${returnSubtotal.toFixed(2)}</span></div>
             <div><span>Global Discount Amount</span><span>${globalDiscountAmount.toFixed(2)}</span></div>
-            <div><span>Rounding Adjustment</span><span>0.00</span></div>
+            <div><span>Rounding Adjustment</span><span>${roundingAdjustment.toFixed(2)}</span></div>
             <div class="grand-total"><span>Amount to Refund</span><span>${refundAmount.toFixed(2)}</span></div>
         `;
     }
-    
+
     window.currentSummary = {
         original_total: originalGrandTotal,
         discount_pct: globalDiscountPct,
         discount_amount: globalDiscountAmount,
         subtotal: returnSubtotal,
         tax_amount: 0,
-        rounding: 0,
+        rounding: roundingAdjustment,
         refund_amount: refundAmount
     };
-    
+
     return window.currentSummary;
 }
 
@@ -1773,12 +2033,27 @@ function submitInvoiceReturn(status) {
         return;
     }
 
+    const returnDateVal = (document.getElementById("invoicereturnDate")?.value || "").trim();
+    if (!isValidReturnDateString(returnDateVal)) {
+        showToast(INVOICE_RETURN_INVALID_DATE_MSG, "error");
+        releaseSaveLock();
+        return;
+    }
+
+    const custName = (document.getElementById("customerName")?.value || "").trim();
+    if (!custName) {
+        showToast("Customer details are missing. Select a valid invoice reference.", "warning");
+        releaseSaveLock();
+        return;
+    }
+
     const itemsTable = document.getElementById("itemsTableBody");
     const items = [];
     let hasErrors = false;
 
     if (itemsTable) {
         Array.from(itemsTable.rows).forEach((row) => {
+            if (row.cells.length < 13) return;
             const returnQty = parseFloat(row.cells[4].querySelector(".return-qty-input")?.value || 0);
             if (returnQty > 0) {
                 const reasonSelect = row.cells[6].querySelector(".reason-select");
@@ -1801,7 +2076,8 @@ function submitInvoiceReturn(status) {
                     return_reason: reasonSelect?.value || "",
                     uom: row.cells[7]?.textContent || "",
                     unit_price: parseFloat(row.getAttribute("data-unit-price") || 0),
-                    disc_pct: 0,
+                    tax_pct: parseFloat(row.getAttribute("data-tax-pct") || 0),
+                    disc_pct: parseFloat(row.getAttribute("data-disc-pct") || 0),
                     total: parseFloat(row.cells[11]?.textContent || 0),
                 });
             }
@@ -1912,14 +2188,8 @@ function submitInvoiceReturn(status) {
 // MAIN BUTTONS
 // ===================================================
 function updateMainButtons() {
-    const invoiceRef = document.getElementById('invoiceReferenceID');
-    const hasRef = invoiceRef && invoiceRef.value.trim() !== "";
-    const saveDraftBtn = document.getElementById('irSaveDraftBtn');
-    const submitBtn = document.getElementById('irSubmitBtn');
-    
-    if (saveDraftBtn && currentStatus === 'draft') saveDraftBtn.disabled = !hasRef;
     if (currentStatus === 'draft' || !currentStatus) {
-        checkSubmitButtonStatus();
+        syncInvoiceReturnFooterButtons();
     }
 }
 
@@ -2068,11 +2338,29 @@ document.addEventListener('DOMContentLoaded', function() {
         returnDateField.value = new Date().toISOString().split("T")[0];
     }
 
+    // Same date validation as invoice-return-list filters: invalid input
+    // (e.g. year outside 1900-2100) raises the maroon "Invalid date" toast.
+    if (returnDateField) {
+        returnDateField.addEventListener("change", handleInvoiceReturnDateChange);
+        returnDateField.addEventListener("blur", handleInvoiceReturnDateChange);
+        returnDateField.addEventListener("input", syncInvoiceReturnFooterButtons);
+    }
+
 
 
     initializeTabs();
     initializeComments();
     initializeAttachments();
+
+    const saleOrderSelectedEl = document.getElementById('saleOrderSelected');
+    if (saleOrderSelectedEl) {
+        saleOrderSelectedEl.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            toggleSaleOrderDropdown();
+        });
+    }
+    syncInvoiceRefPickerUi();
 
     if (editId || viewId) {
         // Load existing invoice return for edit or view
@@ -2172,13 +2460,17 @@ if (deliverBtn) {
         emailAction.addEventListener("click", sendEmail);
     }
 
-    loadSaleOrders();
+    // Invoice Reference dropdown items are server-rendered from `invoices`
+    // (see new-invoice-return.html). Do NOT call loadSaleOrders() here — that
+    // would wipe the invoice list and replace it with sales orders.
     // updatePageHeading(); // add this call
 
     document.addEventListener('click', function(e) {
         const soDropdown = document.getElementById('saleOrderDropdown');
         const soSelected = document.getElementById('saleOrderSelected');
-        if (soSelected && !soSelected.contains(e.target) && soDropdown && !soDropdown.contains(e.target)) {
+        const clickedInDisplay =
+            soSelected && (e.target === soSelected || soSelected.contains(e.target));
+        if (!clickedInDisplay && soDropdown && !soDropdown.contains(e.target)) {
             soDropdown.style.display = 'none';
         }
     });

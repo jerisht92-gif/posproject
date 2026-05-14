@@ -1,7 +1,7 @@
 {% extends "menu.html" %}
 
 {% block extra_css %}
-<link rel="stylesheet" href="{{ url_for('static', filename='new-invoice-return.css') }}?v=2">
+<link rel="stylesheet" href="{{ url_for('static', filename='new-invoice-return.css') }}?v=7">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 {% endblock %}
 
@@ -31,12 +31,12 @@
           <input type="text" id="invoiceReturnId" name="invoiceReturn_id" value="{{ invoice_id }}" readonly>
         </div>
 
-        <!-- Invoice Reference Date (reference dropdown with search) -->
+        <!-- Invoice Reference ID: readonly like Invoice Return ID; click field when draft and none chosen yet to open list -->
         <div class="form-group">
           <label>Invoice Reference ID</label>
           <div class="custom-dropdown">
-            <div class="dropdown-selected" id="saleOrderSelected" onclick="toggleSaleOrderDropdown()">
-              Select Invoice Reference ID
+            <div class="invoice-ref-row">
+              <input type="text" id="saleOrderSelected" readonly placeholder="Select Invoice Reference ID" autocomplete="off">
             </div>
             <div class="dropdown-menu" id="saleOrderDropdown">
               <input type="text" id="InvoiceRefIDSearch" placeholder="Search Sales Order..." onkeyup="filterSaleOrders()">
@@ -44,7 +44,7 @@
                 {% if invoices %}
                   {% for inv in invoices %}
                     <div class="dropdown-item" data-value="{{ inv['invoice_id'] }}" onclick="selectSaleOrder(this)">
-                      {{ inv['invoice_id'] }} 
+                      {{ inv['invoice_id'] }}{% if inv['customer_name'] %} - {{ inv['customer_name'] }}{% endif %}
                     </div>
                   {% endfor %}
                 {% else %}
@@ -211,8 +211,17 @@
 </div>
 </div> <!-- /.modal -->
 
-
-
+<!-- Delete File Modal (Attachments — same as quotation / new invoice) -->
+<div id="deleteFileModal" class="reject-modal-overlay" style="display:none;">
+  <div class="reject-modal">
+    <h3 class="reject-title">Delete File</h3>
+    <p class="reject-text">Are you sure want to delete this file ?</p>
+    <div class="reject-actions">
+      <button type="button" id="deleteFileCancelBtn" class="reject-btn cancel">Cancel</button>
+      <button type="button" id="deleteFileConfirmBtn" class="reject-btn delete">Delete</button>
+    </div>
+  </div>
+</div>
 
 <!-- Email Modal -->
 <div id="emailModal" class="email-modal" style="display: none;">

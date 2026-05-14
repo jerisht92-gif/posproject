@@ -10,6 +10,11 @@
     font-family: "Poppins", sans-serif;
     color: #4a1f1a;
     background: #f6f1f1;
+    /* Fill the main content column so Line Items can use full width on large screens */
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    min-width: 0;
 }
 
 .quotation-full {
@@ -18,6 +23,10 @@ border-radius: 12px;
 padding: 32px 36px;
 box-shadow: 0 10px 20px rgba(0, 0, 0, 0.12);
 transition: 0.3s ease;
+width: 100%;
+max-width: 100%;
+box-sizing: border-box;
+min-width: 0;
 }
 
 .quotation-full:hover {
@@ -101,13 +110,42 @@ color: #d18a84;
   border-radius: 6px;
   padding: 15px 0px 15px 0px;
   margin-top: 20px;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  min-width: 0;
+  /* Allow horizontal scroll only if viewport is extremely narrow; avoids clipping under .content { overflow-x: hidden } */
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .items-table {
   width: 100%;
+  max-width: 100%;
+  table-layout: fixed;
   border-collapse: separate;
   border-spacing: 0;
 }
+
+/* Distribute columns so the table always fits the box width (large + small screens) */
+.items-table th:nth-child(1),
+.items-table td:nth-child(1) { width: 6%; }
+.items-table th:nth-child(2),
+.items-table td:nth-child(2) { width: 24%; }
+.items-table th:nth-child(3),
+.items-table td:nth-child(3) { width: 11%; }
+.items-table th:nth-child(4),
+.items-table td:nth-child(4) { width: 8%; }
+.items-table th:nth-child(5),
+.items-table td:nth-child(5) { width: 7%; }
+.items-table th:nth-child(6),
+.items-table td:nth-child(6) { width: 11%; }
+.items-table th:nth-child(7),
+.items-table td:nth-child(7) { width: 8%; }
+.items-table th:nth-child(8),
+.items-table td:nth-child(8) { width: 11%; }
+.items-table th:nth-child(9),
+.items-table td:nth-child(9) { width: 14%; }
 
 /* Header row */
 .items-table thead tr {
@@ -128,6 +166,13 @@ color: #d18a84;
   padding: 18px;
   font-size: 12px;
   text-align: center;
+  vertical-align: middle;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+.items-table thead th {
+  white-space: nowrap;
 }
 
 
@@ -1340,13 +1385,12 @@ body.view-mode #submitBtn {
     grid-template-columns: 1fr;
   }
 
-  .items-table {
-    min-width: 750px;
+  .items-table th,
+  .items-table td {
+    padding: 12px 8px;
+    font-size: 11px;
   }
 
-  .quotation-items-box {
-    overflow-x: auto;
-  }
   .footer-bottom {
         flex-direction: row;
     }

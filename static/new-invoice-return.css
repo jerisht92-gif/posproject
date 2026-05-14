@@ -101,10 +101,17 @@ color: #d18a84;
   border-radius: 6px;
   padding: 15px 0px 15px 0px;
   margin-top: 20px;
+  /* The invoice-return Line Items table has 13 columns (vs 9 on New Invoice);
+     allow horizontal scroll instead of clipping the right-most columns. */
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .items-table {
   width: 100%;
+  /* Keep columns legible on narrower viewports by enforcing a minimum width
+     and letting the container scroll. */
+  min-width: 1180px;
   border-collapse: separate;
   border-spacing: 0;
 }
@@ -125,9 +132,52 @@ color: #d18a84;
 .items-table th,
 .items-table td {
   border: none;
-  padding: 15px;
+  /* Tighter padding than New Invoice (15px) because this table has 4 more
+     columns and must still fit comfortably. */
+  padding: 10px 8px;
   font-size: 12px;
   text-align: center;
+  vertical-align: middle;
+  word-break: break-word;
+}
+
+/* Keep header labels on a single line so columns don't get squeezed by
+   wrapped 2-line headers. */
+.items-table thead th {
+  white-space: nowrap;
+}
+
+/* Narrow utility columns. */
+.items-table th:first-child,
+.items-table td:first-child {
+  width: 44px;
+}
+.items-table th:last-child,
+.items-table td:last-child {
+  width: 60px;
+}
+
+/* Inputs / selects rendered inside Line Items cells. JS used to set these
+   widths inline; defining them here lets the layout breathe and stays
+   consistent across rows. */
+.items-table .return-qty-input {
+  width: 70px;
+  max-width: 100%;
+  padding: 4px 6px;
+  text-align: center;
+  box-sizing: border-box;
+}
+.items-table .serial-input {
+  width: 130px;
+  max-width: 100%;
+  padding: 4px 6px;
+  box-sizing: border-box;
+}
+.items-table .reason-select {
+  width: 140px;
+  max-width: 100%;
+  padding: 4px 6px;
+  box-sizing: border-box;
 }
 
 
@@ -929,28 +979,35 @@ body.view-mode #irSubmitBtn {
   width: 100%;
 }
 
-.dropdown-selected {
+/* Row: full-width readonly reference (click opens list when draft + no ref yet) */
+.invoice-ref-row {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  align-items: stretch;
   width: 100%;
-  height: 30px;
-  padding: 6px 12px;
-  color: #000;
-  cursor: pointer;
-  border: 1px solid #e7b7b5;
-  border-radius: 8px;
-  background-color: #fff5f5;
-  font-size: 13px;
-  box-sizing: border-box;
-  transition: 0.2s ease;
 }
 
-.dropdown-selected:hover {
-  transform: scale(1.01);
+.invoice-ref-row #saleOrderSelected {
+  flex: 1;
+  min-width: 0;
+}
+
+.custom-dropdown .invoice-ref-row #saleOrderSelected {
+  display: block;
+}
+
+/* Same hover / focus treatment as other .form-grid readonly inputs (e.g. Invoice Return ID) */
+.form-grid .invoice-ref-row #saleOrderSelected:hover {
   background: #f5d4d4;
   border-color: #b9473e;
   box-shadow: 0 4px 10px rgba(161, 40, 40, 0.12);
+  transform: scale(1.01);
+  transition: 0.25s ease-in-out;
+}
+
+.form-grid .invoice-ref-row #saleOrderSelected:focus {
+  border-color: #a12828;
+  box-shadow: 0 0 0 1px rgba(161, 40, 40, 0.25);
+  outline: none;
 }
 
 .dropdown-menu {
@@ -1438,4 +1495,77 @@ box-shadow: 0 2px 0 #999999;
     /* border: 1px solid #ccc; */
     border-radius: 4px;
     background-color:#d18a84;
+}
+
+/* Delete attachment modal (same as new invoice / quotation) */
+.reject-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 12000;
+}
+
+.reject-modal {
+  background: #ffffff;
+  border-radius: 12px;
+  padding: 24px 28px 20px;
+  box-shadow: 0 18px 45px rgba(0, 0, 0, 0.2);
+  min-width: 360px;
+  max-width: 460px;
+}
+
+.reject-title {
+  margin: 0 0 8px;
+  font-size: 18px;
+  font-weight: 600;
+  color: #a12828;
+}
+
+.reject-text {
+  margin: 0 0 12px;
+  font-size: 14px;
+  color: #4a1f1a;
+}
+
+.reject-actions {
+  margin-top: 16px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.reject-btn {
+  min-width: 90px;
+  padding: 8px 14px;
+  border-radius: 10px;
+  border: none;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: filter 0.2s ease, transform 0.25s, box-shadow 0.25s;
+}
+
+.reject-btn.cancel {
+  background: #f6f6f7;
+  color: #1d2430;
+  border: 1.5px solid #cfcfd4;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
+}
+
+.reject-btn.cancel:hover {
+  filter: brightness(0.95);
+}
+
+.reject-btn.delete {
+  background: linear-gradient(#a12828, #8c1f1f);
+  color: #ffffff;
+  box-shadow: 0 5px 0 #6d1717;
+}
+
+.reject-btn.delete:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 0 #6d1717;
 }

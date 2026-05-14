@@ -157,7 +157,7 @@
             </a>
             
             <a href="{{ url_for('invoice_return_list') }}"
-               class="submenu-item{% if page == 'invoice_return' %} active{% endif %}">
+               class="submenu-item{% if page in ['invoice_return', 'inv_return'] %} active{% endif %}">
               <span class="submenu-icon">↩</span>
               <span>Invoice Return</span>
             </a>

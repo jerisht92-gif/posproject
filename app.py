@@ -13749,45 +13749,68 @@ def get_sales_order_comments(so_id):
 
 @app.get("/api/sales-orders")
 def api_sales_orders_list():
+    """Sales Order list used by /sales-order.
+
+    Returns ``{"orders": [...]}``. The previous implementation joined
+    ``customers`` and only selected ``c.name``; on rows whose
+    ``customer_id`` was missing (legacy data) the query worked but elsewhere
+    a Postgres error caused the front-end to silently render "No Sales Orders
+    Found". Mirror the working ``/api/sales-orders/all`` shape: use
+    ``COALESCE(so.customer_name, c.name, '')`` so denormalised columns are
+    honoured, defensively coerce values, and log the traceback if anything
+    still fails.
+    """
     conn = get_db_connection()
     cur = conn.cursor()
 
     try:
-        cur.execute("""
-    SELECT 
-        so.so_id,
-        so.order_type,
-        c.name,
-        so.sales_rep,
-        so.order_date,
-        so.status,
-        so.stock_status,
-        so.grand_total
-    FROM sales_orders so
-    LEFT JOIN customers c
-    ON so.customer_id = c.customer_id
-    ORDER BY so.created_at DESC
-""")
+        # NOTE: We read ``order_date`` as text (``to_char``) instead of as a
+        # ``date``. Legacy test data in the DB has at least one out-of-range
+        # year (e.g. 222222), and psycopg blows up with
+        # ``ValueError: year must be in 1..9999`` while materialising the row.
+        # Casting in SQL bypasses that adapter path entirely.
+        cur.execute(
+            """
+            SELECT
+                so.so_id,
+                so.order_type,
+                COALESCE(so.customer_name, c.name, '') AS customer_name,
+                so.sales_rep,
+                CASE
+                    WHEN so.order_date IS NULL THEN ''
+                    ELSE to_char(so.order_date, 'YYYY-MM-DD')
+                END AS order_date,
+                so.status,
+                so.stock_status,
+                so.grand_total
+            FROM sales_orders so
+            LEFT JOIN customers c
+              ON so.customer_id = c.customer_id
+            ORDER BY so.created_at DESC NULLS LAST, so.so_id DESC
+            """
+        )
 
-        rows = cur.fetchall()
+        rows = cur.fetchall() or []
 
         orders = []
         for r in rows:
             orders.append({
-                "so_id": r[0],
-                "order_type": r[1],
-                "customer_name": r[2],
-                "sales_rep": r[3],
-                "order_date": str(r[4]),
-                "status": r[5],
-                "stock_status": r[6],
-                "grand_total": float(r[7] or 0)
+                "so_id": r[0] or "",
+                "order_type": r[1] or "",
+                "customer_name": r[2] or "",
+                "sales_rep": r[3] or "",
+                "order_date": r[4] or "",
+                "status": r[5] or "",
+                "stock_status": r[6] or "",
+                "grand_total": float(r[7] or 0),
             })
 
         return jsonify({"orders": orders})
 
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        print("[/api/sales-orders] failed:", e)
+        traceback.print_exc()
+        return jsonify({"error": str(e), "orders": []}), 500
 
     finally:
         cur.close()
@@ -18315,22 +18338,107 @@ def generate_invoice_return_id():
 # =========================
 # GET ALL INVOICES (for dropdown)
 # =========================
-def get_all_invoices():
+def _invoice_has_any_returnable_qty(cur, invoice_id, exclude_return_id=None):
+    """
+    True if this invoice has at least one invoice_items line with remaining
+    returnable quantity (same FIFO / pool rules as get_invoice_details).
+    """
+    if not invoice_id:
+        return False
+    cur.execute(
+        """
+        SELECT product_id, quantity, unit_price
+        FROM invoice_items
+        WHERE invoice_id = %s
+        ORDER BY id
+        """,
+        (invoice_id,),
+    )
+    items_rows = cur.fetchall()
+    if not items_rows:
+        return False
+
+    return_params = [invoice_id]
+    ex_sql = ""
+    if exclude_return_id:
+        ex_sql = " AND ir.invoice_return_id <> %s "
+        return_params.append(exclude_return_id)
+    cur.execute(
+        f"""
+        SELECT iri.product_id, iri.unit_price, COALESCE(SUM(iri.return_quantity), 0)
+        FROM invoice_return_items iri
+        INNER JOIN invoice_return ir ON ir.invoice_return_id = iri.invoice_return_id
+        WHERE ir.invoice_id = %s
+          AND LOWER(COALESCE(ir.status, '')) <> 'cancelled'
+          {ex_sql}
+        GROUP BY iri.product_id, iri.unit_price
+        """,
+        tuple(return_params),
+    )
+    pool_left = defaultdict(float)
+    for agg in cur.fetchall():
+        pk = (agg[0] or "", round(float(agg[1] or 0), 6))
+        pool_left[pk] += float(agg[2] or 0)
+
+    def _pool_key(product_id, unit_price):
+        return (product_id or "", round(float(unit_price or 0), 6))
+
+    for row in items_rows:
+        qf = float(row[1] or 0)
+        pk = _pool_key(row[0], row[2])
+        taken = min(qf, pool_left[pk])
+        pool_left[pk] -= taken
+        returnable = qf - taken
+        if returnable > 0:
+            return True
+    return False
+
+
+def get_all_invoices(existing_return_id=None):
+    """
+    Invoices eligible for a new return: at least one line still has returnable qty.
+    Fully returned invoices are omitted.
+
+    When editing/viewing an existing return, pass its invoice_return_id so return
+    sums exclude this document, and the return's current invoice_id is always
+    listed even if nothing else is returnable (edge: malformed data).
+    """
     conn = get_db_connection()
     cur = conn.cursor()
-    cur.execute("""
-        SELECT invoice_id, customer_name
-        FROM invoices
-        ORDER BY created_at DESC
-    """)
-    rows = cur.fetchall()
+    try:
+        include_invoice_id = None
+        if existing_return_id:
+            cur.execute(
+                "SELECT invoice_id FROM invoice_return WHERE invoice_return_id = %s",
+                (existing_return_id,),
+            )
+            rr = cur.fetchone()
+            if rr and rr[0]:
+                include_invoice_id = rr[0]
 
-    invoices = []
-    for r in rows:
-        invoices.append({
-            "invoice_id": r[0],
-        })
-    return invoices
+        cur.execute(
+            """
+            SELECT invoice_id, customer_name
+            FROM invoices
+            ORDER BY created_at DESC
+            """
+        )
+        rows = cur.fetchall()
+
+        invoices = []
+        for r in rows:
+            inv_id = r[0]
+            if include_invoice_id and inv_id == include_invoice_id:
+                invoices.append({"invoice_id": inv_id, "customer_name": r[1] or ""})
+                continue
+            if _invoice_has_any_returnable_qty(
+                cur, inv_id, exclude_return_id=existing_return_id
+            ):
+                invoices.append({"invoice_id": inv_id, "customer_name": r[1] or ""})
+        return invoices
+    finally:
+        cur.close()
+        conn.close()
 
 
 @app.route("/new-invoice-return")
@@ -18354,7 +18462,7 @@ def new_invoice_return():
     # Determine invoice return ID for the hidden field
     invoice_return_id = existing_id if existing_id else generate_invoice_return_id()
 
-    invoices = get_all_invoices()
+    invoices = get_all_invoices(existing_return_id=existing_id)
 
     return render_template(
         "new-invoice-return.html",
@@ -18374,6 +18482,10 @@ def get_invoice_details(invoice_id):
     conn = get_db_connection()
     cur = conn.cursor()
 
+    # Optional: when editing an existing return, exclude its own lines from
+    # "already returned" so remaining quantities are correct.
+    exclude_return_id = (request.args.get("exclude_return_id") or "").strip() or None
+
     # =========================
     # 1. Invoice Main
     # =========================
@@ -18385,13 +18497,15 @@ def get_invoice_details(invoice_id):
     
     row = cur.fetchone()
     if not row:
+        cur.close()
+        conn.close()
         return jsonify({"error": "Invoice not found"}), 404
 
     columns = [desc[0] for desc in cur.description]
     invoice = dict(zip(columns, row))
 
     # =========================
-    # 2. Invoice Items (simplified - only tax and discount)
+    # 2. Invoice Items — only lines with remaining returnable quantity
     # =========================
     cur.execute("""
         SELECT product_id, product_name, quantity, uom,
@@ -18402,6 +18516,33 @@ def get_invoice_details(invoice_id):
     """, (invoice_id,))
 
     items_rows = cur.fetchall()
+
+    # Pooled return quantities by (product_id, unit_price) across non-cancelled returns
+    return_params = [invoice_id]
+    ex_sql = ""
+    if exclude_return_id:
+        ex_sql = " AND ir.invoice_return_id <> %s "
+        return_params.append(exclude_return_id)
+    cur.execute(
+        f"""
+        SELECT iri.product_id, iri.unit_price, COALESCE(SUM(iri.return_quantity), 0)
+        FROM invoice_return_items iri
+        INNER JOIN invoice_return ir ON ir.invoice_return_id = iri.invoice_return_id
+        WHERE ir.invoice_id = %s
+          AND LOWER(COALESCE(ir.status, '')) <> 'cancelled'
+          {ex_sql}
+        GROUP BY iri.product_id, iri.unit_price
+        """,
+        tuple(return_params),
+    )
+    pool_left = defaultdict(float)
+    for agg in cur.fetchall():
+        pk = (agg[0] or "", round(float(agg[1] or 0), 6))
+        pool_left[pk] += float(agg[2] or 0)
+
+    def _pool_key(product_id, unit_price):
+        return (product_id or "", round(float(unit_price or 0), 6))
+
     items = []
     for row in items_rows:
         qty = Decimal(row[2] or 0)
@@ -18409,25 +18550,34 @@ def get_invoice_details(invoice_id):
         tax = Decimal(row[5] or 0)
         disc = Decimal(row[6] or 0)
 
-        # Calculate total (simple calculation)
+        qf = float(qty)
+        pk = _pool_key(row[0], row[4])
+        taken = min(qf, pool_left[pk])
+        pool_left[pk] -= taken
+        returnable = qf - taken
+        if returnable <= 0:
+            continue
+
+        # Calculate line total for display (full invoice line, not prorated)
         total = qty * price
-        # Apply discount if any
         if disc > 0:
             total = total - (total * (disc / Decimal(100)))
-        # Apply tax if any
         if tax > 0:
             total = total + (total * (tax / Decimal(100)))
 
         items.append({
             "product_id": row[0],
             "product_name": row[1],
-            "quantity": float(qty),
+            "quantity": qf,
+            "returnable_quantity": float(returnable),
             "uom": row[3],
             "unit_price": float(price),
-            "tax_pct": float(tax),  # From invoice_items (default 0)
-            "disc_pct": float(disc), # From invoice_items (default 0)
+            "tax_pct": float(tax),
+            "disc_pct": float(disc),
             "total": float(total)
         })
+
+    all_line_items_returned = bool(items_rows) and not items
 
     # =========================
     # 3. Invoice Summary (simplified - only grand_total and global_discount_pct)
@@ -18499,9 +18649,38 @@ def get_invoice_details(invoice_id):
         "contact_person": invoice.get("contact_person"),
         "customer_ref_no": invoice.get("customer_ref_no"),
         "items": items,
+        "all_line_items_returned": all_line_items_returned,
         "summary": summary,
         "comments": comments
     })
+
+
+def _invoice_grand_total_from_summary(cur, invoice_id):
+    """
+    Canonical 'Original Grand Total' for an invoice return: the linked invoice's
+    grand_total from invoice_summary (latest row by created_at).
+
+    invoice_return_summary.original_total can be wrong if an older client saved a
+    bad payload; always prefer the source invoice total when present.
+    """
+    if not invoice_id:
+        return None
+    cur.execute(
+        """
+        SELECT grand_total
+        FROM invoice_summary
+        WHERE invoice_id = %s
+        ORDER BY created_at DESC NULLS LAST
+        LIMIT 1
+        """,
+        (invoice_id,),
+    )
+    row = cur.fetchone()
+    if not row or row[0] is None:
+        return None
+    return float(row[0])
+
+
 # =========================
 # SAVE INVOICE RETURN
 # =========================
@@ -18635,6 +18814,13 @@ def save_invoice_return():
         # 3. INSERT SUMMARY (for both new and update)
         # =========================
         summary = data.get("summary", {})
+        invoice_id_for_total = data.get("invoice_id")
+        canonical_grand = _invoice_grand_total_from_summary(cur, invoice_id_for_total)
+        original_total_val = (
+            float(canonical_grand)
+            if canonical_grand is not None
+            else float(summary.get("original_total", 0))
+        )
         cur.execute("""
             INSERT INTO invoice_return_summary (
                 invoice_return_id,
@@ -18648,7 +18834,7 @@ def save_invoice_return():
             VALUES (%s,%s,%s,%s,%s,%s,%s)
         """, (
             invoice_return_id,
-            float(summary.get("original_total", 0)),
+            original_total_val,
             float(summary.get("discount_pct", 0)),
             float(summary.get("subtotal", 0)),
             float(summary.get("discount_amount", 0)),
@@ -18677,31 +18863,50 @@ def save_invoice_return():
         cur.close()
         conn.close()
 
+
+def _ensure_invoice_return_comments_created_by_column(conn, cur):
+    """Persist comment author display name; DDL committed separately so it survives read-only flows."""
+    try:
+        cur.execute(
+            "ALTER TABLE invoice_return_comments ADD COLUMN IF NOT EXISTS created_by VARCHAR(255)"
+        )
+        conn.commit()
+    except Exception as ex:
+        conn.rollback()
+        print("⚠️ invoice_return_comments.created_by ensure:", ex)
+
+
 @app.route('/api/invoice-return/<invoice_return_id>/comments', methods=['GET'])
 def get_comments_invoice_return(invoice_return_id):
     conn = get_db_connection()
     cur = conn.cursor()
 
-    cur.execute("""
-        SELECT id, comment, created_at
-        FROM invoice_return_comments
-        WHERE invoice_return_id=%s
-        ORDER BY created_at DESC
-    """, (invoice_return_id,))
+    try:
+        _ensure_invoice_return_comments_created_by_column(conn, cur)
+        cur.execute("""
+            SELECT id, comment, created_at, created_by
+            FROM invoice_return_comments
+            WHERE invoice_return_id=%s
+            ORDER BY created_at DESC
+        """, (invoice_return_id,))
 
-    rows = cur.fetchall()
-    cur.close()
-    conn.close()
+        rows = cur.fetchall()
 
-    comments = []
-    for r in rows:
-        comments.append({
-            "id": r[0],
-            "text": r[1],
-            "created_at": r[2].strftime("%Y-%m-%d %H:%M")
-        })
+        comments = []
+        for r in rows:
+            created = r[2]
+            author = (r[3] or "").strip() if len(r) > 3 else ""
+            comments.append({
+                "id": r[0],
+                "text": r[1],
+                "created_at": created.strftime("%Y-%m-%d %H:%M") if created else "",
+                "author": author or "User",
+            })
 
-    return jsonify({"comments": comments})
+        return jsonify({"comments": comments})
+    finally:
+        cur.close()
+        conn.close()
 
 
 @app.route('/api/invoice-return/<invoice_return_id>/comments', methods=['POST'])
@@ -18710,22 +18915,29 @@ def add_comment_invoice_return(invoice_return_id):
     cur = conn.cursor()
 
     data = request.get_json()
+    author_name = _get_logged_in_user_name()
 
-    # ✅ REMOVED the explicit id column – database will auto‑generate it
-    cur.execute("""
-        INSERT INTO invoice_return_comments (invoice_return_id, comment, created_at)
-        VALUES (%s,%s,%s)
-    """, (
-        invoice_return_id,
-        data.get("comment_text"),
-        datetime.now()
-    ))
+    try:
+        _ensure_invoice_return_comments_created_by_column(conn, cur)
+        cur.execute("""
+            INSERT INTO invoice_return_comments (invoice_return_id, comment, created_at, created_by)
+            VALUES (%s,%s,%s,%s)
+        """, (
+            invoice_return_id,
+            data.get("comment_text"),
+            datetime.now(),
+            author_name,
+        ))
 
-    conn.commit()
-    cur.close()
-    conn.close()
-
-    return jsonify({"success": True})
+        conn.commit()
+        return jsonify({"success": True})
+    except Exception as e:
+        conn.rollback()
+        print("❌ add_comment_invoice_return:", e)
+        return jsonify({"success": False, "error": str(e)}), 500
+    finally:
+        cur.close()
+        conn.close()
 
 
 @app.route('/api/invoice-return/<invoice_return_id>/attachments', methods=['GET'])
@@ -18916,6 +19128,8 @@ def get_invoice_return_data(invoice_return_id):
     cur = conn.cursor()
     
     try:
+        _ensure_invoice_return_comments_created_by_column(conn, cur)
+
         # 1. Header
         cur.execute("""
             SELECT 
@@ -18963,6 +19177,7 @@ def get_invoice_return_data(invoice_return_id):
                 return_reason,
                 uom,
                 unit_price,
+                tax_pct,
                 disc_pct,
                 total
             FROM invoice_return_items
@@ -18981,13 +19196,14 @@ def get_invoice_return_data(invoice_return_id):
                 "return_reason": row[5] or "",
                 "uom": row[6] or "",
                 "unit_price": float(row[7]) if row[7] else 0,
-                "disc_pct": float(row[8]) if row[8] else 0,
-                "total": float(row[9]) if row[9] else 0
+                "tax_pct": float(row[8]) if row[8] else 0,
+                "disc_pct": float(row[9]) if row[9] else 0,
+                "total": float(row[10]) if row[10] else 0
             })
         
         # 3. Comments
         cur.execute("""
-            SELECT id, comment, created_at
+            SELECT id, comment, created_at, created_by
             FROM invoice_return_comments
             WHERE invoice_return_id = %s
             ORDER BY created_at DESC
@@ -18995,11 +19211,12 @@ def get_invoice_return_data(invoice_return_id):
         
         comments = []
         for row in cur.fetchall():
+            author = (row[3] or "").strip() if len(row) > 3 else ""
             comments.append({
                 "id": row[0],
                 "text": row[1],
                 "created_at": row[2].strftime("%Y-%m-%d %H:%M:%S") if row[2] else "",
-                "author": "System"  # You can modify if you store author
+                "author": author or "User",
             })
         
         # 4. Attachments
@@ -19034,6 +19251,10 @@ def get_invoice_return_data(invoice_return_id):
             "discount_amount": float(summary_row[3]) if summary_row else 0,
             "refund_amount": float(summary_row[4]) if summary_row else 0
         }
+        inv_id = invoice_return.get("invoice_id")
+        canonical = _invoice_grand_total_from_summary(cur, inv_id)
+        if canonical is not None:
+            summary["original_total"] = canonical
         
         return jsonify({
             "success": True,
@@ -19826,6 +20047,18 @@ def update_invoice_return_items_summary(return_id):
 
         # 3. Replace summary (delete old, insert new)
         cur.execute("DELETE FROM invoice_return_summary WHERE invoice_return_id = %s", (return_id,))
+        cur.execute(
+            "SELECT invoice_id FROM invoice_return WHERE invoice_return_id = %s",
+            (return_id,),
+        )
+        inv_row = cur.fetchone()
+        inv_id = inv_row[0] if inv_row else None
+        canonical_grand = _invoice_grand_total_from_summary(cur, inv_id)
+        original_total_val = (
+            float(canonical_grand)
+            if canonical_grand is not None
+            else float(summary.get("original_total", 0))
+        )
         cur.execute("""
             INSERT INTO invoice_return_summary (
                 invoice_return_id,
@@ -19838,12 +20071,12 @@ def update_invoice_return_items_summary(return_id):
             ) VALUES (%s, %s, %s, %s, %s, %s, %s)
         """, (
             return_id,
-            float(summary.get('original_total', 0)),
-            float(summary.get('discount_pct', 0)),
-            float(summary.get('subtotal', 0)),
-            float(summary.get('discount_amount', 0)),
-            float(summary.get('rounding', 0)),
-            float(summary.get('refund_amount', 0))
+            original_total_val,
+            float(summary.get("discount_pct", 0)),
+            float(summary.get("subtotal", 0)),
+            float(summary.get("discount_amount", 0)),
+            float(summary.get("rounding", 0)),
+            float(summary.get("refund_amount", 0))
         ))
 
         conn.commit()

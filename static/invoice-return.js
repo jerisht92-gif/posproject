@@ -4,7 +4,76 @@
 function norm(v) {
     return (v ?? "").toString().trim().toLowerCase();
   }
+
+// =========================================
+// SHOW TOAST FUNCTION (same as invoice-list.js)
+// =========================================
+function showToast(message, type = 'info') {
+  console.log(`Toast (${type}): ${message}`);
+
+  if (type !== 'success' && type !== 'error' && type !== 'warning') return;
+
+  const toast = document.createElement('div');
+  toast.className = type === 'success' ? 'success-notification' : 'error-notification';
+
+  const icon = document.createElement('span');
+  icon.textContent = type === 'success' ? '✓' : '✕';
+  icon.style.fontSize = '18px';
+  icon.style.fontWeight = '700';
+  icon.style.lineHeight = '1';
+
+  const text = document.createElement('span');
+  text.textContent = message;
+
+  toast.appendChild(icon);
+  toast.appendChild(text);
+
+  // Inline fallback so toast is visible even if page CSS lacks toast classes.
+  const isError = type === 'error' || type === 'warning';
+  toast.style.position = 'fixed';
+  toast.style.top = '20px';
+  toast.style.left = '50%';
+  toast.style.right = 'auto';
+  toast.style.bottom = 'auto';
+  toast.style.transform = 'translateX(-50%) translateY(-100px)';
+  toast.style.padding = '14px 28px';
+  toast.style.borderRadius = '10px';
+  toast.style.fontSize = '15px';
+  toast.style.fontWeight = '600';
+  toast.style.zIndex = '10000';
+  toast.style.opacity = '0';
+  toast.style.transition = 'all 0.35s ease';
+  toast.style.pointerEvents = 'none';
+  toast.style.whiteSpace = 'nowrap';
+  toast.style.display = 'flex';
+  toast.style.alignItems = 'center';
+  toast.style.gap = '8px';
+  toast.style.background = isError
+    ? 'linear-gradient(135deg, #ffe6e6, #ffc2c2)'
+    : 'linear-gradient(135deg, #fff4f4, #ffe8e8)';
+  toast.style.color = '#a12828';
+  toast.style.border = '1.5px solid #a12828';
+  toast.style.boxShadow = isError
+    ? '0 8px 24px rgba(161, 40, 40, 0.35)'
+    : '0 8px 24px rgba(161, 40, 40, 0.25)';
+
+  document.body.appendChild(toast);
+  setTimeout(() => {
+    toast.classList.add('show');
+    toast.style.opacity = '1';
+    toast.style.transform = 'translateX(-50%) translateY(0)';
+  }, 10);
+  setTimeout(() => {
+    toast.classList.remove('show');
+    toast.style.opacity = '0';
+    toast.style.transform = 'translateX(-50%) translateY(-100px)';
+    setTimeout(() => toast.remove(), 400);
+  }, 3000);
+}
 document.addEventListener("DOMContentLoaded", () => {
+  const INVOICE_RETURN_INVALID_DATE_MSG = "Invalid date. Use format YYYY-MM-DD (e.g. 2026-03-09).";
+  const INVOICE_RETURN_DATE_RANGE_ERROR = "Invoice Return From date cannot be later than Invoice Return To date";
+
   /* =========================================================
      DOM ELEMENTS
   ========================================================== */
@@ -77,6 +146,91 @@ document.addEventListener("DOMContentLoaded", () => {
     btn.classList.toggle("disabled", !!disabled);
     btn.disabled = !!disabled;
     btn.setAttribute("aria-disabled", disabled ? "true" : "false");
+  }
+
+  /* =========================================================
+     DATE VALIDATION HELPERS (mirror invoice-list.js)
+  ========================================================== */
+  function normalizeDateKey(value) {
+    if (!value) return null;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+    if (/^\d{2}-\d{2}-\d{4}$/.test(value)) {
+      const [dd, mm, yyyy] = value.split("-");
+      return `${yyyy}-${mm}-${dd}`;
+    }
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return null;
+    return d.toISOString().slice(0, 10);
+  }
+
+  function isValidListDateString(value) {
+    if (!value || typeof value !== "string") return false;
+    const trimmed = value.trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return false;
+    const parts = trimmed.split("-");
+    const y = parseInt(parts[0], 10);
+    const m = parseInt(parts[1], 10) - 1;
+    const d = parseInt(parts[2], 10);
+    if (y < 1900 || y > 2100) return false;
+    const date = new Date(y, m, d);
+    return (
+      date.getFullYear() === y &&
+      date.getMonth() === m &&
+      date.getDate() === d
+    );
+  }
+
+  function hasInvalidDateRange(fromValue, toValue) {
+    const from = normalizeDateKey(fromValue);
+    const to = normalizeDateKey(toValue);
+    if (!from || !to) return false;
+    return to < from;
+  }
+
+  function handleFromDateFilter() {
+    const fd = fromDate?.value?.trim() || "";
+    if (fd && !isValidListDateString(fd)) {
+      showToast(INVOICE_RETURN_INVALID_DATE_MSG, "error");
+      if (fromDate) fromDate.value = "";
+      applyFilters();
+      return;
+    }
+    const td = toDate?.value?.trim() || "";
+    if (td && !isValidListDateString(td)) {
+      showToast(INVOICE_RETURN_INVALID_DATE_MSG, "error");
+      if (toDate) toDate.value = "";
+      applyFilters();
+      return;
+    }
+
+    if (hasInvalidDateRange(fd, td)) {
+      showToast(INVOICE_RETURN_DATE_RANGE_ERROR, "error");
+      if (fromDate) fromDate.value = "";
+    }
+    applyFilters();
+  }
+
+  function handleToDateFilter() {
+    const td = toDate?.value?.trim() || "";
+    if (td && !isValidListDateString(td)) {
+      showToast(INVOICE_RETURN_INVALID_DATE_MSG, "error");
+      if (toDate) toDate.value = "";
+      applyFilters();
+      return;
+    }
+    const fd = fromDate?.value?.trim() || "";
+    if (fd && !isValidListDateString(fd)) {
+      showToast(INVOICE_RETURN_INVALID_DATE_MSG, "error");
+      if (fromDate) fromDate.value = "";
+      applyFilters();
+      return;
+    }
+
+    if (hasInvalidDateRange(fd, td)) {
+      showToast(INVOICE_RETURN_DATE_RANGE_ERROR, "error");
+      if (toDate) toDate.value = "";
+    }
+    applyFilters();
   }
 
   /* =========================================================
@@ -207,14 +361,18 @@ function createActionMenu(returnId, returnStatus) {
     let from = fromDate?.value || "";
     let to = toDate?.value || "";
 
-    // Validate date range
-    if (from && to && parseDate(to) < parseDate(from)) {
-      alert("To date cannot be earlier than From date");
-      if (toDate) {
-        toDate.value = "";
-        toDate.focus();
-      }
-      return; // Stop filtering
+    // Final safety: if dates are individually invalid or the range is inverted,
+    // stop filtering. Toasts are raised by handleFromDateFilter/handleToDateFilter.
+    if (from && !isValidListDateString(from)) {
+      if (fromDate) fromDate.value = "";
+      from = "";
+    }
+    if (to && !isValidListDateString(to)) {
+      if (toDate) toDate.value = "";
+      to = "";
+    }
+    if (hasInvalidDateRange(from, to)) {
+      return;
     }
 
     filteredReturns = allReturns.filter(item => {
@@ -340,8 +498,14 @@ function createActionMenu(returnId, returnStatus) {
   searchInput?.addEventListener("input", applyFilters);
   statusFilter?.addEventListener("change", applyFilters);
   customerFilter?.addEventListener("change", applyFilters);
-  fromDate?.addEventListener("change", applyFilters);
-  toDate?.addEventListener("change", applyFilters);
+  if (fromDate) {
+    fromDate.addEventListener("change", handleFromDateFilter);
+    fromDate.addEventListener("blur", handleFromDateFilter);
+  }
+  if (toDate) {
+    toDate.addEventListener("change", handleToDateFilter);
+    toDate.addEventListener("blur", handleToDateFilter);
+  }
 
   clearFilterBtn?.addEventListener("click", () => {
     if (searchInput) searchInput.value = "";
@@ -386,6 +550,12 @@ function createActionMenu(returnId, returnStatus) {
 
   newReturnBtn?.addEventListener("click", () => {
     window.location.href = "/new-invoice-return";
+  });
+
+  document.addEventListener("change", (e) => {
+    if (!e.target.classList?.contains("row-check")) return;
+    const row = e.target.closest("tr");
+    if (row) row.classList.toggle("row-selected", e.target.checked);
   });
 
   /* =========================================================
