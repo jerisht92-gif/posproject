@@ -300,6 +300,63 @@ addCommentBtn.addEventListener("click", async (e) => {
 
 });
 
+async function loadComments(po_number) {
+
+    try {
+
+        const res =
+            await fetch(`/api/purchase-comments/${po_number}`);
+
+        const comments =
+            await res.json();
+
+        historyDiv.innerHTML = "";
+
+        if (!comments.length) {
+
+            historyDiv.innerHTML = `
+                <p class="no-history-message">
+                    No comments yet
+                </p>
+            `;
+
+            return;
+        }
+
+        comments.forEach(item => {
+
+            const div =
+                document.createElement("div");
+
+            div.classList.add("history-item");
+
+            const date =
+                new Date(item.created_at)
+                .toLocaleString();
+
+            div.innerHTML = `
+                <div class="comment-top">
+                    <strong>
+                        ${item.created_by} - ${date}
+                    </strong>
+                </div>
+
+                <div class="comment-text">
+                    ${item.comment}
+                </div>
+            `;
+
+            historyDiv.appendChild(div);
+
+        });
+
+    } catch (err) {
+
+        console.error(err);
+
+    }
+}
+
 // ==========================
 // Attachment
 // ==========================
@@ -315,11 +372,16 @@ async function handleFiles(selectedFiles) {
 
     for (let f of selectedFiles) {
 
+        // ✅ ADD THIS
+        files.push(f);
+
         const formData = new FormData();
+
         formData.append("po_number", po_number);
         formData.append("file", f);
 
         try {
+
             const res = await fetch("/api/purchase-attachments", {
                 method: "POST",
                 body: formData
@@ -332,18 +394,22 @@ async function handleFiles(selectedFiles) {
             }
 
         } catch (err) {
+
             console.error(err);
+
             showAlert("Upload error", "error");
         }
     }
 
-    // 🔥 IMPORTANT: reload from backend
+    
+    updateFileUI();
+
+    
     await loadAttachments();
 
-    // reset input so same file can be re-selected
+    // reset
     fileInput.value = "";
 }
-
 
 // ==========================
 // TAB SWITCHING
@@ -388,11 +454,22 @@ function updateFileUI() {
 
 
 // Click upload triggers file input
-uploadCard?.addEventListener("click", () => fileInput.click());
-uploadBtn?.addEventListener("click", () => fileInput.click());
+uploadCard?.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    fileInput.click();
+});
+
+uploadBtn?.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    fileInput.click();
+});
 
 // Handle file select
 fileInput?.addEventListener("change", (e) => handleFiles(e.target.files));
+
+
 
 // Delete file
 filesList?.addEventListener("click", (e) => {
@@ -901,15 +978,51 @@ async function loadSalesOrders() {
 }
 
 function syncStatus() {
-    const dropdown = document.getElementById("status_dropdown");
-    const hidden = document.getElementById("status");
+
+    const dropdown =
+        document.getElementById("status_dropdown");
+
+    const hidden =
+        document.getElementById("status");
+
+    const status =
+        dropdown.value;
 
     if (hidden) {
-        hidden.value = dropdown.value;
+        hidden.value = status;
     }
 
-    setStatusColor(dropdown.value);
+    setStatusColor(status);
+
+    // UPDATE BADGE
+    updateStatusBadge(status);
 }
+
+function updateStatusBadge(status) {
+
+    const badge = document.getElementById("poStatusBadge");
+
+    if (!badge) return;
+
+    // RESET CLASSES
+    badge.className = "status-badge";
+
+    const statusMap = {
+        "Draft": "status-draft",
+        "Submitted": "status-submitted",
+        "Pending": "status-pending",
+        "Approved": "status-approved",
+        "Rejected": "status-rejected",
+        "Cancelled": "status-cancelled"
+    };
+
+    badge.classList.add(
+        statusMap[status] || "status-draft"
+    );
+
+    badge.innerText = "Status : " + status;
+}
+
 // footer sections
 async function handleAction(action) {
 
@@ -950,6 +1063,43 @@ async function handleAction(action) {
         return;
     }
 
+    const ddateValue = formData.get("ddate");
+
+    if (!ddateValue) {
+        showAlert("Delivery date is required", "warning");
+        return;
+    }
+
+    const ddate = new Date(ddateValue);
+    const year = ddate.getFullYear();
+
+    // INVALID DATE
+    if (isNaN(ddate.getTime())) {
+        showAlert("Invalid delivery date", "error");
+        return;
+    }
+
+    // YEAR VALIDATION
+    if (year > 2100 || year < 2000) {
+        showAlert("Please enter a valid delivery date", "error");
+        return;
+    }
+
+    // OPTIONAL:
+    // DELIVERY DATE SHOULD NOT BE LESS THAN PURCHASE DATE
+
+    const pdateValue = formData.get("pdate");
+
+    if (pdateValue) {
+
+        const pdate = new Date(pdateValue);
+
+        if (ddate < pdate) {
+            showAlert("Delivery date cannot be before Purchase date", "warning");
+            return;
+        }
+    }
+
     if (action === "GoBack") {
         window.location.href = "/purchase";
         return;
@@ -971,6 +1121,7 @@ async function handleAction(action) {
     
     updateActionButtons(action);
     setStatusColor(action);
+    updateStatusBadge(action);
 
     try {
         const res = await fetch("/api/save-po-purchase", {
@@ -997,6 +1148,7 @@ async function handleAction(action) {
                 ddate: formData.get("ddate"),
 
                 payment_terms: formData.get("payment_terms"),
+                inco_terms: formData.get("inco_terms"),
                 grand_total: parseFloat(
                  (document.getElementById("grandTotal")?.innerText || "0")
                  .replace(/[₹,\s]/g, "")
@@ -1119,7 +1271,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     await loadSuppliers();
     await loadSOProducts();
     await loadSalesOrders();
-    loadComments();
     updateFooterButtons(mode); 
     fillAllProductSelects();
 
@@ -1159,6 +1310,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
         const statusEl = document.getElementById("status_dropdown");
         if (statusEl) statusEl.value = po_data.status || "Draft";
+        updateStatusBadge(po_data.status || "Draft");
 
         // Sync hidden status field
         const hiddenStatus = document.getElementById("status");
@@ -1620,53 +1772,63 @@ async function loadSalesOrderData(so_id) {
     }
 }
 
+/** Normalize GET /api/suppliers rows (object or legacy tuple array). */
+function normalizeSupplierApiRow(row) {
+    if (Array.isArray(row)) {
+        return {
+            id: String(row[0] || "").trim(),
+            name: String(row[1] || "").trim(),
+            email: String(row[2] || "").trim(),
+        };
+    }
+    if (!row || typeof row !== "object") {
+        return { id: "", name: "", email: "" };
+    }
+    return {
+        id: String(row.id || row.supplier_id || "").trim(),
+        name: String(row.name || row.supplier_name || "").trim(),
+        email: String(row.email || "").trim(),
+    };
+}
+
 async function loadSuppliers() {
+    const select = document.getElementById("supplier_id");
+    if (!select) return;
 
     try {
-
         const response = await fetch("/api/suppliers");
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
 
-        const data = await response.json();
+        const payload = await response.json();
+        const rows = Array.isArray(payload)
+            ? payload
+            : Array.isArray(payload?.data)
+              ? payload.data
+              : [];
 
-        console.log("Suppliers:", data);
-
-        const select =
-            document.getElementById("supplier_id");
-
-        // clear dropdown
-        select.innerHTML = `
-            <option value="">
-                Select Supplier
-            </option>
-        `;
-
-        // global storage
+        select.innerHTML = `<option value="">Select Supplier</option>`;
         window.SUPPLIERS_BY_ID = {};
 
-        data.forEach((supplier) => {
+        rows.forEach((raw) => {
+            const supplier = normalizeSupplierApiRow(raw);
+            if (!supplier.id) return;
 
-            const option =
-                document.createElement("option");
-
+            const option = document.createElement("option");
             option.value = supplier.id;
-
-            // dropdown shows supplier id
             option.textContent = supplier.id;
-
             select.appendChild(option);
 
-            // store supplier details
             window.SUPPLIERS_BY_ID[supplier.id] = {
                 name: supplier.name,
-                email: supplier.email
+                email: supplier.email,
             };
-
         });
-
     } catch (error) {
-
         console.error("Supplier Load Error:", error);
-
+        select.innerHTML = `<option value="">Select Supplier</option>`;
+        window.SUPPLIERS_BY_ID = {};
     }
 }
 
@@ -1829,37 +1991,17 @@ function validateRowStrict(row) {
     return valid;
 }
 
-async function loadComments() {
+
+
+window.addEventListener("DOMContentLoaded", () => {
 
     const po_number =
         document.querySelector("input[name='po_number']").value;
 
-    if (!po_number) return;
+    if (po_number) {
 
-    const res = await fetch(`/api/purchase-comments/${po_number}`);
-    const data = await res.json();
+        loadComments(po_number);
 
-    const historyDiv = document.getElementById("history");
-    const noHistoryMsg = document.getElementById("noHistoryMsg");
-
-    historyDiv.innerHTML = "";
-
-    if (!data.length) {
-        noHistoryMsg.style.display = "block";
-        return;
     }
 
-    noHistoryMsg.style.display = "none";
-
-    data.forEach(c => {
-        const div = document.createElement("div");
-        div.classList.add("history-item");
-
-        div.innerHTML = `
-            <p><strong>${c.created_by} - ${c.created_at}</strong></p>
-            <p>${c.comment}</p>
-        `;
-
-        historyDiv.appendChild(div);
-    });
-}
+});

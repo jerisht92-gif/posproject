@@ -780,7 +780,7 @@ app.secret_key = os.getenv("SECRET_KEY", "dev-secret-key")
 app.permanent_session_lifetime = timedelta(days=7)     # for Remember Me
 # Inactivity timeout for normal sessions when "Remember Me" is not checked (in seconds)
 # 15 minutes = 900 seconds — after this, user is logged out and redirected to login
-INACTIVITY_TIMEOUT = 900
+INACTIVITY_TIMEOUT = 3600
 
 
 # =========================================
@@ -8261,16 +8261,28 @@ def create_supplier():
  
 @app.route("/api/suppliers", methods=["GET"])
 def get_suppliers():
+    """List suppliers for dropdowns (purchase order, filters, etc.)."""
     conn = get_db_connection()
     cur = conn.cursor()
- 
-    cur.execute("SELECT * FROM suppliers ORDER BY created_at DESC")
-    suppliers = cur.fetchall()
- 
-    cur.close()
-    conn.close()
- 
-    return jsonify(suppliers)
+    try:
+        cur.execute("""
+            SELECT supplier_id, supplier_name, email
+            FROM suppliers
+            ORDER BY supplier_id ASC
+        """)
+        rows = cur.fetchall()
+        suppliers = [
+            {
+                "id": (row[0] or "").strip(),
+                "name": (row[1] or "").strip(),
+                "email": (row[2] or "").strip(),
+            }
+            for row in rows
+        ]
+        return jsonify(suppliers)
+    finally:
+        cur.close()
+        conn.close()
 #----API endpoint to get a single supplier by ID (for supplier detail/edit UI)
 @app.route("/api/suppliers/<supplier_id>", methods=["GET"])
 def get_supplier(supplier_id):
@@ -21560,53 +21572,6 @@ def get_sales_order_purchase(so_id):
 
 
 
-# ========================================
-# SUPPLIER API
-# ========================================
-
-@app.route("/api/suppliers")
-def suppliers_page():
-
-    conn = get_db_connection()
-    cur = conn.cursor()
-
-    try:
-
-        cur.execute("""
-            SELECT
-                supplier_id,
-                supplier_name,
-                email
-            FROM suppliers
-            ORDER BY supplier_id ASC
-        """)
-
-        rows = cur.fetchall()
-
-        suppliers = []
-
-        for row in rows:
-
-            suppliers.append({
-                "id": row[0],
-                "name": row[1],
-                "email": row[2]
-            })
-
-        return jsonify(suppliers)
-
-    except Exception as e:
-
-        print("SUPPLIER ERROR:", e)
-
-        return jsonify([]), 500
-
-    finally:
-
-        cur.close()
-        conn.close()
-
-        
 @app.route("/api/products-new")
 def get_products_new():
 
