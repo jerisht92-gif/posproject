@@ -822,18 +822,6 @@ def _invoice_return_upload_dir():
 INVOICE_RETURN_UPLOAD_FOLDER = _invoice_return_upload_dir()
 
 
-def _dnr_attachments_dir():
-    """Persisted files for Delivery Note Return attachments (PostgreSQL metadata)."""
-    base = os.path.join(UPLOAD_FOLDER, "dnr_attachments")
-    try:
-        os.makedirs(base, exist_ok=True)
-    except OSError:
-        pass
-    return base
-
-
-DNR_ATTACHMENTS_FOLDER = _dnr_attachments_dir()
-
 
 def _writable_upload_subdir(*parts):
     """Path under UPLOAD_FOLDER for feature-specific files; mkdir when FS allows (Vercel-safe)."""
@@ -1011,9 +999,7 @@ def auto_session_timeout():
         if not is_api and not check_session_timeout():
             return redirect(url_for("login", message="session_expired"))
 
-    # (No Referer-based "inner link" block here: after a valid session, it wrongly
-    # redirected logged-in users to /login when Referer was missing — breaking menu
-    # links like Delivery Note Return in some browsers.)
+
 
 
 # =========================================
@@ -18299,27 +18285,52 @@ def api_invoice_returns():
     conn = get_db_connection()
     cur = conn.cursor()
     try:
-        cur.execute("""
-            SELECT 
-                invoice_return_id,
-                invoice_id,
-                customer_name,
-                return_date,
-                status
-            FROM invoice_return
-            ORDER BY created_at DESC
-        """)
+        exclude_linked_for_dnr = (
+            request.args.get("exclude_linked_for_dnr", "").strip() == "1"
+        )
+        if exclude_linked_for_dnr:
+            cur.execute("""
+                SELECT
+                    ir.invoice_return_id,
+                    ir.invoice_id,
+                    ir.customer_name,
+                    ir.return_date,
+                    ir.status,
+                    (
+                        SELECT d.dnr_id
+                        FROM deliverynote_returns d
+                        WHERE TRIM(COALESCE(d.invoice_return_ref_id, ''))
+                              = TRIM(ir.invoice_return_id)
+                        LIMIT 1
+                    ) AS linked_dnr_id
+                FROM invoice_return ir
+                ORDER BY ir.created_at DESC
+            """)
+        else:
+            cur.execute("""
+                SELECT 
+                    invoice_return_id,
+                    invoice_id,
+                    customer_name,
+                    return_date,
+                    status
+                FROM invoice_return
+                ORDER BY created_at DESC
+            """)
         rows = cur.fetchall()
         
         invoice_returns = []
         for row in rows:
-            invoice_returns.append({
+            item = {
                 "return_id": row[0],       # invoice_return_id
                 "invoice_ref": row[1],     # invoice_id
                 "customer_name": row[2],
                 "return_date": row[3].strftime('%Y-%m-%d') if row[3] else "",
                 "status": row[4]
-            })
+            }
+            if exclude_linked_for_dnr:
+                item["linked_dnr_id"] = row[5] or ""
+            invoice_returns.append(item)
         return jsonify(invoice_returns)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -20104,581 +20115,1579 @@ def update_invoice_return_items_summary(return_id):
         conn.close()
 
 
-
-
-# ========================================================
-# DELIVERY note-return- first page
-# ====================================================
-
-# =========================================================
-# PAGE ROUTE
-# Delivery Note Return List Page
-# =========================================================
+# =========================================
+# DELIVERY NOTE RETURN LIST PAGE
+# =========================================
 @app.route("/deliverynote_return")
-def deliverynote_return():
-    user_email = session.get("user")
-    if not user_email:
-        return redirect(url_for("login", message="session_expired"))
-
-    user_name = _get_logged_in_user_name()
+def dnr_page_list():
 
     return render_template(
-        "deliverynote-return.html",
-        page="deliverynote_return",
-        title="Delivery Note Return",
-        user_email=user_email,
-        user_name=user_name,
+        "deliverynote-return.html"
     )
 
+# =========================================
+# DELIVERY NOTE RETURN — schema
+# =========================================
 
-# =========================================================
-# DELIVERY NOTE RETURN — PostgreSQL
-# Tables: sql/deliverynote_returns_schema.sql
-# =========================================================
-def _dnr_parse_date(val):
-    if val is None or val == "":
-        return date.today()
-    if isinstance(val, date):
-        return val
+DNR_DATE_DISPLAY_FMT = "%d-%m-%Y"
+DNR_DATE_INVALID_MSG = (
+    "Invalid date. Use format DD-MM-YYYY (e.g. 31-05-2026)."
+)
+DNR_DATE_MUST_BE_TODAY_MSG = "DNR date must be today's date."
+
+
+# =========================================
+# DELIVERY NOTE RETURN LIST API
+# =========================================
+@app.route("/api/delivery-note-returns", methods=["GET"])
+def get_delivery_note_returns():
+
     try:
-        return datetime.strptime(str(val)[:10], "%Y-%m-%d").date()
-    except Exception:
-        return date.today()
 
+        conn = get_db_connection()
+        cur = conn.cursor()
 
-def generate_dnr_id():
-    """Next DNR-NNN id (3-digit suffix) from deliverynote_returns (PostgreSQL)."""
-    try:
-        row = fetch_one(
-            """
-            SELECT COALESCE(MAX(SPLIT_PART(dnr_id, '-', 2)::integer), 0) AS mx
-            FROM public.deliverynote_returns
-            WHERE dnr_id LIKE 'DNR-%'
-            """,
-            None,
-        )
-        n = int((row or {}).get("mx") or 0)
-        return f"DNR-{n + 1:03d}"
-    except Exception as e:
-        print(f"generate_dnr_id failed: {e}")
-        raise
-
-
-def get_dnr_by_id(dnr_id):
-    """Header + line items shaped for PDF/email (legacy dict keys)."""
-    if not dnr_id:
-        return None
-    try:
-        row = fetch_one(
-            "SELECT * FROM public.deliverynote_returns WHERE dnr_id = %s",
-            (dnr_id,),
-        )
-    except Exception as e:
-        print(f"get_dnr_by_id fetch header: {e}")
-        return None
-    if not row:
-        return None
-    d = dict(row)
-    try:
-        items_rows = fetch_all(
-            """
-            SELECT product_id, product_name, uom, invoiced_qty, returned_qty, serial_no, return_reason
-            FROM public.deliverynote_return_items
-            WHERE dnr_id = %s
-            ORDER BY id ASC
-            """,
-            (dnr_id,),
-        )
-    except Exception as e:
-        print(f"get_dnr_by_id items: {e}")
-        items_rows = []
-    items = []
-    for ir in items_rows or []:
-        ir = dict(ir)
-        items.append(
-            {
-                "product_id": ir.get("product_id"),
-                "product_name": ir.get("product_name"),
-                "uom": ir.get("uom"),
-                "invoiced_qty": ir.get("invoiced_qty"),
-                "returned_qty": ir.get("returned_qty"),
-                "serial_no": ir.get("serial_no"),
-                "reason": ir.get("return_reason"),
-                "qty": ir.get("returned_qty"),
-            }
-        )
-    d["items"] = items
-    ds = str(d["dnr_date"]) if d.get("dnr_date") else ""
-    d["dnr_date"] = ds
-    d["return_date"] = ds
-    d["date"] = ds
-    d["invoice_return_ref"] = d.get("invoice_return_ref_id") or ""
-    for _ts in ("created_at", "updated_at"):
-        v = d.get(_ts)
-        if v is not None and hasattr(v, "isoformat"):
-            d[_ts] = v.isoformat()
-    try:
-        crows = fetch_all(
-            """
-            SELECT created_by, comment, created_at
-            FROM public.deliverynote_return_comments
-            WHERE dnr_id = %s
-            ORDER BY created_at ASC
-            """,
-            (dnr_id,),
-        )
-    except Exception as e:
-        print(f"get_dnr_by_id comments: {e}")
-        crows = []
-    comments = []
-    for c in crows or []:
-        c = dict(c)
-        ts = c.get("created_at")
-        if ts is not None and hasattr(ts, "strftime"):
-            tstr = ts.strftime("%b %d, %Y, %I:%M %p")
-        else:
-            tstr = str(ts) if ts else ""
-        comments.append(
-            {
-                "user": c.get("created_by") or "",
-                "message": c.get("comment") or "",
-                "time": tstr,
-            }
-        )
-    d["comments"] = comments
-    return d
-
-
-# =========================================================
-# API: GET ALL DELIVERY NOTE RETURNS
-# Used for list page table
-# =========================================================
-@app.route("/api/delivery-note-returns")
-def get_dn_returns():
-    try:
-        rows = fetch_all(
-            """
-            SELECT dnr_id,
-                   dnr_date,
-                   invoice_return_ref_id AS invoice_return_ref,
-                   customer_name,
-                   customer_id,
-                   status
-            FROM public.deliverynote_returns
+        cur.execute("""
+            SELECT *
+            FROM deliverynote_returns
             ORDER BY
-              COALESCE(
-                NULLIF(regexp_replace(dnr_id, '^DNR-', ''), '')::integer,
-                0
-              ) DESC,
-              dnr_id DESC
-            """
-        )
+                dnr_date DESC NULLS LAST,
+                CAST(
+                    NULLIF(SPLIT_PART(dnr_id, '-', 2), '')
+                    AS INTEGER
+                ) DESC NULLS LAST
+        """)
+
+        rows = cur.fetchall()
+
+        columns = [
+            desc[0]
+            for desc in cur.description
+        ]
+
+        result = []
+
+        for row in rows:
+
+            row_dict = dict(
+                zip(columns, row)
+            )
+
+            dnr_date_raw = row_dict.get("dnr_date")
+            if dnr_date_raw is None or dnr_date_raw == "":
+                dnr_date_out = ""
+            elif hasattr(dnr_date_raw, "strftime"):
+                dnr_date_out = dnr_date_raw.strftime(DNR_DATE_DISPLAY_FMT)
+            else:
+                dnr_date_s = str(dnr_date_raw).strip()
+                if not dnr_date_s:
+                    dnr_date_out = ""
+                elif re.match(r"^\d{2}-\d{2}-\d{4}$", dnr_date_s):
+                    dnr_date_out = dnr_date_s
+                else:
+                    dnr_date_iso = dnr_date_s.split("T")[0]
+                    if re.match(r"^\d{4}-\d{2}-\d{2}$", dnr_date_iso):
+                        try:
+                            dnr_date_out = (
+                                datetime.strptime(dnr_date_iso, "%Y-%m-%d")
+                                .date()
+                                .strftime(DNR_DATE_DISPLAY_FMT)
+                            )
+                        except ValueError:
+                            dnr_date_out = dnr_date_s
+                    else:
+                        dnr_date_out = dnr_date_s
+
+            result.append({
+
+                "dnr_id":
+                    row_dict.get("dnr_id", ""),
+
+                "invoice_return_ref":
+                    row_dict.get("invoice_return_ref_id", ""),
+
+                "customer_name":
+                    row_dict.get("customer_name", ""),
+
+                "dnr_date":
+                    dnr_date_out,
+
+                "status":
+                    row_dict.get("status", "")
+
+            })
+
+        cur.close()
+        conn.close()
+
+        return jsonify(result)
+
     except Exception as e:
-        print(traceback.format_exc())
-        return (
-            jsonify(
-                {
-                    "success": False,
-                    "data": [],
-                    "items": [],
-                    "error": str(e),
-                }
-            ),
-            500,
-        )
-    out = []
-    for r in rows or []:
-        x = dict(r)
-        x["dnr_date"] = str(x["dnr_date"]) if x.get("dnr_date") else ""
-        out.append(x)
-    # Same shape as GET /api/delivery-notes (success + data); keep items for older clients.
-    return jsonify({"success": True, "data": out, "items": out})
+
+        print("DNR API ERROR:", e)
+
+        return jsonify({
+            "error": str(e)
+        }), 500
 
 
-@app.route("/api/dnr-history/<dnr_id>")
-def get_dnr_history(dnr_id):
+# =========================================
+# DELIVERY NOTE RETURN — single record
+# =========================================
+
+@app.route("/api/delivery-note-return/<dnr_id>", methods=["GET"])
+def get_delivery_note_return_one(dnr_id):
+
     try:
-        rows = fetch_all(
-            """
-            SELECT action, description, created_by, created_at
-            FROM public.deliverynote_return_history
-            WHERE dnr_id = %s
-            ORDER BY created_at DESC
-            """,
+
+        dnr_id = (dnr_id or "").strip()
+        if not dnr_id:
+            return jsonify({
+                "success": False,
+                "message": "DNR ID is required"
+            }), 400
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        cur.execute(
+            "SELECT * FROM deliverynote_returns WHERE dnr_id = %s",
             (dnr_id,),
         )
-    except Exception as e:
-        print(traceback.format_exc())
-        return jsonify({"success": False, "history": [], "message": str(e)})
+        row = cur.fetchone()
 
-    hist = []
-    for h in rows or []:
-        h = dict(h)
-        ts = h.get("created_at")
-        if ts is not None and hasattr(ts, "strftime"):
-            tstr = ts.strftime("%b %d, %Y, %I:%M %p")
-        else:
-            tstr = str(ts) if ts else ""
-        msg = (h.get("description") or "").strip() or (h.get("action") or "")
-        hist.append(
-            {
-                "user": h.get("created_by") or "",
-                "time": tstr,
-                "action": msg,
-            }
-        )
-    return jsonify({"success": True, "history": hist})
+        if not row:
+            cur.close()
+            conn.close()
+            return jsonify({
+                "success": False,
+                "message": "Delivery note return not found"
+            }), 404
 
+        columns = [desc[0] for desc in cur.description]
+        header = dict(zip(columns, row))
 
-# =========================================================
-# API: CREATE DELIVERY NOTE RETURN
-# =========================================================
-@app.route("/api/delivery-note-returns", methods=["POST"])
-def create_dn_return():
-    body = request.json or {}
-    try:
-        new_id = generate_dnr_id()
-        d = _dnr_parse_date(body.get("dnr_date"))
-        execute_query(
-            """
-            INSERT INTO public.deliverynote_returns (
-                dnr_id, dnr_date, invoice_return_ref_id, customer_ref_no,
-                customer_id, customer_name, email, phone, contact_person, status
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            """,
-            (
-                new_id,
-                d,
-                (body.get("invoice_return_ref") or body.get("invoice_return_ref_id") or "").strip() or None,
-                (body.get("customer_ref_no") or "").strip() or None,
-                (body.get("customer_id") or "").strip() or None,
-                (body.get("customer_name") or "").strip() or None,
-                (body.get("email") or body.get("customer_email") or "").strip() or None,
-                (body.get("phone") or body.get("customer_phone") or "").strip() or None,
-                (body.get("contact_person") or "").strip() or None,
-                _normalize_dnr_store_status(body.get("status")),
-            ),
-        )
-    except Exception as e:
-        print(traceback.format_exc())
-        return jsonify({"success": False, "message": str(e)}), 500
+        cur.execute("""
+            SELECT
+                product_id,
+                product_name,
+                uom,
+                invoiced_qty,
+                returned_qty,
+                serial_no,
+                return_reason
+            FROM deliverynote_return_items
+            WHERE dnr_id = %s
+        """, (dnr_id,))
 
-    _ns = _normalize_dnr_store_status(body.get("status"))
-    item = {
-        "dnr_id": new_id,
-        "invoice_return_ref": body.get("invoice_return_ref", ""),
-        "customer_name": body.get("customer_name", ""),
-        "customer_id": body.get("customer_id", ""),
-        "dnr_date": str(d),
-        "status": _ns,
-    }
-    return jsonify({"success": True, "item": item})
+        items = []
+        for item_row in cur.fetchall():
+            items.append({
+                "product_id": item_row[0] or "",
+                "product_name": item_row[1] or "",
+                "uom": item_row[2] or "",
+                "invoiced_qty": item_row[3],
+                "returned_qty": item_row[4],
+                "serial_no": item_row[5] or "",
+                "return_reason": item_row[6] or "",
+            })
 
-
-# =========================================================
-# DELIVERY NOTE RETURN - 2nd page
-# =========================================================
-@app.route("/deliverynote_return/new")
-def deliverynote_return_new():
-    user_email = session.get("user")
-    if not user_email:
-        return redirect(url_for("login", message="session_expired"))
-
-    user_name = _get_logged_in_user_name()
-
-    dnr_q = request.args.get("dnr_id")
-    mode = request.args.get("mode", "new")
-
-    record = None
-    if dnr_q:
+        comments = []
         try:
-            row = fetch_one(
-                "SELECT * FROM public.deliverynote_returns WHERE dnr_id = %s",
-                (dnr_q,),
-            )
-            if row:
-                record = dict(row)
-        except Exception as e:
-            print(f"deliverynote_return_new load record: {e}")
-
-    if mode == "new" or not record:
-        try:
-            dnr_id = generate_dnr_id()
+            cur.execute("""
+                SELECT comment, created_by, created_at
+                FROM deliverynote_return_comments
+                WHERE dnr_id = %s
+                ORDER BY created_at ASC
+            """, (dnr_id,))
+            for c_row in cur.fetchall():
+                created_at = c_row[2]
+                comments.append({
+                    "comment": c_row[0] or "",
+                    "created_by": (c_row[1] or "").strip() or "User",
+                    "created_at": (
+                        created_at.isoformat()
+                        if hasattr(created_at, "isoformat")
+                        else str(created_at or "")
+                    ),
+                })
         except Exception:
-            dnr_id = dnr_q or "DNR-001"
-    else:
-        dnr_id = dnr_q
+            pass
+
+        history = []
+        try:
+            cur.execute("""
+                SELECT action, description, created_by, created_at
+                FROM deliverynote_return_history
+                WHERE dnr_id = %s
+                ORDER BY created_at DESC
+            """, (dnr_id,))
+            for h_row in cur.fetchall():
+                created_at = h_row[3]
+                history.append({
+                    "action": h_row[0] or "",
+                    "description": h_row[1] or "",
+                    "created_by": (h_row[2] or "").strip() or "User",
+                    "created_at": (
+                        created_at.isoformat()
+                        if hasattr(created_at, "isoformat")
+                        else str(created_at or "")
+                    ),
+                })
+        except Exception:
+            pass
+
+        attachments = []
+
+        try:
+            cur.execute(
+                """
+                SELECT
+                    id,
+                    file_name,
+                    file_type,
+                    file_size,
+                    uploaded_at
+                FROM deliverynote_return_attachments
+                WHERE dnr_id = %s
+                ORDER BY uploaded_at ASC NULLS LAST, id ASC
+                """,
+                (dnr_id,),
+            )
+
+            for att_row in cur.fetchall() or []:
+                uploaded_at = att_row[4]
+
+                if hasattr(uploaded_at, "strftime"):
+                    uploaded_at_text = uploaded_at.strftime("%Y-%m-%d %H:%M:%S")
+                else:
+                    uploaded_at_text = str(uploaded_at or "")
+
+                attachments.append({
+                    "id": att_row[0],
+                    "filename": att_row[1] or "",
+                    "file_type": att_row[2] or "",
+                    "size": int(att_row[3] or 0),
+                    "uploaded_at": uploaded_at_text,
+                })
+        except Exception:
+            pass
+
+        cur.close()
+        conn.close()
+
+        dnr_date_raw = header.get("dnr_date")
+        if dnr_date_raw is None or dnr_date_raw == "":
+            dnr_date_val = ""
+        elif hasattr(dnr_date_raw, "strftime"):
+            dnr_date_val = dnr_date_raw.strftime(DNR_DATE_DISPLAY_FMT)
+        else:
+            dnr_date_s = str(dnr_date_raw).strip()
+            if not dnr_date_s:
+                dnr_date_val = ""
+            elif re.match(r"^\d{2}-\d{2}-\d{4}$", dnr_date_s):
+                dnr_date_val = dnr_date_s
+            else:
+                dnr_date_iso = dnr_date_s.split("T")[0]
+                if re.match(r"^\d{4}-\d{2}-\d{2}$", dnr_date_iso):
+                    try:
+                        dnr_date_val = (
+                            datetime.strptime(dnr_date_iso, "%Y-%m-%d")
+                            .date()
+                            .strftime(DNR_DATE_DISPLAY_FMT)
+                        )
+                    except ValueError:
+                        dnr_date_val = dnr_date_s
+                else:
+                    dnr_date_val = dnr_date_s
+
+        return jsonify({
+            "success": True,
+            "data": {
+                "dnr_id": header.get("dnr_id", ""),
+                "status": header.get("status", ""),
+                "invoice_return_ref_id": (
+                    header.get("invoice_return_ref_id") or ""
+                ),
+                "customer_name": header.get("customer_name") or "",
+                "customer_id": header.get("customer_id") or "",
+                "email": header.get("email") or "",
+                "phone": header.get("phone") or "",
+                "contact_person": header.get("contact_person") or "",
+                "customer_ref_no": header.get("customer_ref_no") or "",
+                "cancel_reason": header.get("cancel_reason") or "",
+                "dnr_date": dnr_date_val,
+                "items": items,
+                "comments": comments,
+                "history": history,
+                "attachments": attachments,
+            },
+        })
+
+    except Exception as e:
+
+        return jsonify({
+            "success": False,
+            "message": str(e)
+        }), 500
+
+
+# =========================================
+# DELIVERY NOTE RETURN NEW PAGE
+# =========================================
+
+@app.route("/deliverynote_return/new")
+def dnr_new_page():
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            SELECT COALESCE(MAX(
+                CAST(NULLIF(SPLIT_PART(dnr_id, '-', 2), '') AS INTEGER)
+            ), 0)
+            FROM deliverynote_returns
+            WHERE dnr_id ~ '^DNR-[0-9]+$'
+            """
+        )
+        max_num = int((cur.fetchone() or [0])[0] or 0)
+        dnr_id = f"DNR-{max_num + 1:03d}"
+        conn.commit()
+    finally:
+        cur.close()
+        conn.close()
 
     return render_template(
         "deliverynotereturn-new.html",
-        dnr_id=dnr_id,
-        record=record,
-        mode=mode,
-        page="deliverynote_return",
-        title="New Delivery Note Return",
-        user_email=user_email,
-        user_name=user_name,
+        dnr_id=dnr_id
     )
 
 
-@app.route("/delivery-return/create/<dn_id>")
-def delivery_return_create_compat(dn_id):
-    """Backward-compatible redirect for old Delivery Return links."""
-    return redirect(url_for("deliverynote_return_new", dn_id=dn_id))
+@app.route("/api/delivery-note-return/next-id", methods=["GET"])
+def api_next_dnr_id():
 
-# =========================================================
-# API: GET DELIVERY NOTE BY ID (PostgreSQL — used by DNR autofill ?dn_id=)
-# =========================================================
-@app.route("/api/delivery-note/<dn_id>")
-def get_delivery_note_by_id(dn_id):
-    if not (dn_id or "").strip():
-        return jsonify({"success": False})
-    dn = get_dn_by_id(dn_id.strip())
-    if not dn:
-        return jsonify({"success": False})
-    item = {
-        "dn_id": dn.get("dn_id") or "",
-        "customer_name": dn.get("customer_name") or "",
-        "customer_id": dn.get("customer_id") or "",
-        "customer_ref_no": dn.get("customer_ref_no") or "",
-        "customer_email": (dn.get("email") or dn.get("customer_email") or ""),
-        "customer_phone": (dn.get("phone") or dn.get("customer_phone") or ""),
-        "contact_person": dn.get("contact_person") or "",
-        "destination_address": dn.get("destination_address") or "",
-        "sale_order_ref": dn.get("so_id") or "",
-        "delivery_date": str(dn.get("delivery_date") or ""),
-        "items": dn.get("items") or [],
-    }
-    return jsonify({"success": True, "item": item})
-
-
-# =========================================
-# SAVE DELIVERY NOTE RETURN DRAFT (PostgreSQL)
-# =========================================
-def _normalize_dnr_store_status(raw):
-    """Allow only Draft / Submitted / Cancelled in storage; unknown values become Draft."""
-    x = (raw or "Draft").strip() or "Draft"
-    low = x.lower()
-    if low == "draft":
-        return "Draft"
-    if low == "submitted":
-        return "Submitted"
-    if low == "cancelled":
-        return "Cancelled"
-    return "Draft"
-
-
-def _dnr_status_bucket(s):
-    """Compare previous vs new status without case/spacing noise."""
-    x = (s or "").strip().lower()
-    if x == "submitted":
-        return "submitted"
-    if x == "cancelled":
-        return "cancelled"
-    return "draft"
-
-
-@app.route("/api/save-dnr-draft", methods=["POST"])
-def save_dnr_draft():
-    # force=True: some proxies/clients omit Content-Type; otherwise body is empty and nothing saves.
-    body = request.get_json(force=True, silent=True) or {}
-    dnr_id = (body.get("dnr_id") or "").strip()
-    if not dnr_id:
-        return jsonify({"success": False, "message": "dnr_id required"}), 400
-
-    user_name = _get_logged_in_user_name()
-
-    dnr_date = _dnr_parse_date(body.get("dnr_date"))
-    invoice_ref = (body.get("invoice_ref") or body.get("invoice_return_ref_id") or "").strip() or None
-    cust_ref = (body.get("customer_ref_no") or "").strip() or None
-    cid = (body.get("customer_id") or "").strip() or None
-    cname = (body.get("customer_name") or "").strip() or None
-    email = (body.get("customer_email") or body.get("email") or "").strip() or None
-    phone = (body.get("customer_phone") or body.get("phone") or "").strip() or None
-    contact = (body.get("contact_person") or "").strip() or None
-    normalized_status = _normalize_dnr_store_status(body.get("status"))
-    if normalized_status == "Submitted":
-        hist_action = "Submitted"
-    elif normalized_status == "Cancelled":
-        hist_action = "Cancelled"
-    else:
-        hist_action = "Saved as Draft"
-    _raw_items = body.get("items")
-    _items_list = _raw_items if isinstance(_raw_items, list) else []
-    # History.description was always ""; store a short summary (optional client note wins).
-    _hist_note = (body.get("history_description") or body.get("history_note") or "").strip()
-    if _hist_note:
-        hist_description = _hist_note[:4000]
-    else:
-        _n_lines = sum(1 for i in _items_list if isinstance(i, dict))
-        _parts = [f"{hist_action}", f"{_n_lines} line item(s)"]
-        if invoice_ref:
-            _parts.insert(0, f"Invoice return ref {invoice_ref}")
-        hist_description = " · ".join(_parts)
-
-    conn = get_db_connection()
-    saved_db = None
     try:
-        # Drop any stale transaction on pooled connections before writing.
+
+        conn = get_db_connection()
+        cur = conn.cursor()
         try:
+            cur.execute(
+                """
+                SELECT COALESCE(MAX(
+                    CAST(NULLIF(SPLIT_PART(dnr_id, '-', 2), '') AS INTEGER)
+                ), 0)
+                FROM deliverynote_returns
+                WHERE dnr_id ~ '^DNR-[0-9]+$'
+                """
+            )
+            max_num = int((cur.fetchone() or [0])[0] or 0)
+            dnr_id = f"DNR-{max_num + 1:03d}"
+            conn.commit()
+        finally:
+            cur.close()
+            conn.close()
+
+        return jsonify({
+            "success": True,
+            "dnr_id": dnr_id
+        })
+
+    except Exception as e:
+
+        return jsonify({
+            "success": False,
+            "message": str(e)
+        }), 500
+
+
+# =========================================
+# DELIVERY NOTE RETURN — ATTACHMENTS (DATABASE ONLY)
+# No static/uploads. No disk storage.
+# =========================================
+
+@app.post("/api/dnr-upload-attachment")
+def dnr_upload_attachment():
+    conn = None
+    cur = None
+
+    try:
+        if "file" not in request.files:
+            return jsonify({
+                "success": False,
+                "error": "No file provided"
+            }), 400
+
+        file = request.files["file"]
+        dnr_id = (request.form.get("dnr_id") or "").strip()
+
+        if not dnr_id:
+            return jsonify({
+                "success": False,
+                "error": "dnr_id required"
+            }), 400
+
+        if file.filename == "":
+            return jsonify({
+                "success": False,
+                "error": "No file selected"
+            }), 400
+
+        filename = os.path.basename(file.filename)
+        file_data = file.read()
+        file_size = len(file_data)
+        file_type = file.mimetype or "application/octet-stream"
+
+        if file_size <= 0:
+            return jsonify({
+                "success": False,
+                "error": "Empty file cannot be uploaded"
+            }), 400
+
+        if file_size > MAX_FILE_SIZE_BYTES:
+            return jsonify({
+                "success": False,
+                "error": f"File size exceeds {MAX_FILE_SIZE_MB} MB"
+            }), 400
+
+        if not allowed_file(filename):
+            return jsonify({
+                "success": False,
+                "error": f'File type not allowed. Allowed: {", ".join(sorted(ALLOWED_EXTENSIONS))}'
+            }), 400
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        cur.execute("""
+            SELECT status
+            FROM deliverynote_returns
+            WHERE dnr_id = %s
+        """, (dnr_id,))
+
+        dnr_row = cur.fetchone()
+
+        if not dnr_row:
             conn.rollback()
-        except Exception:
-            pass
+            cur.close()
+            conn.close()
+            return jsonify({
+                "success": False,
+                "error": "Save the delivery note return first, then attach files."
+            }), 400
+
+        if str(dnr_row[0] or "").strip().lower() == "cancelled":
+            conn.rollback()
+            cur.close()
+            conn.close()
+            return jsonify({
+                "success": False,
+                "error": "Cannot attach files to a cancelled delivery note return."
+            }), 400
+
+        cur.execute("""
+            SELECT COUNT(*)
+            FROM deliverynote_return_attachments
+            WHERE dnr_id = %s
+        """, (dnr_id,))
+
+        current_count = int((cur.fetchone() or [0])[0] or 0)
+
+        if current_count >= 10:
+            conn.rollback()
+            cur.close()
+            conn.close()
+            return jsonify({
+                "success": False,
+                "error": "Maximum 10 files allowed per delivery note return"
+            }), 400
+
+        cur.execute("""
+            INSERT INTO deliverynote_return_attachments (
+                dnr_id,
+                file_name,
+                file_type,
+                file_size,
+                file_content,
+                uploaded_at
+            )
+            VALUES (%s, %s, %s, %s, %s, %s)
+            RETURNING id
+        """, (
+            dnr_id,
+            filename,
+            file_type,
+            file_size,
+            psycopg2.Binary(file_data),
+            datetime.now()
+        ))
+
+        new_row = cur.fetchone()
+        conn.commit()
+
+        cur.close()
+        conn.close()
+
+        return jsonify({
+            "success": True,
+            "attachment": {
+                "id": new_row[0] if new_row else None,
+                "filename": filename,
+                "file_type": file_type,
+                "size": file_size,
+                "uploaded_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            }
+        })
+
+    except Exception as e:
+        if conn:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+
+        if cur:
+            try:
+                cur.close()
+            except Exception:
+                pass
+
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+        print(traceback.format_exc())
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+@app.get("/api/dnr-attachments/<dnr_id>")
+def dnr_get_attachments(dnr_id):
+    conn = None
+    cur = None
+
+    try:
+        dnr_id = (dnr_id or "").strip()
+
+        if not dnr_id:
+            return jsonify({
+                "success": False,
+                "attachments": []
+            }), 400
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        cur.execute("""
+            SELECT
+                id,
+                file_name,
+                file_type,
+                file_size,
+                uploaded_at
+            FROM deliverynote_return_attachments
+            WHERE dnr_id = %s
+            ORDER BY uploaded_at ASC NULLS LAST, id ASC
+        """, (dnr_id,))
+
+        attachments = []
+
+        for row in cur.fetchall() or []:
+            uploaded_at = row[4]
+
+            if hasattr(uploaded_at, "strftime"):
+                uploaded_at_text = uploaded_at.strftime("%Y-%m-%d %H:%M:%S")
+            else:
+                uploaded_at_text = str(uploaded_at or "")
+
+            attachments.append({
+                "id": row[0],
+                "filename": row[1] or "",
+                "file_type": row[2] or "",
+                "size": int(row[3] or 0),
+                "uploaded_at": uploaded_at_text
+            })
+
+        cur.close()
+        conn.close()
+
+        return jsonify({
+            "success": True,
+            "attachments": attachments
+        })
+
+    except Exception as e:
+        if cur:
+            try:
+                cur.close()
+            except Exception:
+                pass
+
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+        return jsonify({
+            "success": False,
+            "attachments": [],
+            "error": str(e)
+        }), 500
+
+
+@app.get("/api/dnr-attachment/<att_id>/view")
+def dnr_view_attachment(att_id):
+    conn = None
+    cur = None
+
+    try:
+        att_id = int(str(att_id).strip())
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        cur.execute("""
+            SELECT
+                file_name,
+                file_type,
+                COALESCE(file_data, file_content)
+            FROM deliverynote_return_attachments
+            WHERE id = %s
+        """, (att_id,))
+
+        row = cur.fetchone()
+
+        cur.close()
+        conn.close()
+
+        if not row:
+            return jsonify({
+                "success": False,
+                "message": "Attachment not found"
+            }), 404
+
+        file_name = row[0] or "attachment"
+        file_type = row[1] or "application/octet-stream"
+        file_data = row[2]
+
+        if file_data is None:
+            return jsonify({
+                "success": False,
+                "message": "Attachment file data not found"
+            }), 404
+
+        if isinstance(file_data, memoryview):
+            file_bytes = file_data.tobytes()
+        else:
+            file_bytes = bytes(file_data)
+
+        return send_file(
+            BytesIO(file_bytes),
+            mimetype=file_type,
+            download_name=file_name,
+            as_attachment=False
+        )
+
+    except Exception as e:
+        if cur:
+            try:
+                cur.close()
+            except Exception:
+                pass
+
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+        return jsonify({
+            "success": False,
+            "message": str(e)
+        }), 500
+
+
+@app.get("/api/dnr-attachment/<att_id>/download")
+def dnr_download_attachment(att_id):
+    conn = None
+    cur = None
+
+    try:
+        att_id = int(str(att_id).strip())
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        cur.execute("""
+            SELECT
+                file_name,
+                file_type,
+                COALESCE(file_data, file_content)
+            FROM deliverynote_return_attachments
+            WHERE id = %s
+        """, (att_id,))
+
+        row = cur.fetchone()
+
+        cur.close()
+        conn.close()
+
+        if not row:
+            return jsonify({
+                "success": False,
+                "message": "Attachment not found"
+            }), 404
+
+        file_name = row[0] or "attachment"
+        file_type = row[1] or "application/octet-stream"
+        file_data = row[2]
+
+        if file_data is None:
+            return jsonify({
+                "success": False,
+                "message": "Attachment file data not found"
+            }), 404
+
+        if isinstance(file_data, memoryview):
+            file_bytes = file_data.tobytes()
+        else:
+            file_bytes = bytes(file_data)
+
+        return send_file(
+            BytesIO(file_bytes),
+            mimetype=file_type,
+            download_name=file_name,
+            as_attachment=True
+        )
+
+    except Exception as e:
+        if cur:
+            try:
+                cur.close()
+            except Exception:
+                pass
+
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+        return jsonify({
+            "success": False,
+            "message": str(e)
+        }), 500
+
+
+@app.delete("/api/dnr-attachment/<att_id>")
+def dnr_delete_attachment(att_id):
+    conn = None
+    cur = None
+
+    try:
+        att_id = int(str(att_id).strip())
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        cur.execute("""
+            SELECT
+                a.id,
+                a.dnr_id,
+                r.status
+            FROM deliverynote_return_attachments a
+            JOIN deliverynote_returns r
+              ON r.dnr_id = a.dnr_id
+            WHERE a.id = %s
+        """, (att_id,))
+
+        row = cur.fetchone()
+
+        if not row:
+            cur.close()
+            conn.close()
+            return jsonify({
+                "success": False,
+                "error": "Attachment not found"
+            }), 404
+
+        if str(row[2] or "").strip().lower() == "cancelled":
+            cur.close()
+            conn.close()
+            return jsonify({
+                "success": False,
+                "error": "Cannot delete attachments on a cancelled record."
+            }), 400
+
+        cur.execute("""
+            DELETE FROM deliverynote_return_attachments
+            WHERE id = %s
+        """, (att_id,))
+
+        conn.commit()
+
+        cur.close()
+        conn.close()
+
+        return jsonify({
+            "success": True
+        })
+
+    except Exception as e:
+        if conn:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+
+        if cur:
+            try:
+                cur.close()
+            except Exception:
+                pass
+
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+        print(traceback.format_exc())
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+# =========================================
+# SAVE DELIVERY NOTE RETURN
+# =========================================
+
+@app.post("/api/save-delivery-note-return")
+def save_delivery_note_return():
+
+    conn = None
+
+    try:
+
+        data = request.get_json() or {}
+
+        dnr_id = (data.get("dnr_id") or "").strip()
+        if not dnr_id:
+            return jsonify({
+                "success": False,
+                "message": "DNR ID is required"
+            }), 400
+
+        status = (data.get("status") or "Draft").strip()
+        if status not in ("Draft", "Submitted"):
+            return jsonify({
+                "success": False,
+                "message": "Invalid status. Use Draft or Submitted."
+            }), 400
+
+        invoice_return_ref_id = (
+            data.get("invoice_return_ref_id")
+            or data.get("invoice_return_ref")
+            or ""
+        ).strip()
+
+        if not invoice_return_ref_id:
+            return jsonify({
+                "success": False,
+                "message": "Select Invoice Return Reference ID"
+            }), 400
+
+        
+
+        conn = get_db_connection()
         cur = conn.cursor()
         cur.execute(
-            "SELECT status FROM public.deliverynote_returns WHERE dnr_id = %s",
-            (dnr_id,),
+            """
+            SELECT status
+            FROM invoice_return
+            WHERE invoice_return_id = %s
+            """,
+            (invoice_return_ref_id,),
         )
-        prev_row = cur.fetchone()
-        prev_status = prev_row[0] if prev_row else None
+        ir_row = cur.fetchone()
+        if not ir_row:
+            cur.close()
+            conn.close()
+            return jsonify({
+                "success": False,
+                "message": "Invoice return not found"
+            }), 400
 
         cur.execute(
             """
-            INSERT INTO public.deliverynote_returns (
-                dnr_id, dnr_date, invoice_return_ref_id, customer_ref_no,
-                customer_id, customer_name, email, phone, contact_person, status
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            ON CONFLICT (dnr_id) DO UPDATE SET
-                dnr_date = EXCLUDED.dnr_date,
-                invoice_return_ref_id = EXCLUDED.invoice_return_ref_id,
-                customer_ref_no = EXCLUDED.customer_ref_no,
-                customer_id = EXCLUDED.customer_id,
-                customer_name = EXCLUDED.customer_name,
-                email = EXCLUDED.email,
-                phone = EXCLUDED.phone,
-                contact_person = EXCLUDED.contact_person,
-                status = EXCLUDED.status,
-                updated_at = CURRENT_TIMESTAMP
+            SELECT status, invoice_return_ref_id
+            FROM deliverynote_returns
+            WHERE dnr_id = %s
             """,
-            (
-                dnr_id,
-                dnr_date,
-                invoice_ref,
-                cust_ref,
-                cid,
-                cname,
+            (dnr_id,),
+        )
+        existing = cur.fetchone()
+        exists = existing is not None
+        existing_ir_ref = (
+            str(existing[1] or "").strip()
+            if exists
+            else ""
+        )
+
+        cur.execute(
+            """
+            SELECT dnr_id
+            FROM deliverynote_returns
+            WHERE TRIM(COALESCE(invoice_return_ref_id, '')) = TRIM(%s)
+              AND TRIM(dnr_id) <> TRIM(%s)
+            LIMIT 1
+            """,
+            (invoice_return_ref_id, dnr_id),
+        )
+        if cur.fetchone():
+            cur.close()
+            conn.close()
+            return jsonify({
+                "success": False,
+                "message": (
+                    "This invoice return is already linked to a delivery note "
+                    "return (including cancelled). Each invoice return can only "
+                    "be used once."
+                ),
+            }), 400
+
+        ir_is_cancelled = (
+            str(ir_row[0] or "").strip().lower() == "cancelled"
+        )
+        reusing_same_ir = (
+            exists
+            and existing_ir_ref == invoice_return_ref_id
+        )
+        if ir_is_cancelled and not reusing_same_ir:
+            cur.close()
+            conn.close()
+            return jsonify({
+                "success": False,
+                "message": "Cannot use a cancelled invoice return"
+            }), 400
+
+        if status == "Submitted":
+            comments_in = data.get("comments") or []
+            has_comment = any(
+                (c.get("comment") or "").strip()
+                for c in comments_in
+            )
+            if not has_comment:
+                cur.close()
+                conn.close()
+                return jsonify({
+                    "success": False,
+                    "message": "Please add at least one comment before submitting"
+                }), 400
+        customer_name = data.get("customer_name") or ""
+        customer_id = data.get("customer_id") or ""
+        email = data.get("email") or ""
+        phone = data.get("phone") or ""
+        contact_person = data.get("contact_person") or ""
+        customer_ref_no = (data.get("customer_ref_no") or "").strip()
+        dnr_date = data.get("dnr_date") or None
+
+        if customer_ref_no:
+            if len(customer_ref_no) < 3 or len(customer_ref_no) > 30:
+                cur.close()
+                conn.close()
+                return jsonify({
+                    "success": False,
+                    "message": (
+                        "Customer Ref No must be between 3 and 30 characters."
+                    ),
+                }), 400
+
+            if not re.match(r"^[A-Za-z0-9\-_/ ]+$", customer_ref_no):
+                cur.close()
+                conn.close()
+                return jsonify({
+                    "success": False,
+                    "message": (
+                        "Only letters, numbers, hyphen (-), underscore (_), "
+                        "and slash (/) are allowed in Customer Ref No."
+                    ),
+                }), 400
+
+        if dnr_date:
+            dnr_date_val = (dnr_date or "").strip()
+            if (
+                not dnr_date_val
+                or not re.match(r"^\d{2}-\d{2}-\d{4}$", dnr_date_val)
+            ):
+                cur.close()
+                conn.close()
+                return jsonify({
+                    "success": False,
+                    "message": DNR_DATE_INVALID_MSG,
+                }), 400
+            try:
+                parsed_dnr_date = datetime.strptime(
+                    dnr_date_val, DNR_DATE_DISPLAY_FMT
+                ).date()
+            except ValueError:
+                cur.close()
+                conn.close()
+                return jsonify({
+                    "success": False,
+                    "message": DNR_DATE_INVALID_MSG,
+                }), 400
+            if parsed_dnr_date.year < 1900 or parsed_dnr_date.year > 2100:
+                cur.close()
+                conn.close()
+                return jsonify({
+                    "success": False,
+                    "message": DNR_DATE_INVALID_MSG,
+                }), 400
+            if parsed_dnr_date != date.today():
+                cur.close()
+                conn.close()
+                return jsonify({
+                    "success": False,
+                    "message": DNR_DATE_MUST_BE_TODAY_MSG,
+                }), 400
+            dnr_date = parsed_dnr_date
+
+        if exists:
+            current_status = str(existing[0] or "").strip().lower()
+            if current_status == "cancelled":
+                cur.close()
+                conn.close()
+                return jsonify({
+                    "success": False,
+                    "message": "Cannot update a cancelled delivery note return"
+                }), 400
+            new_status_lower = status.strip().lower()
+            if current_status == "submitted" and new_status_lower == "draft":
+                cur.close()
+                conn.close()
+                return jsonify({
+                    "success": False,
+                    "message": "Cannot change a submitted delivery note return back to draft"
+                }), 400
+
+        if exists:
+            cur.execute("""
+                UPDATE deliverynote_returns SET
+                    status = %s,
+                    invoice_return_ref_id = %s,
+                    customer_name = %s,
+                    customer_id = %s,
+                    email = %s,
+                    phone = %s,
+                    contact_person = %s,
+                    customer_ref_no = %s,
+                    dnr_date = %s
+                WHERE dnr_id = %s
+            """, (
+                status,
+                invoice_return_ref_id,
+                customer_name,
+                customer_id,
                 email,
                 phone,
-                contact,
-                normalized_status,
-            ),
-        )
-        cur.execute(
-            "DELETE FROM public.deliverynote_return_items WHERE dnr_id = %s",
-            (dnr_id,),
-        )
-        for it in _items_list:
-            if not isinstance(it, dict):
-                continue
-            pid = (it.get("product_id") or "").strip() or None
-            pname = (it.get("product_name") or "").strip() or None
-            uom = (it.get("uom") or "").strip() or None
-            try:
-                inv_q = int(it.get("invoiced_qty") or it.get("invoice_quantity") or 0)
-            except (TypeError, ValueError):
-                inv_q = 0
-            try:
-                ret_q = int(it.get("returned_qty") or it.get("return_quantity") or 0)
-            except (TypeError, ValueError):
-                ret_q = 0
-            serial = (it.get("serial_no") or it.get("serial_number") or "").strip() or None
-            reason = (it.get("return_reason") or it.get("reason") or "").strip() or None
-            cur.execute(
-                """
-                INSERT INTO public.deliverynote_return_items (
-                    dnr_id, product_id, product_name, uom, invoiced_qty, returned_qty, serial_no, return_reason
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                """,
-                (dnr_id, pid, pname, uom, inv_q, ret_q, serial, reason),
-            )
-        append_history = prev_status is None or _dnr_status_bucket(
-            prev_status
-        ) != _dnr_status_bucket(normalized_status)
-        if append_history:
-            cur.execute(
-                """
-                INSERT INTO public.deliverynote_return_history (dnr_id, action, description, created_by)
-                VALUES (%s, %s, %s, %s)
-                """,
-                (dnr_id, hist_action, hist_description, user_name),
-            )
-        # Comments: avoid wiping DB when client omits "comments" or sets sync_comments=false.
-        _explicit_no_comment_sync = body.get("sync_comments") is False
-        _comments_omitted = "comments" not in body
-        if not _explicit_no_comment_sync and not _comments_omitted:
-            cur.execute(
-                "DELETE FROM public.deliverynote_return_comments WHERE dnr_id = %s",
-                (dnr_id,),
-            )
-            _raw_comments = body.get("comments")
-            _comments_list = (
-                _raw_comments if isinstance(_raw_comments, list) else []
-            )
-            for c in _comments_list:
-                if not isinstance(c, dict):
-                    continue
-                msg = (c.get("message") or "").strip()
-                if not msg:
-                    continue
-                who = (c.get("user") or user_name or "User").strip() or "User"
-                cur.execute(
-                    """
-                    INSERT INTO public.deliverynote_return_comments (dnr_id, comment, created_by)
-                    VALUES (%s, %s, %s)
-                    """,
-                    (dnr_id, msg, who),
+                contact_person,
+                customer_ref_no,
+                dnr_date,
+                dnr_id,
+            ))
+        else:
+            cur.execute("""
+                INSERT INTO deliverynote_returns (
+                    dnr_id,
+                    status,
+                    invoice_return_ref_id,
+                    customer_name,
+                    customer_id,
+                    email,
+                    phone,
+                    contact_person,
+                    customer_ref_no,
+                    dnr_date
                 )
-        conn.commit()
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """, (
+                dnr_id,
+                status,
+                invoice_return_ref_id,
+                customer_name,
+                customer_id,
+                email,
+                phone,
+                contact_person,
+                customer_ref_no,
+                dnr_date,
+            ))
+
         cur.execute(
-            "SELECT 1 FROM public.deliverynote_returns WHERE dnr_id = %s",
+            "DELETE FROM deliverynote_return_items WHERE dnr_id = %s",
             (dnr_id,),
         )
-        if cur.fetchone() is None:
-            raise RuntimeError(
-                "Persist check failed: dnr_id not found in public.deliverynote_returns after commit"
-            )
-        cur.execute("SELECT current_database()")
-        saved_db = cur.fetchone()[0]
-        cur.execute("SELECT COUNT(*) FROM public.deliverynote_returns")
-        row_n = cur.fetchone()[0]
-        print(
-            f"save_dnr_draft OK: dnr_id={dnr_id!r} status={normalized_status!r} "
-            f"database={saved_db!r} public.deliverynote_returns rows={row_n}"
-        )
-    except Exception as e:
-        try:
-            conn.rollback()
-        except Exception:
-            pass
-        print(traceback.format_exc())
-        return jsonify({"success": False, "message": str(e)}), 500
-    finally:
-        try:
-            conn.close()
-        except Exception:
-            pass
+        for it in data.get("items") or []:
+            cur.execute("""
+                INSERT INTO deliverynote_return_items (
+                    dnr_id,
+                    product_id,
+                    product_name,
+                    uom,
+                    invoiced_qty,
+                    returned_qty,
+                    serial_no,
+                    return_reason
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            """, (
+                dnr_id,
+                it.get("product_id") or "",
+                it.get("product_name") or "",
+                it.get("uom") or "",
+                it.get("invoiced_qty"),
+                it.get("returned_qty"),
+                it.get("serial_no") or "",
+                it.get("return_reason") or "",
+            ))
 
-    return jsonify(
-        {
+        cur.execute(
+            "DELETE FROM deliverynote_return_comments WHERE dnr_id = %s",
+            (dnr_id,),
+        )
+
+        for c in data.get("comments") or []:
+            comment_text = (c.get("comment") or "").strip()
+            if not comment_text:
+                continue
+
+            comment_author = (
+                (c.get("created_by") or "").strip()
+                or (c.get("author") or "").strip()
+                or _get_logged_in_user_name()
+            )
+
+            created_at_raw = (
+                (c.get("created_at") or "")
+                or (c.get("raw_created_at") or "")
+            )
+
+            created_at_val = datetime.now()
+
+            if created_at_raw:
+                try:
+                    created_at_val = datetime.fromisoformat(
+                        str(created_at_raw).replace("Z", "+00:00")
+                    )
+                except Exception:
+                    created_at_val = datetime.now()
+
+            cur.execute("""
+                INSERT INTO deliverynote_return_comments (
+                    dnr_id,
+                    comment,
+                    created_by,
+                    created_at
+                )
+                VALUES (%s, %s, %s, %s)
+            """, (
+                dnr_id,
+                comment_text,
+                comment_author,
+                created_at_val,
+            ))
+        cur.execute("""
+            INSERT INTO deliverynote_return_history (
+                dnr_id,
+                action,
+                description,
+                created_by,
+                created_at
+            )
+            VALUES (%s, %s, %s, %s, %s)
+        """, (
+            dnr_id,
+            f"Saved as {status}",
+            f"Delivery Note Return {dnr_id} saved as {status}",
+            _get_logged_in_user_name(),
+            datetime.now(),
+        ))
+
+        conn.commit()
+
+        cur.close()
+        conn.close()
+
+        return jsonify({
             "success": True,
+            "message": f"Delivery Note Return saved in status: {status}",
             "dnr_id": dnr_id,
-            "database": saved_db,
-        }
+            "status": status,
+        })
+
+    except Exception as e:
+
+        if conn:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+
+        if getattr(e, "pgcode", None) == "23505":
+            return jsonify({
+                "success": False,
+                "message": (
+                    "DNR ID already exists. Refresh the page to get a new ID."
+                ),
+            }), 409
+
+        return jsonify({
+            "success": False,
+            "message": str(e)
+        }), 500
+
+
+@app.post("/api/cancel-delivery-note-return")
+def cancel_delivery_note_return():
+
+    conn = None
+
+    try:
+
+        data = request.get_json() or {}
+        dnr_id = (data.get("dnr_id") or "").strip()
+        cancel_reason = (data.get("reason") or "").strip()
+
+        if not dnr_id:
+            return jsonify({
+                "success": False,
+                "message": "DNR ID is required"
+            }), 400
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT status FROM deliverynote_returns WHERE dnr_id = %s",
+            (dnr_id,),
+        )
+        row = cur.fetchone()
+
+        if not row:
+            cur.close()
+            conn.close()
+            return jsonify({
+                "success": False,
+                "message": "No saved delivery note return found. Save Draft first."
+            }), 404
+
+        current_status = str(row[0] or "").strip().lower()
+
+        if current_status == "cancelled":
+            cur.close()
+            conn.close()
+            return jsonify({
+                "success": False,
+                "message": "Delivery note return is already cancelled"
+            }), 400
+
+        if current_status != "submitted":
+            cur.close()
+            conn.close()
+            return jsonify({
+                "success": False,
+                "message": "Only submitted delivery note returns can be cancelled"
+            }), 400
+
+        cur.execute(
+            """
+            UPDATE deliverynote_returns
+            SET status = %s,
+                cancel_reason = %s
+            WHERE dnr_id = %s
+            """,
+            ("Cancelled", cancel_reason or None, dnr_id),
+        )
+
+        cancel_description = (
+            f"Delivery Note Return {dnr_id} cancelled"
+        )
+        if cancel_reason:
+            cancel_description += f": {cancel_reason}"
+
+        cur.execute("""
+            INSERT INTO deliverynote_return_history (
+                dnr_id,
+                action,
+                description,
+                created_by,
+                created_at
+            )
+            VALUES (%s, %s, %s, %s, %s)
+        """, (
+            dnr_id,
+            "Cancelled",
+            cancel_description,
+            _get_logged_in_user_name(),
+            datetime.now(),
+        ))
+
+        conn.commit()
+        cur.close()
+        conn.close()
+
+        return jsonify({
+            "success": True,
+            "message": "Delivery Note Return saved in status : Cancelled",
+            "dnr_id": dnr_id,
+            "status": "Cancelled",
+        })
+
+    except Exception as e:
+
+        if conn:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+
+        return jsonify({
+            "success": False,
+            "message": str(e)
+        }), 500
+
+
+@app.route("/deliverynote_return/form")
+def deliverynote_return_form():
+
+    dnr_id_param = (request.args.get("id") or "").strip()
+
+    if dnr_id_param:
+        dnr_id = dnr_id_param
+    else:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        try:
+            cur.execute(
+                """
+                SELECT COALESCE(MAX(
+                    CAST(NULLIF(SPLIT_PART(dnr_id, '-', 2), '') AS INTEGER)
+                ), 0)
+                FROM deliverynote_returns
+                WHERE dnr_id ~ '^DNR-[0-9]+$'
+                """
+            )
+            max_num = int((cur.fetchone() or [0])[0] or 0)
+            dnr_id = f"DNR-{max_num + 1:03d}"
+            conn.commit()
+        finally:
+            cur.close()
+            conn.close()
+
+    return render_template(
+        "deliverynotereturn-new.html",
+        dnr_id=dnr_id
     )
 
-
-@app.route("/api/delivery-note-return/<dnr_id>")
-def get_dnr_by_id_api(dnr_id):
-    d = get_dnr_by_id(dnr_id)
-    if not d:
-        return jsonify({"success": False, "message": "Delivery Note Return not found"}), 404
-    payload = dict(d)
-    # Same shape as GET /api/delivery-notes/<dn_id> (success + data).
-    return jsonify({"success": True, "data": payload})
 # =========================================
-# DELIVERY NOTE RETURN PDF 
+# DELIVERY NOTE RETURN - API (PDF)
+# =========================================
+@app.get("/api/delivery-note-returns/<dnr_id>/pdf")
+def delivery_note_return_pdf(dnr_id):
+    dnr_id = (dnr_id or "").strip()
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    cur.execute(
+        "SELECT * FROM deliverynote_returns WHERE dnr_id=%s",
+        (dnr_id,),
+    )
+    row = cur.fetchone()
+
+    if not row:
+        cur.close()
+        conn.close()
+        return jsonify({
+            "success": False,
+            "message": "Delivery Note Return not found"
+        }), 404
+
+    columns = [desc[0] for desc in cur.description]
+    dnr = dict(zip(columns, row))
+
+    dnr_date_raw = dnr.get("dnr_date")
+    if dnr_date_raw is None or dnr_date_raw == "":
+        dnr["dnr_date"] = ""
+    elif hasattr(dnr_date_raw, "strftime"):
+        dnr["dnr_date"] = dnr_date_raw.strftime(DNR_DATE_DISPLAY_FMT)
+    else:
+        dnr_date_s = str(dnr_date_raw).strip()
+        if not dnr_date_s:
+            dnr["dnr_date"] = ""
+        elif re.match(r"^\d{2}-\d{2}-\d{4}$", dnr_date_s):
+            dnr["dnr_date"] = dnr_date_s
+        else:
+            dnr_date_iso = dnr_date_s.split("T")[0]
+            if re.match(r"^\d{4}-\d{2}-\d{2}$", dnr_date_iso):
+                try:
+                    dnr["dnr_date"] = (
+                        datetime.strptime(dnr_date_iso, "%Y-%m-%d")
+                        .date()
+                        .strftime(DNR_DATE_DISPLAY_FMT)
+                    )
+                except ValueError:
+                    dnr["dnr_date"] = dnr_date_s
+            else:
+                dnr["dnr_date"] = dnr_date_s
+
+    cur.execute("""
+    SELECT
+        product_id,
+        product_name,
+        uom,
+        invoiced_qty,
+        returned_qty,
+        serial_no,
+        return_reason
+    FROM deliverynote_return_items
+    WHERE dnr_id=%s
+    """, (dnr_id,))
+
+    items_rows = cur.fetchall()
+
+    items = []
+    for i in items_rows:
+        items.append({
+            "product_id": i[0],
+            "product_name": i[1],
+            "uom": i[2],
+            "invoiced_qty": float(i[3] or 0),
+            "returned_qty": float(i[4] or 0),
+            "serial_no": i[5] or "",
+            "reason": i[6] or "",
+        })
+
+    dnr["items"] = items
+
+    cur.close()
+    conn.close()
+
+    pdf_bytes = generate_delivery_note_return_pdf_bytes(dnr)
+
+    response = make_response(pdf_bytes)
+    response.headers["Content-Type"] = "application/pdf"
+    response.headers["Content-Disposition"] = (
+        f'inline; filename="{dnr_id}.pdf"'
+    )
+
+    return response
+
+
+
+
+
+# =========================================
+# DELIVERY NOTE RETURN - EMAIL WITH PDF
+# =========================================
+@app.post("/api/delivery-note-returns/<dnr_id>/email")
+def email_delivery_note_return(dnr_id):
+    dnr_id = (dnr_id or "").strip()
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT customer_name, email
+        FROM deliverynote_returns
+        WHERE dnr_id = %s
+        """,
+        (dnr_id,),
+    )
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+
+    if not row:
+        return jsonify({
+            "success": False,
+            "message": "Delivery Note Return not found"
+        }), 404
+
+    customer_name = row[0] or ""
+    customer_email = (row[1] or "").strip()
+
+    if not customer_email:
+        customer = find_customer_by_name(customer_name)
+
+        if customer:
+            customer_email = (
+                customer.get("email") or ""
+            ).strip()
+
+    if not customer_email:
+        return jsonify({
+            "success": False,
+            "message": "Customer email not available"
+        }), 400
+
+    with app.test_client() as client:
+        pdf_resp = client.get(
+            f"/api/delivery-note-returns/{dnr_id}/pdf"
+        )
+
+    if pdf_resp.status_code != 200:
+        return jsonify({
+            "success": False,
+            "message": "Delivery Note Return not found"
+        }), 404
+
+    pdf_bytes = pdf_resp.data
+
+    ok = send_email(
+        customer_email,
+        f"Delivery Note Return {dnr_id}",
+        (
+            f"Dear {customer_name or 'Customer'},\n\n"
+            f"Please find attached the Delivery Note Return "
+            f"document ({dnr_id}).\n\n"
+            f"The returned item details have been recorded "
+            f"successfully in our system.\n\n"
+            f"If you have any questions, please contact us.\n\n"
+            f"Regards,\n"
+            f"Stackly Team"
+        ),
+        attachments=[
+            {
+                "filename": f"{dnr_id}.pdf",
+                "content_bytes": pdf_bytes
+            }
+        ]
+    )
+
+    if not ok:
+        return jsonify({
+            "success": False,
+            "message": "Email failed. Check SMTP/App password."
+        }), 500
+
+    return jsonify({
+        "success": True,
+        "message": "Email sent successfully"
+    })
+
+
+
+
+
+# =========================================
+# DELIVERY NOTE RETURN - PDF GENERATOR
 # =========================================
 def generate_delivery_note_return_pdf_bytes(dnr):
+
     buffer = io.BytesIO()
 
     doc = SimpleDocTemplate(
@@ -20687,13 +21696,13 @@ def generate_delivery_note_return_pdf_bytes(dnr):
         rightMargin=18,
         leftMargin=18,
         topMargin=16,
-        bottomMargin=18,
+        bottomMargin=18
     )
 
     styles = getSampleStyleSheet()
 
     company_style = ParagraphStyle(
-        name="DNR_CompanyName",
+        name="DNRReturnCompanyName",
         parent=styles["Normal"],
         fontName="DejaVuSans-Bold",
         fontSize=20,
@@ -20704,7 +21713,7 @@ def generate_delivery_note_return_pdf_bytes(dnr):
     )
 
     company_info_style = ParagraphStyle(
-        name="DNR_CompanyInfo",
+        name="DNRReturnCompanyInfo",
         parent=styles["Normal"],
         fontName="DejaVuSans",
         fontSize=9,
@@ -20715,7 +21724,7 @@ def generate_delivery_note_return_pdf_bytes(dnr):
     )
 
     page_title_style = ParagraphStyle(
-        name="DNR_PageTitle",
+        name="DNRReturnPageTitle",
         parent=styles["Heading1"],
         fontName="DejaVuSans-Bold",
         fontSize=16,
@@ -20727,7 +21736,7 @@ def generate_delivery_note_return_pdf_bytes(dnr):
     )
 
     section_style = ParagraphStyle(
-        name="DNR_Section",
+        name="DNRSection",
         parent=styles["Heading3"],
         fontName="DejaVuSans-Bold",
         fontSize=11,
@@ -20738,7 +21747,7 @@ def generate_delivery_note_return_pdf_bytes(dnr):
     )
 
     label_style = ParagraphStyle(
-        name="DNR_Label",
+        name="DNRLabel",
         parent=styles["Normal"],
         fontName="DejaVuSans-Bold",
         fontSize=8.5,
@@ -20747,7 +21756,7 @@ def generate_delivery_note_return_pdf_bytes(dnr):
     )
 
     value_style = ParagraphStyle(
-        name="DNR_Value",
+        name="DNRValue",
         parent=styles["Normal"],
         fontName="DejaVuSans",
         fontSize=8.5,
@@ -20756,7 +21765,7 @@ def generate_delivery_note_return_pdf_bytes(dnr):
     )
 
     header_small_style = ParagraphStyle(
-        name="DNR_HeaderSmall",
+        name="DNRHeaderSmall",
         parent=styles["Normal"],
         fontName="DejaVuSans-Bold",
         fontSize=8,
@@ -20766,7 +21775,7 @@ def generate_delivery_note_return_pdf_bytes(dnr):
     )
 
     terms_style = ParagraphStyle(
-        name="DNR_Terms",
+        name="DNRTermsStyle",
         parent=styles["Normal"],
         fontName="DejaVuSans",
         fontSize=8,
@@ -20780,510 +21789,266 @@ def generate_delivery_note_return_pdf_bytes(dnr):
     def safe_str(val, default="-"):
         if val is None:
             return default
+
         s = str(val).strip()
+
         return s if s else default
 
     def safe_float(val, default=0.0):
         try:
             if val in (None, ""):
                 return default
+
             return float(val)
+
         except Exception:
             return default
 
-    # COMPANY HEADER 
     elements.append(Paragraph("STACKLY", company_style))
-    elements.append(
-        Paragraph(
-            "MMR Complex, Chinna Thirupathi, near Chinna Muniyappan Kovil, Salem, Tamil Nadu - 636008",
-            company_info_style,
-        )
-    )
-    elements.append(Paragraph("Phone: +91 7010792745", company_info_style))
-    elements.append(Paragraph("Email: info@stackly.com", company_info_style))
+
+    elements.append(Paragraph(
+        "MMR Complex, Chinna Thirupathi, near Chinna Muniyappan Kovil, Salem, Tamil Nadu - 636008",
+        company_info_style
+    ))
+
+    elements.append(Paragraph(
+        "Phone: +91 7010792745",
+        company_info_style
+    ))
+
+    elements.append(Paragraph(
+        "Email: info@stackly.com",
+        company_info_style
+    ))
+
     elements.append(Spacer(1, 10))
 
-    status_text = safe_str(dnr.get("status") or "SUBMITTED").upper()
-    elements.append(Paragraph(f"DELIVERY NOTE RETURN - {status_text}", page_title_style))
+    status_text = safe_str(
+        dnr.get("status") or "SUBMITTED"
+    ).upper()
+
+    elements.append(Paragraph(
+        f"DELIVERY NOTE RETURN - {status_text}",
+        page_title_style
+    ))
+
     elements.append(Spacer(1, 2))
 
-    ir_ref = safe_str(dnr.get("invoice_return_ref") or dnr.get("invoice_return_ref_id") or "")
+    dnr_date_str = safe_str(dnr.get("dnr_date"))
 
     dnr_details_data = [
         [
-            Paragraph("<b>Delivery Note Return No:</b>", label_style),
+            Paragraph("<b>DNR Number:</b>", label_style),
             Paragraph(safe_str(dnr.get("dnr_id")), value_style),
+
             Paragraph("<b>Date:</b>", label_style),
-            Paragraph(safe_str(dnr.get("dnr_date") or dnr.get("return_date")), value_style),
+            Paragraph(dnr_date_str, value_style),
         ],
+
         [
-            Paragraph("<b>Customer:</b>", label_style),
-            Paragraph(safe_str(dnr.get("customer_name")), value_style),
             Paragraph("<b>Invoice Return Ref:</b>", label_style),
-            Paragraph(ir_ref, value_style),
-        ],
-        [
+            Paragraph(
+                safe_str(dnr.get("invoice_return_ref_id")),
+                value_style
+            ),
+
             Paragraph("<b>Customer Ref No:</b>", label_style),
-            Paragraph(safe_str(dnr.get("customer_ref_no")), value_style),
-            Paragraph("<b>Phone:</b>", label_style),
-            Paragraph(safe_str(dnr.get("phone")), value_style),
+            Paragraph(
+                safe_str(dnr.get("customer_ref_no")),
+                value_style
+            ),
         ],
+
+        [
+            Paragraph("<b>Customer Name:</b>", label_style),
+            Paragraph(
+                safe_str(dnr.get("customer_name")),
+                value_style
+            ),
+
+            Paragraph("<b>Customer ID:</b>", label_style),
+            Paragraph(
+                safe_str(dnr.get("customer_id")),
+                value_style
+            ),
+        ],
+
         [
             Paragraph("<b>Email:</b>", label_style),
-            Paragraph(safe_str(dnr.get("email")), value_style),
-            Paragraph("<b>Contact Person:</b>", label_style),
-            Paragraph(safe_str(dnr.get("contact_person")), value_style),
+            Paragraph(
+                safe_str(dnr.get("email")),
+                value_style
+            ),
+
+            Paragraph("<b>Phone:</b>", label_style),
+            Paragraph(
+                safe_str(dnr.get("phone_no") or dnr.get("phone")),
+                value_style
+            ),
         ],
+
         [
-            Paragraph("<b>Customer ID:</b>", label_style),
-            Paragraph(safe_str(dnr.get("customer_id")), value_style),
+            Paragraph("<b>Contact Person:</b>", label_style),
+            Paragraph(
+                safe_str(dnr.get("contact_person")),
+                value_style
+            ),
+
             Paragraph("<b>Status:</b>", label_style),
             Paragraph(status_text, value_style),
         ],
     ]
 
-    details_table = Table(dnr_details_data, colWidths=[110, 170, 95, 145])
-    details_table.setStyle(
-        TableStyle(
-            [
-                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f3f3f3")),
-                ("BOX", (0, 0), (-1, -1), 0.8, colors.HexColor("#8a8a8a")),
-                ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#a5a5a5")),
-                ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ("LEFTPADDING", (0, 0), (-1, -1), 6),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-                ("TOPPADDING", (0, 0), (-1, -1), 5),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-            ]
-        )
+    details_table = Table(
+        dnr_details_data,
+        colWidths=[110, 170, 95, 145]
     )
+
+    details_table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f3f3f3")),
+        ("BOX", (0, 0), (-1, -1), 0.8, colors.HexColor("#8a8a8a")),
+        ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#a5a5a5")),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+
+        ("LEFTPADDING", (0, 0), (-1, -1), 6),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+    ]))
+
     elements.append(details_table)
     elements.append(Spacer(1, 16))
 
-    elements.append(Paragraph("DELIVERY NOTE RETURN ITEMS", section_style))
+    elements.append(Paragraph(
+        "DELIVERY NOTE RETURN ITEMS",
+        section_style
+    ))
+
     elements.append(Spacer(1, 2))
 
     items = dnr.get("items", []) or []
 
-    item_data = [
-        [
-            Paragraph("S.No", header_small_style),
-            Paragraph("Product Name", header_small_style),
-            Paragraph("Product ID", header_small_style),
-            Paragraph("Inv. Qty", header_small_style),
-            Paragraph("Return Qty", header_small_style),
-            Paragraph("UOM", header_small_style),
-            Paragraph("Serial No", header_small_style),
-            Paragraph("Return Reason", header_small_style),
-        ]
-    ]
+    item_data = [[
+        Paragraph("S.No", header_small_style),
+        Paragraph("Product Name", header_small_style),
+        Paragraph("Product ID", header_small_style),
+        Paragraph("UOM", header_small_style),
+        Paragraph("Invoiced Qty", header_small_style),
+        Paragraph("Returned Qty", header_small_style),
+        Paragraph("Serial No(s)", header_small_style),
+        Paragraph("Reason", header_small_style),
+    ]]
 
     for idx, item in enumerate(items, start=1):
-        product_name = safe_str(item.get("product_name"))
-        product_id = safe_str(item.get("product_id"))
-        inv_q = safe_float(item.get("invoiced_qty"), 0.0)
-        ret_q = safe_float(item.get("returned_qty") or item.get("qty"), 0.0)
-        uom = safe_str(item.get("uom"))
-        serial_no = safe_str(item.get("serial_no"))
-        reason = safe_str(item.get("reason") or item.get("return_reason") or "")
 
-        item_data.append(
-            [
-                Paragraph(str(idx), value_style),
-                Paragraph(product_name, value_style),
-                Paragraph(product_id, value_style),
-                Paragraph(f"{inv_q:.2f}".rstrip("0").rstrip("."), value_style),
-                Paragraph(f"{ret_q:.2f}".rstrip("0").rstrip("."), value_style),
-                Paragraph(uom, value_style),
-                Paragraph(serial_no, value_style),
-                Paragraph(reason, value_style),
-            ]
-        )
+        item_data.append([
+            Paragraph(str(idx), value_style),
+
+            Paragraph(
+                safe_str(item.get("product_name")),
+                value_style
+            ),
+
+            Paragraph(
+                safe_str(item.get("product_id")),
+                value_style
+            ),
+
+            Paragraph(
+                safe_str(item.get("uom")),
+                value_style
+            ),
+
+            Paragraph(
+                str(safe_float(item.get("invoiced_qty"))),
+                value_style
+            ),
+
+            Paragraph(
+                str(safe_float(item.get("returned_qty"))),
+                value_style
+            ),
+
+            Paragraph(
+                safe_str(item.get("serial_no"), ""),
+                value_style
+            ),
+
+            Paragraph(
+                safe_str(item.get("reason")),
+                value_style
+            ),
+        ])
 
     if len(item_data) == 1:
-        item_data.append(
-            [
-                Paragraph("-", value_style),
-                Paragraph("No line items available", value_style),
-                Paragraph("-", value_style),
-                Paragraph("-", value_style),
-                Paragraph("-", value_style),
-                Paragraph("-", value_style),
-                Paragraph("-", value_style),
-                Paragraph("-", value_style),
-            ]
-        )
+        item_data.append([
+            "-", "-", "-", "-", "-", "-", "-", "-"
+        ])
 
     items_table = Table(
         item_data,
-        colWidths=[35, 118, 58, 44, 48, 38, 75, 94],
-        repeatRows=1,
+        colWidths=[35, 110, 65, 45, 65, 65, 90, 75],
+        repeatRows=1
     )
-    items_table.setStyle(
-        TableStyle(
-            [
-                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#a12828")),
-                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-                ("FONTNAME", (0, 0), (-1, 0), "DejaVuSans-Bold"),
-                ("FONTNAME", (0, 1), (-1, -1), "DejaVuSans"),
-                ("FONTSIZE", (0, 0), (-1, -1), 7.5),
-                ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-                ("ALIGN", (1, 1), (2, -1), "LEFT"),
-                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#999999")),
-                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f7f7f7")]),
-                ("LEFTPADDING", (0, 0), (-1, -1), 4),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 4),
-                ("TOPPADDING", (0, 0), (-1, -1), 5),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-            ]
-        )
-    )
+
+    items_table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#a12828")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+
+        ("FONTNAME", (0, 0), (-1, 0), "DejaVuSans-Bold"),
+        ("FONTNAME", (0, 1), (-1, -1), "DejaVuSans"),
+
+        ("FONTSIZE", (0, 0), (-1, -1), 7.5),
+
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+
+        ("ALIGN", (1, 1), (2, -1), "LEFT"),
+
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#999999")),
+
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [
+            colors.white,
+            colors.HexColor("#f7f7f7")
+        ]),
+
+        ("LEFTPADDING", (0, 0), (-1, -1), 4),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+    ]))
+
     elements.append(items_table)
     elements.append(Spacer(1, 16))
 
-    comments = dnr.get("comments") or []
-    if comments:
-        elements.append(Paragraph("Comments", section_style))
-        comments_text = "\n".join(
-            f"{safe_str(c.get('user') or '')} ({safe_str(c.get('time') or '')}): {safe_str(c.get('message') or '')}"
-            for c in comments
-        )
-        notes_table = Table([[Paragraph(comments_text, value_style)]], colWidths=[500])
-        notes_table.setStyle(
-            TableStyle(
-                [
-                    ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor("#999999")),
-                    ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#fafafa")),
-                    ("LEFTPADDING", (0, 0), (-1, -1), 8),
-                    ("RIGHTPADDING", (0, 0), (-1, -1), 8),
-                    ("TOPPADDING", (0, 0), (-1, -1), 8),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
-                ]
-            )
-        )
-        elements.append(notes_table)
-        elements.append(Spacer(1, 12))
-
-    elements.append(Paragraph("Terms and Conditions", section_style))
+    elements.append(Paragraph(
+        "Terms and Conditions",
+        section_style
+    ))
 
     terms_list = [
-        "1. This Delivery Note Return confirms goods returned as per the details above.",
-        "2. Return quantities and reasons are subject to verification.",
-        "3. Kindly retain this document for your records.",
-        "4. Any discrepancy should be reported without delay.",
-        "5. Processing of credit or replacement will follow company policy.",
+        "1. This Delivery Note Return is issued based on the returned item details.",
+        "2. Returned items are subject to verification and approval.",
+        "3. Damaged or incorrect products should be reported immediately.",
+        "4. Serial numbers should match the originally delivered items.",
+        "5. The company reserves the right to reject invalid return requests.",
     ]
 
     for term in terms_list:
         elements.append(Paragraph(term, terms_style))
 
     doc.build(elements)
+
     pdf_bytes = buffer.getvalue()
+
     buffer.close()
+
     return pdf_bytes
 
 
-# =========================================
-# DELIVERY NOTE RETURN - API (PDF)
-# =========================================
-@app.get("/api/delivery-note-returns/<dnr_id>/pdf")
-def delivery_note_return_pdf(dnr_id):
-    dnr = get_dnr_by_id(dnr_id)
-    if not dnr:
-        return jsonify({"success": False, "message": "DNR not found"}), 404
-    pdf_bytes = generate_delivery_note_return_pdf_bytes(dnr)
-    return send_file(
-        io.BytesIO(pdf_bytes),
-        mimetype="application/pdf",
-        download_name=f"{dnr_id}.pdf",
-        as_attachment=False,
-    )
-
-
-# =========================================
-# DELIVERY NOTE RETURN - EMAIL API
-# =========================================
-@app.post("/api/delivery-note-returns/<dnr_id>/email")
-def email_delivery_note_return(dnr_id):
-    dnr = get_dnr_by_id(dnr_id)
-    if not dnr:
-        return jsonify({"success": False, "message": "DNR not found"}), 404
-
-    customer_email = (dnr.get("email") or "").strip()
-
-    if not customer_email:
-        customer = find_customer_by_name(dnr.get("customer_name", ""))
-        if customer:
-            customer_email = customer.get("email", "")
-
-    if not customer_email:
-        return jsonify({"success": False, "message": "Customer email not available"}), 400
-
-    pdf_bytes = generate_delivery_note_return_pdf_bytes(dnr)
-
-    ok = send_email_with_attachments(
-        to_email=customer_email,
-        subject=f"Delivery Note Return {dnr_id}",
-        body=(
-            f"Dear {dnr.get('customer_name', 'Customer')},\n\n"
-            f"Please find attached the delivery note return ({dnr_id}) issued against your invoice return {dnr.get('invoice_return_ref') or dnr.get('invoice_return_ref_id') or ''}.\n"
-            "The return details have been processed as per the information provided.\n\n"
-            "Please let us know if you have any questions.\n\n"
-            "Regards,\n"
-            "Stackly Team"
-        ),
-        from_email=EMAIL_ADDRESS,
-        password=EMAIL_PASSWORD,
-        attachments=[{"filename": f"{dnr_id}.pdf", "content_bytes": pdf_bytes}],
-    )
-
-    if not ok:
-        return jsonify({"success": False, "message": "Email sending failed"}), 500
-
-    return jsonify({"success": True, "message": "Email sent successfully"})
-
-
-# =========================================
-# DELIVERY NOTE RETURN — ATTACHMENTS (same behaviour as quotation attachments)
-# =========================================
-@app.post("/api/dnr-upload-attachment")
-def dnr_upload_attachment():
-    try:
-        if "file" not in request.files:
-            return jsonify({"success": False, "error": "No file provided"}), 400
-        file = request.files["file"]
-        dnr_id = (request.form.get("dnr_id") or "").strip()
-        if not dnr_id:
-            return jsonify({"success": False, "error": "dnr_id required"}), 400
-        if file.filename == "":
-            return jsonify({"success": False, "error": "No file selected"}), 400
-
-        file.seek(0, os.SEEK_END)
-        file_length = file.tell()
-        file.seek(0)
-        if file_length > MAX_FILE_SIZE_BYTES:
-            return jsonify(
-                {"success": False, "error": f"File size exceeds {MAX_FILE_SIZE_MB} MB"}
-            ), 400
-        if not allowed_file(file.filename):
-            return jsonify(
-                {
-                    "success": False,
-                    "error": f'File type not allowed. Allowed: {", ".join(ALLOWED_EXTENSIONS)}',
-                }
-            ), 400
-
-        hdr = fetch_one(
-            "SELECT 1 AS ok FROM public.deliverynote_returns WHERE dnr_id = %s",
-            (dnr_id,),
-        )
-        if not hdr:
-            return jsonify(
-                {
-                    "success": False,
-                    "error": "Save Delivery Note Return as draft first, then attach files.",
-                }
-            ), 400
-
-        cnt_row = fetch_one(
-            """
-            SELECT COUNT(*)::int AS c
-            FROM public.deliverynote_return_attachments
-            WHERE dnr_id = %s
-            """,
-            (dnr_id,),
-        )
-        current_count = int((cnt_row or {}).get("c") or 0)
-        if current_count >= MAX_ATTACHMENTS_PER_QUOTATION:
-            return jsonify(
-                {
-                    "success": False,
-                    "error": f"Maximum {MAX_ATTACHMENTS_PER_QUOTATION} files allowed per delivery note return",
-                }
-            ), 400
-
-        file_ext = file.filename.rsplit(".", 1)[1].lower() if "." in file.filename else ""
-        unique_filename = f"{dnr_id}_{uuid.uuid4().hex}.{file_ext}" if file_ext else f"{dnr_id}_{uuid.uuid4().hex}"
-        abs_path = os.path.join(DNR_ATTACHMENTS_FOLDER, unique_filename)
-        file.save(abs_path)
-
-        row = None
-        conn = get_db_connection()
-        try:
-            with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute(
-                    """
-                    INSERT INTO public.deliverynote_return_attachments
-                        (dnr_id, file_name, file_path, uploaded_at)
-                    VALUES (%s, %s, %s, CURRENT_TIMESTAMP)
-                    RETURNING id
-                    """,
-                    (dnr_id, file.filename, unique_filename),
-                )
-                row = cur.fetchone()
-            conn.commit()
-        except Exception:
-            try:
-                conn.rollback()
-            except Exception:
-                pass
-            if os.path.isfile(abs_path):
-                try:
-                    os.remove(abs_path)
-                except OSError:
-                    pass
-            raise
-        finally:
-            conn.close()
-
-        new_id = row["id"] if row else None
-        return jsonify(
-            {
-                "success": True,
-                "attachment": {
-                    "id": new_id,
-                    "original_filename": file.filename,
-                    "stored_filename": unique_filename,
-                    "size": file_length,
-                    "upload_date": datetime.now().isoformat(),
-                },
-            }
-        )
-    except Exception as e:
-        print(traceback.format_exc())
-        return jsonify({"success": False, "error": str(e)}), 500
-
-
-@app.get("/api/dnr-attachments/<dnr_id>")
-def dnr_get_attachments(dnr_id):
-    try:
-        rows = fetch_all(
-            """
-            SELECT id, file_name, file_path, uploaded_at
-            FROM public.deliverynote_return_attachments
-            WHERE dnr_id = %s
-            ORDER BY id ASC
-            """,
-            (dnr_id,),
-        )
-    except Exception as e:
-        print(f"dnr_get_attachments: {e}")
-        return jsonify({"success": False, "attachments": [], "error": str(e)}), 500
-
-    attachments = []
-    for r in rows or []:
-        r = dict(r)
-        ts = r.get("uploaded_at")
-        tstr = ""
-        if ts is not None:
-            if hasattr(ts, "strftime"):
-                tstr = ts.strftime("%Y-%m-%d %H:%M:%S")
-            else:
-                tstr = str(ts)
-        rel = os.path.basename(str(r.get("file_path") or ""))
-        sz = 0
-        ap = os.path.join(DNR_ATTACHMENTS_FOLDER, rel)
-        if rel and os.path.isfile(ap):
-            try:
-                sz = os.path.getsize(ap)
-            except OSError:
-                sz = 0
-        attachments.append(
-            {
-                "id": r.get("id"),
-                "original_filename": r.get("file_name") or "",
-                "size": sz,
-                "upload_date": tstr or "—",
-            }
-        )
-    return jsonify({"success": True, "attachments": attachments})
-
-
-def _dnr_attachment_abs_path(att_id):
-    row = fetch_one(
-        """
-        SELECT id, dnr_id, file_name, file_path
-        FROM public.deliverynote_return_attachments
-        WHERE id = %s
-        """,
-        (att_id,),
-    )
-    if not row:
-        return None, None
-    row = dict(row)
-    rel = os.path.basename(str(row.get("file_path") or ""))
-    if not rel:
-        return None, None
-    abs_path = os.path.join(DNR_ATTACHMENTS_FOLDER, rel)
-    if not os.path.isfile(abs_path):
-        return None, None
-    return abs_path, row
-
-
-@app.get("/api/dnr-attachment/<int:att_id>/view")
-def dnr_view_attachment(att_id):
-    tup = _dnr_attachment_abs_path(att_id)
-    if not tup[0]:
-        return jsonify({"success": False, "message": "Attachment not found"}), 404
-    abs_path, row = tup
-    return send_file(
-        abs_path,
-        download_name=row.get("file_name") or "file",
-        as_attachment=False,
-    )
-
-
-@app.get("/api/dnr-attachment/<int:att_id>/download")
-def dnr_download_attachment(att_id):
-    tup = _dnr_attachment_abs_path(att_id)
-    if not tup[0]:
-        return jsonify({"success": False, "message": "Attachment not found"}), 404
-    abs_path, row = tup
-    return send_file(
-        abs_path,
-        download_name=row.get("file_name") or "file",
-        as_attachment=True,
-    )
-
-
-@app.delete("/api/dnr-attachment/<int:att_id>")
-def dnr_delete_attachment(att_id):
-    try:
-        row = fetch_one(
-            """
-            SELECT id, file_path
-            FROM public.deliverynote_return_attachments
-            WHERE id = %s
-            """,
-            (att_id,),
-        )
-        if not row:
-            return jsonify({"success": False, "error": "Attachment not found"}), 404
-        row = dict(row)
-        rel = os.path.basename(str(row.get("file_path") or ""))
-        abs_path = os.path.join(DNR_ATTACHMENTS_FOLDER, rel) if rel else ""
-
-        conn = get_db_connection()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "DELETE FROM public.deliverynote_return_attachments WHERE id = %s",
-                    (att_id,),
-                )
-            conn.commit()
-        finally:
-            conn.close()
-
-        if abs_path and os.path.isfile(abs_path):
-            try:
-                os.remove(abs_path)
-            except OSError:
-                pass
-        return jsonify({"success": True})
-    except Exception as e:
-        print(traceback.format_exc())
-        return jsonify({"success": False, "error": str(e)}), 500
 
 
 

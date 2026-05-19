@@ -338,7 +338,7 @@
 
 .sales-order-page .table thead th {
   padding: 8px 12px;
-  text-align: left;
+  text-align: center;
   white-space: nowrap;
   color: #7a1d1d;
   background: rgba(170, 70, 70, 0.10);
@@ -347,11 +347,11 @@
 
 .sales-order-page .table thead th:last-child {
   padding-right: 0;
-  text-align: center;
 }
 
 .sales-order-page .table tbody td {
   padding: 8px 12px;
+  text-align: center;
   white-space: nowrap;
   border-bottom: 1px solid rgba(170, 70, 70, 0.12);
 }

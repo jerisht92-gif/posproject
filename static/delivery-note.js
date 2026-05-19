@@ -502,7 +502,6 @@ function loadDnStatusFilterOptions() {
 
         const tdAction = document.createElement("td");
         tdAction.className = "dn-td-action";
-        tdAction.style.textAlign = "right";
 
         const dots = document.createElement("button");
         dots.type = "button";

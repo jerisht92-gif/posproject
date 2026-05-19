@@ -99,7 +99,10 @@
          LINE ITEMS
     ====================================================== -->
     <div class="dn2-section">
-  <h3>Line Items</h3>
+  <h3 class="dn2-line-items-title">
+    <span class="dn2-line-items-title__main">Line Items</span>
+    <span class="dn2-line-items-title__hint">(auto-filled from Sales Order)</span>
+  </h3>
   <small id="dnLineItemsErr" class="field-error" aria-live="polite"></small>
 
   <div class="dn2-table-wrap">
@@ -116,7 +119,11 @@
   </tr>
 </thead>
 
-      <tbody id="itemsBody"></tbody>
+      <tbody id="itemsBody">
+        <tr class="dn-line-items-empty">
+          <td colspan="7">Select an Sales Order Reference ID to load items</td>
+        </tr>
+      </tbody>
     </table>
 
     <div class="dn-add-item-wrap">

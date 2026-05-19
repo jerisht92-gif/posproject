@@ -86,6 +86,28 @@ function updateSalesOrderHeaderStatus(status) {
   badge.textContent = `Status: ${formatSalesStatusText(cleanStatus)}`;
 }
 
+function syncSalesOrderPageHeading(pageTitle, status) {
+  const heading = document.getElementById("soPageHeading");
+  if (heading) heading.textContent = pageTitle || "New Sales Order";
+
+  updateSalesOrderHeaderStatus(status);
+
+  const label = formatSalesStatusText(status);
+  document.title = label ? `${pageTitle} - ${label}` : pageTitle;
+}
+
+function syncSalesOrderPageHeadingFromMode(status) {
+  const soId = getSOIdSafe();
+  const mode = getModeFromQuery();
+  let pageTitle = "New Sales Order";
+
+  if (soId) {
+    pageTitle = mode === "view" ? "View Sales Order" : "Edit Sales Order";
+  }
+
+  syncSalesOrderPageHeading(pageTitle, status);
+}
+
 // =========================================
 // COMMON HELPERS
 // =========================================
@@ -1720,6 +1742,7 @@ async function prefillSalesOrderIfEdit() {
   if (!so_id) return;
 
   const mode = getModeFromQuery();
+  syncSalesOrderPageHeadingFromMode();
   console.log("Sales Order prefill:", so_id, "mode:", mode);
 
   let data;
@@ -1798,7 +1821,7 @@ async function prefillSalesOrderIfEdit() {
   }
 
   window.__SO_DEBUG = so;
-  updateSalesOrderHeaderStatus(so.status);
+  syncSalesOrderPageHeadingFromMode(so.status);
 
   setValAny(["salesOrderId", "so_id"], so.so_id);
   setValAny(["orderDate", "order_date"], toDateInputValue(so.order_date));
@@ -2293,11 +2316,15 @@ document.addEventListener("DOMContentLoaded", async () => {
     document.getElementById("globalDiscount")?.addEventListener("input", calculateTotals);
     document.getElementById("shipping")?.addEventListener("input", calculateTotals);
 
+    if (getSOIdSafe()) {
+      syncSalesOrderPageHeadingFromMode();
+    }
+
     await prefillSalesOrderIfEdit();
 
-if (!getSOIdSafe()) {
-  updateSalesOrderHeaderStatus("");
-}
+    if (!getSOIdSafe()) {
+      syncSalesOrderPageHeading("New Sales Order", "");
+    }
 
 updateCancelButton();
 updateGenerateDNButton();

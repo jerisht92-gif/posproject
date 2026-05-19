@@ -1,135 +1,230 @@
+
+
 {% extends "menu.html" %}
 
 {% block extra_css %}
-<link rel="stylesheet" href="{{ url_for('static', filename='deliverynote-return.css') }}?v=14">
-
+<link rel="stylesheet"
+href="{{ url_for('static', filename='deliverynote-return.css') }}">
 {% endblock %}
 
 {% block content %}
-<div class="delivery-note-page sales-order-page dnr-page">
 
-  <!-- Header -->
-  <div class="dnr-topbar">
-    <h2 class="dnr-title">Delivery Note Return</h2>
+<div class="dnr-page">
 
-    <button type="button" class="dnr-new" id="dnrNewBtn">
+  <!-- HEADER -->
+  <div class="dnr-header">
+
+    <h2 class="dnr-heading">
+      Delivery Note Return
+    </h2>
+
+    <button
+      type="button"
+      class="dnr-btn-primary"
+      id="newDnrBtn"
+    >
       + New Delivery Note Return
     </button>
+
   </div>
 
-  <!-- Search -->
-  <div class="dnr-searchbar">
-    <div class="dnr-searchwrap">
-      
-      <input
-        type="text"
-        id="dnrSearchInput"
-        class="dnr-search"
-        placeholder="Search by ID number 🔍︎"
-        autocomplete="off"
-      />
-    
-    </div>
-  </div>
-
-  <!-- Filters -->
-  <div class="dnr-filters" id="dnrFilters">
-    <div class="dnr-filter">
-      <label class="dnr-label">DNR Status</label>
-      
-      <select id="dnrStatusFilter" class="dnr-select">
-        <option value="all">All</option>
-      </select>
-    </div>
-
-    <!-- <div class="dnr-filter">
-      <label class="dnr-label">Customer name</label>
-      
-      <select id="dnrCustomerFilter" class="dnr-select">
-        <option value="all">All</option>
-      </select>
-    </div> -->
-
-    <div class="dnr-filter dnr-filter-date">
-  <label class="dnr-label">Delivery Date</label>
-
-  <div class="dnr-date-pill">
-    <!-- FROM -->
-    <div class="dnr-date-part">
-      <span class="dnr-date-tag">From</span>
-      <input type="date" id="dnrFromDate" class="dnr-date-input" />
-     
-    </div>
-
-    <span class="dnr-date-mid"></span>
-
-    <!-- TO -->
-    <div class="dnr-date-part">
-      <span class="dnr-date-tag">To</span>
-      <input type="date" id="dnrToDate" class="dnr-date-input" />
-      
-    </div>
-  </div>
-</div>
-
-    <button type="button" class="dnr-clear" id="dnrClearBtn">
-      Clear Filters
-    </button>
-  </div>
-
-  <!-- Table -->
+  <!-- CARD -->
   <div class="dnr-card">
+
+    <!-- SEARCH -->
+    <div class="dnr-search-row">
+
+      <div class="dnr-search-wrap">
+
+        <input
+          type="text"
+          id="dnrSearchInput"
+          class="dnr-search-input"
+          placeholder="Search by ID number 🔍︎"
+          autocomplete="off"
+        >
+
+      </div>
+
+      <button
+        type="button"
+        class="dnr-clear-link"
+        id="dnrClearBtn"
+      >
+        Clear Filter
+      </button>
+
+    </div>
+
+    <!-- FILTER -->
+    <div class="dnr-filters">
+
+      <!-- STATUS -->
+      <div class="dnr-filter">
+
+        <label class="dnr-label">
+          DNR Status
+        </label>
+
+        <select
+          id="dnrStatusFilter"
+          class="dnr-select"
+        >
+
+          <!-- JS dynamically append -->
+          <option value="all">
+            All
+          </option>
+
+        </select>
+
+      </div>
+
+      <!-- DATE -->
+      <div class="dnr-filter dnr-date-filter">
+
+        <label class="dnr-label">
+          Delivery Date
+        </label>
+
+        <div class="dnr-date-wrap">
+
+          <!-- FROM -->
+          <div class="dnr-date-field">
+
+            <span class="dnr-date-text">
+              From
+            </span>
+
+            <input
+              type="date"
+              id="dnrFromDate"
+              class="dnr-date-input"
+            >
+
+          </div>
+
+          <!-- TO -->
+          <div class="dnr-date-field">
+
+            <span class="dnr-date-text">
+              To
+            </span>
+
+            <input
+              type="date"
+              id="dnrToDate"
+              class="dnr-date-input"
+            >
+
+          </div>
+
+        </div>
+
+      </div>
+
+    </div>
+
+    <!-- TABLE -->
     <div class="dnr-table-wrap">
+
       <table class="dnr-table">
+
         <thead>
+
           <tr>
-            <th class="dnr-heading dnr-col-id">DNR ID</th>
-            <th class="dnr-heading dnr-col-ref">Invoice Return Ref.</th>
-            <th class="dnr-heading dnr-col-cust">Customer Name</th>
-            <th class="dnr-heading dnr-col-date">DNR Date</th>
-            <th class="dnr-heading dnr-col-status dnr-list-sort-th" id="dnrListStatusSortTh">
-              <span class="dnr-list-sort-trigger">
+
+            <th>DNR ID</th>
+
+            <th>
+              Invoice Return Ref.
+            </th>
+
+            <th>
+              Customer Name
+            </th>
+
+            <th>
+              DNR Date
+            </th>
+
+            <th class="dnr-sort-th" id="statusSortTh">
+              <span class="dnr-sort-trigger">
                 <span>Status</span>
-                <span class="dnr-list-sort-caret" aria-hidden="true">⇅</span>
+                <span class="dnr-sort-caret" aria-hidden="true">⇅</span>
               </span>
-              <div class="dnr-list-sort-menu" id="dnrListStatusSortMenu">
+
+              <div class="dnr-sort-menu" id="statusSortMenu">
                 <button type="button" data-sort="newest">Newest First</button>
                 <button type="button" data-sort="oldest">Oldest First</button>
-                <button type="button" data-sort="progress">Progressing (Draft to Cancelled)</button>
-                <button type="button" data-sort="reverse">Reverse Progressing (Cancelled to Draft)</button>
+                <button type="button" data-sort="progress">Progressing (Draft → Cancelled)</button>
+                <button type="button" data-sort="reverse">Reverse Progressing (Cancelled → Draft)</button>
               </div>
             </th>
-            <th class="dnr-heading dnr-col-action">Action</th>
+
+            <th>
+              Action
+            </th>
+
           </tr>
+
         </thead>
 
         <tbody id="dnrTbody">
-          <!-- JS renders rows here -->
+
+          <tr id="dnrNoDataRow">
+            <td colspan="6" class="dnr-empty">
+              <div class="dnr-empty-text">
+                No Delivery Note Returns found
+              </div>
+            </td>
+          </tr>
+
         </tbody>
+
       </table>
 
-      <!-- No Data -->
-      <div class="dnr-nodata" id="dnrNoData">
-        No Data Found
-      </div>
     </div>
 
-    <!-- Footer -->
+    <!-- FOOTER -->
     <div class="dnr-footer">
-      <div class="dnr-showing" id="dnrShowing">Showing 0–0 of 0 Entries</div>
+
+      <div
+        class="dnr-showing"
+        id="dnrShowingText"
+      >
+        Showing 0-0 of 0 Entries
+      </div>
 
       <div class="dnr-pager">
-        <button type="button" class="dnr-pagebtn" id="dnrPrevBtn" disabled>Prev</button>
 
-        <div class="dnr-pageinfo" id="dnrPageInfo">
-          <span class="dnr-page-current"><strong id="dnrPageCurrent">1</strong></span>
-          <span class="dnr-page-sep">of</span>
-          <span class="dnr-page-total" id="dnrPageTotal">1</span>
+        <button
+          type="button"
+          class="dnr-btn-page"
+          id="dnrPrevBtn"
+        >
+          Prev
+        </button>
+
+        <div
+          class="dnr-page-text"
+          id="dnrPageText"
+        >
+          <strong>1</strong> of <strong>1</strong>
         </div>
 
-        <button type="button" class="dnr-pagebtn" id="dnrNextBtn" disabled>Next</button>
+        <button
+          type="button"
+          class="dnr-btn-page"
+          id="dnrNextBtn"
+        >
+          Next
+        </button>
+
       </div>
+
     </div>
+
   </div>
 
 </div>
@@ -137,5 +232,7 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="{{ url_for('static', filename='deliverynote-return.js') }}?v=14" defer></script>
+
+<script src="{{ url_for('static', filename='deliverynote-return.js') }}"></script>
+
 {% endblock %}

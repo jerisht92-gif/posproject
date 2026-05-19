@@ -1,1826 +1,3957 @@
+/* =============
+DNR validation 
+================*/
 
-(function initDnrInlineConfig() {
-  const el = document.getElementById("dnr-inline-config");
-  if (el && el.textContent) {
-    try {
-      const cfg = JSON.parse(el.textContent.trim());
-      window.currentUserName = cfg.currentUserName ?? "User";
-      window.DNR_PAGE_MODE = cfg.pageMode || "new";
-      window.DNR_RECORD_STATUS = cfg.dnrStatus ?? "";
-    } catch (_e) {
-      window.currentUserName = "User";
-      window.DNR_PAGE_MODE = "new";
-      window.DNR_RECORD_STATUS = "";
-    }
-  } else {
-    window.currentUserName = "User";
-    window.DNR_PAGE_MODE = "new";
-    window.DNR_RECORD_STATUS = "";
-  }
-})();
+const DNR_CUSTOMER_REF_MIN = 3;
+const DNR_CUSTOMER_REF_MAX = 30;
+const DNR_CUSTOMER_REF_PATTERN = /^[A-Za-z0-9\-_/ ]+$/;
+const DNR_ID_PATTERN = /^DNR-[0-9]+$/;
 
-const params = new URLSearchParams(window.location.search);
+function validateDnrId(){
 
-const dnrId = params.get("dnr_id") || params.get("id");
-/** URL ?mode= + server default; drives edit vs view chrome */
-const pageMode = params.get("mode") || window.DNR_PAGE_MODE || "new";
+  const el =
+    document.getElementById("dnrId");
 
-/** Full comment list for save; Comments tab renders the latest entry only. */
-let dnrFormComments = [];
+  if(!el)
+    return true;
 
-/** True when opening a new DNR (no dnr_id in URL). False for Edit/View from list — skip noisy IR load toasts. */
-function isBrandNewDnrFromUrl() {
-  return !(dnrId && String(dnrId).trim());
-}
+  const val =
+    el.value.trim();
 
-function normalizeDnrStatus(s) {
-  const x = String(s ?? "")
-    .trim()
-    .toLowerCase();
-  if (x === "cancelled" || x === "canceled") return "cancelled";
-  if (x === "submitted") return "submitted";
-  if (x === "draft") return "draft";
-  return x || "draft";
-}
+  if(!val){
 
-function getStatusText() {
-  return (
-    document.querySelector(".status-pill")?.textContent?.trim().toLowerCase() || ""
-  );
-}
+    showToast(
+      "DNR ID is required",
+      "error"
+    );
 
-function getDnrStatusNorm() {
-  const fromServer = window.DNR_RECORD_STATUS;
-  if (fromServer) return normalizeDnrStatus(fromServer);
-
-  // fallback → UI badge
-  const ui = document.querySelector(".dnr-status-badge")?.textContent;
-  if (ui) return normalizeDnrStatus(ui);
-
-  return "draft";
-}
-
-function isDnrCommentsEditable() {
-  return getDnrStatusNorm() === "draft" && pageMode !== "view";
-}
-
-/** Submitted / Cancelled / Draft+View — form must not be editable */
-function isDnrFormReadOnly() {
-  const st = getDnrStatusNorm();
-  return (
-    st === "submitted" ||
-    st === "cancelled" ||
-    (st === "draft" && pageMode === "view")
-  );
-}
-
-/** Draft opened from list with Edit details — invoice + customer + line identity columns are read-only */
-function isDraftEditDetailsFromList() {
-  return getDnrStatusNorm() === "draft" && pageMode === "edit";
-}
-
-function isDnrCustomerLocked() {
-  return isDnrFormReadOnly() || isDraftEditDetailsFromList();
-}
-
-function isDnrProductLineLocked() {
-  return isDnrFormReadOnly() || isDraftEditDetailsFromList();
-}
-
-// =========================================
-// DELIVERY NOTE RETURN NEW PAGE JS
-// =========================================
-
-// =========================================
-// CUSTOMER DROPDOWN
-// =========================================
-function toggleCustomerDropdown() {
-  if (isDnrCustomerLocked()) return;
-  const dropdown = document.getElementById("customerNameDropdown");
-  if (!dropdown) return;
-
-  dropdown.style.display = dropdown.style.display === "block" ? "none" : "block";
-}
-
-function filterCustomerDropdown() {
-  if (isDnrCustomerLocked()) return;
-  const input = document.getElementById("customerSearchInput");
-  const list = document.querySelectorAll("#customerDropdownList .dropdown-item");
-
-  if (!input) return;
-  const filterValue = input.value.toLowerCase();
-
-  list.forEach(item => {
-    const text = item.textContent.toLowerCase();
-    item.style.display = text.includes(filterValue) ? "block" : "none";
-  });
-}
-
-function selectCustomerItem(item) {
-  if (isDnrCustomerLocked()) return;
-  const selected = document.getElementById("customerNameSelected");
-  const customerId = document.getElementById("customerId");
-  const customerEmail = document.getElementById("customerEmail");
-  const customerPhone = document.getElementById("customerPhone");
-  const contactPerson = document.getElementById("contactPerson");
-  const dropdown = document.getElementById("customerNameDropdown");
-
-  if (selected) selected.textContent = item.textContent.trim();
-  if (customerId) customerId.value = item.dataset.id || "";
-  if (customerEmail) customerEmail.value = item.dataset.email || "";
-  if (customerPhone) customerPhone.value = item.dataset.phone || "";
-  if (contactPerson) contactPerson.value = item.dataset.contact || "";
-  if (dropdown) dropdown.style.display = "none";
-
-  validateSubmitButton();
-}
-
-// =========================================
-// LINE ITEMS — product dropdown (same pattern as New Delivery Note)
-// =========================================
-function buildDnrLineProductOptions() {
-  if (!window.DNR_PRODUCTS || !window.DNR_PRODUCTS.length) {
-    return `<option value="">Select Product</option>`;
-  }
-  const opts = window.DNR_PRODUCTS.map((p) => {
-    const pid = String(
-      p.product_id || p.id || p.code || p.product_code || p.sku || ""
-    ).trim();
-    const name = String(p.product_name || p.name || p.title || "").trim();
-    if (!pid) return "";
-    return `<option value="${pid}">${name ? `${name} (${pid})` : pid}</option>`;
-  }).join("");
-  return `<option value="">Select Product</option>${opts}`;
-}
-
-async function loadDnrProducts() {
-  try {
-    const res = await fetch("/api/sales-products", { cache: "no-store" });
-    const data = await res.json();
-    const list =
-      data && Array.isArray(data.products)
-        ? data.products
-        : data && data.data && Array.isArray(data.data.items)
-          ? data.data.items
-          : Array.isArray(data)
-            ? data
-            : [];
-    window.DNR_PRODUCTS = list;
-    const map = {};
-    list.forEach((p) => {
-      const pid = String(
-        p.product_id || p.id || p.code || p.product_code || p.sku || ""
-      ).trim();
-      if (pid) map[pid] = p;
-    });
-    window.DNR_PRODUCTS_MAP = map;
-    fillDnrLineProductSelects();
-  } catch (e) {
-    console.error("Failed to load products:", e);
-    window.DNR_PRODUCTS = [];
-    window.DNR_PRODUCTS_MAP = {};
-    fillDnrLineProductSelects();
-  }
-}
-
-function fillDnrLineProductSelects() {
-   window.DNR_PRODUCTS_MAP = {};
-  (window.DNR_PRODUCTS || []).forEach(p => {
-    const pid = String(p.product_id || p.id || "").trim();
-    if (pid) {
-      window.DNR_PRODUCTS_MAP[pid] = p;
-    }
-  });
-
-
-  const html = buildDnrLineProductOptions();
-  document.querySelectorAll("#lineItemsTableBody select.product-name-select").forEach((sel) => {
-    const old = sel.value;
-    sel.innerHTML = html;
-    if (old) sel.value = old;
-  });
-  if (isDraftEditDetailsFromList()) syncDnrReadOnlyFields();
-}
-
-function updateLineItemSerialNumbers() {
-  const rows = document.querySelectorAll("#lineItemsTableBody tr");
-  rows.forEach((row, index) => {
-    const serialCell = row.querySelector(".serial-number-cell");
-    if (serialCell) serialCell.textContent = index + 1;
-  });
-}
-
-function handleProductChange(selectElement) {
-  if (isDnrProductLineLocked()) return;
-  const row = selectElement.closest("tr");
-  if (!row) return;
-
-  const selectedOption =
-    selectElement.selectedIndex >= 0
-      ? selectElement.options[selectElement.selectedIndex]
-      : null;
-  const pid = String(selectElement.value || "").trim();
-
-  const productIdCell = row.querySelector(".product-id-cell");
-  const uomCell = row.querySelector(".uom-cell");
-  const invoicedQtyCell = row.querySelector(".invoiced-qty-cell");
-  const serialNoInput = row.querySelector(".serial-no-input");
-
-  if (!pid || !selectedOption) {
-    if (productIdCell) productIdCell.textContent = "-";
-    if (uomCell) uomCell.textContent = "-";
-    if (invoicedQtyCell) invoicedQtyCell.textContent = "0";
-    if (serialNoInput) serialNoInput.value = "";
-    validateSubmitButton();
-    return;
-  }
-
-  const ds = selectedOption.dataset;
-  const map = window.DNR_PRODUCTS_MAP || {};
-  const mapped = map[pid];
-
-  const idOut = ds.productId || pid;
-  if (productIdCell) productIdCell.textContent = idOut || "-";
-
-  let uom = "-";
-  if (ds.uom) uom = String(ds.uom).trim() || "-";
-  else if (mapped) {
-    uom = String(mapped.uom || mapped.unit || mapped.unit_of_measure || "").trim() || "-";
-  }
-  if (uomCell) uomCell.textContent = uom;
-
-  let inv = "0";
-  if (ds.invoicedQty !== undefined && String(ds.invoicedQty).trim() !== "") {
-    inv = String(ds.invoicedQty);
-  }
-  if (invoicedQtyCell) invoicedQtyCell.textContent = inv;
-
-  if (serialNoInput) {
-    if (ds.serialNo && String(ds.serialNo).trim() !== "" && ds.serialNo !== "N/A") {
-      serialNoInput.value = ds.serialNo;
-    } else {
-      serialNoInput.value = "";
-    }
-  }
-
-  validateSubmitButton();
-}
-
-function attachValidationListenersToRow(row) {
-  const inputs = row.querySelectorAll("input, select");
-  inputs.forEach(input => {
-    input.addEventListener("input", validateSubmitButton);
-    input.addEventListener("change", validateSubmitButton);
-  });
-}
-
-// =========================================
-// COMMENTS
-// =========================================
-function dnrParseCommentTimestampMs(raw) {
-  if (!raw || typeof raw !== "object") return 0;
-  if (raw.at != null && Number.isFinite(Number(raw.at))) return Number(raw.at);
-  const t = String(raw.time || "")
-    .replace(/^\s*[–-]\s*/, "")
-    .trim();
-  const ms = Date.parse(t);
-  return Number.isFinite(ms) ? ms : 0;
-}
-
-function renderDnrCommentListLatest() {
-  const commentList = document.getElementById("commentList");
-  const commentsEmpty = document.getElementById("commentsEmpty");
-  if (!commentList || !commentsEmpty) return;
-  commentList.innerHTML = "";
-  if (dnrFormComments.length === 0) {
-    commentsEmpty.style.display = "block";
-    validateSubmitButton();
-    return;
-  }
-  const latest = [...dnrFormComments].sort((a, b) => b.at - a.at)[0];
-  const displayTime =
-    latest.time && String(latest.time).trim().length
-      ? latest.time
-      : new Date(latest.at).toLocaleString();
-  const row = document.createElement("div");
-  row.className = "so-ch-row";
-  row.innerHTML = `
-    <div class="so-ch-row-meta">
-      <span class="so-ch-row-user">${escapeHtml(latest.user)}</span>
-      <span class="so-ch-row-time">– ${escapeHtml(displayTime)}</span>
-    </div>
-    <div class="so-ch-row-msg"></div>
-  `;
-  row.querySelector(".so-ch-row-msg").textContent = latest.message;
-  commentList.appendChild(row);
-  commentsEmpty.style.display = "none";
-  validateSubmitButton();
-}
-
-function dnrReplaceCommentsFromLoadedList(existingComments) {
-  dnrFormComments.length = 0;
-  if (!Array.isArray(existingComments)) {
-    renderDnrCommentListLatest();
-    return;
-  }
-  existingComments.forEach((raw, idx) => {
-    const msg = String(raw?.message || "").trim();
-    if (!msg) return;
-    let at = dnrParseCommentTimestampMs(raw);
-    if (!at) at = idx + 1;
-    dnrFormComments.push({
-      user: String(raw.user || "").trim() || "User",
-      message: msg,
-      time: String(raw.time || "").trim(),
-      at,
-    });
-  });
-  dnrFormComments.sort((a, b) => a.at - b.at);
-  renderDnrCommentListLatest();
-}
-
-function updateCommentButtonState() {
-  const commentInput = document.getElementById("commentInput");
-  const addCommentBtn = document.getElementById("addCommentBtn");
-
-  if (!commentInput || !addCommentBtn) return;
-  if (!isDnrCommentsEditable()) {
-    addCommentBtn.disabled = true;
-    return;
-  }
-  addCommentBtn.disabled = commentInput.value.trim() === "";
-}
-
-function addComment() {
-  if (!isDnrCommentsEditable()) return;
-
-  const commentInput = document.getElementById("commentInput");
-  const commentsEmpty = document.getElementById("commentsEmpty");
-
-  if (!commentInput || !commentsEmpty) return;
-
-  const commentText = commentInput.value.trim();
-  if (!commentText) return;
-
-  const at = Date.now();
-  const timeString = new Date(at).toLocaleString();
-
-  dnrFormComments.push({
-    user: window.currentUserName || "User",
-    message: commentText,
-    time: timeString,
-    at,
-  });
-
-  commentInput.value = "";
-  renderDnrCommentListLatest();
-  updateCommentButtonState();
-  showToast("Comment added successfully", "success");
-}
-
-async function loadHistory() {
-  const historyList = document.getElementById("historyList");
-  const historyEmpty = document.getElementById("historyEmpty");
-
-  if (!historyList) return;
-
-  historyList.innerHTML = "";
-
-  const dnrId = (document.getElementById("dnrId")?.value || "").trim();
-  let apiHistory = [];
-
-  if (dnrId) {
-    try {
-      const res = await fetch(`/api/dnr-history/${encodeURIComponent(dnrId)}`);
-      const data = await res.json();
-      if (data.success && Array.isArray(data.history)) {
-        apiHistory = data.history;
-      }
-    } catch (err) {
-      console.error("History load failed", err);
-    }
-  }
-
-  apiHistory.forEach((item) => {
-    const row = document.createElement("div");
-    row.className = "so-ch-row";
-
-    row.innerHTML = `
-        <div class="so-ch-row-meta">
-          <span class="so-ch-row-user">${escapeHtml(item.user || "")}</span>
-          <span class="so-ch-row-time">– ${escapeHtml(item.time || "")}</span>
-        </div>
-        <div class="so-ch-row-msg"></div>
-      `;
-    row.querySelector(".so-ch-row-msg").textContent = item.action || "";
-
-    historyList.appendChild(row);
-  });
-
-  [...dnrFormComments]
-    .sort((a, b) => a.at - b.at)
-    .forEach((c) => {
-      const row = document.createElement("div");
-      row.className = "so-ch-row";
-      const displayTime =
-        c.time && String(c.time).trim().length
-          ? c.time
-          : new Date(c.at).toLocaleString();
-      row.innerHTML = `
-        <div class="so-ch-row-meta">
-          <span class="so-ch-row-user">${escapeHtml(c.user || "")}</span>
-          <span class="so-ch-row-time">– ${escapeHtml(displayTime)}</span>
-        </div>
-        <div class="so-ch-row-msg"></div>
-      `;
-      row.querySelector(".so-ch-row-msg").textContent = c.message || "";
-      historyList.appendChild(row);
-    });
-
-  const hasAny = apiHistory.length > 0 || dnrFormComments.length > 0;
-  if (historyEmpty) historyEmpty.style.display = hasAny ? "none" : "block";
-}
-
-// =========================================
-// TABS — same as New Sales Order (sales-new.js setActiveTab): .so-ch-pill + .so-ch-panel.hidden
-// =========================================
-function switchTab(activeTab) {
-  const root = document.querySelector(".dnr-new-wrapper");
-  const tabs = root
-    ? root.querySelectorAll("#dnrCommentHistoryCard .so-ch-topbar .so-ch-pill[data-tab]")
-    : [];
-  const panels = {
-    comments: document.getElementById("comments"),
-    history: document.getElementById("history"),
-    attachments: document.getElementById("attachments"),
-  };
-
-  tabs.forEach((t) => t.classList.remove("active"));
-  Object.keys(panels).forEach((key) => {
-    const p = panels[key];
-    if (!p) return;
-    if (key === activeTab) p.classList.remove("hidden");
-    else p.classList.add("hidden");
-  });
-
-  const tabBtn = root?.querySelector(
-    `#dnrCommentHistoryCard .so-ch-topbar .so-ch-pill[data-tab="${activeTab}"]`
-  );
-  if (tabBtn) tabBtn.classList.add("active");
-
-  if (activeTab === "history") loadHistory();
-  if (activeTab === "attachments") loadDnrAttachments();
-}
-
-// =========================================
-// ATTACHMENTS (same pattern as quotation — upload card, list, view/download/delete)
-// =========================================
-const MAX_DNR_ATTACHMENTS = 5;
-const MAX_DNR_FILE_SIZE_BYTES = 10 * 1024 * 1024;
-
-function getDnrIdFromPage() {
-  return (document.getElementById("dnrId")?.value || "").trim();
-}
-
-function dnrAttachmentsReadOnly() {
-  return isDnrFormReadOnly();
-}
-
-function getDnrFileIcon(ext) {
-  const icons = {
-    pdf: "fa-file-pdf",
-    doc: "fa-file-word",
-    docx: "fa-file-word",
-    xls: "fa-file-excel",
-    xlsx: "fa-file-excel",
-    jpg: "fa-file-image",
-    jpeg: "fa-file-image",
-    png: "fa-file-image",
-  };
-  return icons[ext] || "fa-file";
-}
-
-function getDnrFileIconClass(ext) {
-  const classes = {
-    pdf: "pdf",
-    doc: "doc",
-    docx: "doc",
-    xls: "xls",
-    xlsx: "xls",
-    jpg: "jpg",
-    jpeg: "jpg",
-    png: "png",
-  };
-  return classes[ext] || "default";
-}
-
-function applyDnrAttachmentUiMode() {
-  const ro = dnrAttachmentsReadOnly();
-  const card = document.getElementById("uploadCard");
-  const btn = document.getElementById("uploadBtn");
-  if (card) {
-    card.style.display = ro ? "none" : "block";
-    card.style.pointerEvents = ro ? "none" : "auto";
-    card.style.opacity = ro ? "0.5" : "1";
-  }
-  if (btn) {
-    btn.style.display = ro ? "none" : "inline-flex";
-    btn.disabled = !!ro;
-  }
-}
-
-function updateDnrAttachmentBadge(count) {
-  const tab = document.getElementById("dnrTabAttachments");
-  if (!tab) return;
-  const existing = tab.querySelector(".attachment-badge");
-  if (existing) existing.remove();
-  if (count > 0) {
-    const badge = document.createElement("span");
-    badge.className = "attachment-badge";
-    badge.textContent = String(count);
-    tab.appendChild(badge);
-  }
-}
-
-function renderDnrAttachments(files) {
-  const filesList = document.getElementById("filesList");
-  const fileCount = document.getElementById("fileCount");
-  const uploadCard = document.getElementById("uploadCard");
-  const uploadBtn = document.getElementById("uploadBtn");
-  if (!filesList) return;
-
-  window.currentDnrAttachments = files || [];
-  const currentCount = files.length;
-  const isFull = currentCount >= MAX_DNR_ATTACHMENTS;
-  const ro = dnrAttachmentsReadOnly();
-
-  if (fileCount) {
-    fileCount.textContent = `${currentCount} / ${MAX_DNR_ATTACHMENTS} files`;
-  }
-  if (uploadCard && !ro) {
-    uploadCard.style.opacity = isFull ? "0.5" : "1";
-    uploadCard.style.pointerEvents = isFull ? "none" : "auto";
-    uploadCard.title = isFull ? "Maximum files reached" : "Click or drag to upload";
-  }
-  if (uploadBtn && !ro) {
-    uploadBtn.disabled = isFull;
-    uploadBtn.style.opacity = isFull ? "0.5" : "1";
-  }
-
-  if (!files || files.length === 0) {
-    filesList.innerHTML =
-      '<div class="no-files"><i class="fa-regular fa-folder-open"></i><p>No files attached yet</p></div>';
-    updateDnrAttachmentBadge(0);
-    return;
-  }
-
-  let html = "";
-  files.forEach((file) => {
-    const ext = file.original_filename
-      ? file.original_filename.split(".").pop().toLowerCase()
-      : "";
-    const icon = getDnrFileIcon(ext);
-    const iconClass = getDnrFileIconClass(ext);
-    const size = formatFileSize(file.size || 0);
-    const uploadDate = file.upload_date || "—";
-    const id = file.id;
-    const delBlock = ro
-      ? ""
-      : `<button type="button" class="btn-action btn-delete" onclick="openDnrDeleteFileModal(${id})" title="Delete"><i class="fa-solid fa-trash-can"></i></button>`;
-    html += `
-    <div class="file-item" data-id="${id}">
-      <div class="file-info">
-        <div class="file-icon ${iconClass}"><i class="fa-solid ${icon}"></i></div>
-        <div class="file-details">
-          <div class="file-name">${escapeHtml(file.original_filename || "Unknown file")}</div>
-          <div class="file-meta">
-            <span><i class="fa-regular fa-file"></i> ${escapeHtml(size)}</span>
-            <span><i class="fa-regular fa-calendar"></i> ${escapeHtml(uploadDate)}</span>
-          </div>
-        </div>
-      </div>
-      <div class="file-actions">
-        <button type="button" class="btn-action btn-view" onclick="viewDnrAttachment(${id})" title="View"><i class="fa-regular fa-eye"></i></button>
-        <button type="button" class="btn-action btn-download" onclick="downloadDnrAttachment(${id})" title="Download"><i class="fa-solid fa-cloud-arrow-down"></i></button>
-        ${delBlock}
-      </div>
-    </div>`;
-  });
-  filesList.innerHTML = html;
-  updateDnrAttachmentBadge(files.length);
-}
-
-async function loadDnrAttachments() {
-  const id = getDnrIdFromPage();
-  const filesList = document.getElementById("filesList");
-  if (!id) {
-    renderDnrAttachments([]);
-    return;
-  }
-  if (filesList) {
-    filesList.innerHTML =
-      '<div class="loading-files"><i class="fa-solid fa-spinner fa-spin"></i><p>Loading attachments...</p></div>';
-  }
-  try {
-    const res = await fetch(`/api/dnr-attachments/${encodeURIComponent(id)}`, { cache: "no-store" });
-    const data = await res.json();
-    if (data.success) {
-      renderDnrAttachments(data.attachments || []);
-    } else {
-      renderDnrAttachments([]);
-    }
-  } catch (_e) {
-    renderDnrAttachments([]);
-  }
-}
-
-function showDnrUploading(filename) {
-  const filesList = document.getElementById("filesList");
-  if (!filesList) return;
-  const prev = filesList.querySelector(".file-item.uploading");
-  if (prev) prev.remove();
-  const uploading = document.createElement("div");
-  uploading.className = "file-item uploading";
-  uploading.innerHTML = `
-    <div class="file-info">
-      <div class="file-icon default"><i class="fa-solid fa-spinner fa-spin"></i></div>
-      <div class="file-details">
-        <div class="file-name">${escapeHtml(filename)}</div>
-        <div class="file-meta"><span>Uploading...</span></div>
-      </div>
-    </div>`;
-  filesList.insertBefore(uploading, filesList.firstChild);
-}
-
-function removeDnrUploading() {
-  const u = document.querySelector("#filesList .file-item.uploading");
-  if (u) u.remove();
-}
-
-function validateDnrUploadFile(file) {
-  if (file.size > MAX_DNR_FILE_SIZE_BYTES) {
-    showToast(`${file.name} exceeds 10MB limit`, "error");
     return false;
+
   }
-  const allowed = ["pdf", "doc", "docx", "xls", "xlsx", "jpg", "jpeg", "png"];
-  const ext = file.name.split(".").pop().toLowerCase();
-  if (!allowed.includes(ext)) {
-    showToast(`${file.name} type not allowed. Allowed: PDF, DOC, XLS, JPG, PNG`, "error");
+
+  if(!DNR_ID_PATTERN.test(val)){
+
+    showToast(
+      "Invalid DNR ID format.",
+      "error"
+    );
+
     return false;
+
   }
+
   return true;
+
 }
 
-async function uploadDnrFile(file) {
-  if (!validateDnrUploadFile(file)) return;
-  const dnr_id = getDnrIdFromPage();
-  if (!dnr_id) {
-    showToast("DNR ID missing", "error");
+/* =========================================================
+DNR ID — ensure auto id on new / edit form routes
+========================================================= */
+
+async function ensureDnrId(){
+
+  const el =
+    document.getElementById("dnrId");
+
+  if(!el || el.value.trim())
     return;
-  }
-  showDnrUploading(file.name);
-  const formData = new FormData();
-  formData.append("file", file);
-  formData.append("dnr_id", dnr_id);
-  try {
-    const response = await fetch("/api/dnr-upload-attachment", { method: "POST", body: formData });
-    const data = await response.json();
-    if (data.success) {
-      showToast(`${file.name} uploaded successfully!`, "success");
-      await loadDnrAttachments();
-    } else {
-      showToast(`Upload failed: ${data.error || "Unknown error"}`, "error");
-    }
-  } catch (err) {
-    console.error(err);
-    showToast("Upload failed. Please try again.", "error");
-  } finally {
-    removeDnrUploading();
-  }
-}
 
-async function uploadDnrFiles(fileList) {
-  for (const file of fileList) {
-    if (file.size > MAX_DNR_FILE_SIZE_BYTES) {
-      showToast(`${file.name} exceeds 10MB limit`, "error");
-      continue;
-    }
-    await uploadDnrFile(file);
-  }
-}
+  const urlId =
+    new URLSearchParams(window.location.search)
+      .get("id");
 
-function initializeDnrAttachments() {
-  const fileInput = document.getElementById("fileInput");
-  const uploadCard = document.getElementById("uploadCard");
-  const uploadBtn = document.getElementById("uploadBtn");
-  const filesList = document.getElementById("filesList");
-  if (!fileInput || !uploadCard || !uploadBtn || !filesList) return;
+  if(urlId){
 
-  applyDnrAttachmentUiMode();
+    el.value = urlId.trim();
+    return;
 
-  function isMaxFilesReached() {
-    const n = window.currentDnrAttachments ? window.currentDnrAttachments.length : 0;
-    return n >= MAX_DNR_ATTACHMENTS;
   }
 
-  uploadCard.addEventListener("click", (e) => {
-    e.preventDefault();
-    if (dnrAttachmentsReadOnly()) return;
-    if (isMaxFilesReached()) {
-      showToast(`Maximum ${MAX_DNR_ATTACHMENTS} files allowed`, "warning");
-      return;
-    }
-    fileInput.click();
-  });
+  try{
 
-  uploadBtn.addEventListener("click", (e) => {
-    e.preventDefault();
-    if (dnrAttachmentsReadOnly()) return;
-    if (isMaxFilesReached()) {
-      showToast(`Maximum ${MAX_DNR_ATTACHMENTS} files allowed`, "warning");
-      return;
-    }
-    fileInput.click();
-  });
-
-  fileInput.addEventListener("change", (e) => {
-    const files = Array.from(e.target.files || []);
-    const currentCount = window.currentDnrAttachments ? window.currentDnrAttachments.length : 0;
-    if (currentCount + files.length > MAX_DNR_ATTACHMENTS) {
-      showToast(
-        `Cannot upload ${files.length} file(s). Maximum ${MAX_DNR_ATTACHMENTS} files allowed. You have ${currentCount} file(s).`,
-        "warning"
+    const res =
+      await fetch(
+        "/api/delivery-note-return/next-id"
       );
-      fileInput.value = "";
-      return;
-    }
-    if (files.length > 0) uploadDnrFiles(files);
-    fileInput.value = "";
-  });
 
-  uploadCard.addEventListener("dragover", (e) => {
-    e.preventDefault();
-    if (dnrAttachmentsReadOnly()) return;
-    uploadCard.style.borderColor = "#007bff";
-    uploadCard.style.background = "#f0f7ff";
-  });
-  uploadCard.addEventListener("dragleave", (e) => {
-    e.preventDefault();
-    uploadCard.style.borderColor = "#ddd";
-    uploadCard.style.background = "#f8f9fa";
-  });
-  uploadCard.addEventListener("drop", (e) => {
-    e.preventDefault();
-    uploadCard.style.borderColor = "#ddd";
-    uploadCard.style.background = "#f8f9fa";
-    if (dnrAttachmentsReadOnly()) return;
-    const files = Array.from(e.dataTransfer.files || []);
-    const currentCount = window.currentDnrAttachments ? window.currentDnrAttachments.length : 0;
-    if (currentCount + files.length > MAX_DNR_ATTACHMENTS) {
-      showToast(`Cannot upload ${files.length} file(s). Maximum ${MAX_DNR_ATTACHMENTS} files allowed.`, "warning");
-      return;
-    }
-    if (files.length > 0) uploadDnrFiles(files);
-  });
+    const data =
+      await res.json();
 
-  loadDnrAttachments();
+    if(data && data.success && data.dnr_id)
+      el.value = data.dnr_id;
+
+  }
+  catch(err){
+
+    console.error(
+      "DNR ID generate error:",
+      err
+    );
+
+  }
+
 }
 
-window.viewDnrAttachment = function (id) {
-  window.open(`/api/dnr-attachment/${id}/view`, "_blank");
-};
+ensureDnrId();
 
-window.downloadDnrAttachment = function (id) {
-  window.location.href = `/api/dnr-attachment/${id}/download`;
-};
+/* =========================================================
+CURRENT DATE
+========================================================= */
 
-window.deleteDnrAttachment = async function (id) {
-  try {
-    const response = await fetch(`/api/dnr-attachment/${id}`, { method: "DELETE" });
-    const data = await response.json();
-    if (data.success) {
-      showToast("File deleted successfully", "success");
-      await loadDnrAttachments();
-    } else {
-      showToast(`Delete failed: ${data.error || "Unknown error"}`, "error");
-    }
-  } catch (err) {
-    console.error(err);
-    showToast("Delete failed. Please try again.", "error");
-  }
-};
+/* =========================================================
+LIVE DATE VALIDATION
+========================================================= */
 
-let _dnrPendingDeleteAttachmentId = null;
+const DNR_INVALID_DATE_MSG =
+   "Invalid date. Use format DD-MM-YYYY (e.g. 31-05-2026).";
 
-window.openDnrDeleteFileModal = function (id) {
-  _dnrPendingDeleteAttachmentId = id;
-  const backdrop = document.getElementById("dnrDeleteFileBackdrop");
-  if (backdrop) backdrop.style.display = "flex";
-};
+const DNR_EMPTY_DATE_MSG =
+  "Please select DNR date.";
 
-window.closeDnrDeleteFileModal = function () {
-  _dnrPendingDeleteAttachmentId = null;
-  const backdrop = document.getElementById("dnrDeleteFileBackdrop");
-  if (backdrop) backdrop.style.display = "none";
-};
+const DNR_DATE_TODAY_MSG =
+  "DNR date must be today's date.";
 
-/// =========================================
-// SUBMIT VALIDATION
-// =========================================
-function validateSubmitButton() {
-  const dnrDate = document.getElementById("dnrDate");
-  const customerNameSelected = document.getElementById("customerNameSelected");
-  const submitBtn = document.getElementById("submitBtn");
-  const firstRow = document.querySelector("#lineItemsTableBody tr");
+const dnrDate =
+  document.getElementById("dnrDate");
 
-  if (!submitBtn) return;
+const dateError =
+  document.getElementById("dateError");
 
-  const st = getDnrStatusNorm();
-  if (st !== "draft" || pageMode === "view") {
-    submitBtn.disabled = true;
+function setDnrFieldError(el, message){
+
+  if(!el)
     return;
+
+  const msg =
+    (message || "").trim();
+
+  if(msg){
+
+    el.textContent = msg;
+    el.hidden = false;
+    el.classList.add("is-visible");
+
+  }
+  else{
+
+    el.textContent = "";
+    el.hidden = true;
+    el.classList.remove("is-visible");
+
   }
 
-  // =========================================
-  // EDIT MODE VALIDATION
-  // =========================================
-  if (pageMode === "edit") {
-    let isValid = true;
-    if (!firstRow) {
-      submitBtn.disabled = true;
-      return;
-    }
-
-    if (!dnrDate || dnrDate.value.trim() === "") isValid = false;
-
-    if (
-      !customerNameSelected ||
-      customerNameSelected.textContent.trim() === "Select Customer"
-    ) {
-      isValid = false;
-    }
-
-    const customerId = document.getElementById("customerId");
-    if (!customerId || customerId.value.trim() === "") isValid = false;
-
-    const customerRefNo = document.getElementById("customerRefNo");
-    if (!customerRefNo || customerRefNo.value.trim() === "") isValid = false;
-
-    if (firstRow) {
-  const productName = firstRow.children[1]?.textContent.trim();
-  const productId = firstRow.children[2]?.textContent.trim();
-  const uom = firstRow.children[3]?.textContent.trim();
-  const retQtyInput = firstRow.querySelector(".returned-qty-input");
-  const returnedQty = retQtyInput
-    ? parseInt(retQtyInput.value || "0", 10)
-    : parseInt(firstRow.children[5]?.textContent || "0", 10);
-  const reasonInput = firstRow.querySelector(".reason-input");
-  const reason = reasonInput
-    ? reasonInput.value.trim()
-    : (firstRow.children[7]?.textContent || "").trim();
-
-  if (!productName || productName === "-" || !productId || productId === "-") {
-    isValid = false;
-  }
-
-  if (!uom || uom === "-") {
-  isValid = false;
 }
 
-  if (isNaN(returnedQty) || returnedQty <= 0) {
-    isValid = false;
-  }
+function formatDnrTodayIso(){
 
-  if (!reason || reason === "-" || reason === "") {
-    isValid = false;
-  }
+  const t = new Date();
 
-    } else {
-      isValid = false;
-    }
+  const y = t.getFullYear();
+  const m = String(t.getMonth() + 1).padStart(2, "0");
+  const d = String(t.getDate()).padStart(2, "0");
 
-    submitBtn.disabled = !isValid;
-    return;
-  }
+  return `${y}-${m}-${d}`;
 
-  // =========================================
-  // NEW MODE VALIDATION
-  // =========================================
-  let isValid = true;
-
-  if (!dnrDate || dnrDate.value.trim() === "") isValid = false;
-
-  const customerRefNo = document.getElementById("customerRefNo");
-  if (!customerRefNo || customerRefNo.value.trim() === "") isValid = false;
-
-  if (
-    !customerNameSelected ||
-    customerNameSelected.textContent.trim() === "Select Customer"
-  ) {
-    isValid = false;
-  }
-
-  if (firstRow) {
-  const productCell = firstRow.children[1];
-
-  const returnedQtyInput = firstRow.querySelector(".returned-qty-input");
-  const reasonInput = firstRow.querySelector(".reason-input");
-
-  const returnedQtyCell = firstRow.querySelector(".returned-qty-cell");
-  const reasonCell = firstRow.querySelector(".reason-cell");
-
-  // ✅ PRODUCT
-  if (
-    !productCell ||
-    productCell.textContent.trim() === "" ||
-    productCell.textContent.trim() === "-"
-  ) {
-    isValid = false;
-  }
-
-  // ✅ RETURN QTY (input OR text)
-  let returnedQty = 0;
-
-  if (returnedQtyInput) {
-    returnedQty = Number(returnedQtyInput.value);
-  } else if (returnedQtyCell) {
-    returnedQty = Number(returnedQtyCell.textContent);
-  }
-
-  if (!returnedQty || returnedQty <= 0) {
-    isValid = false;
-  }
-
-  // ✅ REASON (input OR text)
-  let reason = "";
-
-  if (reasonInput) {
-    reason = reasonInput.value.trim();
-  } else if (reasonCell) {
-    reason = reasonCell.textContent.trim();
-    
-  }
-
-  if (!reason) {
-    isValid = false;
-  }
-
-} else {
-  isValid = false;
-}
-  // =========================================
-  // COMMENT CHECK (new mode only)
-  // =========================================
-  if (pageMode === "new") {
-    if (dnrFormComments.length === 0) isValid = false;
-  }
-
-  submitBtn.disabled = !isValid;
-}
-// =========================================
-// ACTIONS (saveDraftDnr / openDnrPdf / sendDnrEmail defined below)
-// =========================================
-async function readDnrApiJson(res) {
-  const text = await res.text();
-  if (!text) {
-    return { success: false, message: res.statusText || `Request failed (${res.status})` };
-  }
-  try {
-    const parsed = JSON.parse(text);
-    if (!res.ok) {
-      parsed.success = false;
-      if (!parsed.message) {
-        parsed.message = `HTTP ${res.status}`;
-      }
-    }
-    return parsed;
-  } catch {
-    return { success: false, message: text.slice(0, 300) || `Request failed (${res.status})` };
-  }
 }
 
-function collectDnrLineItems() {
-  const rows = document.querySelectorAll("#lineItemsTableBody tr");
-  const items = [];
-  rows.forEach(row => {
-    const cells = row.querySelectorAll("td");
-    const retQtyInput = row.querySelector(".returned-qty-input");
-    const reasonInput = row.querySelector(".reason-input");
-    items.push({
-      product_id: cells[2]?.textContent?.trim() || null,
-      product_name: cells[1]?.textContent?.trim() || null,
-      uom: cells[3]?.textContent?.trim() || null,
-      invoice_quantity: parseFloat(cells[4]?.textContent) || 0,
-      return_quantity: retQtyInput ? parseFloat(retQtyInput.value) || 0 : parseFloat(cells[5]?.textContent) || 0,
-      serial_number: cells[6]?.textContent.trim() || "",
-      return_reason: reasonInput ? reasonInput.value.trim() : cells[7]?.textContent.trim() || ""
-    });
-  });
-  console.log("FINAL ITEMS:", items);
-  return items;
+function isDnrDateTodayValue(value){
+
+  const v = String(value || "").trim();
+
+  return !!v && v === formatDnrTodayIso();
+
+}
+
+function dnrDateRequiresToday(){
+
+  const pageMode =
+    new URLSearchParams(window.location.search).get("mode");
+
+  const urlId =
+    new URLSearchParams(window.location.search).get("id");
+
+  if(
+    pageMode === "view-submitted" ||
+    pageMode === "view-cancelled" ||
+    pageMode === "view"
+  ){
+    return false;
+  }
+
+  if(pageMode === "edit" && urlId)
+    return true;
+
+  return !urlId;
+
 }
 
 /**
- * @param {string} status
- * @param {{ syncComments?: boolean }} [options] - syncComments false: omit comments + set sync_comments=false so server keeps existing DB comments
+ * New DNR: readonly, today only.
+ * Draft edit: min/max today (calendar cannot pick other days).
+ * Submitted/Cancelled/view: readonly (preserve loaded date).
  */
-function buildDnrPayload(status, options = {}) {
-  const syncComments = options.syncComments !== false;
-  const data = {
-    dnr_id: document.getElementById("dnrId").value,
-    dnr_date: document.getElementById("dnrDate").value,
-    invoice_ref: document.getElementById("invoiceReturnReferenceId").value,
-    customer_ref_no: document.getElementById("customerRefNo")?.value || "",
-    customer_name: document.getElementById("customerNameSelected")?.textContent?.trim() || "",
-    customer_id: document.getElementById("customerId").value,
-    customer_email: document.getElementById("customerEmail").value,
-    customer_phone: document.getElementById("customerPhone").value,
-    contact_person: document.getElementById("contactPerson").value,
-    status,
-    items: collectDnrLineItems(),
-  };
-  if (syncComments) {
-    const comments = [];
-    [...dnrFormComments]
-      .sort((a, b) => a.at - b.at)
-      .forEach((c) => {
-        comments.push({
-          user: c.user,
-          message: c.message,
-          time: String(c.time || "").trim().startsWith("–")
-            ? c.time
-            : `– ${c.time}`,
-        });
-      });
-    data.comments = comments;
-  } else {
-    data.sync_comments = false;
-  }
-  return data;
-}
+function configureDnrDateField(opts){
 
-async function submitDnr() {
-  if (getDnrStatusNorm() !== "draft" || pageMode === "view") return;
-  const submitBtn = document.getElementById("submitBtn");
-  if (!submitBtn || submitBtn.style.display === "none") return;
-  validateSubmitButton();
-  if (submitBtn.disabled) {
-    showToast("Please fill all required fields, then add at least one comment using Add New before submitting.", "error");
+  if(!dnrDate)
     return;
-  }
-  try {
-    const res = await fetch("/api/save-dnr-draft", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(buildDnrPayload("Submitted")),
-    });
-    const result = await readDnrApiJson(res);
-    if (result.success) {
-      if (result.database) {
-        console.info("DNR saved to database:", result.database, "dnr_id:", result.dnr_id);
-      }
-      // Success toast only on list page (/deliverynote_return) via ?toast= — avoid flash on this page
-      const message = encodeURIComponent("Delivery Note Return submitted successfully.");
-      const type = encodeURIComponent("success");
-      window.location.href = `/deliverynote_return?toast=${message}&toastType=${type}`;
-    } else {
-      showToast(result.message || "Submit failed", "error");
-    }
-  } catch (err) {
-    console.error(err);
-    showToast("Server error while submitting", "error");
-  }
-}
 
-// =========================================
-// CANCEL MODAL
-// =========================================
-function openCancelDnrModal() {
-  const btn = document.getElementById("cancelDnrBtn");
-  if (btn?.disabled) return;
-  const backdrop = document.getElementById("cancelDnrBackdrop");
-  if (backdrop) backdrop.style.display = "flex";
-}
+  const preserveValue =
+    !!(opts && opts.preserveValue);
 
-function closeCancelDnrModal() {
-  const backdrop = document.getElementById("cancelDnrBackdrop");
-  const reasonBox = document.getElementById("cancelDnrReason");
+  const todayIso =
+    formatDnrTodayIso();
 
-  if (backdrop) backdrop.style.display = "none";
-  if (reasonBox) reasonBox.value = "";
-}
+  const pageMode =
+    new URLSearchParams(window.location.search).get("mode");
 
-async function confirmCancelDnr() {
-  const reasonBox = document.getElementById("cancelDnrReason");
-  const reason = reasonBox ? reasonBox.value.trim() : "";
+  const urlId =
+    new URLSearchParams(window.location.search).get("id");
 
-  if (!reason) {
-    showToast("Please enter cancellation reason.", "error");
+  const viewOnly =
+    pageMode === "view-submitted" ||
+    pageMode === "view-cancelled" ||
+    pageMode === "view";
+
+  const isEditDraft =
+    pageMode === "edit" && !!urlId;
+
+  const isNew =
+    !urlId && pageMode !== "edit";
+
+  clearDnrDateNativeValidity();
+
+  if(viewOnly){
+
+    dnrDate.readOnly = true;
+    dnrDate.removeAttribute("min");
+    dnrDate.removeAttribute("max");
+    dnrDate.classList.add("dnr-locked-field");
+
     return;
+
   }
 
-  const dnrIdEl = document.getElementById("dnrId");
-  if (!dnrIdEl || !String(dnrIdEl.value || "").trim()) {
-    showToast("DNR ID missing", "error");
+  if(!preserveValue)
+    dnrDate.value = todayIso;
+
+  dnrDate.setAttribute("min", todayIso);
+  dnrDate.setAttribute("max", todayIso);
+
+  if(isNew){
+
+    dnrDate.readOnly = true;
+    dnrDate.classList.add("dnr-locked-field");
+
     return;
+
   }
 
-  closeCancelDnrModal();
+  if(isEditDraft){
 
-  try {
-    const payload = buildDnrPayload("Cancelled", { syncComments: false });
-    payload.history_description = `Cancelled: ${reason}`.slice(0, 4000);
+    dnrDate.readOnly = false;
+    dnrDate.classList.remove("dnr-locked-field");
 
-    const res = await fetch("/api/save-dnr-draft", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    const result = await readDnrApiJson(res);
-    if (!result.success) {
-      showToast(result.message || "Could not cancel delivery note return", "error");
+    return;
+
+  }
+
+  dnrDate.readOnly = true;
+  dnrDate.classList.add("dnr-locked-field");
+
+}
+
+/** API DD-MM-YYYY (or ISO) → value for type="date" (YYYY-MM-DD). */
+function dnrDateApiToIso(val){
+
+  const s = String(val || "").trim();
+  if(!s)
+    return "";
+
+  const iso = s.split("T")[0];
+  if(/^\d{4}-\d{2}-\d{2}$/.test(iso))
+    return iso;
+
+  const dm = s.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+  if(dm)
+    return `${dm[3]}-${dm[2]}-${dm[1]}`;
+
+  return "";
+
+}
+
+/** type="date" value (YYYY-MM-DD) → API DD-MM-YYYY. */
+function dnrDateIsoToApi(iso){
+
+  const s = String(iso || "").trim();
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(s))
+    return "";
+
+  const [y, m, d] = s.split("-");
+  return `${d}-${m}-${y}`;
+
+}
+
+function isValidDNRDateString(value){
+
+  if(!value || typeof value !== "string")
+    return false;
+
+  const trimmed = value.trim();
+
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(trimmed))
+    return false;
+
+  const parts = trimmed.split("-");
+
+  const y = parseInt(parts[0], 10);
+  const m = parseInt(parts[1], 10) - 1;
+  const d = parseInt(parts[2], 10);
+
+  if(y < 1900 || y > 2100)
+    return false;
+
+  const date = new Date(y, m, d);
+
+  if(
+    date.getFullYear() !== y ||
+    date.getMonth() !== m ||
+    date.getDate() !== d
+  ){
+    return false;
+  }
+
+  return true;
+
+}
+
+function clearDnrDateNativeValidity(){
+
+  if(dnrDate)
+    dnrDate.setCustomValidity("");
+
+}
+
+/** Clamp year segment to max 4 digits while typing (same as quotation expiry date). */
+function attachDnrYearClamp(input){
+
+  if(!input)
+    return;
+
+  input.addEventListener("input", function(){
+
+    let v = input.value || "";
+    v = v.replace(/[^\d-]/g, "");
+
+    const iso = v.match(/^(\d{4,})-(\d{2})-(\d{2})$/);
+    if(iso){
+      const year = iso[1].slice(0, 4);
+      input.value = `${year}-${iso[2]}-${iso[3]}`;
       return;
     }
-    const message = encodeURIComponent("Delivery Note Return cancelled");
-    const type = encodeURIComponent("success");
-    window.location.href = `/deliverynote_return?toast=${message}&toastType=${type}`;
-  } catch (e) {
-    console.error(e);
-    showToast("Server error while cancelling", "error");
-  }
-}
 
-// =========================================
-// STATUS BADGE
-// =========================================
-function setStatusBadge(statusText, statusClass) {
-  const badge = document.getElementById("dnrStatusBadge");
-  if (!badge) return;
-
-  badge.textContent = statusText;
-  badge.className = "dn2-status-pill dnr-status-badge";
-  badge.classList.remove("dnr-status-hidden");
-  badge.classList.add(statusClass);
-}
-
-// =========================================
-// HELPERS
-// =========================================
-function escapeHtml(text) {
-  const div = document.createElement("div");
-  div.textContent = text;
-  return div.innerHTML;
-}
-
-function formatFileSize(bytes) {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-
-// =========================================
-// URL helpers + optional autofill from DN (?dn_id=)
-// =========================================
-function getParam(name) {
-  return new URL(window.location.href).searchParams.get(name);
-}
-
-async function loadDeliveryNoteData() {
-  const dnId = getParam("dn_id");
-  if (!dnId) return;
-
-  try {
-    const res = await fetch(`/api/delivery-note/${encodeURIComponent(dnId)}`);
-    const data = await res.json();
-
-    if (!data.success) return;
-
-    const dn = data.item;
-
-    const cref = document.getElementById("customerRefNo");
-    if (cref) cref.value = dn.customer_ref_no || "";
-
-    const cid = document.getElementById("customerId");
-    if (cid) cid.value = dn.customer_id || "";
-
-    const email = document.getElementById("customerEmail");
-    if (email) email.value = dn.customer_email || "";
-
-    const phone = document.getElementById("customerPhone");
-    if (phone) phone.value = dn.customer_phone || "";
-
-    const contact = document.getElementById("contactPerson");
-   
-    if (contact) {
-      if (contact && (!contact.value || contact.value.trim() === "")) {
-      contact.value = dn.contact_person || "";
-    }
-    }
-    const selected = document.getElementById("customerNameSelected");
-    if (selected) selected.textContent = dn.customer_name || "Select Customer";
-
-    validateSubmitButton();
-  } catch (err) {
-    console.error("Failed to load Delivery Note for autofill", err);
-  }
-}
-
-function populateLineItemsFromInvoiceReturn(items) {
-  console.log("ITEMS:", items);
-
-  const tableBody = document.getElementById("lineItemsTableBody");
-  if (!tableBody) return;
-
-  tableBody.innerHTML = "";
-
-  const isReadOnly = isDnrFormReadOnly();
-
-  (items || []).forEach((item, index) => {
-    const tr = document.createElement("tr");
-
-    const pid = escapeHtml(String(item.product_id || ""));
-    const pName = escapeHtml(String(item.product_name || ""));
-    const uom = escapeHtml(String(item.uom || ""));
-    const retQty = item.return_quantity ?? 0;
-    const reason = escapeHtml(String(item.return_reason ?? ""));
-    const serial = escapeHtml(String(item.serial_number ?? ""));
-    const invQty = item.invoice_quantity ?? 0;
-
-    const retQtyCell = isReadOnly
-      ? `<td class="returned-qty-cell">${retQty}</td>`
-      : `<td class="returned-qty-cell"><input type="number" class="returned-qty-input" min="0" value="${retQty}"></td>`;
-
-    const reasonCell = isReadOnly
-      ? `<td class="reason-cell">${reason}</td>`
-      : `<td class="reason-cell"><input type="text" class="reason-input" value="${reason}"></td>`;
-
-    tr.innerHTML = `
-      <td>${index + 1}</td>
-      <td class="product-name-cell" data-value="${pName}">${pName || "-"}</td>
-      <td class="product-id-cell" data-value="${pid}">${pid || "-"}</td>
-      <td class="uom-cell" data-value="${uom}">${uom || "-"}</td>
-      <td class="invoiced-qty-cell">${invQty}</td>
-      ${retQtyCell}
-      <td class="serial-cell">${serial}</td>
-      ${reasonCell}
-    `;
-
-    tableBody.appendChild(tr);
-    attachValidationListenersToRow(tr);
-  });
-
-  setTimeout(() => validateSubmitButton(), 100);
-}
-
-async function applyInvoiceReturnSelection() {
-  const sel = document.getElementById("invoiceReturnReferenceId");
-  if (!sel || !sel.value) {
-    populateLineItemsFromInvoiceReturn([]);
-    return;
-  }
-  try {
-    const res = await fetch(`/api/invoice-return/${encodeURIComponent(sel.value)}`);
-    const data = await res.json();
-    console.log("ITEMS:", data.items);
-    if (!data.success || !data.invoice_return) {
-      showToast("Invoice return data not found", "error");
-      populateLineItemsFromInvoiceReturn([]);
+    const lastDash = v.lastIndexOf("-");
+    if(lastDash !== -1){
+      const prefix = v.slice(0, lastDash + 1);
+      let yearPart = v.slice(lastDash + 1).replace(/\D/g, "");
+      if(yearPart.length > 4)
+        yearPart = yearPart.slice(0, 4);
+      input.value = prefix + yearPart;
       return;
     }
-    const ir = data.invoice_return;
-    const nameEl = document.getElementById("customerNameSelected");
-    if (nameEl) nameEl.textContent = ir.customer_name || "Select Customer";
-    const cid = document.getElementById("customerId");
-    if (cid) {
-      const v = ir.customer_id;
-      cid.value = v != null && v !== "" ? String(v) : "";
-    }
-    const email = document.getElementById("customerEmail");
-    if (email) email.value = ir.email || "";
-    const phone = document.getElementById("customerPhone");
-    if (phone) phone.value = ir.phone || "";
-    const contact = document.getElementById("contactPerson");
-    if (contact && (!contact.value || contact.value.trim() === "")) {
-      contact.value = ir.contact_person || "";
-    }
-    const cref = document.getElementById("customerRefNo");
-    if (cref) cref.value = ir.customer_ref_no || "";
 
-    // Lock customer fields — all data comes from IR, user must not edit
-    ["customerId", "customerEmail", "customerPhone", "contactPerson"].forEach((id) => {
-      const el = document.getElementById(id);
-      if (el) el.readOnly = true;
-    });
-    const nameEl2 = document.getElementById("customerNameSelected");
-    if (nameEl2) {
-      nameEl2.style.pointerEvents = "none";
-      nameEl2.style.opacity = "0.85";
-    }
+    const m = v.match(/^(\d{0,4})\d*$/);
+    input.value = m ? m[1] : v;
 
-    const rawItems = Array.isArray(data.items) ? data.items : [];
-
-    const items = rawItems.map(i => ({
-    product_id: i.product_id || "-",
-    product_name: i.product_name || "-",
-
-
-    uom: i.uom || i.unit || i.uom_name || "Nos",
-
-    invoice_quantity: i.invoiced_qty || i.invoice_quantity || 0,
-    return_quantity: i.returned_qty || i.return_quantity || 0,
-    serial_number: i.serial_no || i.serial_number || "",
-    return_reason: i.return_reason || ""
-  }));
-
-    console.log("FINAL ITEMS:", items);
-
-    populateLineItemsFromInvoiceReturn(items);
-
-    if (isBrandNewDnrFromUrl()) {
-      if (items.length > 0) {
-        showToast("Invoice return loaded successfully", "success");
-      } else {
-        showToast("Invoice return loaded — no line items on this return", "warning");
-      }
-    }
-    validateSubmitButton();
-    syncDnrReadOnlyFields();
-  } catch (e) {
-    console.error("Invoice return detail failed", e);
-    showToast("Failed to load invoice return", "error");
-    populateLineItemsFromInvoiceReturn([]);
-  }
-}
-
-// =========================================
-// INITIALIZE
-// =========================================
-document.addEventListener("DOMContentLoaded", () => {
-  loadInvoiceReturnOptions();
-  const today = new Date().toISOString().split("T")[0];
-  const dnrDate = document.getElementById("dnrDate");
-  const commentInput = document.getElementById("commentInput");
-  if (dnrDate) dnrDate.value = today;
-
-  if (commentInput) {
-    commentInput.addEventListener("input", updateCommentButtonState);
-  }
-
-  document
-    .querySelectorAll("#dnrCommentHistoryCard .so-ch-topbar .so-ch-pill[data-tab]")
-    .forEach((tabBtn) => {
-      tabBtn.addEventListener("click", () => {
-        const name = tabBtn.getAttribute("data-tab");
-        if (name) switchTab(name);
-      });
-    });
-
-  initializeDnrAttachments();
-
-  document.getElementById("dnrDeleteFileCancelBtn")?.addEventListener("click", () => {
-    closeDnrDeleteFileModal();
-  });
-  document.getElementById("dnrDeleteFileConfirmBtn")?.addEventListener("click", async () => {
-    if (_dnrPendingDeleteAttachmentId != null) {
-      await window.deleteDnrAttachment(_dnrPendingDeleteAttachmentId);
-    }
-    closeDnrDeleteFileModal();
   });
 
-  document.querySelectorAll("#lineItemsTableBody tr").forEach(row => {
-    attachValidationListenersToRow(row);
-  });
-
-  document.addEventListener("click", function (event) {
-    const customerDropdown = document.querySelector(".custom-dropdown");
-    const customerMenu = document.getElementById("customerNameDropdown");
-
-    if (customerDropdown && !customerDropdown.contains(event.target) && customerMenu) {
-      customerMenu.style.display = "none";
-    }
-  });
-
-  if (!dnrId) handleMode();
-  validateSubmitButton();
-  updateCommentButtonState();
-
-  document.getElementById("pdfBtn")?.addEventListener("click", openDnrPdf);
-  document.getElementById("emailBtn")?.addEventListener("click", () => {
-    sendDnrEmail().catch((e) => console.error(e));
-  });
-
-  document.getElementById("invoiceReturnReferenceId")?.addEventListener("change", (e) => {
-
-  
-  if (pageMode === "edit") return;
-
-  applyInvoiceReturnSelection().catch((e) => console.error(e));
-});
-
-  (async () => {
-    await loadDeliveryNoteData();
-    if (dnrId) await loadDNRDetails(dnrId);
-
-    setTimeout(() => {
-      validateSubmitButton();
-    }, 200);
-  })();
-
-  const paramsToast = new URLSearchParams(window.location.search);
-  const toastMessage = paramsToast.get("toast");
-  if (toastMessage) {
-    showToast(decodeURIComponent(toastMessage));
-  }
-});
-
-
-
-async function loadDNRDetails(id) {
-  try {
-    const res = await fetch(`/api/delivery-note-return/${encodeURIComponent(id)}`);
-    const raw = await readDnrApiJson(res);
-    if (!raw.success) return;
-    const data = raw.data || raw;
-    if (!data || !data.dnr_id) return;
-    const el = (x) => document.getElementById(x);
-    if (el("dnrId") && data.dnr_id != null) el("dnrId").value = data.dnr_id;
-    const dateVal = data.date || data.return_date || data.dnr_date;
-    if (el("dnrDate") && dateVal) el("dnrDate").value = String(dateVal).slice(0, 10);
-    const sel = el("customerNameSelected");
-    if (sel && data.customer_name) sel.textContent = data.customer_name;
-    const cid = el("customerId");
-      if (cid) {
-        const v = data.customer_id;
-        cid.value = v != null && v !== "" ? String(v) : "";
-      }
-    if (el("customerEmail") && data.email != null) el("customerEmail").value = data.email;
-    if (el("customerPhone") && data.phone != null) el("customerPhone").value = data.phone;
-    const contact = el("contactPerson");
-    if (contact && (!contact.value || contact.value.trim() === "")) {
-      contact.value = data.contact_person || "";
-    }
-    if (el("customerRefNo") && data.customer_ref_no != null) el("customerRefNo").value = data.customer_ref_no;
-
-    window.DNR_RECORD_STATUS = data.status || "";
-    const st = getDnrStatusNorm();
-    if (st === "submitted") setStatusBadge("Submitted", "dnr-status-submitted");
-    else if (st === "cancelled") setStatusBadge("Cancelled", "dnr-status-cancelled");
-    else setStatusBadge("Draft", "dnr-status-draft");
-
-    const irRef = data.invoice_return_ref_id || data.invoice_return_ref;
-    const invSel = el("invoiceReturnReferenceId");
-    if (invSel && irRef) {
-      // Ensure the option exists (it may be filtered out in new-mode dropdown)
-      if (!invSel.querySelector(`option[value="${irRef}"]`)) {
-        const opt = document.createElement("option");
-        opt.value = irRef;
-        opt.textContent = irRef;
-        invSel.appendChild(opt);
-      }
-      invSel.value = irRef;
-    }
-
-    if (Array.isArray(data.items) && data.items.length > 0) {
-      console.log("DNR DB ITEMS:", data.items);
-      populateLineItemsFromInvoiceReturn(
-        (data.items || []).map(item => ({
-          product_id: item.product_id,
-          product_name: item.product_name,
-          uom: item.uom,
-          invoice_quantity: item.invoiced_qty,   // ✅ FIX
-          return_quantity: item.returned_qty,    // ✅ FIX
-          serial_number: item.serial_no,         // ✅ FIX
-          return_reason: item.return_reason || item.reason  // ✅ FIX
-        }))
-      );
-    }
-    if (data.comments) loadComments(data.comments);
-    handleMode();
-    setTimeout(() => {
-      validateSubmitButton();
-    }, 200);
-    applyDnrToolbarUi();
-  } catch (_e) {
-    console.warn("DNR detail load failed");
-  }
 }
 
-function syncDnrReadOnlyFields() {
-  const wrap = document.querySelector(".dnr-new-wrapper");
-  if (!wrap) return;
+function validateDNRDate(){
 
-  const fullRo = isDnrFormReadOnly();
-  const partialDraftEdit = isDraftEditDetailsFromList();
+  if(!dnrDate)
+    return false;
 
-  wrap.classList.toggle("dnr-page-readonly", fullRo);
-  wrap.classList.toggle("dnr-draft-edit-partial", partialDraftEdit && !fullRo);
+  clearDnrDateNativeValidity();
 
-  const drop = document.getElementById("customerNameDropdown");
-  if (drop && (fullRo || partialDraftEdit)) drop.style.display = "none";
+  let dv = dnrDate.value.trim();
 
-  const clearLineCellLocks = () => {
-    wrap.querySelectorAll(".dnr-draft-line-cell-lock").forEach((td) => {
-      td.classList.remove("dnr-draft-line-cell-lock");
-    });
-  };
-
-  if (fullRo) {
-    clearLineCellLocks();
-    const editable = false;
-    const ro = true;
-    wrap.querySelectorAll(".dn2-card input, .dn2-card select, .dn2-card textarea").forEach((el) => {
-      if (el.type === "hidden") return;
-      if (el.id === "dnrId") {
-        el.readOnly = true;
-        el.setAttribute("readonly", "readonly");
-        return;
-      }
-      el.disabled = ro;
-    });
-    wrap.querySelectorAll("#lineItemsTableBody input, #lineItemsTableBody select").forEach((el) => {
-      el.disabled = ro;
-    });
-    const ddSelFull = document.getElementById("customerNameSelected");
-    if (ddSelFull) {
-      ddSelFull.style.pointerEvents = "none";
-      ddSelFull.style.opacity = "0.85";
-      ddSelFull.setAttribute("aria-disabled", "true");
-    }
-    const commentInputFull = document.getElementById("commentInput");
-    if (commentInputFull) {
-      commentInputFull.disabled = !editable || !isDnrCommentsEditable();
-    }
-    return;
+  const mDigits = dv.match(/(\d{4})\d+/);
+  if(mDigits){
+    dv = dv.replace(/(\d{4})\d+/, "$1");
+    dnrDate.value = dv;
   }
 
-  wrap.querySelectorAll(".dn2-card input, .dn2-card select, .dn2-card textarea").forEach((el) => {
-    if (el.type === "hidden") return;
-    if (el.id === "dnrId") {
-      el.readOnly = true;
-      el.setAttribute("readonly", "readonly");
-      return;
-    }
-    el.disabled = false;
-  });
-  wrap.querySelectorAll("#lineItemsTableBody input, #lineItemsTableBody select").forEach((el) => {
-    el.disabled = false;
-  });
-  clearLineCellLocks();
+  const badInput =
+    !!dnrDate.validity?.badInput;
 
-  const ddSel = document.getElementById("customerNameSelected");
-  if (ddSel) {
-    ddSel.style.pointerEvents = "";
-    ddSel.style.opacity = "";
-    ddSel.setAttribute("aria-disabled", "false");
-  }
+  if(!isValidDNRDateString(dv)){
 
-  const invSel = document.getElementById("invoiceReturnReferenceId");
-  const custSearch = document.getElementById("customerSearchInput");
-
-  if (partialDraftEdit) {
-    if (invSel) invSel.disabled = true;
-    ["customerEmail", "customerPhone", "contactPerson"].forEach((id) => {
-      const el = document.getElementById(id);
-      if (el) el.disabled = true;
-    });
-    if (ddSel) {
-      ddSel.style.pointerEvents = "none";
-      ddSel.style.opacity = "0.85";
-      ddSel.setAttribute("aria-disabled", "true");
-    }
-    if (custSearch) custSearch.disabled = true;
-
-    wrap.querySelectorAll("#lineItemsTableBody select.product-name-select").forEach((sel) => {
-      sel.disabled = true;
-    });
-    wrap.querySelectorAll("#lineItemsTableBody tr").forEach((row) => {
-      row.querySelectorAll(".prodIdCell, .uomCell, .invoiced-qty-cell").forEach((td) => {
-        td.classList.add("dnr-draft-line-cell-lock");
-      });
-    });
-  } else {
-    if (invSel) invSel.disabled = false;
-    if (custSearch) custSearch.disabled = false;
-  }
-
-  const commentInput = document.getElementById("commentInput");
-  if (commentInput) {
-    commentInput.disabled = !isDnrCommentsEditable();
-  }
-}
-
-function applyDnrToolbarUi() {
-  const st = getDnrStatusNorm();
-  const isDraft = st === "draft";
-  const isSubmitted = st === "submitted";
-
-  const saveDraftBtn = document.getElementById("saveDraftBtn");
-  const submitBtn = document.getElementById("submitBtn");
-  const pdfBtn = document.getElementById("pdfBtn");
-  const emailBtn = document.getElementById("emailBtn");
-  const cancelDnrBtn = document.getElementById("cancelDnrBtn");
-  const cancelBackBtn = document.getElementById("dnrFooterCancelBtn");
-
-  if (cancelBackBtn) {
-    cancelBackBtn.disabled = false;
-    cancelBackBtn.style.opacity = "";
-  }
-
-  const showDraftSubmit = isDraft;
-  if (saveDraftBtn) {
-    saveDraftBtn.style.display = showDraftSubmit ? "" : "none";
-    saveDraftBtn.disabled = !showDraftSubmit;
-  }
-  if (submitBtn) {
-    submitBtn.style.display = showDraftSubmit ? "inline-block" : "none";
-    if (!showDraftSubmit) submitBtn.disabled = true;
-  }
-
-  if (pdfBtn) {
-    pdfBtn.disabled = !isSubmitted;
-    pdfBtn.style.opacity = isSubmitted ? "" : "0.45";
-  }
-  if (emailBtn) {
-    emailBtn.disabled = !isSubmitted;
-    emailBtn.style.opacity = isSubmitted ? "" : "0.45";
-  }
-  // Cancel DNR: Submitted (view), or Draft in edit mode — not Cancelled / not draft+view
-  const canCancelDnr =
-    isSubmitted || (isDraft && pageMode === "edit");
-  if (cancelDnrBtn) {
-    cancelDnrBtn.disabled = !canCancelDnr;
-    cancelDnrBtn.style.opacity = canCancelDnr ? "" : "0.45";
-  }
-
-  updateCommentButtonState();
-}
-
-function handleMode() {
-  syncDnrReadOnlyFields();
-  applyDnrToolbarUi();
-  applyDnrAttachmentUiMode();
-  loadDnrAttachments();
-}
-
-function loadComments(existingComments) {
-  dnrReplaceCommentsFromLoadedList(existingComments);
-}
-
-// =========================================================
-// GO BACK TO (cancel button)DELIVERY NOTE RETURN LIST PAGE
-// =========================================================
-function goBackToDnrList(){
-  window.location.href = "/deliverynote_return";
-}
-// ===================================================
-// SAVE DRAFT DELIVERY NOTE RETURN
-// ===================================================
-
-async function saveDraftDnr() {
-  const saveDraftBtn = document.getElementById("saveDraftBtn");
-  if (!saveDraftBtn || saveDraftBtn.style.display === "none" || saveDraftBtn.disabled) return;
-  if (getDnrStatusNorm() !== "draft" || pageMode === "view") return;
-
-  const data = buildDnrPayload("Draft");
-
-  try {
-    const res = await fetch("/api/save-dnr-draft", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(data),
-    });
-
-    const result = await readDnrApiJson(res);
-
-    if (result.success) {
-      if (result.database) {
-        console.info("DNR draft saved to database:", result.database, "dnr_id:", result.dnr_id);
-      }
-      const message = encodeURIComponent("Delivery Note Return saved as Draft");
-      const type = encodeURIComponent("success");
-      setTimeout(() => {
-        window.location.href = `/deliverynote_return?toast=${message}&toastType=${type}`;
-      }, 800);
-    } else {
-      showToast(result.message || "Failed to save draft", "error");
-    }
-  } catch (err) {
-    console.error(err);
-    showToast("Server error while saving draft", "error");
-  }
-}
-
-// ===============================================
-// TOAST (same pattern as new-invoice.js — success-notification)
-// ===============================================
-function showToast(message, type = "success") {
-  if (!message) return;
-  let className = "success-notification";
-  if (type === "error" || type === "warning") {
-    className = "error-notification";
-  } else if (type !== "success") {
-    return;
-  }
-
-  const toast = document.createElement("div");
-  toast.className = className;
-  toast.textContent = message;
-
-  document.body.appendChild(toast);
-  setTimeout(() => toast.classList.add("show"), 10);
-  setTimeout(() => {
-    toast.classList.remove("show");
-    setTimeout(() => toast.remove(), 400);
-  }, 3000);
-}
-
-function openDnrPdf() {
-  const pdfBtn = document.getElementById("pdfBtn");
-  if (pdfBtn?.disabled) return;
-
-  const id = document.getElementById("dnrId").value;
-
-  if (!id) {
-    showToast("DNR ID missing", "error");
-    return;
-  }
-
-  window.open(`/api/delivery-note-returns/${encodeURIComponent(id)}/pdf`, "_blank");
-}
-
-async function sendDnrEmail() {
-  const emailBtn = document.getElementById("emailBtn");
-  if (emailBtn?.disabled) return;
-
-  const id = document.getElementById("dnrId").value;
-
-  if (!id) {
-    showToast("DNR ID missing", "error");
-    return;
-  }
-
-  // Match DN/SO behavior: show success toast immediately, send in background.
-  showToast("Email sent successfully", "success");
-
-  try {
-    await fetch(`/api/delivery-note-returns/${encodeURIComponent(id)}/email`, {
-      method: "POST",
-    });
-  } catch (err) {
-    console.error(err);
-  }
-
-}
-
-
-async function loadInvoiceReturnOptions() {
-  const sel = document.getElementById("invoiceReturnReferenceId");
-
-  if (!sel) return;
-
-  try {
-    const [irRes, dnrRes] = await Promise.all([
-      fetch("/api/invoice-returns"),
-      fetch("/api/delivery-note-returns")
-    ]);
-    const irData = await irRes.json();
-    const dnrData = await dnrRes.json();
-
-    // API returns array directly or {items: [...]}
-    const list = Array.isArray(irData) ? irData : (irData.items || []);
-
-    // Collect IR IDs already used in any DNR
-    const usedIrIds = new Set(
-      (dnrData.items || dnrData.data || [])
-        .map(d => (d.invoice_return_ref || d.invoice_return_ref_id || "").trim())
-        .filter(Boolean)
+    dnrDate.classList.add(
+      "input-invalid"
     );
 
-    sel.innerHTML = '<option value="">Select Invoice Return</option>';
+    const msg =
+      !dv && !badInput
+        ? DNR_EMPTY_DATE_MSG
+        : DNR_INVALID_DATE_MSG;
 
-    list.forEach(item => {
-      const irId = item.invoice_return_id || item.return_id || "";
-      if (!irId) return;
-      if (usedIrIds.has(irId)) return;
-      const opt = document.createElement("option");
-      opt.value = irId;
-      opt.textContent = irId;
-      sel.appendChild(opt);
-    });
+    setDnrFieldError(
+      dateError,
+      msg
+    );
 
-    sel.addEventListener("change", async function () {
-      const irId = this.value;
-      if (!irId) return;
-      const res = await fetch(`/api/invoice-return-items/${irId}`);
-      const data = await res.json();
-      console.log("IR ITEMS:", data.items);
-      populateLineItemsFromInvoiceReturn(data.items || []);
-    });
+    return false;
 
-  } catch (err) {
-    console.error(err);
   }
+
+  if(
+    dnrDateRequiresToday() &&
+    !isDnrDateTodayValue(dv)
+  ){
+
+    dnrDate.classList.add(
+      "input-invalid"
+    );
+
+    setDnrFieldError(
+      dateError,
+      DNR_DATE_TODAY_MSG
+    );
+
+    return false;
+
+  }
+
+  dnrDate.classList.remove(
+    "input-invalid"
+  );
+
+  setDnrFieldError(dateError, "");
+
+  return true;
+
 }
+
+if(dnrDate){
+
+  attachDnrYearClamp(dnrDate);
+  clearDnrDateNativeValidity();
+
+  dnrDate.addEventListener(
+    "input",
+    validateDNRDate
+  );
+
+  dnrDate.addEventListener(
+    "change",
+    validateDNRDate
+  );
+
+  dnrDate.addEventListener(
+    "blur",
+    validateDNRDate
+  );
+
+  dnrDate.addEventListener(
+    "invalid",
+    (e) => {
+
+      e.preventDefault();
+      validateDNRDate();
+
+    }
+  );
+
+}
+
+/* =========================================================
+CUSTOMER REF NO — 3–30 chars (DNR_CUSTOMER_REF_*)
+========================================================= */
+
+const DNR_CUSTOMER_REF_DISALLOWED =
+  /[@#$%^&*()+]/g;
+
+const DNR_CUSTOMER_REF_MSG_CHARS =
+  "Only letters, numbers, hyphen (-), underscore (_), and slash (/) are allowed in Customer Ref No.";
+
+const DNR_CUSTOMER_REF_MSG_LEN =
+  "Customer Ref No must be between 3 and 30 characters.";
+
+const customerRefEl =
+  document.getElementById("customerRef");
+
+const customerRefError =
+  document.getElementById("customerRefError");
+
+function sanitizeCustomerRefValue(raw){
+
+  return String(raw || "")
+    .replace(DNR_CUSTOMER_REF_DISALLOWED,"")
+    .replace(/[^A-Za-z0-9\-_/ ]/g,"")
+    .slice(0,DNR_CUSTOMER_REF_MAX);
+
+}
+
+function validateCustomerRef(showInlineError = true){
+
+  if(!customerRefEl)
+    return true;
+
+  const val =
+    customerRefEl.value.trim();
+
+  if(!val){
+
+    customerRefEl.classList.remove("input-invalid");
+    customerRefEl.removeAttribute("aria-describedby");
+
+    setDnrFieldError(customerRefError, "");
+
+    return true;
+
+  }
+
+  const lenOk =
+    val.length >= DNR_CUSTOMER_REF_MIN &&
+    val.length <= DNR_CUSTOMER_REF_MAX;
+
+  const charsOk =
+    DNR_CUSTOMER_REF_PATTERN.test(val);
+
+  if(lenOk && charsOk){
+
+    customerRefEl.classList.remove("input-invalid");
+    customerRefEl.removeAttribute("aria-describedby");
+
+    setDnrFieldError(customerRefError, "");
+
+    return true;
+
+  }
+
+  if(showInlineError){
+
+    customerRefEl.classList.add("input-invalid");
+    customerRefEl.setAttribute(
+      "aria-describedby",
+      "customerRefError"
+    );
+
+    setDnrFieldError(
+      customerRefError,
+      !charsOk
+        ? DNR_CUSTOMER_REF_MSG_CHARS
+        : DNR_CUSTOMER_REF_MSG_LEN
+    );
+
+  }
+  else{
+
+    setDnrFieldError(customerRefError, "");
+
+  }
+
+  return false;
+
+}
+
+if(customerRefEl){
+
+  customerRefEl.addEventListener(
+    "input",
+    ()=>{
+
+      const start =
+        customerRefEl.selectionStart;
+
+      const before =
+        customerRefEl.value;
+
+      const cleaned =
+        sanitizeCustomerRefValue(before);
+
+      if(cleaned !== before){
+
+        customerRefEl.value = cleaned;
+
+        const pos =
+          Math.max(
+            0,
+            (start || 0) -
+              (before.length - cleaned.length)
+          );
+
+        customerRefEl.setSelectionRange(pos,pos);
+
+      }
+
+      validateCustomerRef(true);
+
+    }
+  );
+
+  customerRefEl.addEventListener(
+    "blur",
+    ()=>{
+      validateCustomerRef(true);
+    }
+  );
+
+  customerRefEl.addEventListener(
+    "paste",
+    e=>{
+
+      e.preventDefault();
+
+      const paste =
+        (e.clipboardData || window.clipboardData)
+          .getData("text") || "";
+
+      const start =
+        customerRefEl.selectionStart ?? customerRefEl.value.length;
+
+      const end =
+        customerRefEl.selectionEnd ?? start;
+
+      const merged =
+        customerRefEl.value.slice(0,start) +
+        paste +
+        customerRefEl.value.slice(end);
+
+      customerRefEl.value =
+        sanitizeCustomerRefValue(merged);
+
+      validateCustomerRef(true);
+
+    }
+  );
+
+}
+
+
+/* =========================================================
+LOAD INVOICE RETURNS
+========================================================= */
+/* =========================================================
+LOAD INVOICE RETURNS
+========================================================= */
+
+const IR_REF_PLACEHOLDER =
+  "Select Invoice Return Reference ID";
+
+function isCancelledInvoiceReturn(item){
+
+  return (
+    String(item?.status || "")
+      .trim()
+      .toLowerCase() === "cancelled"
+  );
+
+}
+
+function formatInvoiceReturnLabel(item){
+
+  const rid =
+    item.return_id ||
+    item.invoice_return_id ||
+    "";
+
+  const name =
+    String(item.customer_name || "").trim();
+
+  if(!rid)
+    return "";
+
+  if(!name)
+    return rid;
+
+  return `${rid} - ${name}`;
+
+}
+
+function getInvoiceReturnLabelById(refId){
+
+  const id =
+    String(refId || "").trim();
+
+  if(!id)
+    return "";
+
+  const list =
+    window.invoiceReturnsAll ||
+    window.invoiceReturns ||
+    [];
+
+  const found =
+    list.find(item =>
+      String(
+        item.return_id ||
+        item.invoice_return_id ||
+        ""
+      ) === id
+    );
+
+  return found
+    ? formatInvoiceReturnLabel(found)
+    : id;
+
+}
+
+function setInvoiceReturnRefDisplay(label){
+
+  const selected =
+    document.getElementById("invoiceReturnRefSelected");
+
+  if(selected)
+    selected.textContent =
+      label || IR_REF_PLACEHOLDER;
+
+}
+
+function toggleInvoiceReturnRefDropdown(){
+
+  const wrap =
+    document.getElementById("dnrIrRefDropdown");
+
+  const menu =
+    document.getElementById("invoiceReturnRefDropdown");
+
+  if(!wrap || !menu || wrap.classList.contains("dnr-ir-ref--locked"))
+    return;
+
+  const open =
+    menu.style.display === "block";
+
+  menu.style.display =
+    open ? "none" : "block";
+
+}
+
+function selectInvoiceReturnRef(el){
+
+  const wrap =
+    document.getElementById("dnrIrRefDropdown");
+
+  if(!wrap || wrap.classList.contains("dnr-ir-ref--locked"))
+    return;
+
+  const hidden =
+    document.getElementById("invoiceReturnRef");
+
+  const menu =
+    document.getElementById("invoiceReturnRefDropdown");
+
+  if(!hidden || !el)
+    return;
+
+  hidden.value =
+    el.dataset.value || "";
+
+  setInvoiceReturnRefDisplay(
+    el.textContent.trim()
+  );
+
+  if(menu)
+    menu.style.display = "none";
+
+  hidden.dispatchEvent(
+    new Event("change", { bubbles: true })
+  );
+
+}
+
+function initInvoiceReturnRefDropdown(){
+
+  const selected =
+    document.getElementById("invoiceReturnRefSelected");
+
+  if(selected){
+
+    selected.addEventListener("click", () => {
+      toggleInvoiceReturnRefDropdown();
+    });
+
+  }
+
+  document.addEventListener("click", e => {
+
+    const menu =
+      document.getElementById("invoiceReturnRefDropdown");
+
+    const wrap =
+      document.getElementById("dnrIrRefDropdown");
+
+    if(!menu || !wrap)
+      return;
+
+    if(
+      !wrap.contains(e.target)
+    ){
+      menu.style.display = "none";
+    }
+
+  });
+
+}
+
+async function loadInvoiceReturns(currentDnrId){
+
+  try{
+
+    const qs =
+      new URLSearchParams();
+
+    qs.set(
+      "exclude_linked_for_dnr",
+      "1"
+    );
+
+    const dnrIdForExclude =
+      currentDnrId != null
+        ? String(currentDnrId).trim()
+        : "";
+
+    if(dnrIdForExclude)
+      qs.set(
+        "exclude_dnr_id",
+        dnrIdForExclude
+      );
+
+    const res =
+      await fetch(
+        "/api/invoice-returns?" + qs.toString()
+      );
+
+    const json =
+      await res.json();
+
+    const list =
+      Array.isArray(json)
+        ? json
+        : (json && Array.isArray(json.data) ? json.data : []);
+
+    // window.invoiceReturnsAll = list;
+    // window.invoiceReturns =
+    //   list.filter(item => !isCancelledInvoiceReturn(item));
+    window.invoiceReturnsAll = list;
+
+    /* =========================================
+    Hide:
+    1. Cancelled invoice returns
+    2. Already linked invoice returns
+    ========================================= */
+
+    const currentEditDnrId =
+      currentDnrId != null
+        ? String(currentDnrId).trim()
+        : "";
+
+    window.invoiceReturns = list.filter(item => {
+
+      // hide cancelled invoice returns
+      if(isCancelledInvoiceReturn(item))
+        return false;
+
+      const linkedDnrId =
+        String(item.linked_dnr_id || "").trim();
+
+      // not linked anywhere → show
+      if(!linkedDnrId)
+        return true;
+
+      // edit mode → allow current DNR own ref
+      if(
+        currentEditDnrId &&
+        linkedDnrId === currentEditDnrId
+      ){
+        return true;
+      }
+
+      // already used in another DNR
+      return false;
+
+    });
+    const listEl =
+      document.getElementById("invoiceReturnRefList");
+
+    if(!listEl)
+      return;
+
+    listEl.innerHTML = "";
+
+    window.invoiceReturns.forEach(item=>{
+
+      const rid =
+        item.return_id ||
+        item.invoice_return_id ||
+        "";
+
+      if(!rid)
+        return;
+
+      const row =
+        document.createElement("div");
+
+      row.className = "dnr-ir-ref-item";
+      row.dataset.value = rid;
+      row.textContent =
+        formatInvoiceReturnLabel(item);
+
+      row.addEventListener("click", () => {
+        selectInvoiceReturnRef(row);
+      });
+
+      listEl.appendChild(row);
+
+    });
+
+    if(!window.invoiceReturns.length){
+
+      const empty =
+        document.createElement("div");
+
+      empty.className = "dnr-ir-ref-item";
+      empty.textContent = "No invoice returns found";
+      empty.style.pointerEvents = "none";
+      listEl.appendChild(empty);
+
+    }
+
+    const hidden =
+      document.getElementById("invoiceReturnRef");
+
+    if(hidden && hidden.value.trim()){
+
+      setInvoiceReturnRefDisplay(
+        getInvoiceReturnLabelById(hidden.value)
+      );
+
+    }
+    else {
+
+      setInvoiceReturnRefDisplay("");
+
+    }
+
+  }
+  catch(err){
+
+    console.error(
+      "Invoice Return Load Error:",
+      err
+    );
+
+  }
+
+}
+
+initInvoiceReturnRefDropdown();
+
+/* =========================================================
+LOAD SAVED DNR (view / edit from list)
+========================================================= */
+
+let isLoadingDnrRecord = false;
+
+function formatDnrStatusLabel(status){
+
+  const s =
+    String(status || "")
+      .trim()
+      .toLowerCase();
+
+  if(s === "draft")
+    return "Draft";
+
+  if(s === "submitted")
+    return "Submitted";
+
+  if(s === "cancelled")
+    return "Cancelled";
+
+  if(!s)
+    return "";
+
+  return (
+    s.charAt(0).toUpperCase() +
+    s.slice(1)
+  );
+
+}
+
+function updateDnrPageHeader(pageTitle, status){
+
+  const heading =
+    document.getElementById("dnrPageHeading");
+
+  const badge =
+    document.getElementById("dnrStatusBadge");
+
+  if(heading)
+    heading.textContent = pageTitle || "Delivery Note Return";
+
+  if(badge){
+
+    const label =
+      formatDnrStatusLabel(status);
+
+    if(label){
+
+      const slug =
+        label.toLowerCase();
+
+      badge.innerHTML = `
+
+        <span class="dnr-status-badge dnr-status-badge--${slug}">
+          Status : ${label}
+        </span>
+
+      `;
+
+    }
+    else{
+
+      badge.innerHTML = "";
+
+    }
+
+  }
+
+  const label =
+    formatDnrStatusLabel(status);
+
+  document.title =
+    label
+      ? `${pageTitle} - ${label}`
+      : pageTitle;
+
+}
+
+function syncDnrHeaderFromMode(statusFromData){
+
+  const urlId =
+    params.get("id");
+
+  const status =
+    statusFromData ||
+    (mode === "view-cancelled"
+      ? "Cancelled"
+      : mode === "view-submitted"
+        ? "Submitted"
+        : mode === "edit"
+          ? "Draft"
+          : "");
+
+  if(isDnrViewOnlyMode()){
+
+    updateDnrPageHeader(
+      "View Delivery Note Return",
+      status
+    );
+
+    return;
+
+  }
+
+  if(mode === "edit" || urlId){
+
+    updateDnrPageHeader(
+      "Edit Delivery Note Return",
+      status || "Draft"
+    );
+
+    return;
+
+  }
+
+  updateDnrPageHeader(
+    "New Delivery Note Return",
+    ""
+  );
+
+}
+
+function isDnrViewOnlyMode(){
+
+  return (
+    mode === "view-submitted" ||
+    mode === "view-cancelled" ||
+    mode === "view"
+  );
+
+}
+
+function formatDnrDateTime(raw){
+
+  if(!raw)
+    return "";
+
+  const d = new Date(raw);
+
+  if(!Number.isNaN(d.getTime()))
+    return d.toLocaleString();
+
+  return String(raw);
+
+}
+
+function ensureInvoiceReturnOption(refId){
+
+  const hidden =
+    document.getElementById("invoiceReturnRef");
+
+  const listEl =
+    document.getElementById("invoiceReturnRefList");
+
+  if(!hidden || !refId)
+    return;
+
+  const ref =
+    String(refId).trim();
+
+  let label =
+    getInvoiceReturnLabelById(ref);
+
+  if(listEl){
+
+    const exists =
+      listEl.querySelector(
+        `.dnr-ir-ref-item[data-value="${CSS.escape(ref)}"]`
+      );
+
+    if(!exists){
+
+      const row =
+        document.createElement("div");
+
+      row.className = "dnr-ir-ref-item";
+      row.dataset.value = ref;
+      row.textContent = label;
+
+      row.addEventListener("click", () => {
+        selectInvoiceReturnRef(row);
+      });
+
+      listEl.appendChild(row);
+
+    }
+    else {
+
+      label =
+        exists.textContent.trim();
+
+    }
+
+  }
+
+  hidden.value = ref;
+  setInvoiceReturnRefDisplay(label);
+
+}
+
+const DNR_RETURN_REASONS = [
+  "Select Reason",
+  "Damaged",
+  "Wrong Product",
+  "Quality Issue",
+  "Expired",
+  "Customer Request",
+  "Other"
+];
+
+function isDnrReasonEditable(){
+
+  const p =
+    new URLSearchParams(window.location.search);
+
+  const pageMode =
+    p.get("mode");
+
+  const urlId =
+    p.get("id");
+
+  if(
+    pageMode === "view-submitted" ||
+    pageMode === "view-cancelled" ||
+    pageMode === "view"
+  ){
+    return false;
+  }
+
+  if(pageMode === "edit" && urlId)
+    return true;
+
+  return !urlId && pageMode !== "edit";
+
+}
+
+function applyStoredDnrReturnReason(reasonSelect, storedRaw){
+
+  if(!reasonSelect)
+    return;
+
+  const raw =
+    storedRaw != null
+      ? String(storedRaw).trim()
+      : "";
+
+  if(!raw){
+
+    reasonSelect.value = "Select Reason";
+    return;
+
+  }
+
+  const values =
+    Array.from(reasonSelect.options).map(o => o.value);
+
+  if(values.includes(raw)){
+
+    reasonSelect.value = raw;
+    return;
+
+  }
+
+  const lower =
+    raw.toLowerCase();
+
+  for(const o of reasonSelect.options){
+
+    if(
+      o.value !== "Select Reason" &&
+      o.value.toLowerCase() === lower
+    ){
+
+      reasonSelect.value = o.value;
+      return;
+
+    }
+
+  }
+
+  const opt =
+    document.createElement("option");
+
+  opt.value = raw;
+  opt.textContent = raw;
+  reasonSelect.appendChild(opt);
+  reasonSelect.value = raw;
+
+}
+
+function appendDnrLineItemRow(tbody, item, index){
+
+  const tr =
+    document.createElement("tr");
+
+  const reasonEditable =
+    isDnrReasonEditable();
+
+  const invQty =
+    item.invoiced_qty != null
+      ? item.invoiced_qty
+      : item.invoice_qty != null
+        ? item.invoice_qty
+        : item.invoice_quantity;
+
+  const retQty =
+    item.returned_qty != null
+      ? item.returned_qty
+      : item.return_qty != null
+        ? item.return_qty
+        : item.return_quantity;
+
+  const serial =
+    item.serial_no != null && item.serial_no !== ""
+      ? item.serial_no
+      : (item.serial_number || "");
+
+  const reason =
+    item.return_reason != null && item.return_reason !== ""
+      ? item.return_reason
+      : (item.reason || "");
+
+  [
+    String(index + 1),
+    item.product_name || "",
+    item.product_id || "",
+    item.uom || "",
+    invQty ?? "",
+    retQty ?? "",
+    serial
+  ].forEach(text => {
+
+    const td =
+      document.createElement("td");
+
+    td.textContent =
+      text != null
+        ? String(text)
+        : "";
+
+    tr.appendChild(td);
+
+  });
+
+  const tdReason =
+    document.createElement("td");
+
+  if(reasonEditable){
+
+    const reasonSelect =
+      document.createElement("select");
+
+    reasonSelect.className = "dnr-reason-select";
+
+    DNR_RETURN_REASONS.forEach(reasonOpt => {
+
+      const option =
+        document.createElement("option");
+
+      option.value = reasonOpt;
+      option.textContent = reasonOpt;
+
+      if(reasonOpt === "Select Reason")
+        option.disabled = true;
+
+      reasonSelect.appendChild(option);
+
+    });
+
+    applyStoredDnrReturnReason(reasonSelect, reason);
+    tdReason.appendChild(reasonSelect);
+
+  }
+  else {
+
+    tdReason.textContent =
+      reason != null
+        ? String(reason)
+        : "";
+
+  }
+
+  tr.appendChild(tdReason);
+  tbody.appendChild(tr);
+
+}
+
+function renderDnrLineItems(items){
+
+  const tbody =
+    document.getElementById("lineItemsBody");
+
+  if(!tbody)
+    return;
+
+  tbody.innerHTML = "";
+
+  if(!items || !items.length){
+
+    const tr =
+      document.createElement("tr");
+
+    const td =
+      document.createElement("td");
+
+    td.colSpan = 8;
+    td.textContent = "No items available";
+    tr.appendChild(td);
+    tbody.appendChild(tr);
+
+    return;
+
+  }
+
+  items.forEach((item, index)=>{
+    appendDnrLineItemRow(tbody, item, index);
+  });
+
+}
+
+function isDnrSaveStatusAuditRow(row){
+
+  const desc =
+    (row && row.description || "").trim().toLowerCase();
+
+  const action =
+    (row && row.action || "").trim().toLowerCase();
+
+  return (
+    /saved as (draft|submitted)/.test(desc) ||
+    /^saved as (draft|submitted)$/.test(action)
+  );
+
+}
+
+function renderCombinedDnrHistory(historyRows = [], commentRows = []){
+
+  const listEl =
+    document.getElementById("historyList");
+
+  if(!listEl)
+    return;
+
+  const combined = [];
+
+  historyRows.forEach(h=>{
+
+    if(isDnrSaveStatusAuditRow(h))
+      return;
+
+    combined.push({
+      type: "history",
+      created_at: h.created_at,
+      created_by:
+        (h.created_by || "").trim() ||
+        getDnrCommentAuthorName(),
+      text:
+        h.description ||
+        h.action ||
+        ""
+    });
+
+  });
+
+  commentRows.forEach(c=>{
+
+    combined.push({
+      type: "comment",
+      created_at: c.raw_created_at || c.created_at || c.time,
+      created_by:
+        (c.author || c.created_by || "").trim() ||
+        getDnrCommentAuthorName(),
+      text:
+        c.comment || ""
+    });
+
+  });
+
+  combined.sort((a,b)=>{
+
+    const da = new Date(a.created_at);
+    const db = new Date(b.created_at);
+
+    const ta =
+      Number.isNaN(da.getTime())
+        ? 0
+        : da.getTime();
+
+    const tb =
+      Number.isNaN(db.getTime())
+        ? 0
+        : db.getTime();
+
+    return ta - tb;
+
+  });
+
+  if(!combined.length){
+
+    listEl.innerHTML = `
+
+      <p class="empty-msg">
+        No history available
+      </p>
+
+    `;
+
+    return;
+
+  }
+
+  listEl.innerHTML = "";
+
+  combined.forEach(row=>{
+
+    const when =
+      formatDnrDateTime(row.created_at);
+
+    listEl.innerHTML += `
+
+      <div class="history-card">
+
+        <div class="history-meta">
+          ${row.created_by}${when ? " — " + when : ""}
+        </div>
+
+        <p class="history-text">${row.text}</p>
+
+      </div>
+
+    `;
+
+  });
+
+}
+
+let dnrAuditHistory = [];
+
+function refreshDnrHistoryPanel(){
+
+  renderCombinedDnrHistory(dnrAuditHistory, comments);
+
+}
+
+function lockDnrField(el){
+
+  if(!el)
+    return;
+
+  const wrap =
+    el.closest(".dnr-field");
+
+  if(el.tagName === "SELECT"){
+
+    el.disabled = true;
+    if(wrap)
+      wrap.classList.add("dnr-field--locked");
+
+    return;
+
+  }
+
+  if(el.id === "invoiceReturnRef"){
+
+    document
+      .getElementById("dnrIrRefDropdown")
+      ?.classList.add("dnr-ir-ref--locked");
+
+    const menu =
+      document.getElementById("invoiceReturnRefDropdown");
+
+    if(menu)
+      menu.style.display = "none";
+
+    return;
+
+  }
+
+  if(el.tagName === "TEXTAREA" || el.type !== "hidden"){
+
+    el.readOnly = true;
+    el.removeAttribute("disabled");
+    el.classList.add("dnr-locked-field");
+
+  }
+
+}
+
+function applyDnrFormReadonly(){
+
+  document
+    .querySelectorAll(
+      ".dnr-page input, .dnr-page textarea, .dnr-page select"
+    )
+    .forEach(lockDnrField);
+
+  const tableWrap =
+    document.querySelector(".dnr-table-wrap");
+
+  if(tableWrap)
+    tableWrap.classList.add("dnr-line-items--locked");
+
+  if(addCommentBtn)
+    addCommentBtn.setAttribute("disabled","");
+
+}
+
+function unlockDnrField(el){
+
+  if(!el)
+    return;
+
+  const wrap =
+    el.closest(".dnr-field");
+
+  el.readOnly = false;
+  el.disabled = false;
+  el.classList.remove("dnr-locked-field");
+
+  if(wrap)
+    wrap.classList.remove("dnr-field--locked");
+
+}
+
+function applyDnrEditDraftLocks(){
+
+  if(mode !== "edit")
+    return;
+
+  document.body.classList.add("dnr-edit-draft-mode");
+
+  [
+    "dnrId",
+    "invoiceReturnRef",
+    "customerName",
+    "customerId",
+    "customerEmail",
+    "customerPhone",
+    "contactPerson"
+  ].forEach(id=>{
+
+    lockDnrField(
+      document.getElementById(id)
+    );
+
+  });
+
+  unlockDnrField(customerRefEl);
+  configureDnrDateField();
+
+}
+
+function hideDnrCommentEditor(){
+
+  const addLabel =
+    document.querySelector(
+      "#commentsContent > label"
+    );
+
+  if(addLabel)
+    addLabel.style.display = "none";
+
+  if(commentInput)
+    commentInput.style.display = "none";
+
+  if(addCommentBtn)
+    addCommentBtn.style.display = "none";
+
+}
+
+async function loadDnrRecord(dnrId){
+
+  if(!dnrId)
+    return;
+
+  isLoadingDnrRecord = true;
+
+  try{
+
+    const res =
+      await fetch(
+        `/api/delivery-note-return/${encodeURIComponent(dnrId)}`,
+        { cache: "no-store" }
+      );
+
+    const json =
+      await res.json();
+
+    if(!json || !json.success || !json.data){
+
+      showToast(
+        (json && json.message) ||
+          "Could not load delivery note return",
+        "error"
+      );
+
+      return;
+
+    }
+
+    const d = json.data;
+
+    const dnrIdEl =
+      document.getElementById("dnrId");
+
+    if(dnrIdEl)
+      dnrIdEl.value = d.dnr_id || dnrId;
+
+    if(dnrDate && d.dnr_date)
+      dnrDate.value = dnrDateApiToIso(d.dnr_date);
+
+    ensureInvoiceReturnOption(
+      d.invoice_return_ref_id || ""
+    );
+
+    const setVal = (id, val)=>{
+
+      const el =
+        document.getElementById(id);
+
+      if(el)
+        el.value = val != null ? String(val) : "";
+
+    };
+
+    setVal("customerName", d.customer_name);
+    setVal("customerId", d.customer_id);
+    setVal("customerEmail", d.email);
+    setVal("customerPhone", d.phone);
+    setVal("contactPerson", d.contact_person);
+    setVal("customerRef", d.customer_ref_no);
+
+    renderDnrLineItems(d.items || []);
+
+    comments.length = 0;
+
+    (d.comments || []).forEach(c=>{
+
+      comments.push({
+        comment: c.comment || "",
+        time: formatDnrDateTime(c.created_at),
+        raw_created_at: c.created_at,
+        author: (c.created_by || "").trim() || "User"
+      });
+
+    });
+
+    renderCommentsList();
+
+    dnrAuditHistory = d.history || [];
+    refreshDnrHistoryPanel();
+
+    if(window.dnrAttApi)
+      window.dnrAttApi.loadFromServer(d.dnr_id || dnrId, d.attachments);
+
+    syncDnrHeaderFromMode(d.status);
+
+    if(isDnrViewOnlyMode()){
+
+      configureDnrDateField({
+        preserveValue: true
+      });
+      applyDnrFormReadonly();
+      hideDnrCommentEditor();
+
+    }
+    else if(mode === "edit"){
+
+      applyDnrEditDraftLocks();
+      syncDnrEditDraftFooterButtons();
+
+    }
+
+  }
+  catch(err){
+
+    console.error(
+      "DNR load error:",
+      err
+    );
+
+    showToast(
+      "Could not load delivery note return",
+      "error"
+    );
+
+  }
+  finally{
+
+    isLoadingDnrRecord = false;
+
+  }
+
+}
+
+async function initDnrPageFromUrl(){
+
+  const urlId =
+    (params.get("id") || "").trim();
+
+  await loadInvoiceReturns(urlId);
+
+  if(urlId)
+    await loadDnrRecord(urlId);
+
+}
+
+/* =========================================================
+AUTO FILL CUSTOMER DETAILS + LINE ITEMS (invoice return)
+========================================================= */
+
+function clearInvoiceReturnDerivedFields(){
+
+  const ids = [
+    "customerName",
+    "customerId",
+    "customerEmail",
+    "customerPhone",
+    "contactPerson",
+    "customerRef"
+  ];
+
+  ids.forEach(id=>{
+
+    const el =
+      document.getElementById(id);
+
+    if(el)
+      el.value = "";
+
+  });
+
+  const tbody =
+    document.getElementById("lineItemsBody");
+
+  tbody.innerHTML = `
+
+    <tr>
+      <td colspan="8">
+        No items available
+      </td>
+    </tr>
+
+  `;
+
+}
+
+function normalizeInvoiceReturnFetch(json){
+
+  if(!json || !json.success)
+    return null;
+
+  let header = null;
+  let items = [];
+
+  if(json.invoice_return){
+
+    header = json.invoice_return;
+    items = json.items || [];
+
+  }
+  else if(json.data && typeof json.data === "object" && !Array.isArray(json.data)){
+
+    header = json.data;
+    items = json.data.items || [];
+
+  }
+
+  if(!header)
+    return null;
+
+  return { header, items };
+
+}
+
+const invoiceReturnRefEl =
+  document.getElementById("invoiceReturnRef");
+
+if(invoiceReturnRefEl){
+
+invoiceReturnRefEl.addEventListener(
+  "change",
+  async ()=>{
+
+    if(isLoadingDnrRecord)
+      return;
+
+    const selectedId =
+      invoiceReturnRefEl.value.trim();
+
+    if(!selectedId){
+
+      clearInvoiceReturnDerivedFields();
+      return;
+
+    }
+
+    try{
+
+      const res =
+        await fetch(
+          `/api/invoice-return/${encodeURIComponent(selectedId)}`
+        );
+
+      const json =
+        await res.json();
+
+      const norm =
+        normalizeInvoiceReturnFetch(json);
+
+      if(!norm){
+
+        showToast(
+          (json && json.error) ||
+            (json && json.message) ||
+            "Could not load invoice return",
+          "error"
+        );
+        clearInvoiceReturnDerivedFields();
+        return;
+
+      }
+
+      const data =
+        norm.header;
+
+      const items =
+        norm.items;
+
+      document.getElementById("customerName").value =
+        data.customer_name || "";
+
+      document.getElementById("customerId").value =
+        data.customer_id || "";
+
+      document.getElementById("customerEmail").value =
+        data.email || "";
+
+      document.getElementById("customerPhone").value =
+        data.phone ||
+        data.phone_number ||
+        "";
+
+      document.getElementById("contactPerson").value =
+        data.contact_person || "";
+
+      const refEl =
+        document.getElementById("customerRef");
+
+      if(refEl)
+        refEl.value =
+          data.customer_ref_no != null && data.customer_ref_no !== ""
+            ? String(data.customer_ref_no)
+            : "";
+
+      const tbody =
+        document.getElementById("lineItemsBody");
+
+      tbody.innerHTML = "";
+
+      if(items.length === 0){
+
+        tbody.innerHTML = `
+
+          <tr>
+            <td colspan="8">
+              No items available
+            </td>
+          </tr>
+
+        `;
+
+      }
+      else{
+
+        items.forEach((item, index)=>{
+          appendDnrLineItemRow(tbody, item, index);
+        });
+
+      }
+
+      showToast(
+        "Invoice return loaded successfully",
+        "success"
+      );
+
+    }
+    catch(err){
+
+      console.error(
+        "Invoice Return Fetch Error:",
+        err
+      );
+
+      showToast(
+        "Could not load invoice return",
+        "error"
+      );
+      clearInvoiceReturnDerivedFields();
+
+    }
+
+});
+
+}
+
+/* =========================================================
+VIEW MODES
+========================================================= */
+
+const params =
+  new URLSearchParams(window.location.search);
+
+const mode =
+  params.get("mode");
+
+/* BUTTONS */
+
+const pdfBtn =
+  document.getElementById("dnrPdfAction");
+
+const emailBtn =
+  document.getElementById("dnrEmailAction");
+
+function isNewDnrFormPage(){
+
+  return (
+    mode !== "view-submitted" &&
+    mode !== "view-cancelled"
+  );
+
+}
+
+function isBrandNewDnrPage(){
+
+  const urlId =
+    params.get("id");
+
+  return (
+    isNewDnrFormPage() &&
+    !urlId &&
+    mode !== "edit"
+  );
+
+}
+
+function isDnrEditDraftPage(){
+
+  return (
+    mode === "edit" &&
+    !!params.get("id")
+  );
+
+}
+
+function getInvoiceReturnRefValue(){
+
+  const el =
+    document.getElementById("invoiceReturnRef");
+
+  return el
+    ? el.value.trim()
+    : "";
+
+}
+
+function setFooterIconDisabled(
+  el,
+  disabled
+){
+
+  if(!el)
+    return;
+
+  if(disabled){
+
+    el.classList.add("is-disabled");
+    el.setAttribute(
+      "aria-disabled",
+      "true"
+    );
+
+  }
+  else{
+
+    el.classList.remove("is-disabled");
+    el.removeAttribute("aria-disabled");
+
+  }
+
+}
+
+function syncDnrEditDraftFooterButtons(){
+
+  setFooterIconDisabled(pdfBtn, true);
+  setFooterIconDisabled(emailBtn, true);
+
+  if(cancelBtn)
+    cancelBtn.disabled = false;
+
+  if(saveDraftBtn)
+    saveDraftBtn.disabled = false;
+
+  if(submitBtn)
+    submitBtn.disabled = false;
+
+  /* Cancel DNR only applies after Submit — draft cannot be cancelled */
+  if(cancelDnrBtn)
+    cancelDnrBtn.disabled = true;
+
+}
+
+function syncBrandNewDnrFooterButtons(){
+
+  const invoiceRef =
+    getInvoiceReturnRefValue();
+
+  const hasComment =
+    comments.length > 0;
+
+  setFooterIconDisabled(pdfBtn, true);
+  setFooterIconDisabled(emailBtn, true);
+
+  if(cancelDnrBtn)
+    cancelDnrBtn.disabled = true;
+
+  if(cancelBtn)
+    cancelBtn.disabled = false;
+
+  if(saveDraftBtn)
+    saveDraftBtn.disabled = false;
+
+  if(submitBtn)
+    submitBtn.disabled =
+      !invoiceRef ||
+      !hasComment;
+
+}
+
+function syncNewDnrFooterButtons(){
+
+  if(isDnrViewOnlyMode())
+    return;
+
+  if(isDnrEditDraftPage()){
+
+    syncDnrEditDraftFooterButtons();
+    return;
+
+  }
+
+  if(isBrandNewDnrPage())
+    syncBrandNewDnrFooterButtons();
+
+}
+
+const cancelBtn =
+  document.getElementById("dnrCancelBtn");
+
+const cancelDnrBtn =
+  document.getElementById("cancelDnrBtn");
+
+const saveDraftBtn =
+  document.getElementById("saveDraftBtn");
+
+const submitBtn =
+  document.getElementById("submitBtn");
+
+const DNR_LIST_URL = "/deliverynote_return";
+
+if(cancelBtn){
+
+  cancelBtn.addEventListener(
+    "click",
+    ()=>{
+
+      window.location.href = DNR_LIST_URL;
+
+    }
+  );
+
+}
+
+/* =========================================================
+TABS
+========================================================= */
+
+const commentsTab =  document.getElementById("commentsTab");
+
+const historyTab =  document.getElementById("historyTab");
+
+const attachmentsTab =  document.getElementById("attachmentsTab");
+
+const commentsContent =  document.getElementById("commentsContent");
+
+const historyContent =  document.getElementById("historyContent");
+
+const attachmentsContent =  document.getElementById("attachmentsContent");
+
+function switchTab(tab){
+
+  if(!commentsTab || !historyTab || !attachmentsTab)
+    return;
+
+  if(!commentsContent || !historyContent || !attachmentsContent)
+    return;
+
+  const showComments = tab === "comments";
+  const showHistory = tab === "history";
+  const showAttachments = tab === "attachments";
+
+  commentsTab.classList.toggle("active", showComments);
+  historyTab.classList.toggle("active", showHistory);
+  attachmentsTab.classList.toggle("active", showAttachments);
+
+  commentsTab.setAttribute(
+    "aria-selected",
+    showComments ? "true" : "false"
+  );
+  historyTab.setAttribute(
+    "aria-selected",
+    showHistory ? "true" : "false"
+  );
+  attachmentsTab.setAttribute(
+    "aria-selected",
+    showAttachments ? "true" : "false"
+  );
+
+  commentsContent.classList.toggle("active", showComments);
+  historyContent.classList.toggle("active", showHistory);
+  attachmentsContent.classList.toggle("active", showAttachments);
+
+  commentsContent.hidden = !showComments;
+  historyContent.hidden = !showHistory;
+  attachmentsContent.hidden = !showAttachments;
+
+  if(showHistory)
+    refreshDnrHistoryPanel();
+
+}
+
+const dnrTabsHeader =
+  document.querySelector(".dnr-tabs-header");
+
+if(dnrTabsHeader){
+
+  dnrTabsHeader.addEventListener(
+    "click",
+    e=>{
+
+      const btn =
+        e.target.closest(".dnr-tab-btn");
+
+      if(!btn)
+        return;
+
+      if(btn.id === "commentsTab")
+        switchTab("comments");
+      else if(btn.id === "historyTab")
+        switchTab("history");
+      else if(btn.id === "attachmentsTab")
+        switchTab("attachments");
+
+    }
+  );
+
+}
+
+/* =========================================================
+TOAST
+========================================================= */
+
+function showToast(message, type = "success"){
+
+  const existing =
+    document.querySelectorAll(
+      ".success-notification, .error-notification"
+    );
+
+  existing.forEach(el=>el.remove());
+
+  let className = "success-notification";
+
+  if(type === "error" || type === "warning")
+    className = "error-notification";
+  else if(type !== "success")
+    return;
+
+  const toast =
+    document.createElement("div");
+
+  toast.className = className;
+
+  const icon = document.createElement("span");
+  icon.className = "dnr-toast-icon";
+  icon.setAttribute("aria-hidden", "true");
+  icon.textContent =
+    type === "error" || type === "warning" ? "✕" : "✓";
+
+  const text = document.createElement("span");
+  text.className = "dnr-toast-text";
+  text.textContent = message;
+
+  toast.appendChild(icon);
+  toast.appendChild(text);
+
+  document.body.appendChild(toast);
+
+  requestAnimationFrame(()=>{
+
+    toast.classList.add("show");
+
+  });
+
+  setTimeout(()=>{
+
+    toast.classList.remove("show");
+    setTimeout(()=>toast.remove(), 400);
+
+  }, 3000);
+
+}
+
+/* =========================================================
+COMMENTS
+========================================================= */
+
+const commentInput =  document.getElementById("commentInput");
+
+const addCommentBtn =  document.getElementById("addCommentBtn");
+
+const latestComment =  document.getElementById("latestComment");
+
+const historyList =  document.getElementById("historyList");
+
+let comments = [];
+
+function getDnrCommentAuthorName(){
+
+  const n =
+    window.LOGGED_IN_USER_NAME;
+
+  if(typeof n === "string" && n.trim())
+    return n.trim();
+
+  return "User";
+
+}
+
+function updateAddCommentBtnState(){
+
+  const ta =
+    document.getElementById("commentInput");
+
+  const btn =
+    document.getElementById("addCommentBtn");
+
+  if(!ta || !btn)
+    return;
+
+  const hasText =
+    ta.value.trim().length > 0;
+
+  if(hasText){
+
+    btn.removeAttribute("disabled");
+    btn.classList.add("is-enabled");
+
+  }
+  else{
+
+    btn.setAttribute("disabled","");
+    btn.classList.remove("is-enabled");
+
+  }
+
+}
+
+if(commentInput && addCommentBtn){
+
+  updateAddCommentBtnState();
+
+  commentInput.addEventListener(
+    "input",
+    updateAddCommentBtnState
+  );
+
+  commentInput.addEventListener(
+    "keyup",
+    updateAddCommentBtnState
+  );
+
+  commentInput.addEventListener(
+    "paste",
+    ()=>{
+
+      setTimeout(
+        updateAddCommentBtnState,
+        0
+      );
+
+    }
+  );
+
+}
+
+addCommentBtn?.addEventListener("click",()=>{
+
+  const value =    commentInput.value.trim();
+
+  if(!value) return;
+
+  const now = new Date();
+
+const obj = {
+
+  comment: value,
+  time: now.toLocaleString(),
+  raw_created_at: now.toISOString(),
+  author: getDnrCommentAuthorName()
+
+};
+
+  comments.push(obj);
+
+  renderCommentsList();
+  refreshDnrHistoryPanel();
+
+  commentInput.value = "";
+
+  updateAddCommentBtnState();
+
+  checkSubmitEnable();
+
+  showToast("Comment added successfully", "success");
+
+});
+
+function renderCommentsList(){
+
+  if(!latestComment)
+    return;
+
+  if(!comments.length){
+
+    latestComment.innerHTML = `
+
+      <p class="empty-msg">
+        No comments yet
+      </p>
+
+    `;
+
+    return;
+
+  }
+
+  const latest = comments[comments.length - 1];
+
+  latestComment.innerHTML = `
+
+    <div class="comment-card">
+
+      <div class="comment-name">
+        ${latest.author || getDnrCommentAuthorName()} —
+        ${latest.time}
+      </div>
+
+      <p>${latest.comment}</p>
+
+    </div>
+
+  `;
+
+}
+
+/* =========================================================
+DNR ATTACHMENTS (new ids: dnrAtt*)
+========================================================= */
+
+(function(){
+
+  const inp =
+    document.getElementById("dnrAttInput");
+
+  const list =
+    document.getElementById("dnrAttItems");
+
+  const countEl =
+    document.getElementById("dnrAttCount");
+
+  const attachmentsTabBtn =
+    document.getElementById("attachmentsTab");
+
+  const attachmentsTabLabelEl =
+    document.getElementById("attachmentsTabLabel");
+
+  const btn =
+    document.getElementById("dnrAttChooseBtn");
+
+  const drop =
+    document.getElementById("dnrAttDrop");
+
+  if(!inp || !list || !countEl)
+    return;
+
+  const MAX = 10;
+  const MAX_BYTES = 10 * 1024 * 1024;
+
+  let files = [];
+  let pendingDeleteFileIndex = null;
+
+  function isServerAttachment(item){
+    return !!(item && item.server && item.id);
+  }
+
+  function getCurrentDnrIdForAtt(){
+    return (
+      document.getElementById("dnrId")?.value?.trim() || ""
+    );
+  }
+
+  function canUploadAttachmentNow(){
+
+    const dnrId =
+      getCurrentDnrIdForAtt();
+
+    const urlId =
+      new URLSearchParams(window.location.search).get("id");
+
+    return !!(
+      dnrId &&
+      urlId &&
+      urlId === dnrId &&
+      !isDnrViewOnlyMode()
+    );
+
+  }
+
+  async function uploadFileToServer(dnrId, file){
+
+    const fd =
+      new FormData();
+
+    fd.append("file", file);
+    fd.append("dnr_id", dnrId);
+
+    const res =
+      await fetch(
+        "/api/dnr-upload-attachment",
+        { method: "POST", body: fd }
+      );
+
+    const data =
+      await res.json().catch(() => ({}));
+
+    if(!res.ok || !data.success){
+
+      throw new Error(
+        (data && (data.error || data.message)) ||
+          "Upload failed"
+      );
+
+    }
+
+    const att =
+      data.attachment || {};
+
+    return {
+      server: true,
+      id: att.id,
+      name: att.filename || file.name,
+      size: att.size != null ? att.size : file.size,
+      uploadedAt: att.uploaded_at || new Date().toLocaleString()
+    };
+
+  }
+
+  const deleteFileModal =
+    document.getElementById("dnrDeleteFileModal");
+  const deleteFileCancelBtn =
+    document.getElementById("dnrDeleteFileCancelBtn");
+  const deleteFileConfirmBtn =
+    document.getElementById("dnrDeleteFileConfirmBtn");
+
+  function openDeleteFileModal(index){
+
+    pendingDeleteFileIndex = index;
+    if(!deleteFileModal) return;
+    deleteFileModal.style.display = "flex";
+    deleteFileModal.setAttribute("aria-hidden", "false");
+
+  }
+
+  function closeDeleteFileModal(){
+
+    pendingDeleteFileIndex = null;
+    if(!deleteFileModal) return;
+    deleteFileModal.style.display = "none";
+    deleteFileModal.setAttribute("aria-hidden", "true");
+
+  }
+
+  if(deleteFileCancelBtn){
+    deleteFileCancelBtn.addEventListener("click", closeDeleteFileModal);
+  }
+
+  if(deleteFileConfirmBtn){
+    deleteFileConfirmBtn.addEventListener("click", () => {
+      const index = pendingDeleteFileIndex;
+      closeDeleteFileModal();
+      if(index == null) return;
+      removeDnrFile(index);
+    });
+  }
+
+  if(deleteFileModal){
+    deleteFileModal.addEventListener("click", e => {
+      if(e.target === deleteFileModal)
+        closeDeleteFileModal();
+    });
+  }
+
+  function formatFileSize(bytes){
+
+    const n = Number(bytes) || 0;
+
+    if(n === 0)
+      return "0 Bytes";
+
+    const k = 1024;
+    const sizes = ["Bytes", "KB", "MB"];
+    const i = Math.min(
+      Math.floor(Math.log(n) / Math.log(k)),
+      sizes.length - 1
+    );
+
+    return (
+      parseFloat((n / Math.pow(k, i)).toFixed(1)) +
+      " " +
+      sizes[i]
+    );
+
+  }
+
+  function getFileIconMeta(name){
+
+    const ext =
+      String(name || "")
+        .split(".")
+        .pop()
+        .toLowerCase();
+
+    const map = {
+      pdf: { icon: "fa-file-pdf", cls: "pdf" },
+      doc: { icon: "fa-file-word", cls: "doc" },
+      docx: { icon: "fa-file-word", cls: "doc" },
+      xls: { icon: "fa-file-excel", cls: "xls" },
+      xlsx: { icon: "fa-file-excel", cls: "xls" },
+      jpg: { icon: "fa-file-image", cls: "png" },
+      jpeg: { icon: "fa-file-image", cls: "png" },
+      png: { icon: "fa-file-image", cls: "png" },
+    };
+
+    return map[ext] || { icon: "fa-file", cls: "default" };
+
+  }
+
+  function formatAttachmentsTabLabel(count){
+
+    const n =
+      Math.max(0, Number(count) || 0);
+
+    const word =
+      n === 1
+        ? "Attachment"
+        : "Attachments";
+
+    return "(" + n + ") " + word;
+
+  }
+
+  function syncAttachmentsTabLabel(count){
+
+    const n =
+      count != null
+        ? Math.max(0, Number(count) || 0)
+        : files.length;
+
+    const text =
+      formatAttachmentsTabLabel(n);
+
+    if(attachmentsTabLabelEl)
+      attachmentsTabLabelEl.textContent = text;
+    else if(attachmentsTabBtn)
+      attachmentsTabBtn.textContent = text;
+
+  }
+
+  function syncCount(){
+
+    countEl.textContent =
+      files.length + " / " + MAX + " files";
+
+    syncAttachmentsTabLabel(files.length);
+
+  }
+
+  function renderDnrAttRows(){
+
+    list.innerHTML = "";
+
+    files.forEach((file, index) => {
+
+      const fileName = file.name || "";
+      const meta = getFileIconMeta(fileName);
+      const row = document.createElement("div");
+      row.className = "dnr-att__row";
+      row.dataset.fileIndex = String(index);
+
+      row.innerHTML =
+        '<div class="dnr-att__file-left">' +
+          '<div class="dnr-att__fileicon-wrap ' + meta.cls + '">' +
+            '<i class="fa-solid ' + meta.icon + '"></i>' +
+          '</div>' +
+          '<div class="dnr-att__file-info">' +
+            '<span class="dnr-att__row-name"></span>' +
+            '<div class="dnr-att__meta-row">' +
+              '<span class="dnr-att__meta-item">' +
+                '<i class="fa-regular fa-file"></i> ' +
+                '<span class="dnr-att__size"></span>' +
+              '</span>' +
+              '<span class="dnr-att__meta-item">' +
+                '<i class="fa-regular fa-calendar"></i> ' +
+                '<span class="dnr-att__date"></span>' +
+              '</span>' +
+            '</div>' +
+          '</div>' +
+        '</div>' +
+        '<div class="dnr-att__row-actions">' +
+          '<button type="button" class="att-btn view-btn" title="View">' +
+            '<i class="fa-regular fa-eye"></i>' +
+          '</button>' +
+          '<button type="button" class="att-btn download-btn" title="Download">' +
+            '<i class="fa-solid fa-cloud-arrow-down"></i>' +
+          '</button>' +
+          '<button type="button" class="att-btn delete-btn" title="Delete">' +
+            '<i class="fa-solid fa-trash-can"></i>' +
+          '</button>' +
+        '</div>';
+
+      row.querySelector(".dnr-att__row-name").textContent = fileName;
+      row.querySelector(".dnr-att__size").textContent = formatFileSize(file.size);
+      row.querySelector(".dnr-att__date").textContent =
+        isServerAttachment(file)
+          ? (file.uploadedAt || "—")
+          : new Date(file.lastModified || Date.now()).toLocaleString();
+
+      if(
+        typeof isDnrViewOnlyMode === "function" &&
+        isDnrViewOnlyMode()
+      ){
+        const delBtn = row.querySelector(".delete-btn");
+        if(delBtn) delBtn.style.display = "none";
+      }
+
+      list.appendChild(row);
+
+    });
+
+    syncCount();
+
+  }
+
+  function viewDnrFile(file){
+
+    if(!file) return;
+
+    if(isServerAttachment(file)){
+      window.open(
+        `/api/dnr-attachment/${encodeURIComponent(file.id)}/view`,
+        "_blank"
+      );
+      return;
+    }
+
+    const url = URL.createObjectURL(file);
+    window.open(url, "_blank");
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+
+  }
+
+  function downloadDnrFile(file){
+
+    if(!file) return;
+
+    if(isServerAttachment(file)){
+      window.location.href =
+        `/api/dnr-attachment/${encodeURIComponent(file.id)}/download`;
+      return;
+    }
+
+    const url = URL.createObjectURL(file);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = file.name || "download";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+  }
+
+  async function removeDnrFile(index){
+
+    if(index < 0 || index >= files.length) return;
+
+    const item = files[index];
+
+    if(isServerAttachment(item)){
+
+      try{
+
+        const res = await fetch(
+          `/api/dnr-attachment/${encodeURIComponent(item.id)}`,
+          { method: "DELETE" }
+        );
+
+        const data = await res.json().catch(() => ({}));
+
+        if(!res.ok || !data.success){
+          showToast(
+            (data && (data.error || data.message)) || "Delete failed",
+            "error"
+          );
+          return;
+        }
+
+      }
+      catch(err){
+        console.error("DNR attachment delete:", err);
+        showToast("Delete failed", "error");
+        return;
+      }
+
+    }
+
+    files.splice(index, 1);
+    renderDnrAttRows();
+    showToast("File deleted successfully", "success");
+
+  }
+
+  list.addEventListener("click", e => {
+
+    const viewBtn = e.target.closest(".view-btn");
+    const downloadBtn = e.target.closest(".download-btn");
+    const deleteBtn = e.target.closest(".delete-btn");
+
+    if(!viewBtn && !downloadBtn && !deleteBtn) return;
+
+    e.preventDefault();
+
+    const row = e.target.closest(".dnr-att__row");
+    if(!row) return;
+
+    const index = parseInt(row.dataset.fileIndex, 10);
+    const file = files[index];
+    if(!file) return;
+
+    if(viewBtn) viewDnrFile(file);
+    else if(downloadBtn) downloadDnrFile(file);
+    else if(deleteBtn) openDeleteFileModal(index);
+
+  });
+
+  async function addFromFileList(fileList){
+
+    const arr =
+      Array.from(fileList || []);
+
+    if(!arr.length)
+      return;
+
+    const room =
+      MAX - files.length;
+
+    if(room <= 0){
+
+      showToast(
+        "Maximum " + MAX + " files reached",
+        "error"
+      );
+      return;
+
+    }
+
+    const slice =
+      arr.slice(0, room);
+
+    let successCount = 0;
+
+    for(const file of slice){
+
+      if(file.size > MAX_BYTES){
+        showToast(
+          (file.name || "File") + " exceeds 10 MB",
+          "error"
+        );
+        continue;
+      }
+
+      if(canUploadAttachmentNow()){
+
+        try{
+
+          const saved =
+            await uploadFileToServer(
+              getCurrentDnrIdForAtt(),
+              file
+            );
+
+          files.push(saved);
+          successCount++;
+
+        }
+        catch(err){
+
+          console.error("DNR attachment upload:", err);
+          showToast(
+            err.message || "Upload failed",
+            "error"
+          );
+
+        }
+
+      }
+      else{
+
+        files.push(file);
+        successCount++;
+
+      }
+
+    }
+
+    renderDnrAttRows();
+
+    if(successCount === 1){
+      showToast(
+        slice[0].name + " added successfully",
+        "success"
+      );
+    }
+    else if(successCount > 1){
+      showToast(
+        successCount + " files added successfully",
+        "success"
+      );
+    }
+
+  }
+
+  function mapServerAttachments(list){
+
+    return (list || []).map(att => ({
+      server: true,
+      id: att.id,
+      name: att.filename || att.file_name || "",
+      size: att.size != null ? att.size : 0,
+      uploadedAt: att.uploaded_at || att.upload_date || ""
+    }));
+
+  }
+
+  window.dnrAttApi = {
+
+    getPendingFiles(){
+      return files.filter(f => f instanceof File);
+    },
+
+    async uploadPending(dnrId){
+
+      const pending =
+        files.filter(f => f instanceof File);
+
+      for(const file of pending){
+
+        await uploadFileToServer(dnrId, file);
+
+      }
+
+      await window.dnrAttApi.loadFromServer(dnrId);
+
+      return { ok: true };
+
+    },
+
+    async loadFromServer(dnrId, preloaded){
+
+      files = mapServerAttachments(preloaded);
+
+      if(!preloaded){
+
+        try{
+
+          const res =
+            await fetch(
+              `/api/dnr-attachments/${encodeURIComponent(dnrId)}`
+            );
+
+          const data =
+            await res.json();
+
+          if(data && data.success)
+            files = mapServerAttachments(data.attachments);
+
+        }
+        catch(err){
+          console.error("DNR attachments load:", err);
+        }
+
+      }
+
+      renderDnrAttRows();
+
+    },
+
+    clear(){
+      files = [];
+      renderDnrAttRows();
+    }
+
+  };
+
+  if(btn)
+    btn.addEventListener(
+      "click",
+      ()=>inp.click()
+    );
+
+  if(drop){
+
+    drop.addEventListener(
+      "click",
+      e=>{
+
+        if(e.target === inp)
+          return;
+
+        inp.click();
+
+      }
+    );
+
+    drop.addEventListener(
+      "keydown",
+      e=>{
+
+        if(
+          e.key !== "Enter" &&
+          e.key !== " "
+        )
+          return;
+
+        e.preventDefault();
+        inp.click();
+
+      }
+    );
+
+    [
+      "dragenter",
+      "dragover"
+    ].forEach(ev=>{
+
+      drop.addEventListener(
+        ev,
+        e=>{
+
+          e.preventDefault();
+          e.stopPropagation();
+          drop.classList.add("dnr-att__drop--drag");
+
+        }
+      );
+
+    });
+
+    drop.addEventListener(
+      "dragleave",
+      e=>{
+
+        e.preventDefault();
+
+        if(!drop.contains(e.relatedTarget))
+          drop.classList.remove("dnr-att__drop--drag");
+
+      }
+    );
+
+    drop.addEventListener(
+      "drop",
+      e=>{
+
+        e.preventDefault();
+        e.stopPropagation();
+        drop.classList.remove("dnr-att__drop--drag");
+
+        const dt =
+          e.dataTransfer &&
+          e.dataTransfer.files;
+
+        if(dt && dt.length)
+          addFromFileList(dt);
+
+      }
+    );
+
+  }
+
+  inp.addEventListener(
+    "change",
+    e=>{
+
+      addFromFileList(e.target.files);
+      e.target.value = "";
+
+    }
+  );
+
+  syncAttachmentsTabLabel(0);
+
+})();
+
+/* =========================================================
+COLLECT LINE ITEMS + SAVE PAYLOAD
+========================================================= */
+
+function collectDnrLineItems(){
+
+  const tbody =
+    document.getElementById("lineItemsBody");
+
+  if(!tbody)
+    return [];
+
+  const items = [];
+
+  tbody.querySelectorAll("tr").forEach(tr=>{
+
+    const cells =
+      tr.querySelectorAll("td");
+
+    if(cells.length < 8)
+      return;
+
+    const productName =
+      (cells[1].textContent || "").trim();
+
+    if(
+      !productName ||
+      productName === "No items available"
+    )
+      return;
+
+    const reasonSelect =
+      tr.querySelector(".dnr-reason-select");
+
+    let returnReason =
+      reasonSelect
+        ? (reasonSelect.value || "").trim()
+        : (cells[7].textContent || "").trim();
+
+    if(returnReason === "Select Reason")
+      returnReason = "";
+
+    items.push({
+
+      product_name: productName,
+      product_id: (cells[2].textContent || "").trim(),
+      uom: (cells[3].textContent || "").trim(),
+      invoiced_qty: (cells[4].textContent || "").trim(),
+      returned_qty: (cells[5].textContent || "").trim(),
+      serial_no: (cells[6].textContent || "").trim(),
+      return_reason: returnReason
+
+    });
+
+  });
+
+  return items;
+
+}
+
+function buildDnrSavePayload(status){
+
+  return {
+
+    dnr_id:
+      document.getElementById("dnrId")?.value?.trim() || "",
+
+    status,
+
+    invoice_return_ref_id:
+      getInvoiceReturnRefValue(),
+
+    customer_name:
+      document.getElementById("customerName")?.value?.trim() || "",
+
+    customer_id:
+      document.getElementById("customerId")?.value?.trim() || "",
+
+    email:
+      document.getElementById("customerEmail")?.value?.trim() || "",
+
+    phone:
+      document.getElementById("customerPhone")?.value?.trim() || "",
+
+    contact_person:
+      document.getElementById("contactPerson")?.value?.trim() || "",
+
+    customer_ref_no:
+      document.getElementById("customerRef")?.value?.trim() || "",
+
+    dnr_date:
+      dnrDateIsoToApi(
+        document.getElementById("dnrDate")?.value?.trim() || ""
+      ),
+
+    items: collectDnrLineItems(),
+
+    comments: comments.map(c => ({
+    comment: c.comment || "",
+    created_by: c.created_by || c.author || "",
+    created_at: c.created_at || c.raw_created_at || ""
+  })),
+
+  };
+
+}
+
+let dnrSaveInFlight = false;
+let dnrCancelInFlight = false;
+
+async function saveDnr(status){
+
+  if(dnrSaveInFlight)
+    return;
+
+  const invoiceRef =
+    getInvoiceReturnRefValue();
+
+  if(!invoiceRef){
+
+    showToast(
+      "Select Invoice Return Reference ID",
+      "error"
+    );
+
+    return;
+
+  }
+
+  if(status === "Submitted" && comments.length === 0){
+
+    showToast(
+      "Please add at least one comment before submitting",
+      "error"
+    );
+
+    return;
+
+  }
+
+  if(dnrDate && !validateDNRDate()){
+
+    showToast(
+      (dateError?.textContent || "").trim() ||
+        DNR_INVALID_DATE_MSG,
+      "error"
+    );
+
+    return;
+
+  }
+
+  if(!validateCustomerRef(true)){
+
+    customerRefEl?.focus();
+
+    return;
+
+  }
+
+  await ensureDnrId();
+
+  if(!validateDnrId())
+    return;
+
+  const dnrIdVal =
+    document.getElementById("dnrId")?.value?.trim() || "";
+
+  const isDraft = status === "Draft";
+
+  dnrSaveInFlight = true;
+
+  try{
+
+    const res =
+      await fetch(
+        "/api/save-delivery-note-return",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify(
+            buildDnrSavePayload(status)
+          )
+        }
+      );
+
+    const data =
+      await res.json();
+
+    if(data && data.success){
+
+      if(window.dnrAttApi){
+
+        const pending =
+          window.dnrAttApi.getPendingFiles();
+
+        if(pending.length){
+
+          try{
+
+            await window.dnrAttApi.uploadPending(dnrIdVal);
+
+          }
+          catch(uploadErr){
+
+            console.error(
+              "DNR attachment upload after save:",
+              uploadErr
+            );
+
+            showToast(
+              uploadErr.message ||
+                "Saved but some attachments failed to upload",
+              "error"
+            );
+
+            syncNewDnrFooterButtons();
+            return;
+
+          }
+
+        }
+
+      }
+
+      try{
+        localStorage.setItem(
+          "dnrListToast",
+          isDraft ? "draft" : "submitted"
+        );
+      }
+      catch(e){}
+
+      window.location.href =
+        DNR_LIST_URL;
+
+      return;
+
+    }
+
+    showToast(
+      (data && data.message) || "Save failed",
+      "error"
+    );
+
+    syncNewDnrFooterButtons();
+
+  }
+  catch(err){
+
+    console.error(
+      "DNR save error:",
+      err
+    );
+
+    showToast(
+      "Network error",
+      "error"
+    );
+
+    syncNewDnrFooterButtons();
+
+  }
+  finally{
+
+    dnrSaveInFlight = false;
+
+  }
+
+}
+
+/* =========================================================
+CANCEL — UI only (no DB)
+========================================================= */
+
+/* dnrCancelBtn → DNR_LIST_URL (wired above) */
+
+/* =========================================================
+SAVE DRAFT / SUBMIT — handlers (DB via app.py)
+========================================================= */
+
+saveDraftBtn?.addEventListener(
+  "click",
+  ()=>{
+    saveDnr("Draft");
+  }
+);
+
+submitBtn?.addEventListener(
+  "click",
+  ()=>{
+    saveDnr("Submitted");
+  }
+);
+
+/* =========================================================
+CANCEL DNR MODAL
+========================================================= */
+
+function openCancelDnrModal(defaultText = ""){
+
+  const backdrop =
+    document.getElementById("cancelDnrBackdrop");
+
+  const reasonEl =
+    document.getElementById("cancelDnrReason");
+
+  const btnYes =
+    document.getElementById("cancelDnrModalYes");
+
+  const btnNo =
+    document.getElementById("cancelDnrModalNo");
+
+  const btnX =
+    document.getElementById("cancelDnrModalX");
+
+  const lastFocusedEl =
+    document.activeElement;
+
+  if(!backdrop || !reasonEl || !btnYes || !btnNo || !btnX)
+    return Promise.resolve(null);
+
+  function getFocusable(){
+
+    const modal =
+      backdrop.querySelector(".dnr-modal");
+
+    if(!modal)
+      return [];
+
+    return [
+      ...modal.querySelectorAll(
+        'button:not([disabled]), textarea:not([disabled]), input:not([disabled])'
+      )
+    ].filter(el=>el.offsetParent !== null);
+
+  }
+
+  reasonEl.value = defaultText || "";
+  reasonEl.readOnly = false;
+  reasonEl.disabled = false;
+  reasonEl.classList.remove("dnr-locked-field");
+  backdrop.setAttribute("aria-hidden","false");
+
+  let resolveFn;
+
+  const p =
+    new Promise(resolve=>{
+      resolveFn = resolve;
+    });
+
+  function close(){
+
+    backdrop.style.display = "none";
+    backdrop.setAttribute("aria-hidden","true");
+    btnYes.removeEventListener("click",onYes);
+    btnNo.removeEventListener("click",onNo);
+    btnX.removeEventListener("click",onNo);
+    backdrop.removeEventListener("click",onBackdrop);
+    document.removeEventListener("keydown",onKeydown);
+
+    if(
+      lastFocusedEl &&
+      typeof lastFocusedEl.focus === "function"
+    )
+      setTimeout(()=>lastFocusedEl.focus(),0);
+
+  }
+
+  function onYes(){
+
+    const reason =
+      (reasonEl.value || "").trim();
+
+    close();
+    resolveFn(reason);
+
+  }
+
+  function onNo(){
+
+    close();
+    resolveFn(null);
+
+  }
+
+  function onBackdrop(e){
+
+    if(e.target === backdrop)
+      onNo();
+
+  }
+
+  function onKeydown(e){
+
+    if(e.key === "Escape"){
+
+      e.preventDefault();
+      onNo();
+      return;
+
+    }
+
+    if(e.key !== "Tab")
+      return;
+
+    const focusables =
+      getFocusable();
+
+    if(!focusables.length)
+      return;
+
+    const first =
+      focusables[0];
+
+    const last =
+      focusables[focusables.length - 1];
+
+    if(e.shiftKey && document.activeElement === first){
+
+      e.preventDefault();
+      last.focus();
+      return;
+
+    }
+
+    if(!e.shiftKey && document.activeElement === last){
+
+      e.preventDefault();
+      first.focus();
+
+    }
+
+  }
+
+  backdrop.style.display = "flex";
+  btnYes.addEventListener("click",onYes);
+  btnNo.addEventListener("click",onNo);
+  btnX.addEventListener("click",onNo);
+  backdrop.addEventListener("click",onBackdrop);
+  document.addEventListener("keydown",onKeydown);
+
+  setTimeout(()=>{
+    reasonEl.focus();
+  },50);
+
+  return p;
+
+}
+
+/* =========================================================
+CANCEL DNR — handler (DB via app.py)
+========================================================= */
+
+async function cancelDnr(){
+
+  if(cancelDnrBtn?.disabled)
+    return;
+
+  const dnrIdVal =
+    document.getElementById("dnrId")?.value?.trim() || "";
+
+  if(!dnrIdVal){
+
+    showToast(
+      "DNR ID is required",
+      "error"
+    );
+
+    return;
+
+  }
+
+  const reason =
+    await openCancelDnrModal();
+
+  if(reason === null)
+    return;
+
+  if(dnrCancelInFlight)
+    return;
+
+  dnrCancelInFlight = true;
+
+  try{
+
+    const res =
+      await fetch(
+        "/api/cancel-delivery-note-return",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            dnr_id: dnrIdVal,
+            reason
+          })
+        }
+      );
+
+    const data =
+      await res.json();
+
+    if(data && data.success){
+
+      try{
+        localStorage.setItem(
+          "dnrListToast",
+          "cancelled"
+        );
+      }
+      catch(e){}
+
+      window.location.href =
+        DNR_LIST_URL;
+
+      return;
+
+    }
+
+    showToast(
+      (data && data.message) || "Cancel failed",
+      "error"
+    );
+
+  }
+  catch(err){
+
+    console.error(
+      "DNR cancel error:",
+      err
+    );
+
+    showToast(
+      "Network error",
+      "error"
+    );
+
+  }
+  finally{
+
+    dnrCancelInFlight = false;
+
+  }
+
+}
+
+/* =========================================================
+NEW DNR — footer button states
+========================================================= */
+
+function checkSubmitEnable(){
+
+  if(dnrDate)
+    validateDNRDate();
+
+  syncNewDnrFooterButtons();
+
+}
+
+document
+  .getElementById("invoiceReturnRef")
+  ?.addEventListener(
+    "change",
+    checkSubmitEnable
+  );
+
+/* =========================================================
+PAGE HEADER (title + status badge)
+========================================================= */
+
+syncDnrHeaderFromMode();
+
+/* =========================================================
+READ ONLY VIEW MODE
+========================================================= */
+
+if(mode === "view-submitted"){
+
+  document.body.classList.add(
+    "dnr-view-mode"
+  );
+
+  configureDnrDateField({
+    preserveValue: true
+  });
+
+  applyDnrFormReadonly();
+
+  /* ENABLE */
+
+  setFooterIconDisabled(pdfBtn, false);
+  setFooterIconDisabled(emailBtn, false);
+
+  if(cancelBtn)
+    cancelBtn.disabled = false;
+
+  if(cancelDnrBtn)
+    cancelDnrBtn.disabled = false;
+
+  /* DISABLE */
+
+  if(saveDraftBtn)
+    saveDraftBtn.disabled = true;
+
+  if(submitBtn)
+    submitBtn.disabled = true;
+
+}
+
+
+if(mode === "view-cancelled"){
+
+  document.body.classList.add(
+    "dnr-cancelled-view-mode"
+  );
+
+  configureDnrDateField({
+    preserveValue: true
+  });
+
+  applyDnrFormReadonly();
+
+  /* ENABLE (same as invoice return — PDF/Email for cancelled records) */
+
+  setFooterIconDisabled(pdfBtn, false);
+  setFooterIconDisabled(emailBtn, false);
+
+  if(cancelBtn)
+    cancelBtn.disabled = false;
+
+  /* DISABLE */
+
+  if(cancelDnrBtn)
+    cancelDnrBtn.disabled = true;
+
+  if(saveDraftBtn)
+    saveDraftBtn.disabled = true;
+
+  if(submitBtn)
+    submitBtn.disabled = true;
+
+}
+
+/* =========================================================
+FOOTER: PDF / Email
+========================================================= */
+
+function getSavedDnrIdForActions(){
+
+  return (
+    document.getElementById("dnrId")?.value?.trim() || ""
+  );
+
+}
+
+function isDnrSavedOnPage(){
+
+  const dnrId =
+    getSavedDnrIdForActions();
+
+  if(!dnrId)
+    return false;
+
+  if(isDnrViewOnlyMode())
+    return true;
+
+  if(mode === "edit" && params.get("id"))
+    return true;
+
+  return false;
+
+}
+
+function generateDnrPdf(){
+
+  const dnrId =
+    getSavedDnrIdForActions();
+
+  if(!dnrId){
+
+    showToast(
+      "Save the delivery note return first to generate a PDF",
+      "error"
+    );
+
+    return;
+
+  }
+
+  if(!isDnrSavedOnPage()){
+
+    showToast(
+      "Save the delivery note return first to generate a PDF",
+      "error"
+    );
+
+    return;
+
+  }
+
+  window.open(
+    `/api/delivery-note-returns/${encodeURIComponent(dnrId)}/pdf`,
+    "_blank"
+  );
+
+}
+
+async function sendDnrEmail(){
+
+  const dnrId =
+    getSavedDnrIdForActions();
+
+  if(!dnrId || !isDnrSavedOnPage()){
+
+    showToast(
+      "Save the delivery note return first to send email",
+      "error"
+    );
+
+    return;
+
+  }
+
+  try{
+
+    const res =
+      await fetch(
+        `/api/delivery-note-returns/${encodeURIComponent(dnrId)}/email`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          }
+        }
+      );
+
+    const data =
+      await res.json().catch(() => ({}));
+
+    if(res.ok && data.success !== false){
+
+      showToast(
+        "Email sent successfully",
+        "success"
+      );
+
+      return;
+
+    }
+
+    showToast(
+      (data && data.message) ||
+        "Email could not be sent",
+      "error"
+    );
+
+  }
+  catch(err){
+
+    console.error(
+      "DNR email error:",
+      err
+    );
+
+    showToast(
+      "Email could not be sent",
+      "error"
+    );
+
+  }
+
+}
+
+/* =========================================================
+FOOTER: list navigation
+========================================================= */
+
+cancelDnrBtn?.addEventListener(
+  "click",
+  ()=>{
+    cancelDnr();
+  }
+);
+
+if(pdfBtn){
+
+  pdfBtn.addEventListener(
+    "click",
+    ()=>{
+
+      if(pdfBtn.classList.contains("is-disabled"))
+        return;
+
+      generateDnrPdf();
+
+    }
+  );
+
+}
+
+if(emailBtn){
+
+  emailBtn.addEventListener(
+    "click",
+    ()=>{
+
+      if(emailBtn.classList.contains("is-disabled"))
+        return;
+
+      sendDnrEmail();
+
+    }
+  );
+
+}
+
+if(isBrandNewDnrPage()){
+
+  configureDnrDateField();
+  syncBrandNewDnrFooterButtons();
+
+}
+else if(isDnrEditDraftPage()){
+
+  syncDnrEditDraftFooterButtons();
+
+}
+
+/* Enable Add New when comment box has text (always runs) */
+
+document.addEventListener(
+  "input",
+  (e)=>{
+
+    if(
+      e.target &&
+      e.target.id === "commentInput"
+    ){
+
+      updateAddCommentBtnState();
+
+    }
+
+  },
+  true
+);
+
+document.addEventListener(
+  "keyup",
+  (e)=>{
+
+    if(
+      e.target &&
+      e.target.id === "commentInput"
+    ){
+
+      updateAddCommentBtnState();
+
+    }
+
+  },
+  true
+);
+
+updateAddCommentBtnState();
+
+initDnrPageFromUrl();

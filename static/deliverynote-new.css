@@ -335,6 +335,35 @@
   font-weight: 700;
 }
 
+.dn2-line-items-title{
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 10px;
+  margin-bottom: 15px;
+}
+
+.dn2-line-items-title__main{
+  color: #4a1f1a;
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.dn2-line-items-title__hint{
+  color: #766060;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.dn2-table tr.dn-line-items-empty td{
+  text-align: center;
+  color: #766060;
+  font-size: 14px;
+  font-weight: 500;
+  padding: 24px 12px;
+}
+
 /* =========================================================
    GENERIC BUTTONS
 ========================================================= */

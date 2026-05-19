@@ -76,7 +76,33 @@ document.addEventListener("DOMContentLoaded", () => {
   const editId = qs("id");
   const mode = (qs("mode") || (editId ? "edit" : "new")).toLowerCase(); // new/edit/view
 
+  const DN_LINE_ITEMS_COLSPAN = 7;
+  const DN_LINE_ITEMS_EMPTY_MSG =
+    "Select an Sales Order Reference ID to load items";
 
+  function getDnLineItemDataRows() {
+    if (!itemsBody) return [];
+    return [...itemsBody.querySelectorAll("tr")].filter(
+      (tr) => !tr.classList.contains("dn-line-items-empty")
+    );
+  }
+
+  function showDnLineItemsEmptyPlaceholder() {
+    if (!itemsBody) return;
+    itemsBody.innerHTML = `
+      <tr class="dn-line-items-empty">
+        <td colspan="${DN_LINE_ITEMS_COLSPAN}">${DN_LINE_ITEMS_EMPTY_MSG}</td>
+      </tr>
+    `;
+  }
+
+  function syncDn2PageHeading() {
+    let pageTitle = "New Delivery Note";
+    if (editId) {
+      pageTitle = mode === "view" ? "View Delivery Note" : "Edit Delivery Note";
+    }
+    if (pageTitleEl) pageTitleEl.textContent = pageTitle;
+  }
 
   /* =========================================================
      TOAST (match sales-new.js / New Sales Order)
@@ -282,8 +308,9 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!vehicleNoEl?.value?.trim()) return false;
     if (!trackingIdEl?.value?.trim()) return false;
     if (!deliveryNotesEl?.value?.trim()) return false;
-    if (!itemsBody || !itemsBody.querySelectorAll("tr").length) return false;
-    return [...itemsBody.querySelectorAll("tr")].every((tr) =>
+    const dataRows = getDnLineItemDataRows();
+    if (!dataRows.length) return false;
+    return dataRows.every((tr) =>
       (tr.querySelector(".prodIdCell")?.textContent || "").trim()
     );
   }
@@ -498,7 +525,7 @@ function formatMoney(value) {
   }
 
   function renumber() {
-    [...itemsBody.querySelectorAll("tr")].forEach((tr, idx) => {
+    getDnLineItemDataRows().forEach((tr, idx) => {
       const sno = tr.querySelector(".sno");
       if (sno) sno.textContent = String(idx + 1);
     });
@@ -939,7 +966,7 @@ function formatMoney(value) {
   // }
 
   function dnUpdateProductValidationForAllRows(showForInvalid) {
-    itemsBody.querySelectorAll("tr").forEach((row) => {
+    getDnLineItemDataRows().forEach((row) => {
       const pid = row.querySelector(".prodIdCell")?.textContent?.trim() || "";
       // dnSetProductRowValidation(row, showForInvalid && !pid);
     });
@@ -987,6 +1014,10 @@ function formatMoney(value) {
   // };
 
   function addRow(prefill = {}) {
+  if (itemsBody?.querySelector("tr.dn-line-items-empty")) {
+    itemsBody.innerHTML = "";
+  }
+
   const tr = document.createElement("tr");
 
   const qty = Math.max(1, Math.floor(Number(prefill.qty ?? 1)) || 1);
@@ -1112,6 +1143,9 @@ function formatMoney(value) {
       if (!row) return;
       row.remove();
       renumber();
+      if (!getDnLineItemDataRows().length && !soRefSel?.value?.trim()) {
+        showDnLineItemsEmptyPlaceholder();
+      }
       // dnRefreshProductDropdowns();
       validateSubmit();
     });
@@ -1183,7 +1217,7 @@ function formatMoney(value) {
     if (custNameEl) custNameEl.value = "";
     if (destAddrEl) destAddrEl.value = "";
     if (trackingIdEl) trackingIdEl.value = "";
-    itemsBody.innerHTML = "";
+    showDnLineItemsEmptyPlaceholder();
     validateSubmit();
     return;
   }
@@ -1258,7 +1292,7 @@ function formatMoney(value) {
      COLLECT + SAVE
   ========================================================== */
  function collectItems() {
-  return [...itemsBody.querySelectorAll("tr")]
+  return getDnLineItemDataRows()
     .map((tr) => {
       return {
         product_id: tr.querySelector(".prodIdCell")?.textContent?.trim() || "",
@@ -1571,13 +1605,13 @@ function formatMoney(value) {
   await loadSORefs();
 
     if (editId) {
+      syncDn2PageHeading();
       await loadForEdit(editId);
       dnLiveValidationActive = true;
 
       if (mode === "view") {
         setReadonlyView();
       } else {
-        if (pageTitleEl) pageTitleEl.textContent = "New Delivery Note";
         if (submitBtn) submitBtn.textContent = "Update Delivery Note";
       }
       validateSubmit();

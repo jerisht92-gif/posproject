@@ -1,440 +1,1257 @@
-/**
- * Delivery Note Return — list page
- */
 document.addEventListener("DOMContentLoaded", () => {
-  const PAGE_SIZE = 10;
-  const API_URL = "/api/delivery-note-returns";
+
+  /* =====================================================
+     DOM ELEMENTS
+  ===================================================== */
 
   const tbody = document.getElementById("dnrTbody");
-  const noData = document.getElementById("dnrNoData");
+  const noDataRow = document.getElementById("dnrNoDataRow");
+
   const searchInput = document.getElementById("dnrSearchInput");
+  const clearBtn = document.getElementById("dnrClearBtn");
+
   const statusFilter = document.getElementById("dnrStatusFilter");
-  // const customerFilter = document.getElementById("dnrCustomerFilter");
+
   const fromDate = document.getElementById("dnrFromDate");
   const toDate = document.getElementById("dnrToDate");
-  const clearBtn = document.getElementById("dnrClearBtn");
-  const showingEl = document.getElementById("dnrShowing");
-  const prevBtn = document.getElementById("dnrPrevBtn");
-  const nextBtn = document.getElementById("dnrNextBtn");
-  const pageCurrentEl = document.getElementById("dnrPageCurrent");
-  const pageTotalEl = document.getElementById("dnrPageTotal");
-  const newBtn = document.getElementById("dnrNewBtn");
-  const statusSortTh = document.getElementById("dnrListStatusSortTh");
-  const statusSortMenu = document.getElementById("dnrListStatusSortMenu");
 
-  if (!tbody || !statusFilter) return;
+  const newBtn = document.getElementById("newDnrBtn");
+
+  const API_URL = "/api/delivery-note-returns";
+  /* PAGINATION */
+
+  const showingText =
+    document.getElementById("dnrShowingText");
+
+  const prevBtn =
+    document.getElementById("dnrPrevBtn");
+
+  const nextBtn =
+    document.getElementById("dnrNextBtn");
+
+  const pageText =
+    document.getElementById("dnrPageText");
+
+  const statusSortTh =
+    document.getElementById("statusSortTh");
+
+  const statusSortMenu =
+    document.getElementById("statusSortMenu");
 
   let allRows = [];
   let filteredRows = [];
-  let currentPage = 1;
-  let currentSortMode = "";
+
+  let page = 1;
+  let currentStatusSortMode = "";
   let statusSortHideTimer = null;
 
-  /** Body-attached hover fly menu (same pattern as delivery-note.js) */
-  let dnrFlyEl = null;
-  let dnrHideTimer = null;
+  const pageSize = 10;
 
-  function removeDnrFly() {
-    if (dnrFlyEl) {
-      dnrFlyEl.remove();
-      dnrFlyEl = null;
-    }
-  }
 
-  function scheduleDnrHide() {
-    clearTimeout(dnrHideTimer);
-    dnrHideTimer = setTimeout(() => removeDnrFly(), 120);
-  }
 
-  function keepDnrFlyOpen() {
-    clearTimeout(dnrHideTimer);
-  }
+  /* =====================================================
+     TOAST MESSAGE
+  ===================================================== */
 
-  function goDnrDetailPage(dnrId, mode) {
-    window.location.href = `/deliverynote_return/new?dnr_id=${encodeURIComponent(dnrId)}&mode=${encodeURIComponent(mode)}`;
-  }
+  function showToast(message, type = "success") {
 
-  function buildDnrFlyMenu(row, anchorBtn) {
-    const dnrId = row.dnrId;
-    const st = norm(row.status);
-
-    const isDraft = st === "draft";
-
-    let firstLabel = isDraft ? "Edit details" : "View details";
-    let firstMode = isDraft ? "edit" : "view";
-
-    removeDnrFly();
-    dnrFlyEl = document.createElement("div");
-    dnrFlyEl.className = "dnr-act-fly";
-
-    const mkItem = (label, onClick, disabled) => {
-      const b = document.createElement("button");
-      b.type = "button";
-      b.className = "dnr-act-item";
-      b.textContent = label;
-      b.disabled = !!disabled;
-      if (!disabled) b.addEventListener("click", onClick);
-      return b;
-    };
-
-    dnrFlyEl.appendChild(
-      mkItem(firstLabel, () => goDnrDetailPage(dnrId, firstMode), false)
+    const existing = document.querySelector(
+      ".success-notification, .error-notification"
     );
 
-    dnrFlyEl.addEventListener("mouseenter", keepDnrFlyOpen);
-    dnrFlyEl.addEventListener("mouseleave", scheduleDnrHide);
+    if (existing) existing.remove();
 
-    document.body.appendChild(dnrFlyEl);
+    const div = document.createElement("div");
 
-    const btnRect = anchorBtn.getBoundingClientRect();
+    div.className =
+      type === "error"
+        ? "error-notification"
+        : "success-notification";
 
-    dnrFlyEl.style.visibility = "hidden";
-    dnrFlyEl.style.left = "0px";
-    dnrFlyEl.style.top = "0px";
+    div.textContent = message;
 
-    const popRect = dnrFlyEl.getBoundingClientRect();
+    document.body.appendChild(div);
 
-    const gap = 8;
-    const DROP_Y = 25;
-
-    let top = btnRect.top - popRect.height - gap + DROP_Y;
-    if (top < 8) top = btnRect.bottom + gap + DROP_Y;
-
-    let left = btnRect.right - popRect.width;
-    const maxLeft = window.innerWidth - popRect.width - 8;
-
-    if (left > maxLeft) left = maxLeft;
-    if (left < 8) left = 8;
-
-    dnrFlyEl.style.left = `${Math.round(left)}px`;
-    dnrFlyEl.style.top = `${Math.round(top)}px`;
-    dnrFlyEl.style.visibility = "visible";
-  }
-    
-
-  function attachDnrHoverMenu(btn, row) {
-    btn.addEventListener("mouseenter", () => {
-      removeDnrFly();
-      keepDnrFlyOpen();
-      buildDnrFlyMenu(row, btn);
+    requestAnimationFrame(() => {
+      div.classList.add("show");
     });
-    btn.addEventListener("mouseleave", scheduleDnrHide);
+
+    setTimeout(() => {
+
+      div.classList.remove("show");
+
+      setTimeout(() => {
+        div.remove();
+      }, 300);
+
+    }, 3000);
+
   }
 
-  window.addEventListener("scroll", () => removeDnrFly(), true);
-  window.addEventListener("resize", () => removeDnrFly());
 
-  function openDnrListStatusSortMenu() {
-    clearTimeout(statusSortHideTimer);
-    statusSortTh?.classList.add("open");
-  }
 
-  function scheduleDnrListStatusSortMenuClose() {
-    clearTimeout(statusSortHideTimer);
-    statusSortHideTimer = setTimeout(() => {
-      statusSortTh?.classList.remove("open");
-    }, 160);
-  }
+  /* =====================================================
+     DATE VALIDATION
+  ===================================================== */
 
-  function syncDnrListSortMenuActive() {
-    if (!statusSortMenu) return;
-    statusSortMenu.querySelectorAll("button[data-sort]").forEach((b) => {
-      b.classList.toggle("dnr-list-sort-option--active", b.dataset.sort === currentSortMode);
-    });
-  }
+  const DNR_INVALID_DATE_MSG =
+     "Invalid date. Use format DD-MM-YYYY (e.g. 31-05-2026).";
 
-  function dnrListRowDateMs(row) {
-    const dateVal = getField(row, "dnr_date", "dnrDate", "date");
-    const dt = toDateObj(dateVal);
-    return dt && !isNaN(dt.getTime()) ? dt.getTime() : 0;
-  }
+  function parseDnrRowDate(dateStr) {
 
-  function dnrListStatusRank(statusRaw) {
-    const s = norm(statusRaw);
-    if (s === "draft") return 0;
-    if (s === "submitted") return 1;
-    if (s === "cancelled" || s === "canceled") return 2;
-    return 99;
-  }
+    const s = String(dateStr || "").trim();
+    if (!s) return null;
 
-  function applyDnrListStatusSort(mode) {
-    currentSortMode = mode || "";
-    syncDnrListSortMenuActive();
-    if (!Array.isArray(filteredRows) || !filteredRows.length) return;
-    const sorted = [...filteredRows];
-    if (mode === "newest") {
-      sorted.sort((a, b) => dnrListRowDateMs(b) - dnrListRowDateMs(a));
-    } else if (mode === "oldest") {
-      sorted.sort((a, b) => dnrListRowDateMs(a) - dnrListRowDateMs(b));
-    } else if (mode === "progress") {
-      sorted.sort(
-        (a, b) =>
-          dnrListStatusRank(getField(a, "status", "dnr_status")) -
-          dnrListStatusRank(getField(b, "status", "dnr_status"))
-      );
-    } else if (mode === "reverse") {
-      sorted.sort(
-        (a, b) =>
-          dnrListStatusRank(getField(b, "status", "dnr_status")) -
-          dnrListStatusRank(getField(a, "status", "dnr_status"))
-      );
-    }
-    filteredRows = sorted;
-  }
-
-  const esc = (s) =>
-    String(s ?? "")
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;")
-      .replaceAll('"', "&quot;")
-      .replaceAll("'", "&#039;");
-
-  const norm = (s) => String(s ?? "").trim().toLowerCase();
-
-  function toDateObj(val) {
-    if (!val) return null;
-    if (/^\d{4}-\d{2}-\d{2}$/.test(val)) {
-      const [y, m, d] = val.split("-").map(Number);
-      return new Date(y, m - 1, d);
-    }
-    const dt = new Date(val);
-    return isNaN(dt.getTime()) ? null : dt;
-  }
-
-  function formatDMY(val) {
-    const dt = toDateObj(val);
-    if (!dt) return "";
-    const dd = String(dt.getDate()).padStart(2, "0");
-    const mm = String(dt.getMonth() + 1).padStart(2, "0");
-    const yy = dt.getFullYear();
-    return `${dd}-${mm}-${yy}`;
-  }
-
-  function getField(row, ...keys) {
-    for (const k of keys) {
-      if (row && row[k] != null && row[k] !== "") return row[k];
-    }
-    return "";
-  }
-
-  function statusClass(status) {
-    const s = norm(status);
-
-    if (s === "draft") return "pill pill-draft";
-    if (s === "submitted") return "pill pill-submitted";
-    if (s === "cancelled") return "pill pill-cancelled";
-
-    return "pill";
-  }
-
-  function fillFilterOptions() {
-  statusFilter.innerHTML = `<option value="all">All</option>`;
-
-  const fixedStatuses = ["Draft", "Submitted", "Cancelled"];
-
-  fixedStatuses.forEach((status) => {
-    const opt = document.createElement("option");
-    opt.value = status;
-    opt.textContent = status;
-    statusFilter.appendChild(opt);
-  });
-}
-  function applyFilters(resetPage = false) {
-  if (resetPage) currentPage = 1;
-
-  const q = norm(searchInput.value);
-  const stVal = statusFilter.value;
-  const from = toDateObj(fromDate.value);
-  const to = toDateObj(toDate.value);
-
-  filteredRows = allRows.filter((r) => {
-    const dnrId = String(getField(r, "dnr_id", "dnrId", "id")).trim();
-    const invRef = String(
-      getField(r, "invoice_return_ref", "invoiceReturnRef", "inv_return_ref")
-    ).trim();
-    const custName = String(getField(r, "customer_name", "customerName", "cust_name")).trim();
-    const custId = String(getField(r, "customer_id", "customerId", "cust_id")).trim();
-    const status = String(getField(r, "status", "dnr_status")).trim();
-    const dateVal = getField(r, "dnr_date", "dnrDate", "date");
-
-    if (q) {
-      const hay = norm(`${dnrId} ${invRef} ${custName} ${custId} ${status}`);
-      if (!hay.includes(q)) return false;
-    }
-
-    if (stVal !== "all" && status !== stVal) return false;
-
-    if (from || to) {
-      const dt = toDateObj(dateVal);
-      if (!dt) return false;
-
-      dt.setHours(0, 0, 0, 0);
-
-      if (from) {
-        const f = new Date(from);
-        f.setHours(0, 0, 0, 0);
-        if (dt < f) return false;
+    const dm = s.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+    if (dm) {
+      const d = parseInt(dm[1], 10);
+      const m = parseInt(dm[2], 10) - 1;
+      const y = parseInt(dm[3], 10);
+      const dt = new Date(y, m, d);
+      if (
+        dt.getFullYear() === y &&
+        dt.getMonth() === m &&
+        dt.getDate() === d
+      ) {
+        return dt;
       }
+      return null;
+    }
 
-      if (to) {
-        const t = new Date(to);
-        t.setHours(0, 0, 0, 0);
-        if (dt > t) return false;
-      }
+    if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
+      const dt = new Date(s.slice(0, 10) + "T00:00:00");
+      return isNaN(dt.getTime()) ? null : dt;
+    }
+
+    return null;
+
+  }
+
+  const DNR_DATE_RANGE_ERROR =
+    "Delivery Return From date cannot be later than Delivery Return To date.";
+
+
+
+  function parseISO(d) {
+
+    if (!d) return null;
+
+    const dt = new Date(d + "T00:00:00");
+
+    return isNaN(dt.getTime())
+      ? null
+      : dt;
+
+  }
+
+
+
+  function isValidListDateString(value) {
+
+    if (!value || typeof value !== "string")
+      return false;
+
+    const trimmed = value.trim();
+
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed))
+      return false;
+
+    const parts = trimmed.split("-");
+
+    const y = parseInt(parts[0], 10);
+    const m = parseInt(parts[1], 10) - 1;
+    const d = parseInt(parts[2], 10);
+
+    if (y < 1900 || y > 2100)
+      return false;
+
+    const date = new Date(y, m, d);
+
+    if (
+      date.getFullYear() !== y ||
+      date.getMonth() !== m ||
+      date.getDate() !== d
+    ) {
+      return false;
     }
 
     return true;
-  });
 
-  applyDnrListStatusSort(currentSortMode);
-  render();
-}
-  function totalPages() {
-    return Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE));
   }
 
-  function pagedRows() {
-    const start = (currentPage - 1) * PAGE_SIZE;
-    return filteredRows.slice(start, start + PAGE_SIZE);
+
+
+  function isInvalidDeliveryReturnDateRange(fd, td) {
+
+    if (!fd || !td)
+      return false;
+
+    const fromTime = new Date(fd).getTime();
+    const toTime = new Date(td).getTime();
+
+    return fromTime > toTime;
+
   }
 
-  function render() {
-    const tp = totalPages();
-    if (currentPage > tp) currentPage = tp;
-    tbody.innerHTML = "";
-    const rows = pagedRows();
-    const total = filteredRows.length;
-    if (noData) noData.style.display = rows.length ? "none" : "block";
 
-    rows.forEach((r) => {
-      const dnrId = String(getField(r, "dnr_id", "dnrId", "id")).trim();
-      const invRef = String(
-        getField(r, "invoice_return_ref", "invoiceReturnRef", "inv_return_ref")
-      ).trim();
-      const custName = String(getField(r, "customer_name", "customerName", "cust_name")).trim();
-      const dateVal = getField(r, "dnr_date", "dnrDate", "date");
-      const status = String(getField(r, "status", "dnr_status")).trim();
-      const tr = document.createElement("tr");
-      tr.innerHTML = `
-        <td class="dnr-col-id">${esc(dnrId)}</td>
-        <td class="dnr-col-ref">${esc(invRef)}</td>
-        <td class="dnr-col-cust">${esc(custName)}</td>
-        <td class="dnr-col-date">${esc(formatDMY(dateVal))}</td>
-        <td class="dnr-col-status">
-          <span class="${statusClass(status)}">${esc(status || "-")}</span>
-        </td>
-        <td class="dnr-col-action dnr-td-action">
-          <button type="button" class="dnr-act-dots">⋮</button>
-        </td>`;
-      tbody.appendChild(tr);
-      const dots = tr.querySelector(".dnr-act-dots");
-      if (dots) attachDnrHoverMenu(dots, { dnrId, status });
+
+  function inDateRange(rowDateStr, fromStr, toStr) {
+
+    const d = parseDnrRowDate(rowDateStr);
+
+    if (!d) return false;
+
+    const f = parseISO(fromStr);
+    const t = parseISO(toStr);
+
+    if (f && d < f) return false;
+
+    if (t && d > t) return false;
+
+    return true;
+
+  }
+
+
+
+  /* =====================================================
+     LOAD STATUS FILTER
+  ===================================================== */
+
+  function loadStatusFilter(rows) {
+
+    statusFilter.innerHTML = "";
+
+    const allOption = document.createElement("option");
+
+    allOption.value = "all";
+    allOption.textContent = "All";
+
+    statusFilter.appendChild(allOption);
+
+    const uniqueStatuses = [...new Set(
+      rows.map(r => r.status)
+    )];
+
+    uniqueStatuses.forEach(status => {
+
+      if (!status) return;
+
+      const option = document.createElement("option");
+
+      option.value = status;
+      option.textContent = status;
+
+      statusFilter.appendChild(option);
+
     });
 
-    const startIdx = total === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1;
-    const endIdx = Math.min(currentPage * PAGE_SIZE, total);
-    if (showingEl)
-      showingEl.textContent = `Showing ${startIdx}–${endIdx} of ${total} Entries`;
-    if (pageCurrentEl) pageCurrentEl.textContent = String(currentPage);
-    if (pageTotalEl) pageTotalEl.textContent = String(tp);
-    if (prevBtn) prevBtn.disabled = currentPage <= 1;
-    if (nextBtn) nextBtn.disabled = currentPage >= tp;
   }
 
-  async function loadData() {
-    try {
-      const res = await fetch(API_URL, { cache: "no-store" });
-      if (!res.ok) throw new Error("bad response");
-      const result = await res.json();
-      const list = Array.isArray(result?.data)
-        ? result.data
-        : Array.isArray(result?.items)
-          ? result.items
-          : Array.isArray(result)
-            ? result
-            : [];
-      allRows = list;
-    } catch {
-      allRows = [];
+
+
+  /* =====================================================
+     LOAD DELIVERY NOTE RETURN LIST
+  ===================================================== */
+
+  function dnrListSortKey(row) {
+
+    const idPart =
+      parseInt(
+        String(row.dnr_id || "").split("-")[1],
+        10
+      );
+
+    const idNum =
+      Number.isFinite(idPart)
+        ? idPart
+        : 0;
+
+    const dateStr =
+      String(row.dnr_date || "").trim();
+
+    const dateTs =
+      dateStr
+        ? new Date(dateStr + "T00:00:00").getTime()
+        : 0;
+
+    return {
+      dateTs: Number.isFinite(dateTs) ? dateTs : 0,
+      idNum
+    };
+
+  }
+
+  function sortDnrRowsNewestFirst(rows) {
+
+    return [...(rows || [])].sort((a, b) => {
+
+      const ka = dnrListSortKey(a);
+      const kb = dnrListSortKey(b);
+
+      if(kb.dateTs !== ka.dateTs)
+        return kb.dateTs - ka.dateTs;
+
+      return kb.idNum - ka.idNum;
+
+    });
+
+  }
+
+  const DNR_STATUS_SORT_ORDER = [
+    "draft",
+    "submitted",
+    "cancelled",
+  ];
+
+  function normalizeDnrStatus(v) {
+    return String(v || "")
+      .trim()
+      .toLowerCase()
+      .replaceAll(" ", "_");
+  }
+
+  function dnrStatusRank(status) {
+    const key = normalizeDnrStatus(status);
+    const i = DNR_STATUS_SORT_ORDER.indexOf(key);
+    return i === -1 ? 999 : i;
+  }
+
+  function sortRowsByMode(rows, mode) {
+
+    const list = [...(rows || [])];
+
+    if (mode === "newest") {
+      return sortDnrRowsNewestFirst(list);
     }
-    fillFilterOptions();
-    applyFilters(true);
+
+    if (mode === "oldest") {
+      return list.sort((a, b) => {
+
+        const ka = dnrListSortKey(a);
+        const kb = dnrListSortKey(b);
+
+        if (ka.dateTs !== kb.dateTs) {
+          return ka.dateTs - kb.dateTs;
+        }
+
+        return ka.idNum - kb.idNum;
+
+      });
+    }
+
+    if (mode === "progress") {
+      return list.sort(
+        (a, b) =>
+          dnrStatusRank(a.status) - dnrStatusRank(b.status)
+      );
+    }
+
+    if (mode === "reverse") {
+      return list.sort(
+        (a, b) =>
+          dnrStatusRank(b.status) - dnrStatusRank(a.status)
+      );
+    }
+
+    return list;
+
   }
 
-  let debounce = null;
-  searchInput.addEventListener("input", () => {
-    clearTimeout(debounce);
-    debounce = setTimeout(() => applyFilters(true), 150);
-  });
-  statusFilter.addEventListener("change", () => applyFilters(true));
+  function syncStatusSortMenuActive() {
 
-  fromDate?.addEventListener("change", () => applyFilters(true));
-  toDate?.addEventListener("change", () => applyFilters(true));
-  clearBtn?.addEventListener("click", () => {
+    if (!statusSortMenu) return;
+
+    statusSortMenu
+      .querySelectorAll("button[data-sort]")
+      .forEach((b) => {
+        b.classList.toggle(
+          "dnr-sort-option--active",
+          b.dataset.sort === currentStatusSortMode
+        );
+      });
+
+  }
+
+  function applyStatusSort(mode) {
+
+    currentStatusSortMode = mode || "";
+    syncStatusSortMenuActive();
+    page = 1;
+    applyFilters();
+
+  }
+
+  function openStatusSortMenu() {
+
+    clearTimeout(statusSortHideTimer);
+    statusSortTh?.classList.add("open");
+
+  }
+
+  function closeStatusSortMenu() {
+
+    clearTimeout(statusSortHideTimer);
+    statusSortTh?.classList.remove("open");
+
+  }
+
+  function scheduleStatusSortMenuClose() {
+
+    clearTimeout(statusSortHideTimer);
+    statusSortHideTimer = setTimeout(closeStatusSortMenu, 120);
+
+  }
+
+  async function loadDnrList() {
+
+    try {
+
+      const response = await fetch(API_URL);
+
+      const data = await response.json();
+
+      allRows = sortDnrRowsNewestFirst(data || []);
+
+      loadStatusFilter(allRows);
+
+      renderTable(allRows);
+
+    }
+    catch (error) {
+
+      console.error(error);
+
+      showToast(
+        "Failed to load Delivery Note Return list",
+        "error"
+      );
+
+    }
+
+  }
+
+
+
+  /* =====================================================
+     RENDER TABLE
+  ===================================================== */
+
+  function renderTable(rows) {
+
+  filteredRows = rows;
+
+  tbody.innerHTML = "";
+
+  const total = filteredRows.length;
+
+  const totalPages =
+    Math.max(1, Math.ceil(total / pageSize));
+
+  if (page > totalPages) {
+    page = totalPages;
+  }
+
+  if (page < 1) {
+    page = 1;
+  }
+
+  const startIndex =
+    (page - 1) * pageSize;
+
+  const pageItems =
+    filteredRows.slice(
+      startIndex,
+      startIndex + pageSize
+    );
+
+  /* EMPTY */
+
+  if (!pageItems.length) {
+
+    tbody.appendChild(noDataRow);
+
+  }
+  else {
+
+    pageItems.forEach(row => {
+
+      const tr =
+        document.createElement("tr");
+
+      /* ID */
+
+      const tdId =
+        document.createElement("td");
+
+      tdId.textContent =
+        row.dnr_id || "-";
+
+      /* REF */
+
+      const tdRef =
+        document.createElement("td");
+
+      tdRef.textContent =
+        row.invoice_return_ref || "-";
+
+      /* CUSTOMER */
+
+      const tdCustomer =
+        document.createElement("td");
+
+      tdCustomer.textContent =
+        row.customer_name || "-";
+
+      /* DATE */
+
+      const tdDate =
+        document.createElement("td");
+
+      tdDate.textContent =
+        row.dnr_date || "-";
+
+      /* STATUS */
+
+      const tdStatus =
+        document.createElement("td");
+
+      tdStatus.className = "dnr-td-status";
+
+      const statusBadge =
+        document.createElement("span");
+
+      statusBadge.className =
+        `dnr-badge ${normalizeDnrStatus(row.status)}`;
+
+      statusBadge.textContent =
+        row.status || "-";
+
+      tdStatus.appendChild(statusBadge);
+
+      /* ACTION */
+
+      const tdAction =
+        document.createElement("td");
+
+      tdAction.className =
+        "dnr-td-action";
+
+      const dots =
+        document.createElement("button");
+
+      dots.type = "button";
+
+      dots.className =
+        "dnr-act-dots";
+
+      dots.textContent = "⋮";
+
+      attachHoverMenu(dots, row);
+
+      tdAction.appendChild(dots);
+
+      /* APPEND */
+
+      tr.appendChild(tdId);
+      tr.appendChild(tdRef);
+      tr.appendChild(tdCustomer);
+      tr.appendChild(tdDate);
+      tr.appendChild(tdStatus);
+      tr.appendChild(tdAction);
+
+      tbody.appendChild(tr);
+
+    });
+
+  }
+
+  /* SHOWING */
+
+  if (showingText) {
+
+    const shown =
+      pageItems.length;
+
+    const start =
+      total === 0
+        ? 0
+        : startIndex + 1;
+
+    const end =
+      startIndex + shown;
+
+    showingText.textContent =
+      `Showing ${start}-${end} of ${total} Entries`;
+
+  }
+
+  /* PAGE TEXT */
+
+  if (pageText) {
+
+    pageText.innerHTML =
+      `Page <strong>${page}</strong> of <strong>${totalPages}</strong>`;
+
+  }
+
+  /* BUTTON STATES */
+
+  if (prevBtn) {
+
+    /* BUTTON STATES */
+
+setBtnDisabled(
+  prevBtn,
+  page <= 1 || total === 0
+);
+
+setBtnDisabled(
+  nextBtn,
+  page >= totalPages || total === 0
+);
+
+/* SINGLE PAGE */
+
+if (totalPages === 1) {
+
+  setBtnDisabled(prevBtn, true);
+
+  setBtnDisabled(nextBtn, true);
+
+}
+  }
+
+}
+
+  /* =====================================================
+     APPLY FILTERS
+  ===================================================== */
+
+  function applyFilters() {
+
+    const search =
+      searchInput.value.trim().toLowerCase();
+
+    const status =
+      statusFilter.value;
+
+    const fdRaw =
+      fromDate.value.trim();
+
+    const tdRaw =
+      toDate.value.trim();
+
+    const fd =
+      fdRaw && isValidListDateString(fdRaw)
+        ? fdRaw
+        : "";
+
+    const td =
+      tdRaw && isValidListDateString(tdRaw)
+        ? tdRaw
+        : "";
+
+    let filtered = [...allRows];
+
+
+
+    /* SEARCH FILTER */
+
+    if (search) {
+
+      filtered = filtered.filter(r => {
+
+        const dnrId =
+          String(r.dnr_id || "").toLowerCase();
+
+        const customer =
+          String(r.customer_name || "").toLowerCase();
+
+        const invoiceRef =
+          String(r.invoice_return_ref || "").toLowerCase();
+
+        return (
+          dnrId.includes(search) ||
+          customer.includes(search) ||
+          invoiceRef.includes(search)
+        );
+
+      });
+
+    }
+
+
+
+    /* STATUS FILTER */
+
+    if (status !== "all") {
+
+      filtered = filtered.filter(r =>
+
+        String(r.status) === status
+
+      );
+
+    }
+
+
+
+    /* DATE FILTER */
+
+    if (fd || td) {
+
+      filtered = filtered.filter(r =>
+
+        inDateRange(
+          r.dnr_date,
+          fd,
+          td
+        )
+
+      );
+
+    }
+
+    if (currentStatusSortMode) {
+      filtered = sortRowsByMode(
+        filtered,
+        currentStatusSortMode
+      );
+    }
+
+    renderTable(filtered);
+
+  }
+
+
+
+  /* =====================================================
+     FROM DATE FILTER
+  ===================================================== */
+
+  function handleFromDateFilter() {
+
+    const fd =
+      fromDate.value.trim();
+
+    if (
+      fd &&
+      !isValidListDateString(fd)
+    ) {
+
+      showToast(
+        DNR_INVALID_DATE_MSG,
+        "error"
+      );
+
+      fromDate.value = "";
+
+      applyFilters();
+
+      return;
+
+    }
+
+    const td =
+      toDate.value.trim();
+
+    if (
+      td &&
+      !isValidListDateString(td)
+    ) {
+
+      showToast(
+        DNR_INVALID_DATE_MSG,
+        "error"
+      );
+
+      toDate.value = "";
+
+      applyFilters();
+
+      return;
+
+    }
+
+    if (
+      isInvalidDeliveryReturnDateRange(fd, td)
+    ) {
+
+      showToast(
+        DNR_DATE_RANGE_ERROR,
+        "error"
+      );
+
+      fromDate.value = "";
+
+      return;
+
+    }
+
+    applyFilters();
+
+  }
+
+
+
+  /* =====================================================
+     TO DATE FILTER
+  ===================================================== */
+
+  function handleToDateFilter() {
+
+    const td =
+      toDate.value.trim();
+
+    if (
+      td &&
+      !isValidListDateString(td)
+    ) {
+
+      showToast(
+        DNR_INVALID_DATE_MSG,
+        "error"
+      );
+
+      toDate.value = "";
+
+      applyFilters();
+
+      return;
+
+    }
+
+    const fd =
+      fromDate.value.trim();
+
+    if (
+      fd &&
+      !isValidListDateString(fd)
+    ) {
+
+      showToast(
+        DNR_INVALID_DATE_MSG,
+        "error"
+      );
+
+      fromDate.value = "";
+
+      applyFilters();
+
+      return;
+
+    }
+
+    if (
+      isInvalidDeliveryReturnDateRange(fd, td)
+    ) {
+
+      showToast(
+        DNR_DATE_RANGE_ERROR,
+        "error"
+      );
+
+      toDate.value = "";
+
+      return;
+
+    }
+
+    applyFilters();
+
+  }
+
+
+
+  /* =====================================================
+     CLEAR FILTERS
+  ===================================================== */
+
+  function clearFilters() {
+
     searchInput.value = "";
+
     statusFilter.value = "all";
 
     fromDate.value = "";
+
     toDate.value = "";
-    currentPage = 1;
-    applyFilters(true);
-  });
-  prevBtn?.addEventListener("click", () => {
-    if (currentPage > 1) {
-      currentPage--;
-      render();
-    }
-  });
-  nextBtn?.addEventListener("click", () => {
-    if (currentPage < totalPages()) {
-      currentPage++;
-      render();
-    }
-  });
-  if (newBtn) {
-    newBtn.addEventListener("click", () => {
-      window.location.href = "/deliverynote_return/new";
-    });
+
+    currentStatusSortMode = "";
+    syncStatusSortMenuActive();
+
+    renderTable(allRows);
+
   }
+
+
+
+  /* =====================================================
+     EVENTS
+  ===================================================== */
+
+  searchInput.addEventListener(
+    "input",
+    applyFilters
+  );
+
+  statusFilter.addEventListener(
+    "change",
+    applyFilters
+  );
+
+  fromDate.addEventListener(
+    "change",
+    handleFromDateFilter
+  );
+
+  fromDate.addEventListener(
+    "blur",
+    handleFromDateFilter
+  );
+
+  toDate.addEventListener(
+    "change",
+    handleToDateFilter
+  );
+
+  toDate.addEventListener(
+    "blur",
+    handleToDateFilter
+  );
+
+  clearBtn.addEventListener(
+    "click",
+    clearFilters
+  );
 
   if (statusSortTh && statusSortMenu) {
-    statusSortTh.addEventListener("mouseenter", openDnrListStatusSortMenu);
-    statusSortTh.addEventListener("mouseleave", scheduleDnrListStatusSortMenuClose);
-    statusSortMenu.addEventListener("mouseenter", openDnrListStatusSortMenu);
-    statusSortMenu.addEventListener("mouseleave", scheduleDnrListStatusSortMenuClose);
 
-    statusSortTh.addEventListener("click", (e) => {
-      if (e.target.closest("#dnrListStatusSortMenu")) return;
-      statusSortTh.classList.toggle("open");
-    });
-
-    document.addEventListener("click", (e) => {
-      if (!e.target.closest("#dnrListStatusSortTh")) {
-        statusSortTh.classList.remove("open");
-      }
-    });
+    statusSortTh.addEventListener("mouseenter", openStatusSortMenu);
+    statusSortTh.addEventListener("mouseleave", scheduleStatusSortMenuClose);
+    statusSortMenu.addEventListener("mouseenter", openStatusSortMenu);
+    statusSortMenu.addEventListener("mouseleave", scheduleStatusSortMenuClose);
 
     statusSortMenu.addEventListener("click", (e) => {
-      const btn = e.target.closest("button[data-sort]");
+
+      const btn = e.target.closest("[data-sort]");
+
       if (!btn) return;
-      applyDnrListStatusSort(btn.getAttribute("data-sort") || "");
-      currentPage = 1;
-      render();
-      statusSortTh.classList.remove("open");
+
+      applyStatusSort(btn.dataset.sort);
+      closeStatusSortMenu();
+
     });
+
   }
 
-  const urlParams = new URLSearchParams(window.location.search);
-  const toastMsg = urlParams.get("toast");
-  if (toastMsg) {
-    const n = document.createElement("div");
-    n.className = "success-notification show";
-    n.textContent = decodeURIComponent(toastMsg);
-    document.body.appendChild(n);
-    setTimeout(() => n.remove(), 3500);
-    window.history.replaceState({}, "", window.location.pathname);
+
+
+  /* =====================================================
+     NEW DELIVERY NOTE RETURN BUTTON
+  ===================================================== */
+
+  newBtn.addEventListener("click", () => {
+
+    window.location.href =
+      "/deliverynote_return/new";
+
+  });
+
+/* =====================================================
+   RESTRICT DATE INPUT
+===================================================== */
+
+function restrictDateInput(input) {
+
+  input.addEventListener("input", () => {
+
+    let value = input.value;
+
+    if (!value) return;
+
+    const parts = value.split("-");
+
+    /* YEAR */
+
+    if (parts[0] && parts[0].length > 4) {
+
+      showToast(
+        "Year must contain only 4 digits.",
+        "error"
+      );
+
+      input.value = "";
+
+      return;
+
+    }
+
+    /* MONTH */
+
+    if (parts[1] && parts[1].length > 2) {
+
+      input.value = "";
+
+      return;
+
+    }
+
+    /* DATE */
+
+    if (parts[2] && parts[2].length > 2) {
+
+      input.value = "";
+
+    }
+
+  });
+
+}
+
+/* =====================================================
+   DATE INPUT RESTRICTION
+===================================================== */
+
+restrictDateInput(fromDate);
+
+restrictDateInput(toDate);
+
+
+
+/* =========================================================
+   ACTION MENU (THREE DOTS HOVER)
+========================================================= */
+
+let flyEl = null;
+let hideTimer = null;
+
+function removeFly() {
+  if (flyEl) {
+    flyEl.remove();
+    flyEl = null;
+  }
+}
+
+function scheduleHide() {
+  clearTimeout(hideTimer);
+  hideTimer = setTimeout(() => removeFly(), 120);
+}
+
+function keepOpen() {
+  clearTimeout(hideTimer);
+}
+
+function goViewPage(dnrId) {
+  window.location.href =
+    `/deliverynote_return/form?id=${encodeURIComponent(dnrId)}&mode=view`;
+}
+
+function buildFlyMenu(row, anchorBtn) {
+
+  flyEl = document.createElement("div");
+  flyEl.className = "dnr-act-fly";
+
+  const status =
+    String(row.status || "")
+      .trim()
+      .toLowerCase()
+      .replaceAll(" ", "_");
+
+  /* DRAFT CHECK */
+
+  const isDraft =
+    status === "draft";
+
+  /* LABEL */
+
+  const label =
+    isDraft
+      ? "Edit details"
+      : "View details";
+
+  /* MODE */
+
+  let mode = "view";
+
+  if(isDraft)
+    mode = "edit";
+  else if(status === "submitted")
+    mode = "view-submitted";
+  else if(status === "cancelled")
+    mode = "view-cancelled";
+
+  /* BUTTON */
+
+  const btn =
+  document.createElement("button");
+
+  btn.type = "button";
+
+  btn.className =
+    "dnr-act-item";
+
+  btn.textContent = label;
+
+  btn.addEventListener("click", () => {
+
+    window.location.href =
+      `/deliverynote_return/form?id=${encodeURIComponent(row.dnr_id)}&mode=${mode}`;
+
+  });
+
+  flyEl.appendChild(btn);
+
+  flyEl.addEventListener("mouseenter", keepOpen);
+  flyEl.addEventListener("mouseleave", scheduleHide);
+
+  document.body.appendChild(flyEl);
+
+  /* ===== Position ===== */
+
+  const rect = anchorBtn.getBoundingClientRect();
+
+  flyEl.style.visibility = "hidden";
+  flyEl.style.left = "0px";
+  flyEl.style.top = "0px";
+
+  const popRect = flyEl.getBoundingClientRect();
+
+  const gap = 8;
+  const DROP_Y = 25;
+
+  let top =
+    rect.top - popRect.height - gap + DROP_Y;
+
+  if (top < 8) {
+    top = rect.bottom + gap + DROP_Y;
   }
 
-  loadData();
+  let left = rect.right - popRect.width;
+
+  const maxLeft =
+    window.innerWidth - popRect.width - 8;
+
+  if (left > maxLeft) {
+    left = maxLeft;
+  }
+
+  if (left < 8) {
+    left = 8;
+  }
+
+  flyEl.style.left = `${Math.round(left)}px`;
+  flyEl.style.top = `${Math.round(top)}px`;
+  flyEl.style.visibility = "visible";
+}
+
+function attachHoverMenu(btn, row) {
+
+  btn.addEventListener("mouseenter", () => {
+    removeFly();
+    keepOpen();
+    buildFlyMenu(row, btn);
+  });
+
+  btn.addEventListener("mouseleave", scheduleHide);
+}
+
+window.addEventListener("scroll", removeFly, true);
+window.addEventListener("resize", removeFly);
+
+
+/* =====================================================
+   PAGINATION EVENTS
+===================================================== */
+
+prevBtn?.addEventListener("click", () => {
+
+  if (page <= 1) return;
+
+  page--;
+
+  renderTable(filteredRows);
+
+});
+
+nextBtn?.addEventListener("click", () => {
+
+  const totalPages =
+    Math.max(
+      1,
+      Math.ceil(filteredRows.length / pageSize)
+    );
+
+  if (page >= totalPages) return;
+
+  page++;
+
+  renderTable(filteredRows);
+
+});
+
+
+function setBtnDisabled(btn, disabled) {
+
+  if (!btn) return;
+
+  btn.classList.toggle(
+    "disabled",
+    !!disabled
+  );
+
+  btn.disabled = !!disabled;
+
+  btn.setAttribute(
+    "aria-disabled",
+    disabled ? "true" : "false"
+  );
+
+}
+  /* =====================================================
+     INITIAL LOAD
+  ===================================================== */
+
+  try {
+
+    const dnrToast =
+      localStorage.getItem("dnrListToast");
+
+    if(dnrToast === "draft"){
+
+      showToast(
+        "Delivery Note Return saved in status : Draft",
+        "success"
+      );
+
+      localStorage.removeItem("dnrListToast");
+
+    }
+    else if(dnrToast === "submitted"){
+
+      showToast(
+        "Delivery Note Return saved in status : Submitted",
+        "success"
+      );
+
+      localStorage.removeItem("dnrListToast");
+
+    }
+    else if(dnrToast === "cancelled"){
+
+      showToast(
+        "Delivery Note Return saved in status : Cancelled",
+        "success"
+      );
+
+      localStorage.removeItem("dnrListToast");
+
+    }
+
+  }
+  catch(e){}
+
+  loadDnrList();
+
 });
