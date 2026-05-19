@@ -58,11 +58,7 @@
         <label class="dn-label">Delivery Status</label>
         <select id="dnStatusFilter" class="dn-select">
           <option value="all">All</option>
-          <option value="draft">Draft</option>
-          <option value="delivered">Delivered</option>
-          <option value="partially_delivered">Partially Delivered</option>
-          <option value="returned">Returned</option>
-          <option value="cancelled">Cancelled</option>
+          <!-- status options filled from saved delivery notes (delivery-note.js) -->
         </select>
       </div>
 
@@ -85,13 +81,13 @@
           <!-- From -->
           <div class="dn-date-field">
             <span class="dn-date-text">From</span>
-            <input type="date" id="dnFromDate" class="dn-date-input">
+            <input type="date" id="dnFromDate" class="dn-date-input" min="1900-01-01" max="2100-12-31">
           </div>
 
           <!-- To -->
           <div class="dn-date-field">
             <span class="dn-date-text">To</span>
-            <input type="date" id="dnToDate" class="dn-date-input">
+            <input type="date" id="dnToDate" class="dn-date-input" min="1900-01-01" max="2100-12-31">
             
           </div>
         </div>

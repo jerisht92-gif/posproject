@@ -26,6 +26,9 @@ function showToast(message, type = 'info') {
 const INVOICE_RETURN_INVALID_DATE_MSG =
     "Invalid date. Use format YYYY-MM-DD (e.g. 2026-03-09).";
 
+const IR_LINE_ITEMS_EMPTY_HTML =
+    '<tr class="ir-line-items-empty"><td colspan="13" style="text-align:center;padding:16px;">Select an Invoice Reference ID to load items</td></tr>';
+
 function isValidReturnDateString(value) {
     if (!value || typeof value !== "string") return false;
     const trimmed = value.trim();
@@ -75,6 +78,7 @@ function hasAtLeastOneValidReturnLine() {
     const rows = document.querySelectorAll("#itemsTableBody tr");
     let ok = false;
     rows.forEach((row) => {
+        if (row.classList.contains("ir-line-items-empty")) return;
         if (row.cells.length < 13) return;
         const returnQty = parseFloat(row.cells[4].querySelector(".return-qty-input")?.value || 0);
         const reasonSelect = row.cells[6].querySelector(".reason-select");
@@ -164,12 +168,14 @@ const heading = document.getElementById('pageHeading');
 
 if (editId || viewId) {
     currentInvoiceReturnId = editId || viewId;
-        heading.textContent = 'Invoice Return';
+    if (heading) {
+        heading.textContent = viewId ? 'View Invoice Return' : 'Edit Invoice Return';
+    }
 
     tempInvoiceReturnId = null;
     isNewReturn = false;
 } else {
-        heading.textContent = 'New Invoice Return';
+    if (heading) heading.textContent = 'New Invoice Return';
 
     // Generate temporary ID for new invoice returns
     tempInvoiceReturnId = 'TEMP_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
@@ -232,12 +238,18 @@ function getStatusBadge(status) {
 // UPDATE PAGE TITLE BASED ON STATUS
 // ===================================================
 function updatePageTitle() {
-    let title = 'Invoice Return';
+    let title = isNewReturn
+        ? 'New Invoice Return'
+        : viewId
+            ? 'View Invoice Return'
+            : editId
+                ? 'Edit Invoice Return'
+                : 'Invoice Return';
     if (currentStatus) {
         const statusText = currentStatus.charAt(0).toUpperCase() + currentStatus.slice(1);
-        title = `Invoice Return - ${statusText}`;
+        title = `${title} - ${statusText}`;
     } else if (isNewReturn) {
-        title = 'Invoice Return - Draft';
+        title = 'New Invoice Return - Draft';
     }
     document.title = title;
 }
@@ -1581,8 +1593,13 @@ function checkSubmitButtonStatus() {
 function loadInvoiceDetails(invoiceId) {
     if (!invoiceId) {
         console.warn("Invoice ID empty, cannot fetch details");
+        const tbodyEmpty = document.getElementById("itemsTableBody");
+        if (tbodyEmpty) tbodyEmpty.innerHTML = IR_LINE_ITEMS_EMPTY_HTML;
         return;
     }
+
+    const tbody = document.getElementById("itemsTableBody");
+    if (!tbody) return;
 
     showToast("🔄 Loading invoice details...", 'info');
 
@@ -1598,10 +1615,9 @@ function loadInvoiceDetails(invoiceId) {
         .then(data => {
             if (data.error) {
                 showToast(data.error || 'Could not load invoice', 'error');
+                tbody.innerHTML = IR_LINE_ITEMS_EMPTY_HTML;
                 return;
             }
-
-            const tbody = document.getElementById("itemsTableBody");
 
             if (data.all_line_items_returned) {
                 /* Invoice Reference label + hidden value were already set by selectSaleOrder;
@@ -1788,6 +1804,7 @@ function loadInvoiceDetails(invoiceId) {
         .catch(err => {
             console.error("Error loading invoice details:", err);
             showToast("❌ Failed to load invoice details", 'error');
+            tbody.innerHTML = IR_LINE_ITEMS_EMPTY_HTML;
         });
 }
 const RETURN_QTY_NON_POSITIVE_MSG = "Return Qty value cannot be zero or negative";
@@ -1861,6 +1878,7 @@ function updateOrderSummary() {
     let returnSubtotal = 0;
     
     rows.forEach(row => {
+        if (row.classList.contains("ir-line-items-empty")) return;
         if (row.cells.length < 13) return;
         
         const returnQty = parseFloat(row.cells[4].querySelector('.return-qty-input')?.value || 0);
@@ -1906,6 +1924,7 @@ function updateOrderSummary() {
 function renumberRows() {
     const rows = document.querySelectorAll('#itemsTableBody tr');
     rows.forEach((row, idx) => {
+        if (row.classList.contains("ir-line-items-empty")) return;
         if (row.cells.length > 0 && row.cells[0]) {
             row.cells[0].textContent = idx + 1;
         }
@@ -2058,6 +2077,7 @@ function submitInvoiceReturn(status) {
 
     if (itemsTable) {
         Array.from(itemsTable.rows).forEach((row) => {
+            if (row.classList.contains("ir-line-items-empty")) return;
             if (row.cells.length < 13) return;
             const returnQty = parseFloat(row.cells[4].querySelector(".return-qty-input")?.value || 0);
             if (returnQty > 0) {
@@ -2383,6 +2403,20 @@ document.addEventListener('DOMContentLoaded', function() {
         const invoiceRef = document.getElementById('invoiceReferenceID');
         if (invoiceRef) {
             invoiceRef.addEventListener('change', function() {
+                const id = (this.value || "").trim();
+                if (id) {
+                    loadInvoiceDetails(id);
+                } else {
+                    const tbodyEl = document.getElementById("itemsTableBody");
+                    if (tbodyEl) tbodyEl.innerHTML = IR_LINE_ITEMS_EMPTY_HTML;
+                    document.getElementById("customerName").value = "";
+                    document.getElementById("customerId").value = "";
+                    document.getElementById("email").value = "";
+                    document.getElementById("phone").value = "";
+                    document.getElementById("contactPerson").value = "";
+                    document.getElementById("customerRefNo").value = "";
+                    updateOrderSummary();
+                }
                 updateMainButtons();
             });
         }

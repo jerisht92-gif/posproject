@@ -96,6 +96,12 @@ color: #d18a84;
     color: #7a1d1d;
 }
 
+.section-title .ir-line-items-hint {
+  font-size: 13px;
+  font-weight: 500;
+  color: #8b4513;
+}
+
 .quotation-items-box {
   border: 1px solid #f2bcbc;
   border-radius: 6px;

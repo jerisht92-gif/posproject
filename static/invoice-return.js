@@ -467,6 +467,12 @@ function createActionMenu(returnId, returnStatus) {
     const pageData = filteredReturns.slice(start, end);
 
     pageData.forEach(item => {
+      const retIso = String(item.return_date || "").trim();
+      const retIsoM = retIso.match(/^(\d{4})-(\d{2})-(\d{2})/);
+      const retDateDisplay = retIsoM
+        ? `${retIsoM[3]}-${retIsoM[2]}-${retIsoM[1]}`
+        : safeText(item.return_date);
+
       const row = document.createElement("tr");
       row.innerHTML = `
         <td class="dn-td-check">
@@ -475,7 +481,7 @@ function createActionMenu(returnId, returnStatus) {
         <td class="so-id">${safeText(item.return_id)}</td>
         <td class="so-invoice-ref">${safeText(item.invoice_ref)}</td>
         <td class="so-customer">${safeText(item.customer_name)}</td>
-        <td class="so-date">${safeText(item.return_date)}</td>
+        <td class="so-date">${retDateDisplay}</td>
         <td class="so-status">
           <span class="${getStatusClass(item.status)}">${safeText(item.status)}</span>
         </td>

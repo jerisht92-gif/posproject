@@ -88,7 +88,7 @@
 
         <div class="dn2-field">
           <label>Destination Address</label>
-          <input type="text" id="destAddr" placeholder="Enter Destination Address">
+          <input type="text" id="destAddr" class="dn2-input auto-field" placeholder="Auto-filled from Sales Order" readonly autocomplete="off">
           <small id="destAddrErr" class="field-error" aria-live="polite"></small>
         </div>
       </div>
@@ -125,10 +125,6 @@
         </tr>
       </tbody>
     </table>
-
-    <div class="dn-add-item-wrap">
-      <button type="button" class="dn-add-item-btn" id="dnAddItemBtn">+ Add Item</button>
-    </div>
 
   </div>
 </div>
@@ -172,7 +168,7 @@
 
           <div class="dn2-field">
             <label>Tracking ID</label>
-            <input type="text" id="trackingId" placeholder="Enter Tracking ID">
+            <input type="text" id="trackingId" class="dn2-input auto-field" placeholder="Auto-filled from Sales Order" readonly autocomplete="off">
             <small id="trackingIdErr" class="field-error" aria-live="polite"></small>
           </div>
         </div>
@@ -255,7 +251,7 @@
         <button type="button" class="btn-outline" id="cancelBtn">Cancel</button>
         <button type="button" class="btn-save-draft" id="saveDraftBtn">Save Draft</button>
         <button type="button" class="btn-submit" id="submitBtn" disabled>
-          Submit (DN)
+          Submit
         </button>
         <button type="button" id="cancelDnBtn" class="btn-cancel-dn">Cancel DN</button>
       </div>

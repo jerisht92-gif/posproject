@@ -857,10 +857,9 @@ function formatMoney(value) {
     const lockDraftCoreFields = mode === "edit" && statusKey === "draft";
     if (soRefSel) soRefSel.disabled = lockDraftCoreFields;
     if (destAddrEl) {
-      destAddrEl.readOnly = lockDraftCoreFields;
-      destAddrEl.setAttribute("aria-readonly", lockDraftCoreFields ? "true" : "false");
-      // Reuse same readonly visual style as Customer Name field.
-      destAddrEl.classList.toggle("auto-field", lockDraftCoreFields);
+      destAddrEl.readOnly = true;
+      destAddrEl.setAttribute("aria-readonly", "true");
+      destAddrEl.classList.add("auto-field");
     }
 
     updatePdfEmailButtons();
@@ -1181,17 +1180,43 @@ function formatMoney(value) {
   if (!soRefSel) return;
 
   try {
-    const res = await fetch("/api/sales-orders");
-    const json = await res.json();
+    const [soRes, dnRes] = await Promise.all([
+      fetch("/api/sales-orders"),
+      fetch("/api/delivery-notes", { cache: "no-store" }),
+    ]);
+    const json = await soRes.json();
+    const dnJson = await dnRes.json();
 
     console.log("SO list:", json); // ✅ debug
 
     const list = json.orders || [];
+    const dnNotes =
+      dnJson && dnJson.success && Array.isArray(dnJson.data)
+        ? dnJson.data
+        : [];
+
+    const blockedRefs = new Set();
+    const currentEditDnId = editId ? String(editId).trim() : "";
+
+    dnNotes.forEach((note) => {
+      const noteDnId = String(note.dn_id || "").trim();
+      if (currentEditDnId && noteDnId === currentEditDnId) return;
+      if (isPartiallyDeliveredNote(note)) return;
+      const st = normalizeDnDeliveryStatusKey(
+        note.delivery_status ?? note.status ?? ""
+      );
+      if (st === "cancelled") return;
+
+      const ref = String(
+        note.sale_order_ref || note.so_ref || note.so_id || ""
+      ).trim();
+      if (ref) blockedRefs.add(ref);
+    });
 
     const refs = new Set();
     list.forEach((so) => {
       const id = (so.so_id || "").trim();
-      if (id) refs.add(id);
+      if (id && !blockedRefs.has(id)) refs.add(id);
     });
 
     const sorted = [...refs].sort();
@@ -1306,6 +1331,17 @@ function formatMoney(value) {
 }
 
   async function saveDN(status) {
+    if (!soRefSel?.value?.trim()) {
+      showToast("Select Sales Order Reference ID", "error");
+      return;
+    }
+
+    const dv = dnDate?.value?.trim() || "";
+    if (!dv || !isValidDNDateString(dv)) {
+      showToast("Enter the valid date format..", "error");
+      return;
+    }
+
     const payload = {
       dn_id: dnId?.value || dnIdView?.value || "",
       delivery_date: dnDate?.value || "",
@@ -1499,6 +1535,30 @@ function formatMoney(value) {
   /* =========================================================
      INPUT EVENTS (Logistics live filters)
   ========================================================== */
+  dnDate?.addEventListener("input", () => {
+    let v = dnDate.value || "";
+    v = v.replace(/[^\d-]/g, "");
+
+    const iso = v.match(/^(\d{4,})-(\d{2})-(\d{2})$/);
+    if (iso) {
+      const year = iso[1].slice(0, 4);
+      dnDate.value = `${year}-${iso[2]}-${iso[3]}`;
+      return;
+    }
+
+    const lastDash = v.lastIndexOf("-");
+    if (lastDash !== -1) {
+      const prefix = v.slice(0, lastDash + 1);
+      let yearPart = v.slice(lastDash + 1).replace(/\D/g, "");
+      if (yearPart.length > 4) yearPart = yearPart.slice(0, 4);
+      dnDate.value = prefix + yearPart;
+      return;
+    }
+
+    const m = v.match(/^(\d{0,4})\d*$/);
+    dnDate.value = m ? m[1] : v;
+  });
+
   deliveryByEl?.addEventListener("input", () => {
     const cleaned = filterDeliveredBy(deliveryByEl.value);
     if (deliveryByEl.value !== cleaned) deliveryByEl.value = cleaned;
@@ -1611,8 +1671,6 @@ function formatMoney(value) {
 
       if (mode === "view") {
         setReadonlyView();
-      } else {
-        if (submitBtn) submitBtn.textContent = "Update Delivery Note";
       }
       validateSubmit();
   } else {

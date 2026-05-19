@@ -314,6 +314,10 @@
   border-bottom: 1px solid rgba(170, 70, 70, 0.12);
 }
 
+.dn-table tbody td.dn-empty{
+  text-align: left;
+}
+
 .dn-table thead th:last-child{
   padding-right: 0;
 }

@@ -54,20 +54,10 @@ document.addEventListener("DOMContentLoaded", () => {
   return t ? t.charAt(0).toUpperCase() + t.slice(1) : "";
 };
 
-/* =========================================================
-   DELIVERY NOTE STATUS MASTER
-========================================================== */
-const DELIVERY_NOTE_STATUSES = [
-  "Draft",
-  
-  "Delivered",
-  "Partially Delivered",
-  "Returned",
-  "Cancelled"
-];
-
-function loadDnStatusFilterOptions() {
+function loadDnStatusFilterOptions(rows) {
   if (!statusFilter) return;
+
+  const prev = statusFilter.value || "all";
 
   statusFilter.innerHTML = "";
 
@@ -76,12 +66,22 @@ function loadDnStatusFilterOptions() {
   allOpt.textContent = "All";
   statusFilter.appendChild(allOpt);
 
-  DELIVERY_NOTE_STATUSES.forEach((status) => {
+  const uniqueStatuses = [...new Set(
+    (rows || []).map((r) => r.status).filter(Boolean)
+  )].sort((a, b) => dnStatusRank(a) - dnStatusRank(b));
+
+  uniqueStatuses.forEach((status) => {
     const opt = document.createElement("option");
-    opt.value = normalizeStatus(status);
-    opt.textContent = status;
+    opt.value = status;
+    opt.textContent = statusLabel(status) || titleCase(status);
     statusFilter.appendChild(opt);
   });
+
+  if ([...statusFilter.options].some((o) => o.value === prev)) {
+    statusFilter.value = prev;
+  } else {
+    statusFilter.value = "all";
+  }
 }
   function normalizeStatus(v) {
     return String(v || "").trim().toLowerCase().replaceAll(" ", "_");
@@ -414,6 +414,7 @@ function loadDnStatusFilterOptions() {
       allRows = [];
     }
 
+    loadDnStatusFilterOptions(allRows);
     applyFilters(true);
   }
   /* =========================================================
@@ -492,7 +493,11 @@ function loadDnStatusFilterOptions() {
         tdType.textContent = titleCase(r.delivery_type);
 
         const tdDate = document.createElement("td");
-        tdDate.textContent = r.delivery_date;
+        const rawDnDate = String(r.delivery_date || "").trim();
+        const isoDnDate = rawDnDate.match(/^(\d{4})-(\d{2})-(\d{2})/);
+        tdDate.textContent = isoDnDate
+          ? `${isoDnDate[3]}-${isoDnDate[2]}-${isoDnDate[1]}`
+          : rawDnDate;
 
         const tdStatus = document.createElement("td");
         const badge = document.createElement("span");
@@ -599,6 +604,42 @@ function loadDnStatusFilterOptions() {
     applyFilters(true);
   }
 
+  [fromDate, toDate].forEach((dateInput) => {
+    dateInput?.addEventListener("input", () => {
+      let v = dateInput.value || "";
+      if (!v) return;
+
+      const parts = v.split("-");
+      if (parts[0] && parts[0].length > 4) {
+        showToast("Year must contain only 4 digits.", "error");
+        dateInput.value = "";
+        return;
+      }
+
+      v = v.replace(/[^\d-]/g, "");
+
+      const iso = v.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (iso) {
+        dateInput.value = `${iso[1]}-${iso[2]}-${iso[3]}`;
+        return;
+      }
+
+      const segs = v.split("-");
+      if (segs[1] && segs[1].length > 2) {
+        dateInput.value = "";
+        return;
+      }
+
+      if (segs[2] && segs[2].length > 2) {
+        dateInput.value = "";
+        return;
+      }
+
+      const m = v.match(/^(\d{0,4})\d*$/);
+      dateInput.value = m ? m[1] : v;
+    });
+  });
+
   fromDate?.addEventListener("change", handleFromDateFilter);
   fromDate?.addEventListener("blur", handleFromDateFilter);
   toDate?.addEventListener("change", handleToDateFilter);
@@ -671,6 +712,5 @@ function loadDnStatusFilterOptions() {
     }
   } catch (e) {}
 
-  loadDnStatusFilterOptions();
   loadData();
 });

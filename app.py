@@ -14032,7 +14032,31 @@ def get_one_sales_order(so_id):
     conn = get_db_connection()
     cur = conn.cursor()
 
-    cur.execute("SELECT * FROM sales_orders WHERE so_id=%s", (so_id,))
+    # Cast date columns to text (legacy rows may have years outside Python's 1..9999).
+    cur.execute("""
+        SELECT
+            so_id, sales_rep, order_type, status,
+            customer_id, customer_name, billing_address, shipping_address,
+            email, phone,
+            payment_method, currency, terms,
+            shipping_method, tracking_number, internal_notes, customer_notes,
+            subtotal, tax_total, global_discount, shipping_charges, grand_total,
+            stock_status,
+            CASE
+                WHEN order_date IS NULL THEN ''
+                ELSE to_char(order_date, 'YYYY-MM-DD')
+            END AS order_date,
+            CASE
+                WHEN due_date IS NULL THEN ''
+                ELSE to_char(due_date, 'YYYY-MM-DD')
+            END AS due_date,
+            CASE
+                WHEN delivery_date IS NULL THEN ''
+                ELSE to_char(delivery_date, 'YYYY-MM-DD')
+            END AS delivery_date
+        FROM sales_orders
+        WHERE so_id=%s
+    """, (so_id,))
     row = cur.fetchone()
     if not row:
         cur.close()
@@ -15184,7 +15208,12 @@ def api_delivery_notes():
         cur = conn.cursor()
 
         cur.execute("""
-        SELECT dn_id, delivery_date, so_id, customer_name,
+        SELECT dn_id,
+        CASE
+            WHEN delivery_date IS NULL THEN ''
+            ELSE to_char(delivery_date, 'YYYY-MM-DD')
+        END AS delivery_date,
+        so_id, customer_name,
         delivery_type, destination_address,
         delivery_status, status
         FROM delivery_notes
@@ -15324,7 +15353,19 @@ def api_delivery_note_one(dn_id):
     # =========================
     # FETCH HEADER
     # =========================
-    cur.execute("SELECT * FROM delivery_notes WHERE dn_id=%s", (dn_id,))
+    cur.execute("""
+    SELECT
+        dn_id,
+        CASE
+            WHEN delivery_date IS NULL THEN ''
+            ELSE to_char(delivery_date, 'YYYY-MM-DD')
+        END AS delivery_date,
+        so_id, customer_name, destination_address,
+        delivery_type, status, delivery_status,
+        delivery_by, vehicle_number, tracking_id, delivery_notes
+    FROM delivery_notes
+    WHERE dn_id=%s
+    """, (dn_id,))
     row = cur.fetchone()
 
     if not row:
@@ -18512,12 +18553,29 @@ def get_invoice_details(invoice_id):
     # =========================
     # 1. Invoice Main
     # =========================
+    # Cast date columns to text (legacy rows may have years outside Python's 1..9999).
     cur.execute("""
-        SELECT * FROM invoices 
-        WHERE invoice_id = %s 
+        SELECT
+            invoice_id,
+            customer_name,
+            customer_id,
+            email,
+            phone,
+            contact_person,
+            customer_ref_no,
+            CASE
+                WHEN invoice_date IS NULL THEN ''
+                ELSE to_char(invoice_date, 'YYYY-MM-DD')
+            END AS invoice_date,
+            CASE
+                WHEN due_date IS NULL THEN ''
+                ELSE to_char(due_date, 'YYYY-MM-DD')
+            END AS due_date
+        FROM invoices
+        WHERE invoice_id = %s
         ORDER BY created_at DESC LIMIT 1
     """, (invoice_id,))
-    
+
     row = cur.fetchone()
     if not row:
         cur.close()

@@ -290,11 +290,23 @@ document.addEventListener("DOMContentLoaded", () => {
             // Column 3: Customer Name
             row.insertCell(3).textContent = invoice.customer_name;
 
-            // Column 4: Invoice Date
-            row.insertCell(4).textContent = invoice.invoice_date;
+            // Column 4: Invoice Date (display DD-MM-YYYY; keep ISO for filter/sort)
+            const invDateCell = row.insertCell(4);
+            const invIso = String(invoice.invoice_date || "").trim();
+            invDateCell.dataset.isoDate = invIso;
+            const invIsoM = invIso.match(/^(\d{4})-(\d{2})-(\d{2})/);
+            invDateCell.textContent = invIsoM
+              ? `${invIsoM[3]}-${invIsoM[2]}-${invIsoM[1]}`
+              : invIso;
 
-            // Column 5: Due Date
-            row.insertCell(5).textContent = invoice.due_date || "";
+            // Column 5: Due Date (display DD-MM-YYYY; keep ISO for filter/sort)
+            const dueDateCell = row.insertCell(5);
+            const dueIso = String(invoice.due_date || "").trim();
+            dueDateCell.dataset.isoDate = dueIso;
+            const dueIsoM = dueIso.match(/^(\d{4})-(\d{2})-(\d{2})/);
+            dueDateCell.textContent = dueIsoM
+              ? `${dueIsoM[3]}-${dueIsoM[2]}-${dueIsoM[1]}`
+              : dueIso;
 
             // Column 6: Payment Status
             const payCell = row.insertCell(6);
@@ -440,7 +452,9 @@ document.addEventListener("DOMContentLoaded", () => {
             const invoiceId = row.children[1] ? row.children[1].textContent.toLowerCase() : '';
             const paymentStatus = row.children[6] ? row.children[6].dataset.payment : '';
             const status = row.children[7] ? row.children[7].dataset.status : '';
-            const invoiceDate = row.children[4] ? row.children[4].textContent : '';
+            const invoiceDate = row.children[4]
+              ? (row.children[4].dataset.isoDate || row.children[4].textContent)
+              : "";
 
             let show = true;
             if (statusVal && status !== statusVal) show = false;
@@ -509,8 +523,12 @@ document.addEventListener("DOMContentLoaded", () => {
         filteredRows.sort((a, b) => {
             const statusA = a.children[7] ? a.children[7].dataset.status : '';
             const statusB = b.children[7] ? b.children[7].dataset.status : '';
-            const dateA = a.children[4] ? a.children[4].textContent : '';
-            const dateB = b.children[4] ? b.children[4].textContent : '';
+            const dateA = a.children[4]
+              ? (a.children[4].dataset.isoDate || a.children[4].textContent)
+              : "";
+            const dateB = b.children[4]
+              ? (b.children[4].dataset.isoDate || b.children[4].textContent)
+              : "";
 
             switch (sortType) {
                 case 'newest':

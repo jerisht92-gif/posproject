@@ -161,6 +161,38 @@ FIELDS
   border-color:#b9473e;
 }
 
+/* Locked / read-only fields (same pattern as delivery note auto-field) */
+.dnr-field input.dnr-locked-field,
+.dnr-field input[readonly],
+.dnr-field textarea[readonly]{
+  cursor:default;
+  user-select:none;
+}
+
+.dnr-field input.dnr-locked-field:hover,
+.dnr-field input[readonly]:hover,
+.dnr-field textarea[readonly]:hover,
+.dnr-field--locked select:hover,
+.dnr-field select:disabled:hover,
+.dnr-ir-ref-dropdown.dnr-ir-ref--locked .dnr-ir-ref-selected:hover{
+  background-color:#fff5f5;
+  border-color:#e7b7b5;
+}
+
+.dnr-field--locked select:hover,
+.dnr-field select:disabled:hover,
+.dnr-ir-ref-dropdown.dnr-ir-ref--locked .dnr-ir-ref-selected:hover{
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 20 20' fill='none'><path d='M5 7.5L10 12.5L15 7.5' stroke='%23222222' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+}
+
+.dnr-field input.dnr-locked-field:focus,
+.dnr-field input[readonly]:focus,
+.dnr-field textarea[readonly]:focus{
+  background-color:#fff5f5;
+  border-color:#e7b7b5;
+  outline:none;
+}
+
 /* FOCUS */
 
 .dnr-field input:focus,
@@ -1284,71 +1316,11 @@ FONT AWESOME REQUIRED FIX
   color:#999;
 }
 
-
-/* =========================================================
-READ ONLY / LOCKED FIELDS (view + edit draft)
-========================================================= */
-
-.dnr-view-mode input[readonly],
-.dnr-view-mode input.dnr-locked-field,
-.dnr-cancelled-view-mode input[readonly],
-.dnr-cancelled-view-mode input.dnr-locked-field,
-.dnr-edit-draft-mode input[readonly],
-.dnr-edit-draft-mode input.dnr-locked-field{
-
-  cursor:default;
-  user-select:none;
-  opacity:1;
-}
-
-.dnr-view-mode .dnr-page textarea[readonly],
-.dnr-cancelled-view-mode .dnr-page textarea[readonly],
-.dnr-edit-draft-mode .dnr-page textarea[readonly]{
-
-  cursor:default;
-  user-select:none;
-  opacity:1;
-}
-
-.dnr-view-mode select:disabled,
-.dnr-cancelled-view-mode select:disabled,
-.dnr-edit-draft-mode select:disabled{
-
-  cursor:default;
-  opacity:1;
-}
-
-/* hover on locked fields — parent .dnr-field (select) or readonly input */
-.dnr-view-mode .dnr-field:hover input[readonly],
-.dnr-view-mode .dnr-field:hover input.dnr-locked-field,
-.dnr-view-mode .dnr-field--locked:hover select,
-.dnr-cancelled-view-mode .dnr-field:hover input[readonly],
-.dnr-cancelled-view-mode .dnr-field:hover input.dnr-locked-field,
-.dnr-cancelled-view-mode .dnr-field--locked:hover select,
-.dnr-edit-draft-mode .dnr-field:hover input[readonly],
-.dnr-edit-draft-mode .dnr-field:hover input.dnr-locked-field,
-.dnr-edit-draft-mode .dnr-field--locked:hover select{
-
-  background-color:#f5d4d4;
-  border-color:#b9473e;
-}
-
-.dnr-view-mode .dnr-field:hover textarea[readonly],
-.dnr-cancelled-view-mode .dnr-field:hover textarea[readonly],
-.dnr-edit-draft-mode .dnr-field:hover textarea[readonly]{
-
-  background-color:#f5d4d4;
-  border-color:#b9473e;
-}
-
 .dnr-line-items--locked{
   user-select:none;
 }
 
-.dnr-view-mode .dnr-line-items--locked .dnr-table tbody tr:hover td,
-.dnr-cancelled-view-mode .dnr-line-items--locked .dnr-table tbody tr:hover td,
-.dnr-edit-draft-mode .dnr-line-items--locked .dnr-table tbody tr:hover td{
-
+.dnr-line-items--locked .dnr-table tbody tr:hover td{
   background-color:#faf0f0;
 }
 

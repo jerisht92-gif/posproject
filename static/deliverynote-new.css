@@ -359,9 +359,10 @@
 .dn2-table tr.dn-line-items-empty td{
   text-align: center;
   color: #766060;
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 500;
-  padding: 24px 12px;
+  line-height: 1.35;
+  padding: 10px 8px;
 }
 
 /* =========================================================
