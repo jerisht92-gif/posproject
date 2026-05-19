@@ -33,7 +33,10 @@ document.addEventListener("DOMContentLoaded", () => {
   const comments = [];
   /** True when loaded `comments` field was a JSON array (history entries). */
   let storedCommentsFormatJson = false;
-  const files = [];
+  /** Files picked in UI but not yet uploaded (waiting for supplier_id). */
+  const pendingFiles = [];
+  /** Attachments already saved on server for this supplier. */
+  const serverAttachments = [];
   const MAX_ATTACHMENTS = 10;
   const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
   const ALLOWED_FILE_EXTENSIONS = new Set(["pdf", "doc", "docx", "xls", "xlsx", "jpg", "jpeg", "png"]);
@@ -351,34 +354,132 @@ document.addEventListener("DOMContentLoaded", () => {
       if (submitButton) submitButton.textContent = "Update";
       const title = document.querySelector(".page-title");
       if (title) title.textContent = "Edit Supplier";
+      await loadSupplierAttachments();
     } catch (error) {
       showToast("Network error while loading supplier.", "error");
     }
   }
- 
+
+  function getSupplierIdForUploads() {
+    const field = document.getElementById("supplierCode");
+    return (field?.value || editingSupplierId || "").toString().trim().toUpperCase();
+  }
+
+  function totalAttachmentCount() {
+    return serverAttachments.length + pendingFiles.length;
+  }
+
   function renderFiles() {
     if (!filesList) return;
     filesList.innerHTML = "";
-    if (!files.length) {
+    const total = totalAttachmentCount();
+    if (!total) {
       filesList.innerHTML =
         '<div class="no-files"><i class="fa-regular fa-folder-open"></i><p>No files attached yet</p></div>';
       if (fileCount) fileCount.textContent = `0 / ${MAX_ATTACHMENTS} files`;
       return;
     }
- 
+
     if (fileCount) {
-      const n = files.length;
-      fileCount.textContent = `${n} / ${MAX_ATTACHMENTS} files`;
+      fileCount.textContent = `${total} / ${MAX_ATTACHMENTS} files`;
     }
- 
-    files.forEach((file, index) => {
+
+    serverAttachments.forEach((att) => {
       const row = document.createElement("div");
       row.className = "file-item";
-      row.innerHTML = `<span>${file.name}</span><button type="button" class="remove-btn" data-index="${index}">Remove</button>`;
+      row.innerHTML = `<span>${escapeHtml(att.file_name)}</span><button type="button" class="remove-btn" data-server-id="${att.id}">Remove</button>`;
+      filesList.appendChild(row);
+    });
+
+    pendingFiles.forEach((file, index) => {
+      const row = document.createElement("div");
+      row.className = "file-item";
+      row.innerHTML = `<span>${escapeHtml(file.name)} (pending)</span><button type="button" class="remove-btn" data-pending-index="${index}">Remove</button>`;
       filesList.appendChild(row);
     });
   }
- 
+
+  async function loadSupplierAttachments() {
+    const supplierId = getSupplierIdForUploads();
+    if (!supplierId) {
+      serverAttachments.length = 0;
+      renderFiles();
+      return;
+    }
+    try {
+      const response = await fetch(`/api/supplier-attachments/${encodeURIComponent(supplierId)}`);
+      const result = await response.json().catch(() => ({}));
+      serverAttachments.length = 0;
+      if (response.ok && result?.success && Array.isArray(result.attachments)) {
+        result.attachments.forEach((a) => serverAttachments.push(a));
+      }
+    } catch (error) {
+      console.error("loadSupplierAttachments:", error);
+    }
+    renderFiles();
+  }
+
+  async function uploadSupplierFile(file) {
+    const supplierId = getSupplierIdForUploads();
+    if (!supplierId) {
+      showToast("Supplier ID is required before uploading files.", "error");
+      return false;
+    }
+    const formData = new FormData();
+    formData.append("supplier_id", supplierId);
+    formData.append("file", file);
+    try {
+      const response = await fetch("/api/supplier-attachments", {
+        method: "POST",
+        body: formData,
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !result.success) {
+        if (response.status === 404) {
+          pendingFiles.push(file);
+          renderFiles();
+          return true;
+        }
+        showToast(result?.message || result?.error || "Upload failed.", "error");
+        return false;
+      }
+      return true;
+    } catch (error) {
+      showToast("Network error while uploading file.", "error");
+      return false;
+    }
+  }
+
+  async function uploadPendingFiles() {
+    if (!pendingFiles.length) return;
+    const queue = pendingFiles.splice(0, pendingFiles.length);
+    const failed = [];
+    for (const file of queue) {
+      const ok = await uploadSupplierFile(file);
+      if (!ok) failed.push(file);
+    }
+    if (failed.length) pendingFiles.push(...failed);
+    await loadSupplierAttachments();
+  }
+
+  async function handleIncomingFiles(candidateFiles) {
+    const accepted = validateIncomingFiles(candidateFiles);
+    if (!accepted.length) return;
+
+    const supplierId = getSupplierIdForUploads();
+    if (!supplierId) {
+      accepted.forEach((file) => pendingFiles.push(file));
+      renderFiles();
+      return;
+    }
+
+    for (const file of accepted) {
+      const ok = await uploadSupplierFile(file);
+      if (!ok) break;
+    }
+    await loadSupplierAttachments();
+  }
+
   function validateIncomingFiles(candidateFiles) {
     const accepted = [];
  
@@ -395,7 +496,7 @@ document.addEventListener("DOMContentLoaded", () => {
       accepted.push(file);
     });
  
-    const remainingSlots = MAX_ATTACHMENTS - files.length;
+    const remainingSlots = MAX_ATTACHMENTS - totalAttachmentCount();
     if (remainingSlots <= 0) {
       showToast(`You can upload up to ${MAX_ATTACHMENTS} files only.`, "error");
       return [];
@@ -471,21 +572,42 @@ document.addEventListener("DOMContentLoaded", () => {
     uploadCard.style.borderColor = "#ddd";
     uploadCard.style.background = "#f8f9fa";
     const droppedFiles = Array.from(event.dataTransfer?.files || []);
-    validateIncomingFiles(droppedFiles).forEach((file) => files.push(file));
-    renderFiles();
+    void handleIncomingFiles(droppedFiles);
   });
   fileInput?.addEventListener("change", (event) => {
     const selectedFiles = Array.from(event.target?.files || []);
-    validateIncomingFiles(selectedFiles).forEach((file) => files.push(file));
-    renderFiles();
+    void handleIncomingFiles(selectedFiles);
     fileInput.value = "";
   });
-  filesList?.addEventListener("click", (event) => {
+  filesList?.addEventListener("click", async (event) => {
     if (!(event.target instanceof HTMLElement)) return;
     if (!event.target.classList.contains("remove-btn")) return;
-    const index = Number(event.target.dataset.index);
-    if (!Number.isNaN(index)) {
-      files.splice(index, 1);
+
+    const serverId = event.target.dataset.serverId;
+    if (serverId) {
+      const supplierId = getSupplierIdForUploads();
+      if (!supplierId) return;
+      try {
+        const response = await fetch(
+          `/api/supplier-attachments/${encodeURIComponent(supplierId)}/${encodeURIComponent(serverId)}`,
+          { method: "DELETE" }
+        );
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok || !result.success) {
+          showToast(result?.message || "Failed to remove file.", "error");
+          return;
+        }
+        await loadSupplierAttachments();
+        showToast("File removed.", "success");
+      } catch (error) {
+        showToast("Network error while removing file.", "error");
+      }
+      return;
+    }
+
+    const pendingIndex = Number(event.target.dataset.pendingIndex);
+    if (!Number.isNaN(pendingIndex)) {
+      pendingFiles.splice(pendingIndex, 1);
       renderFiles();
     }
   });
@@ -519,7 +641,8 @@ document.addEventListener("DOMContentLoaded", () => {
   discardButton?.addEventListener("click", () => {
     if (!supplierForm) return;
     supplierForm.reset();
-    files.length = 0;
+    pendingFiles.length = 0;
+    serverAttachments.length = 0;
     comments.length = 0;
     renderFiles();
     renderComments();
@@ -604,6 +727,7 @@ document.addEventListener("DOMContentLoaded", () => {
       }
  
       showToast(editingSupplierId ? "Supplier updated successfully." : "Supplier saved successfully.", "success");
+      await uploadPendingFiles();
       setTimeout(() => {
         const savedSupplierId = (
           result?.supplier_id ||

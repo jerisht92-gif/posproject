@@ -7,6 +7,7 @@ import smtplib
 import random
 import json
 import os
+import shutil
 import time
 from datetime import timedelta, datetime, date
 import uuid
@@ -787,40 +788,17 @@ INACTIVITY_TIMEOUT = 3600
 # ✅ FILE PATH CONSTANTS (JSON FILES)
 # =========================================
 def _init_upload_paths():
-    """Use app/static paths locally; fall back to TMPDIR on read-only FS (e.g. Vercel serverless)."""
-    root_upload = os.path.join(app.root_path, "static", "uploads")
-    root_attach = os.path.join(app.root_path, "attachments")
+    """Single project uploads/ root; fall back to TMPDIR on read-only FS (e.g. Vercel serverless)."""
+    root_upload = os.path.join(app.root_path, "uploads")
     try:
         os.makedirs(root_upload, exist_ok=True)
-        os.makedirs(root_attach, exist_ok=True)
-        return root_upload, root_attach
+        return root_upload
     except OSError as e:
         if getattr(e, "errno", None) not in (30, 13, 1):  # EROFS, EACCES, EPERM
             raise
-    base = os.path.join(os.environ.get("TMPDIR", "/tmp"), "pos_app_data")
-    up = os.path.join(base, "uploads")
-    att = os.path.join(base, "attachments")
-    os.makedirs(up, exist_ok=True)
-    os.makedirs(att, exist_ok=True)
-    return up, att
-
-
-ROLE_FILE = os.path.join(app.root_path, "roles.json")
-DEPARTMENT_FILE = os.path.join(app.root_path, "departments.json")
-UPLOAD_FOLDER, ATTACHMENTS_FOLDER = _init_upload_paths()
-
-
-def _invoice_return_upload_dir():
-    base = os.path.join(UPLOAD_FOLDER, "invoice_return")
-    try:
-        os.makedirs(base, exist_ok=True)
-    except OSError:
-        pass
-    return base
-
-
-INVOICE_RETURN_UPLOAD_FOLDER = _invoice_return_upload_dir()
-
+    root_upload = os.path.join(os.environ.get("TMPDIR", "/tmp"), "pos_app_data", "uploads")
+    os.makedirs(root_upload, exist_ok=True)
+    return root_upload
 
 
 def _writable_upload_subdir(*parts):
@@ -833,9 +811,92 @@ def _writable_upload_subdir(*parts):
     return base
 
 
+def _merge_legacy_upload_tree(src_dir, dest_dir):
+    """Move files from a legacy folder into uploads/ (skip if destination already exists)."""
+    if not src_dir or not os.path.isdir(src_dir):
+        return
+    src_norm = os.path.normpath(src_dir)
+    dest_norm = os.path.normpath(dest_dir)
+    if src_norm == dest_norm:
+        return
+    for root, _dirs, files in os.walk(src_dir):
+        rel = os.path.relpath(root, src_dir)
+        target_root = dest_dir if rel in (".", "") else os.path.join(dest_dir, rel)
+        try:
+            os.makedirs(target_root, exist_ok=True)
+        except OSError:
+            continue
+        for name in files:
+            sp = os.path.join(root, name)
+            dp = os.path.join(target_root, name)
+            if os.path.isfile(dp):
+                continue
+            try:
+                shutil.move(sp, dp)
+            except OSError:
+                try:
+                    shutil.copy2(sp, dp)
+                except OSError:
+                    pass
+
+
+def _migrate_legacy_upload_dirs():
+    """Consolidate static/uploads and root attachments/ into project uploads/."""
+    legacy_static = os.path.join(app.root_path, "static", "uploads")
+    legacy_attach = os.path.join(app.root_path, "attachments")
+    _merge_legacy_upload_tree(legacy_static, UPLOAD_FOLDER)
+    _merge_legacy_upload_tree(legacy_attach, QUOTATION_ATTACHMENTS_FOLDER)
+
+
+def _resolve_stored_file_path(file_path):
+    """Resolve DB-stored paths after uploads/ consolidation (supports legacy locations)."""
+    if not file_path:
+        return ""
+    p = str(file_path).strip()
+    if os.path.isfile(p):
+        return p
+    base = os.path.basename(p.replace("\\", "/"))
+    if not base:
+        return p
+    search_dirs = [
+        UPLOAD_FOLDER,
+        INVOICE_RETURN_UPLOAD_FOLDER,
+        INVOICE_ATTACHMENTS_FOLDER,
+        QUOTATION_ATTACHMENTS_FOLDER,
+        PURCHASE_ATTACHMENTS_FOLDER,
+        STOCK_ATTACHMENTS_FOLDER,
+        CREDIT_NOTE_ATTACHMENTS_FOLDER,
+        SUPPLIER_ATTACHMENTS_FOLDER,
+        PRODUCT_IMAGES_FOLDER,
+        IMPORT_UPLOAD_FOLDER,
+        os.path.join(app.root_path, "static", "uploads"),
+        os.path.join(app.root_path, "static", "uploads", "invoice_return"),
+        os.path.join(app.root_path, "attachments"),
+    ]
+    for d in search_dirs:
+        if not d:
+            continue
+        candidate = os.path.join(d, base)
+        if os.path.isfile(candidate):
+            return candidate
+    return p
+
+
+ROLE_FILE = os.path.join(app.root_path, "roles.json")
+DEPARTMENT_FILE = os.path.join(app.root_path, "departments.json")
+UPLOAD_FOLDER = _init_upload_paths()
+
+INVOICE_RETURN_UPLOAD_FOLDER = _writable_upload_subdir("invoice_return")
+QUOTATION_ATTACHMENTS_FOLDER = _writable_upload_subdir("quotation_attachments")
+INVOICE_ATTACHMENTS_FOLDER = _writable_upload_subdir("invoice_attachments")
+PRODUCT_IMAGES_FOLDER = _writable_upload_subdir("product_images")
+IMPORT_UPLOAD_FOLDER = _writable_upload_subdir("imports")
 PURCHASE_ATTACHMENTS_FOLDER = _writable_upload_subdir("purchase_attachments")
 STOCK_ATTACHMENTS_FOLDER = _writable_upload_subdir("stock_attachments")
 CREDIT_NOTE_ATTACHMENTS_FOLDER = _writable_upload_subdir("credit_note_attachments")
+SUPPLIER_ATTACHMENTS_FOLDER = _writable_upload_subdir("supplier_attachments")
+
+_migrate_legacy_upload_dirs()
 
 PRODUCT_FILE = os.path.join(app.root_path, "product.json")
 CATEGORY_FILE = os.path.join(app.root_path, "product_categories.json")
@@ -5685,9 +5746,8 @@ def import_products():
             })
 
         # Save uploaded file
-        upload_folder = "uploads"
-        os.makedirs(upload_folder, exist_ok=True)
-        file.save(os.path.join(upload_folder, file.filename))
+        os.makedirs(IMPORT_UPLOAD_FOLDER, exist_ok=True)
+        file.save(os.path.join(IMPORT_UPLOAD_FOLDER, file.filename))
 
         # Dummy response (replace later)
         return jsonify({
@@ -6228,9 +6288,9 @@ def save_product():
             image_filename = secure_filename(image.filename)
 
             # ensure upload folder exists
-            os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+            os.makedirs(PRODUCT_IMAGES_FOLDER, exist_ok=True)
 
-            image_path = os.path.join(UPLOAD_FOLDER, image_filename)
+            image_path = os.path.join(PRODUCT_IMAGES_FOLDER, image_filename)
             image.save(image_path)
 
         # -------------------- PRODUCT OBJECT ----------------------------
@@ -8369,18 +8429,201 @@ def update_supplier(supplier_id):
     finally:
         cur.close()
         conn.close()
+
+
+def _ensure_supplier_attachment_table(cur=None):
+    """supplier_attachments table + uploads/supplier_attachments/ folder."""
+    try:
+        os.makedirs(SUPPLIER_ATTACHMENTS_FOLDER, exist_ok=True)
+    except OSError:
+        pass
+    own_conn = None
+    own_cur = None
+    if cur is None:
+        own_conn = get_db_connection()
+        own_cur = own_conn.cursor()
+        cur = own_cur
+    try:
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS supplier_attachments (
+                id SERIAL PRIMARY KEY,
+                supplier_id TEXT NOT NULL,
+                file_name TEXT NOT NULL,
+                file_path TEXT NOT NULL,
+                uploaded_at TIMESTAMP DEFAULT NOW()
+            )
+            """
+        )
+        cur.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_supplier_attachments_supplier_id
+            ON supplier_attachments (supplier_id)
+            """
+        )
+        # Commit DDL on the active connection (required when cur is caller-supplied).
+        cur.connection.commit()
+    finally:
+        if own_conn:
+            own_cur.close()
+            own_conn.close()
+
+
+@app.route("/api/supplier-attachments", methods=["POST"])
+def upload_supplier_attachment():
+    """Save supplier file under uploads/supplier_attachments/."""
+    try:
+        supplier_id = (request.form.get("supplier_id") or "").strip().upper()
+        file = request.files.get("file")
+        if not supplier_id:
+            return jsonify({"success": False, "message": "supplier_id is required"}), 400
+        if not file or not file.filename:
+            return jsonify({"success": False, "message": "No file uploaded"}), 400
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+        try:
+            cur.execute("SELECT 1 FROM suppliers WHERE supplier_id = %s", (supplier_id,))
+            if not cur.fetchone():
+                return jsonify({"success": False, "message": "Supplier not found"}), 404
+        finally:
+            cur.close()
+            conn.close()
+
+        original_name = secure_filename(file.filename) or "attachment"
+        ext = original_name.rsplit(".", 1)[-1].lower() if "." in original_name else ""
+        stored_name = f"{supplier_id}_{uuid.uuid4().hex}"
+        if ext:
+            stored_name = f"{stored_name}.{ext}"
+        save_path = os.path.join(SUPPLIER_ATTACHMENTS_FOLDER, stored_name)
+        file.save(save_path)
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+        try:
+            _ensure_supplier_attachment_table(cur)
+            cur.execute(
+                """
+                INSERT INTO supplier_attachments (supplier_id, file_name, file_path)
+                VALUES (%s, %s, %s)
+                RETURNING id, uploaded_at
+                """,
+                (supplier_id, original_name, save_path),
+            )
+            row = cur.fetchone()
+            conn.commit()
+            uploaded_at = row[1].strftime("%Y-%m-%d %H:%M:%S") if row and row[1] else ""
+            attachment_id = row[0] if row else None
+        finally:
+            cur.close()
+            conn.close()
+
+        return jsonify({
+            "success": True,
+            "id": attachment_id,
+            "file_name": original_name,
+            "file_path": save_path,
+            "uploaded_at": uploaded_at,
+        })
+    except Exception as e:
+        print("❌ upload_supplier_attachment:", e)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/supplier-attachments/<supplier_id>", methods=["GET"])
+def get_supplier_attachments(supplier_id):
+    supplier_id = (supplier_id or "").strip().upper()
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        _ensure_supplier_attachment_table(cur)
+        cur.execute(
+            """
+            SELECT id, file_name, file_path, uploaded_at
+            FROM supplier_attachments
+            WHERE supplier_id = %s
+            ORDER BY uploaded_at DESC
+            """,
+            (supplier_id,),
+        )
+        rows = cur.fetchall()
+        result = []
+        for r in rows:
+            result.append({
+                "id": r[0],
+                "file_name": r[1],
+                "file_path": r[2],
+                "uploaded_at": r[3].strftime("%Y-%m-%d %H:%M:%S") if r[3] else "",
+            })
+        return jsonify({"success": True, "attachments": result})
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.route("/api/supplier-attachments/<supplier_id>/<int:attachment_id>", methods=["DELETE"])
+def delete_supplier_attachment(supplier_id, attachment_id):
+    supplier_id = (supplier_id or "").strip().upper()
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        _ensure_supplier_attachment_table(cur)
+        cur.execute(
+            """
+            SELECT file_path FROM supplier_attachments
+            WHERE id = %s AND supplier_id = %s
+            """,
+            (attachment_id, supplier_id),
+        )
+        row = cur.fetchone()
+        if not row:
+            return jsonify({"success": False, "message": "Attachment not found"}), 404
+        resolved = _resolve_stored_file_path(row[0])
+        if resolved and os.path.isfile(resolved):
+            try:
+                os.remove(resolved)
+            except OSError:
+                pass
+        cur.execute(
+            "DELETE FROM supplier_attachments WHERE id = %s AND supplier_id = %s",
+            (attachment_id, supplier_id),
+        )
+        conn.commit()
+        return jsonify({"success": True, "message": "Attachment deleted"})
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"success": False, "error": str(e)}), 500
+    finally:
+        cur.close()
+        conn.close()
+
+
 #----API endpoint to delete a supplier by ID (for supplier list UI)
 @app.route("/api/suppliers/<supplier_id>", methods=["DELETE"])
 def delete_supplier(supplier_id):
+    supplier_id = (supplier_id or "").strip().upper()
     conn = get_db_connection()
     cur = conn.cursor()
- 
+
     try:
+        _ensure_supplier_attachment_table(cur)
+        cur.execute(
+            "SELECT file_path FROM supplier_attachments WHERE supplier_id = %s",
+            (supplier_id,),
+        )
+        for (file_path,) in cur.fetchall():
+            resolved = _resolve_stored_file_path(file_path)
+            if resolved and os.path.isfile(resolved):
+                try:
+                    os.remove(resolved)
+                except OSError:
+                    pass
+        cur.execute("DELETE FROM supplier_attachments WHERE supplier_id = %s", (supplier_id,))
         cur.execute("DELETE FROM suppliers WHERE supplier_id = %s", (supplier_id,))
         conn.commit()
- 
+
         return jsonify({"success": True, "message": "Supplier deleted successfully"})
- 
+
     except Exception as e:
         conn.rollback()
         return jsonify({"success": False, "error": str(e)}), 500
@@ -11319,12 +11562,11 @@ def upload_attachment():
             pass
 
         # Save file
-        upload_folder = os.path.join(app.root_path, 'attachments')
-        os.makedirs(upload_folder, exist_ok=True)
+        os.makedirs(QUOTATION_ATTACHMENTS_FOLDER, exist_ok=True)
 
         ext = file.filename.rsplit('.', 1)[1].lower()
         unique_filename = f"{quotation_id}_{uuid.uuid4().hex}.{ext}"
-        file_path = os.path.join(upload_folder, unique_filename)
+        file_path = os.path.join(QUOTATION_ATTACHMENTS_FOLDER, unique_filename)
         file.save(file_path)
 
         # Insert into database (using the same connection)
@@ -11393,8 +11635,9 @@ def view_attachment(attachment_id):
             return jsonify({'error': 'Attachment not found'}), 404
         file_path = row[0]
         original_name = row[1]
-        folder = os.path.join(app.root_path, 'attachments')
-        full_path = os.path.join(folder, file_path)
+        full_path = _resolve_stored_file_path(
+            os.path.join(QUOTATION_ATTACHMENTS_FOLDER, file_path)
+        )
         return send_file(full_path, as_attachment=False, download_name=original_name)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -11412,8 +11655,9 @@ def download_attachment(attachment_id):
             return jsonify({'error': 'Attachment not found'}), 404
         file_path = row[0]
         original_name = row[1]
-        folder = os.path.join(app.root_path, 'attachments')
-        full_path = os.path.join(folder, file_path)
+        full_path = _resolve_stored_file_path(
+            os.path.join(QUOTATION_ATTACHMENTS_FOLDER, file_path)
+        )
         return send_file(full_path, as_attachment=True, download_name=original_name)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -11427,9 +11671,10 @@ def delete_attachment(attachment_id):
         if not row:
             return jsonify({'success': False, 'error': 'Attachment not found'}), 404
         file_path = row[0]
-        folder = os.path.join(app.root_path, 'attachments')
-        full_path = os.path.join(folder, file_path)
-        if os.path.exists(full_path):
+        full_path = _resolve_stored_file_path(
+            os.path.join(QUOTATION_ATTACHMENTS_FOLDER, file_path)
+        )
+        if full_path and os.path.exists(full_path):
             os.remove(full_path)
         cur.execute("DELETE FROM quotation_attachments WHERE attachment_id = %s", (attachment_id,))
         conn.commit()
@@ -18027,7 +18272,7 @@ def upload_attachment_invoice(invoice_id):
     ext = filename.split('.')[-1]
     stored = f"{uuid.uuid4()}.{ext}"
 
-    path = os.path.join(UPLOAD_FOLDER, stored)
+    path = os.path.join(INVOICE_ATTACHMENTS_FOLDER, stored)
     file.save(path)
 
     conn = get_db_connection()
@@ -18067,7 +18312,10 @@ def download_attachment_invoice(invoice_id, id):
     conn.close()
     if not row:
         return "Not found", 404
-    return send_file(row[0], as_attachment=True, download_name=row[1])
+    resolved = _resolve_stored_file_path(row[0])
+    if not resolved or not os.path.isfile(resolved):
+        return "Not found", 404
+    return send_file(resolved, as_attachment=True, download_name=row[1])
 
 # NEW: View route (as_attachment=False)
 @app.route('/api/invoice/<invoice_id>/attachments/<id>/view')
@@ -18080,8 +18328,11 @@ def view_attachment_invoice(invoice_id, id):
     conn.close()
     if not row:
         return "Not found", 404
+    resolved = _resolve_stored_file_path(row[0])
+    if not resolved or not os.path.isfile(resolved):
+        return "Not found", 404
     # Serve inline (browser will display images, PDFs, etc.)
-    return send_file(row[0], as_attachment=False, download_name=row[1])
+    return send_file(resolved, as_attachment=False, download_name=row[1])
 
 
 @app.route('/api/invoice/<invoice_id>/attachments/<attachment_id>', methods=['DELETE'])
@@ -18119,9 +18370,10 @@ def delete_invoice_attachment(invoice_id, attachment_id):
         conn.close()
         
         # Delete physical file from filesystem
-        if os.path.exists(file_path):
-            os.remove(file_path)
-            print(f"✅ Deleted file: {file_path}")
+        resolved = _resolve_stored_file_path(file_path)
+        if resolved and os.path.exists(resolved):
+            os.remove(resolved)
+            print(f"✅ Deleted file: {resolved}")
         else:
             print(f"⚠️ File not found on disk: {file_path}")
         
@@ -19114,8 +19366,9 @@ def delete_attachment_invoice_return(invoice_return_id, attachment_id):
         file_path = row[0]
 
         # Delete file from disk
-        if file_path and os.path.exists(file_path):
-            os.remove(file_path)
+        resolved = _resolve_stored_file_path(file_path)
+        if resolved and os.path.exists(resolved):
+            os.remove(resolved)
 
         # Delete from DB
         cur.execute("""
@@ -19156,11 +19409,12 @@ def download_invoice_return_attachment(invoice_return_id, attachment_id):
         file_path = row[0]
         original_name = row[1]
 
-        if not os.path.exists(file_path):
+        resolved = _resolve_stored_file_path(file_path)
+        if not resolved or not os.path.exists(resolved):
             return jsonify({"error": "File not found on server"}), 404
 
         # as_attachment=True → forces download
-        return send_file(file_path, as_attachment=True, download_name=original_name)
+        return send_file(resolved, as_attachment=True, download_name=original_name)
 
     except Exception as e:
         print("❌ Download error:", e)
@@ -19190,11 +19444,12 @@ def view_invoice_return_attachment(invoice_return_id, attachment_id):
         file_path = row[0]
         original_name = row[1]
 
-        if not os.path.exists(file_path):
+        resolved = _resolve_stored_file_path(file_path)
+        if not resolved or not os.path.exists(resolved):
             return jsonify({"error": "File not found on server"}), 404
 
         # as_attachment=False → browser displays images/PDFs inline
-        return send_file(file_path, as_attachment=False, download_name=original_name)
+        return send_file(resolved, as_attachment=False, download_name=original_name)
 
     except Exception as e:
         print("❌ View error:", e)
