@@ -28,4 +28,7 @@ reportlab>=4.0.0
 # --- Environment variable loader (.env support) ---
 python-dotenv>=1.0.0
 
+# --- S3-compatible storage (Supabase Storage, etc.) ---
+boto3>=1.34.0,<2.0
+
 
