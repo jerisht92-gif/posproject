@@ -33,6 +33,61 @@
     align-items: center;
     margin-bottom: 20px;
 }
+.page-title-wrap{
+    display:flex;
+    align-items:center;
+    gap:20px;
+}
+h1{
+  color:var(--main);
+  letter-spacing:0.5px;
+  font-size:28px;
+  font-weight:600;
+  margin-bottom:12px;
+  text-shadow:1px 1px 2px #d8b7b7;
+}
+
+.status-badge{
+    padding:10px 16px;
+    border-radius:30px;
+    font-size:13px;
+    font-weight:600;
+    min-width:auto;
+    text-align:center;
+    box-shadow:0 2px 8px rgba(0,0,0,0.08);
+}
+
+/* STATUS COLORS */
+
+.status-draft{
+  background:#EAB308;
+  color:#3B2F00;
+}
+
+.status-submitted{
+  background:linear-gradient(135deg,#D1FAE5,#A7F3D0);
+  color:#047857;
+}
+
+.status-partial{
+  background:#7C3AED;
+  color:#ffffff;
+}
+
+.status-received{
+  background:linear-gradient(135deg,#E0ECFF,#B6CCFF);
+  color:#1D4ED8;
+}
+
+.status-cancelled{
+  background:#4B5563;
+  color:#ffffff;
+}
+
+.status-closed{
+  background:linear-gradient(135deg,#E5E7EB,#D1D5DB);
+  color:#374151;
+}
 
 /* ROW ALIGNMENT FIX */
 .row {
@@ -60,127 +115,102 @@ h3 {
     color: #a12828;
     font-weight: 600;
 }
-/* ========================= */
-/* BASE INPUT STYLE ✅ */
-/* ========================= */
+/* =========================
+   REFERRAL STYLE BASE (PURCHASE PAGE)
+========================= */
 
-
-input,
-select,
-textarea {
+.page .field input,
+.page .field select,
+.page .field textarea {
   width: 100%;
-  outline: none;
-  color: #000;
   box-sizing: border-box;
-  transition: all 0.25s ease;   
+
   border: 1px solid #e7b7b5;
   border-radius: 10px;
-  background: linear-gradient(135deg, #fff5f5 0%, #f5f5f5 100%);
+
+  background: #fff5f5;  
+  color: #000;
+
+  outline: none;
+  font-family: "Poppins", sans-serif;
+
+  transition: all 0.2s ease;
 }
 
-input:hover,
-select:hover,
-textarea:hover {
-  background: linear-gradient(135deg, #f5d4d4 0%, #e8e8e8 100%);
-  border-color: #b9473e;
-  box-shadow: 0 4px 10px rgba(161, 40, 40, 0.12);
-  transform: scale(1.01);
+
+.page .field input,
+.page .field select {
+  height: 30px;
+  padding: 6px 12px;
+  font-size: 13px;
 }
 
-input:focus,
-select:focus,
-textarea:focus {
-  border-color: #a12828;
-  background: #fff;
-  box-shadow: 0 0 0 1px rgba(161, 40, 40, 0.25);
-  transform: none;
-}
-
-input,
-select {
-  height: 30px !important;
-  padding: 6px 12px !important;
-  border-radius: 8px;
-  font-size: 13px !important;
-}
-
-textarea {
+.page .field textarea {
   height: 90px;
   padding: 10px 12px;
+  font-size: 13px;
   resize: none;
-  font-size: 14px;
 }
 
- .input-field, .otp-digit, .line-table input, .line-table select {
-    box-sizing: border-box;          
-    padding: 10px;                   
-    font-size: 14px;                 
-    border: 1px solid #A23737;       
-    border-radius: 6px;
-    outline: none;
-    transition: 0.3s;
-    height: 38px;                     
+.page .field input:hover,
+.page .field select:hover,
+.page .field textarea:hover {
+  background: #f5d4d4;
+  border-color: #b9473e;
+  box-shadow: 0 0 6px rgba(185, 71, 62, 0.4);
 }
 
-/* Focus effect */
-input:focus, select:focus, textarea:focus, .input-field:focus, .otp-digit:focus {
-    border-color: #7f2a2a;
-     box-shadow: 0 0 0 1px rgba(161, 40, 40, 0.25);
-}
-input:disabled,
-select:disabled,
-textarea:disabled {
-  opacity: 0.7 !important;
-  cursor: default !important;
-  user-select: none !important;
-  pointer-events: none !important;
-  background-color: #f5f5f5 !important;
-}
-/* Full width */
-.input-field, input, select, textarea {
-    width: 100%;
+.page .field input:focus,
+.page .field select:focus,
+.page .field textarea:focus {
+  background: #fff5f5;
+  border-color: #a12828;
+  box-shadow: 0 0 0 1px rgba(161, 40, 40, 0.25);
 }
 
-/* Table Inputs */
-.line-table input,
-.line-table select {
-    width: 80px;
-    text-align: center;
-    padding: 10px;
-    font-size: 13px;
-    border: 1px solid #e7b7b5;
-    border-radius: 8px;
-    background: linear-gradient(135deg, #fff5f5 0%, #f5f5f5 100%);
-    box-shadow: none;
-    outline: none;
-    font-size: 13px;
-    transform: none;
+.summary-row.has-input input,
+#global_discount,
+#shipping {
+  width: 110px;
+  height: 30px;
+  padding: 6px 12px;
+  text-align: right;
+
+  border: 1px solid #e7b7b5;
+  border-radius: 8px;
+
+  background: #fff5f5 !important;
+  font-size: 13px;
+  font-weight: 500;
+
+  outline: none;
+  box-sizing: border-box;
 }
 
-.line-table select:hover,
-.line-table input:hover {
-    background: linear-gradient(135deg, #f5d4d4 0%, #e8e8e8 100%);
-    border-color: #d9a4a1;
-    box-shadow: none;
+.page select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
 }
 
-.line-table select:focus,
-.line-table input:focus {
-    border-color: #a12828;
-    background: #fff;
-    box-shadow: 0 0 0 1px rgba(161, 40, 40, 0.25);
+.page .field input:disabled,
+.page .field select:disabled,
+.page .field textarea:disabled {
+  opacity: 0.7;
+  cursor: default;
+  background-color: #f5f5f5;
+  pointer-events: none;
 }
-
-/* Textarea */
-textarea {
-    height: 80px;
-    resize: vertical;
+.page .field input,
+.page .field select,
+.page .field textarea {
+  transition: all 0.25s ease !important;
 }
-
-/* Optional helper classes for custom widths */
-.input-small { width: 80px; }
-.input-medium { width: 150px; }
-.input-large { width: 100%; }
+.page .field input:focus,
+.page .field select:focus,
+.page .field textarea:focus {
+  transform: translateY(-1px);
+}
 
 /* ========================= */
 /* TITLES */
@@ -245,6 +275,28 @@ button:hover {
   text-align: center;
 }
 
+.priceInput{
+
+    border:none !important;
+    background:transparent !important;
+
+    color:#222 !important;
+    font-weight:500;
+
+    text-align:center;
+
+    width:100px;
+    min-width:100px;
+
+    outline:none !important;
+    box-shadow:none !important;
+
+    pointer-events:none;
+
+    overflow:visible;
+
+    white-space:nowrap;
+}
 
 
 .so-items-table thead tr {
@@ -566,7 +618,7 @@ select option:hover {
 #commentText {
   width: 100%;
   box-sizing: border-box;
-  min-height: 130px;
+  min-height: 70px;
   margin-top: 8px;
   padding: 14px 16px;
 
@@ -893,41 +945,83 @@ select option:hover {
     margin: 10px 0;
 }
 
-.top-alert {
+/* =========================================
+   MODERN ALERT / TOAST DESIGN
+========================================= */
+
+.top-alert{
     position: fixed;
     top: 20px;
     left: 50%;
-    transform: translateX(-50%);
+
+    transform: translateX(-50%) translateY(-100px);
 
     display: none;
     align-items: center;
-    justify-content: center;   /* ✅ ADD THIS */
+    justify-content: center;
     gap: 10px;
 
-    padding: 14px 24px;
+    padding: 14px 28px;
 
-    border: 2px solid #b33434;
-    border-radius: 16px;
+    border-radius: 12px;
 
-    background: #f7eaea;
-    color: #a12828;
-
-    font-size: 16px;
+    font-size: 15px;
     font-weight: 600;
-
-    box-shadow: 0 4px 10px rgba(0,0,0,0.08);
 
     z-index: 99999;
 
     min-width: 350px;
-    max-width: 600px;
-    text-align: center;  
+    max-width: 560px;
+
+    text-align: center;
+
+    opacity: 0;
+    pointer-events: none;
+
+    transition: all 0.4s cubic-bezier(0.68,-0.55,0.265,1.55);
 }
 
-.alert-icon {
-    font-size: 20px;
+/* SHOW */
+.top-alert.show{
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+    pointer-events: auto;
+}
+
+/* SUCCESS */
+.top-alert.success{
+    background: linear-gradient(135deg,#fff4f4,#ffe8e8);
+    color: #a12828;
+
+    border: 1.5px solid #a12828;
+
+    box-shadow: 0 8px 24px rgba(161,40,40,0.25);
+}
+
+/* ERROR */
+.top-alert.error{
+    background: linear-gradient(135deg,#ffe6e6,#ffc2c2);
+    color: #a12828;
+
+    border: 1.5px solid #a12828;
+
+    box-shadow: 0 8px 24px rgba(161,40,40,0.35);
+}
+
+.top-alert.warning{
+    background: linear-gradient(135deg,#fff4f4,#ffe8e8);
+    color: #a12828;
+
+    border: 1.5px solid #a12828;
+
+    box-shadow: 0 8px 24px rgba(161,40,40,0.25);
+}
+
+/* ICON */
+.alert-icon{
+    font-size: 18px;
     font-weight: bold;
-    color: #b33434;
+    flex-shrink: 0;
 }
 
 #so_id {
@@ -962,7 +1056,7 @@ select option:hover {
 /* FIX TOP MENU SEARCH BAR */
 .topbar .search-input{
     padding-left: 38px !important;
-    height: 48px !important;
+    height: 20px !important;
 }
 
 /* =============================== */
@@ -1024,4 +1118,274 @@ i.fa-regular {
     display: inline-block !important;
     font-family: "Font Awesome 6 Free" !important;
     font-weight: 900;
+}
+
+.live-error{
+
+    color:#A23737;
+
+    font-size:12px;
+
+    font-weight:600;
+
+    margin-top:2px;
+
+    line-height:11px;
+
+    padding-left:2px;
+
+    display:none;
+}
+
+/* =========================
+   FILE ITEM
+========================= */
+
+.file-item{
+
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+
+    padding:18px;
+
+    border:1px solid #e8e8e8;
+    border-radius:12px;
+
+    background:#fff;
+
+    margin-bottom:12px;
+}
+
+/* LEFT */
+.file-left{
+
+    display:flex;
+    align-items:center;
+    gap:14px;
+}
+
+/* PDF ICON */
+.file-icon{
+
+    width:50px;
+    height:50px;
+
+    border-radius:10px;
+
+    background:#ffeaea;
+
+    display:flex;
+    align-items:center;
+    justify-content:center;
+}
+
+.file-icon i{
+
+    color:#e53935;
+    font-size:28px;
+}
+
+/* DETAILS */
+.file-name{
+
+    font-size:16px;
+    font-weight:600;
+    color:#4a1f1a;
+}
+
+.file-meta{
+
+    font-size:13px;
+    color:#777;
+
+    margin-top:3px;
+}
+
+/* RIGHT BUTTONS */
+.file-actions{
+
+    display:flex;
+    gap:10px;
+}
+
+/* COMMON BUTTON */
+.file-btn{
+
+    width:38px;
+    height:38px;
+
+    border:none;
+    border-radius:8px;
+
+    display:flex;
+    align-items:center;
+    justify-content:center;
+
+    cursor:pointer;
+
+    transition:0.2s ease;
+}
+
+/* VIEW */
+.view-btn{
+
+    background:#e8f1ff;
+    color:#1e88e5;
+}
+
+/* DOWNLOAD */
+.download-btn{
+
+    background:#e7f8ee;
+    color:#1b8f4d;
+}
+
+/* DELETE */
+.delete-btn{
+
+    background:#ffeaea;
+    color:#e53935;
+}
+
+/* HOVER */
+.file-btn:hover{
+
+    transform:translateY(-2px);
+}
+/* =========================
+   DELETE MODAL
+========================= */
+
+.delete-modal{
+
+    position:fixed;
+    inset:0;
+
+    background:rgba(0,0,0,0.45);
+
+    display:none;
+
+    align-items:center;
+    justify-content:center;
+
+    z-index:99999;
+}
+
+/* BOX */
+.delete-modal-content{
+
+    width:360px;
+
+    background:#fff;
+
+    border-radius:18px;
+
+    padding:30px 25px;
+
+    text-align:center;
+
+    animation:popupFade 0.2s ease;
+}
+
+/* ICON */
+.delete-icon{
+
+    width:70px;
+    height:70px;
+
+    margin:0 auto 15px;
+
+    border-radius:50%;
+
+    background:#ffeaea;
+
+    display:flex;
+    align-items:center;
+    justify-content:center;
+}
+
+.delete-icon i{
+
+    font-size:32px;
+    color:#e53935;
+}
+
+/* TITLE */
+.delete-modal-content h3{
+
+    margin-bottom:10px;
+
+    color:#222;
+}
+
+/* TEXT */
+.delete-modal-content p{
+
+    color:#666;
+
+    font-size:14px;
+
+    margin-bottom:25px;
+}
+
+/* BUTTONS */
+.delete-modal-actions{
+
+    display:flex;
+    justify-content:center;
+    gap:12px;
+}
+
+/* COMMON BTN */
+.delete-modal-actions button{
+
+    border:none;
+
+    padding:10px 18px;
+
+    border-radius:8px;
+
+    cursor:pointer;
+
+    font-weight:600;
+}
+
+/* CANCEL */
+.cancel-delete-btn{
+
+    background:#e5e7eb;
+    color:#333;
+}
+
+/* DELETE */
+.confirm-delete-btn{
+
+    background:#e53935;
+    color:#fff;
+}
+
+/* HOVER */
+.confirm-delete-btn:hover{
+
+    background:#c62828;
+}
+
+.cancel-delete-btn:hover{
+
+    background:#d1d5db;
+}
+
+/* ANIMATION */
+@keyframes popupFade{
+
+    from{
+        transform:scale(0.9);
+        opacity:0;
+    }
+
+    to{
+        transform:scale(1);
+        opacity:1;
+    }
 }

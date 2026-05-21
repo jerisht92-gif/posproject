@@ -28,68 +28,68 @@
         </div>
 
         <!-- FILTER -->
-        <div class="filter-bar">
 
-            <div class="filters">
+       <div class="filter-bar">
 
-                <div>
-                    <label>Status</label>
-                    <div class="custom-select">
-                    <select id="statusFilter">
-                        <option value="">All</option>
-                        <option value="Draft">Draft</option>
-                        <option value="Submitted">Submitted</option>
-                        <option value="Partially Received">Partially Received</option>
-                        <option value="Received">Received</option>
-                        <option value="Cancelled">Cancelled</option>
-                        <option value="Closed">Closed</option>
-                    </select>
-                    </div>
-                </div>
+    <!-- CLEAR FILTER -->
+    <div class="clear-container">
+        <button class="clear-btn">Clear Filter</button>
+    </div>
 
-                <div>
-                    <label>Supplier</label>
-                            <div class="custom-select">
-                            <select id="supplierFilter">
+    <!-- FILTERS -->
+    <div class="filters">
 
-                                <option value="">All</option>
-
-                                {% for supplier in suppliers %}
-
-                                    <option value="{{ supplier[0] }}">
-                                        {{ supplier[0] }}
-                                    </option>
-
-                                {% endfor %}
-
-                            </select>
-                            </div>
-                </div>
-
-                <div>
-                    <label>Payment Method</label>
-                    <div class="custom-select">
-                    <select id="payment">
-                        <option value="">All</option>
-                        <option value="Net 30">Net 30</option>
-                        <option value="Net 45">Net 45</option>
-                        <option value="Net 90">Net 90</option>
-                        <option value="Credit">Credit</option>
-                        <option value="Advance">Advance</option>
-                        <option value="Cash on Delivery (COD)">Cash on Delivery (COD)</option>
-                        <option value="Upon Invoice">Upon Invoice</option>
-                                            </select>
-                </div>
-                </div>
-
+        <div>
+            <label>Status</label>
+            <div class="custom-select">
+                <select id="statusFilter">
+                    <option value="">All</option>
+                    <option value="Draft">Draft</option>
+                    <option value="Submitted">Submitted</option>
+                    <option value="Partially Received">Partially Received</option>
+                    <option value="Received">Received</option>
+                    <option value="Cancelled">Cancelled</option>
+                    <option value="Closed">Closed</option>
+                </select>
             </div>
-
-            <div class="clear-container">
-                <label>&nbsp;</label>
-                <button class="clear-btn">Clear Filter</button>
-            </div>
-
         </div>
+
+        <div>
+            <label>Supplier</label>
+            <div class="custom-select">
+                <select id="supplierFilter">
+
+                    <option value="">All</option>
+
+                    {% for supplier in suppliers %}
+                    <option value="{{ supplier[0] }}">
+                        {{ supplier[0] }}
+                    </option>
+                    {% endfor %}
+
+                </select>
+            </div>
+        </div>
+
+        <div>
+            <label>Payment Method</label>
+            <div class="custom-select">
+                <select id="payment">
+                    <option value="">All</option>
+                    <option value="Net 30">Net 30</option>
+                    <option value="Net 45">Net 45</option>
+                    <option value="Net 90">Net 90</option>
+                    <option value="Credit">Credit</option>
+                    <option value="Advance">Advance</option>
+                    <option value="Cash on Delivery (COD)">Cash on Delivery (COD)</option>
+                    <option value="Upon Invoice">Upon Invoice</option>
+                </select>
+            </div>
+        </div>
+
+    </div>
+
+</div>
 
         <!-- TABLE -->
         <div class="table-wrapper">
@@ -97,7 +97,7 @@
 
                 <thead>
                     <tr>
-                        <th>S.No</th>
+                        
                         <th>PO ID</th>
                         <th>Supplier</th>
                         <th>PO Date</th>
@@ -113,7 +113,6 @@
 
                 {% for order in orders %}
                 <tr>
-                    <td>{{ loop.index }}</td>
                     <td>{{ order.po_number }}</td>
                     <td>{{ order.supplier }}</td>
                     <td>{{ order.pdate or "-" }}</td>
@@ -188,8 +187,6 @@
 
             </table>
         </div>
-
-    </div>
    
 
     <!-- PAGINATION -->
@@ -203,6 +200,7 @@
             <span class="page-info"></span>
             <button class="btn-next">Next</button>
         </div>
+    </div>
     </div>
 
 </div>
