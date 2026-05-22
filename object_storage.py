@@ -8,6 +8,8 @@ Object keys are stored under one bucket with a prefix per submodule, e.g.:
   quotation_attachments/QA-010/invoice_INV-010 (2).pdf
   supplier_attachments/SUP-001/contract.pdf
   invoice_attachments/INV-010/receipt.pdf
+  deliverynote_attachments/DN-001/proof.pdf
+  deliverynote_return_attachments/DNR-001/invoice.pdf
   (entity subfolder + original uploaded file name)
 
 The public URL returned and stored in PostgreSQL is:
@@ -42,6 +44,8 @@ MODULE_INVOICE_RETURN_ATTACHMENTS = "invoice_return_attachments"
 MODULE_PURCHASE_ATTACHMENTS = "purchase_attachments"
 MODULE_STOCK_ATTACHMENTS = "stock_attachments"
 MODULE_CREDIT_NOTE_ATTACHMENTS = "credit_note_attachments"
+MODULE_DELIVERY_NOTE_ATTACHMENTS = "deliverynote_attachments"
+MODULE_DELIVERY_NOTE_RETURN_ATTACHMENTS = "deliverynote_return_attachments"
 MODULE_PRODUCT_IMAGES = "product_images"
 MODULE_IMPORTS = "imports"
 

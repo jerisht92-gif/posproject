@@ -111,7 +111,7 @@
         <div class="menu-group">
           <button
             type="button"
-            class="menu-toggle"
+            class="menu-toggle{% if page in ['sales_order','quick_billing','delivery_note','invoice','deliverynote_return','delivery_note_return','invoice_return','dn_return','inv_return','stock_receipt'] %} open{% endif %}"
             data-target="sales-submenu"
           >
             <span class="menu-icon">☰</span>
@@ -120,7 +120,7 @@
           </button>
 
           <div id="sales-submenu"
-               class="submenu{% if page in ['sales_order','quick_billing','delivery_note','invoice','deliverynote_return','invoice_return','dn_return','inv_return','stock_receipt'] %} open{% endif %}">
+               class="submenu{% if page in ['sales_order','quick_billing','delivery_note','invoice','deliverynote_return','delivery_note_return','invoice_return','dn_return','inv_return','stock_receipt'] %} open{% endif %}">
 
 
             <a href="{{ url_for('quick_billing') }}"
@@ -142,7 +142,7 @@
             </a>
 
             <a href="{{ url_for('dnr_page_list') }}"
-              class="submenu-item{% if page == 'deliverynote_return' %} active{% endif %}">
+              class="submenu-item{% if page in ['deliverynote_return', 'delivery_note_return'] %} active{% endif %}">
               <span class="submenu-icon">↩</span>
               <span>Delivery Note Return</span>
             </a>

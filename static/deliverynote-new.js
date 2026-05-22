@@ -639,8 +639,17 @@ function formatMoney(value) {
     `;
 
     document.getElementById("ackDownloadBtn")?.addEventListener("click", () => {
-    if (uploadedAckFile?.isExisting) {
-      showToast("Existing file download needs backend file path/API.", "error");
+    const id = dnId?.value || dnIdView?.value || "";
+    if (uploadedAckFile?.isExisting && id) {
+      window.open(
+        `/api/delivery-notes/${encodeURIComponent(id)}/pod/download`,
+        "_blank"
+      );
+      return;
+    }
+
+    if (!uploadedAckFile || uploadedAckFile.isExisting) {
+      showToast("POD file not available to download.", "error");
       return;
     }
 
@@ -652,7 +661,25 @@ function formatMoney(value) {
     URL.revokeObjectURL(url);
   });
 
-    document.getElementById("ackRemoveBtn")?.addEventListener("click", () => {
+    document.getElementById("ackRemoveBtn")?.addEventListener("click", async () => {
+      const id = dnId?.value || dnIdView?.value || "";
+      if (uploadedAckFile?.isExisting && id) {
+        let delUrl = `/api/delivery-notes/${encodeURIComponent(id)}/pod`;
+        if (uploadedAckFile.pod_file_path) {
+          delUrl += `?path=${encodeURIComponent(uploadedAckFile.pod_file_path)}`;
+        }
+        try {
+          const res = await fetch(delUrl, { method: "DELETE" });
+          const data = await res.json();
+          if (!data.success) {
+            showToast(data.message || "Could not remove POD", "error");
+            return;
+          }
+        } catch {
+          showToast("Network error", "error");
+          return;
+        }
+      }
       uploadedAckFile = null;
       ackSaved = false;
       if (ackPodFile) ackPodFile.value = "";
@@ -800,11 +827,44 @@ function formatMoney(value) {
       return;
     }
 
-    // If you have backend API, call it here
-    ackSaved = true;
-    showToast("Acknowledgement saved.", "success");
-    updatePdfEmailButtons();
-    validateSubmit();
+    const id = dnId?.value || dnIdView?.value || "";
+    if (!id) {
+      showToast("Delivery Note ID missing", "error");
+      return;
+    }
+
+    const form = new FormData();
+    form.append("received_by", (ackReceivedBy?.value || "").trim());
+    form.append("contact_number", (ackContact?.value || "").trim());
+    if (uploadedAckFile && !uploadedAckFile.isExisting) {
+      form.append("file", uploadedAckFile, uploadedAckFile.name);
+    } else if (uploadedAckFile?.pod_file_path) {
+      form.append("pod_file_path", uploadedAckFile.pod_file_path);
+      form.append("pod_file_name", uploadedAckFile.name || "");
+    }
+
+    try {
+      const res = await fetch(
+        `/api/delivery-notes/${encodeURIComponent(id)}/acknowledgement`,
+        { method: "POST", body: form }
+      );
+      const data = await res.json();
+      if (!data.success) {
+        showToast(data.message || "Acknowledgement save failed", "error");
+        return;
+      }
+      uploadedAckFile = {
+        name: data.pod_file_name || data.pod_file || uploadedAckFile.name,
+        pod_file_path: data.pod_file_path || "",
+        isExisting: true,
+      };
+      ackSaved = true;
+      showToast("Acknowledgement saved.", "success");
+      updatePdfEmailButtons();
+      validateSubmit();
+    } catch {
+      showToast("Network error", "error");
+    }
   });
 
   pdfBtn?.addEventListener("click", () => {
@@ -1416,6 +1476,7 @@ function formatMoney(value) {
       received_by: ackReceivedBy?.value || "",
       contact_number: ackContact?.value || "",
       pod_file: uploadedAckFile?.name || "",
+      pod_file_path: uploadedAckFile?.pod_file_path || "",
 
       items: collectItems(),
     };
@@ -1485,10 +1546,11 @@ function formatMoney(value) {
       "";
   }
 
-  if (dn.pod_file || dn.ack_pod_file_name) {
+  if (dn.pod_file || dn.ack_pod_file_name || dn.pod_file_path) {
     uploadedAckFile = {
-      name: dn.pod_file || dn.ack_pod_file_name,
-      isExisting: true
+      name: dn.pod_file || dn.ack_pod_file_name || "POD",
+      pod_file_path: dn.pod_file_path || "",
+      isExisting: true,
     };
     ackSaved = true;
   } else {

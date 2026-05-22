@@ -14,7 +14,10 @@ const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 // =============================
 function clearMessages() {
   emailErrorEl.textContent = "";
-  if (statusEl) statusEl.textContent = "";
+  if (statusEl) {
+    statusEl.textContent = "";
+    statusEl.classList.remove("success");
+  }
 }
 
 function validateEmailField() {
@@ -32,43 +35,58 @@ function validateEmailField() {
   return true;
 }
 
+function setSending(isSending) {
+  if (!sendBtn) return;
+  sendBtn.disabled = isSending;
+  sendBtn.textContent = isSending ? "Sending..." : "Send reset link";
+}
+
 
 // =============================
-// 3. CLICK HANDLER
+// 3. SEND RESET LINK (direct — no check-your-mail page)
 // =============================
 sendBtn.addEventListener("click", () => {
   clearMessages();
 
-  // 1️⃣ Format check
   if (!validateEmailField()) return;
 
-  const email = emailInput.value.trim();
+  const email = emailInput.value.trim().toLowerCase();
 
+  setSending(true);
   if (statusEl) {
-    statusEl.textContent = "Checking email...";
+    statusEl.textContent = "Sending reset link...";
+    statusEl.classList.remove("success");
     statusEl.style.color = "#8f1e43";
   }
 
-  // 2️⃣ Ask backend if email is registered
-  fetch("/check-email", {
+  fetch("/send-reset-link", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email })
+    body: JSON.stringify({ email }),
   })
-    .then((res) => res.json())
-    .then((data) => {
-      if (data.status === "ok") {
-        const encoded = encodeURIComponent(email);
-        window.location.href = "/check-your-mail?email=" + encoded;
-      } else {
-        emailErrorEl.textContent = "Enter a registered email address.";
-        if (statusEl) statusEl.textContent = "";
+    .then((res) => res.json().then((data) => ({ ok: res.ok, data })))
+    .then(({ ok, data }) => {
+      if (ok && data.status === "ok") {
+        emailErrorEl.textContent = "";
+        if (statusEl) {
+          statusEl.textContent =
+            `Reset link sent to ${email}. Check your inbox and spam folder.`;
+          statusEl.classList.add("success");
+          statusEl.style.color = "#1a7f4e";
+        }
+        return;
       }
+      emailErrorEl.textContent =
+        data.message === "Email not registered."
+          ? "Enter a registered email address."
+          : data.message || "Could not send reset link.";
+      if (statusEl) statusEl.textContent = "";
     })
     .catch(() => {
       if (statusEl) {
         statusEl.textContent = "Network error. Please try again.";
         statusEl.style.color = "#6e102c";
       }
-    });
+    })
+    .finally(() => setSending(false));
 });

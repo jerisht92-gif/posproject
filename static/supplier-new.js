@@ -950,24 +950,48 @@ document.addEventListener("DOMContentLoaded", () => {
       if (!btn) return;
       const row = btn.closest(".sup-att__row");
       if (!row || !row.closest(".supplier-doc-upload__list")) return;
- 
+
       const slotKey = row.dataset.slotKey;
+      const serverId = row.dataset.serverId;
       const file = slotKey ? slotUploadFiles[slotKey] : null;
-      if (!file) return;
- 
+      const supplierId = getSupplierIdForUploads();
+
       if (btn.classList.contains("view-btn")) {
-        viewSupplierAttachmentFile({ pendingFile: file });
+        if (serverId) viewSupplierAttachmentFile({ serverId });
+        else if (file) viewSupplierAttachmentFile({ pendingFile: file });
         return;
       }
       if (btn.classList.contains("download-btn")) {
-        downloadSupplierAttachmentFile({ pendingFile: file });
+        if (serverId) downloadSupplierAttachmentFile({ serverId });
+        else if (file) downloadSupplierAttachmentFile({ pendingFile: file });
         return;
       }
       if (btn.classList.contains("delete-btn")) {
-        slotUploadFiles[slotKey] = null;
-        const cfg = SUPPLIER_SLOT_CONFIG.find((c) => c.key === slotKey);
-        if (cfg?.input()) cfg.input().value = "";
-        renderSlotUploadList(slotKey);
+        if (serverId && supplierId) {
+          try {
+            const response = await fetch(
+              `/api/supplier-attachments/${encodeURIComponent(supplierId)}/${encodeURIComponent(serverId)}`,
+              { method: "DELETE" }
+            );
+            const result = await response.json().catch(() => ({}));
+            if (!response.ok || !result.success) {
+              showToast(result?.message || "Failed to remove file.", "error");
+              return;
+            }
+            await loadSupplierAttachments();
+            hydrateSlotUploadsFromServer();
+            showToast("File removed.", "success");
+          } catch (error) {
+            showToast("Network error while removing file.", "error");
+          }
+          return;
+        }
+        if (slotKey) {
+          slotUploadFiles[slotKey] = null;
+          const cfg = SUPPLIER_SLOT_CONFIG.find((c) => c.key === slotKey);
+          if (cfg?.input()) cfg.input().value = "";
+          renderSlotUploadList(slotKey);
+        }
       }
     });
   }
@@ -984,7 +1008,7 @@ document.addEventListener("DOMContentLoaded", () => {
     for (const { key } of SUPPLIER_SLOT_CONFIG) {
       const file = slotUploadFiles[key];
       if (!file) continue;
-      const ok = await uploadSupplierFile(file);
+      const ok = await uploadSupplierFile(file, key);
       if (ok) {
         slotUploadFiles[key] = null;
         const cfg = SUPPLIER_SLOT_CONFIG.find((c) => c.key === key);
@@ -1718,18 +1742,41 @@ document.addEventListener("DOMContentLoaded", () => {
       const title = document.querySelector(".page-title");
       if (title) title.textContent = "Edit Supplier";
       await loadSupplierAttachments();
+      hydrateSlotUploadsFromServer();
     } catch (error) {
       showToast("Network error while loading supplier.", "error");
     }
   }
- 
+
+  function hydrateSlotUploadsFromServer() {
+    SUPPLIER_SLOT_CONFIG.forEach(({ key, listId }) => {
+      const listEl = document.getElementById(listId);
+      if (!listEl) return;
+      const att = serverAttachments.find((a) => (a.category || "") === key);
+      if (!att) {
+        listEl.innerHTML = "";
+        return;
+      }
+      listEl.innerHTML = buildSupAttRowHtml({
+        name: att.file_name,
+        sizeLabel: "—",
+        dateLabel: att.uploaded_at || "—",
+        serverId: String(att.id),
+        slotKey: key
+      });
+    });
+  }
+
   function getSupplierIdForUploads() {
     const field = document.getElementById("supplierCode");
     return (field?.value || editingSupplierId || "").toString().trim().toUpperCase();
   }
  
   function totalAttachmentCount() {
-    return serverAttachments.length + pendingFiles.length;
+    const tabCount = serverAttachments.filter(
+      (a) => !a.category || a.category === "attachments"
+    ).length;
+    return tabCount + pendingFiles.length;
   }
  
   function renderFiles() {
@@ -1745,7 +1792,9 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
  
-    serverAttachments.forEach((att) => {
+    serverAttachments
+      .filter((att) => !att.category || att.category === "attachments")
+      .forEach((att) => {
       const wrap = document.createElement("div");
       wrap.innerHTML = buildSupAttRowHtml({
         name: att.file_name,
@@ -1788,7 +1837,7 @@ document.addEventListener("DOMContentLoaded", () => {
     renderFiles();
   }
  
-  async function uploadSupplierFile(file) {
+  async function uploadSupplierFile(file, category = "") {
     const supplierId = getSupplierIdForUploads();
     if (!supplierId) {
       showToast("Supplier ID is required before uploading files.", "error");
@@ -1797,6 +1846,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const formData = new FormData();
     formData.append("supplier_id", supplierId);
     formData.append("file", file);
+    if (category) formData.append("category", category);
     try {
       const response = await fetch("/api/supplier-attachments", {
         method: "POST",
@@ -1811,6 +1861,9 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         showToast(result?.message || result?.error || "Upload failed.", "error");
         return false;
+      }
+      if (!category) {
+        await loadSupplierAttachments();
       }
       return true;
     } catch (error) {
@@ -1843,7 +1896,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
  
     for (const file of accepted) {
-      const ok = await uploadSupplierFile(file);
+      const ok = await uploadSupplierFile(file, "attachments");
       if (!ok) break;
     }
     await loadSupplierAttachments();
@@ -2161,19 +2214,16 @@ document.addEventListener("DOMContentLoaded", () => {
         showToast(serverMessage, "error");
         return;
       }
- 
+
       showToast(editingSupplierId ? "Supplier updated successfully." : "Supplier saved successfully.", "success");
-      await uploadPendingFiles();
-      await uploadSlotFiles();
+      try {
+        await uploadPendingFiles();
+        await uploadSlotFiles();
+      } catch (uploadErr) {
+        console.error("Supplier attachment upload after save:", uploadErr);
+      }
       setTimeout(() => {
-        const savedSupplierId = (
-          result?.supplier_id ||
-          payload?.supplier_id ||
-          editingSupplierId ||
-          ""
-        ).trim().toUpperCase();
-        if (!savedSupplierId) return;
-        window.location.href = `/supplier-new?supplier_id=${encodeURIComponent(savedSupplierId)}`;
+        window.location.href = "/suppliers";
       }, 600);
     } catch (error) {
       showToast("Network error while saving supplier.", "error");

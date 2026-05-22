@@ -178,8 +178,9 @@ function dnrDateRequiresToday(){
     return false;
   }
 
+  /* Draft edit: keep the date already saved on the record */
   if(pageMode === "edit" && urlId)
-    return true;
+    return false;
 
   return !urlId;
 
@@ -250,6 +251,8 @@ function configureDnrDateField(opts){
 
     dnrDate.readOnly = false;
     dnrDate.classList.remove("dnr-locked-field");
+    dnrDate.removeAttribute("min");
+    dnrDate.removeAttribute("max");
 
     return;
 
@@ -1597,7 +1600,7 @@ function applyDnrEditDraftLocks(){
   });
 
   unlockDnrField(customerRefEl);
-  configureDnrDateField();
+  configureDnrDateField({ preserveValue: true });
 
 }
 
@@ -3390,21 +3393,33 @@ async function saveDnr(status){
 
 /* =========================================================
 SAVE DRAFT / SUBMIT — handlers (DB via app.py)
+First click while comment/inputs are focused: without mousedown
+preventDefault the blur steals the click (needs two clicks).
 ========================================================= */
 
-saveDraftBtn?.addEventListener(
-  "click",
-  ()=>{
-    saveDnr("Draft");
-  }
-);
+function bindDnrSaveButton(btn, status){
 
-submitBtn?.addEventListener(
-  "click",
-  ()=>{
-    saveDnr("Submitted");
-  }
-);
+  if(!btn)
+    return;
+
+  btn.addEventListener(
+    "mousedown",
+    e=>{
+      e.preventDefault();
+    }
+  );
+
+  btn.addEventListener(
+    "click",
+    ()=>{
+      saveDnr(status);
+    }
+  );
+
+}
+
+bindDnrSaveButton(saveDraftBtn, "Draft");
+bindDnrSaveButton(submitBtn, "Submitted");
 
 /* =========================================================
 CANCEL DNR MODAL

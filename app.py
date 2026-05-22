@@ -871,6 +871,8 @@ def _resolve_stored_file_path(file_path):
         STOCK_ATTACHMENTS_FOLDER,
         CREDIT_NOTE_ATTACHMENTS_FOLDER,
         SUPPLIER_ATTACHMENTS_FOLDER,
+        DELIVERY_NOTE_ATTACHMENTS_FOLDER,
+        DELIVERY_NOTE_RETURN_ATTACHMENTS_FOLDER,
         PRODUCT_IMAGES_FOLDER,
         IMPORT_UPLOAD_FOLDER,
         os.path.join(app.root_path, "static", "uploads"),
@@ -905,6 +907,10 @@ PURCHASE_ATTACHMENTS_FOLDER = _writable_upload_subdir("purchase_attachments")
 STOCK_ATTACHMENTS_FOLDER = _writable_upload_subdir("stock_attachments")
 CREDIT_NOTE_ATTACHMENTS_FOLDER = _writable_upload_subdir("credit_note_attachments")
 SUPPLIER_ATTACHMENTS_FOLDER = _writable_upload_subdir("supplier_attachments")
+DELIVERY_NOTE_ATTACHMENTS_FOLDER = _writable_upload_subdir("deliverynote_attachments")
+DELIVERY_NOTE_RETURN_ATTACHMENTS_FOLDER = _writable_upload_subdir("deliverynote_return_attachments")
+
+_DN_POD_EXTENSIONS = {"pdf", "jpg", "jpeg", "png"}
 
 
 def _upload_basename(original_filename, secure=False):
@@ -923,6 +929,18 @@ def _upload_relative_path(entity_id, original_filename, secure=False):
     """Relative key/path: {entity_id}/{original filename} under a module folder."""
     eid = (entity_id or "").strip().replace("\\", "/").split("/")[-1]
     base = _upload_basename(original_filename, secure=secure)
+    if not eid:
+        return base
+    return f"{eid}/{base}"
+
+
+def _supplier_attachment_relative_path(supplier_id, original_filename, category=None):
+    """S3/local key under supplier_attachments/: {id}/[category/]{original filename}."""
+    eid = (supplier_id or "").strip().replace("\\", "/").split("/")[-1].upper()
+    base = _upload_basename(original_filename)
+    cat = (category or "").strip().lower().replace("\\", "/").split("/")[-1]
+    if cat and cat not in (".", ".."):
+        return f"{eid}/{cat}/{base}"
     if not eid:
         return base
     return f"{eid}/{base}"
@@ -1126,8 +1144,8 @@ def auto_session_timeout():
         "/login",
         "/signup",
         "/forgot-password",
-        "/check-email",
         "/check-your-mail",
+        "/check-email",
         "/reset-password",
         "/send_otp",
         "/verify_otp",
@@ -2253,8 +2271,8 @@ def forgot_password():
 
 @app.route("/check-your-mail")
 def check_your_mail_page():
-    email = request.args.get("email", "")
-    return render_template("check-your-mail.html", email=email)
+    """Legacy URL — password reset is handled on /forgot-password."""
+    return redirect(url_for("forgot_password"))
 
 
 # =========================================
@@ -8619,6 +8637,12 @@ def _ensure_supplier_attachment_table(cur=None):
             ON supplier_attachments (supplier_id)
             """
         )
+        cur.execute(
+            """
+            ALTER TABLE supplier_attachments
+            ADD COLUMN IF NOT EXISTS category TEXT DEFAULT ''
+            """
+        )
         # Commit DDL on the active connection (required when cur is caller-supplied).
         cur.connection.commit()
     finally:
@@ -8629,15 +8653,16 @@ def _ensure_supplier_attachment_table(cur=None):
  
 @app.route("/api/supplier-attachments", methods=["POST"])
 def upload_supplier_attachment():
-    """Save supplier file under uploads/supplier_attachments/."""
+    """Save supplier file to S3 supplier_attachments/ or local uploads/supplier_attachments/."""
     try:
         supplier_id = (request.form.get("supplier_id") or "").strip().upper()
+        category = (request.form.get("category") or "").strip().lower()
         file = request.files.get("file")
         if not supplier_id:
             return jsonify({"success": False, "message": "supplier_id is required"}), 400
         if not file or not file.filename:
             return jsonify({"success": False, "message": "No file uploaded"}), 400
- 
+
         conn = get_db_connection()
         cur = conn.cursor()
         try:
@@ -8647,40 +8672,54 @@ def upload_supplier_attachment():
         finally:
             cur.close()
             conn.close()
- 
-        original_name = secure_filename(file.filename) or "attachment"
-        ext = original_name.rsplit(".", 1)[-1].lower() if "." in original_name else ""
-        stored_name = f"{supplier_id}_{uuid.uuid4().hex}"
-        if ext:
-            stored_name = f"{stored_name}.{ext}"
-        save_path = os.path.join(SUPPLIER_ATTACHMENTS_FOLDER, stored_name)
-        file.save(save_path)
- 
+
+        display_name = file.filename or "attachment"
+        rel_path = _supplier_attachment_relative_path(supplier_id, display_name, category)
+        save_path, _file_size = _persist_module_upload(
+            object_storage.MODULE_SUPPLIER_ATTACHMENTS,
+            SUPPLIER_ATTACHMENTS_FOLDER,
+            file,
+            rel_path,
+        )
+
         conn = get_db_connection()
         cur = conn.cursor()
         try:
             _ensure_supplier_attachment_table(cur)
             cur.execute(
                 """
-                INSERT INTO supplier_attachments (supplier_id, file_name, file_path)
-                VALUES (%s, %s, %s)
+                INSERT INTO supplier_attachments (supplier_id, file_name, file_path, category)
+                VALUES (%s, %s, %s, %s)
                 RETURNING id, uploaded_at
                 """,
-                (supplier_id, original_name, save_path),
+                (supplier_id, display_name, save_path, category),
             )
             row = cur.fetchone()
+            attachment_id = row[0] if row else None
+            if attachment_id is not None:
+                cur.execute(
+                    """
+                    DELETE FROM supplier_attachments
+                    WHERE supplier_id = %s AND file_name = %s
+                      AND COALESCE(category, '') = %s AND id != %s
+                    RETURNING file_path
+                    """,
+                    (supplier_id, display_name, category, attachment_id),
+                )
+                for old in cur.fetchall() or []:
+                    _remove_stored_upload(old[0], SUPPLIER_ATTACHMENTS_FOLDER)
             conn.commit()
             uploaded_at = row[1].strftime("%Y-%m-%d %H:%M:%S") if row and row[1] else ""
-            attachment_id = row[0] if row else None
         finally:
             cur.close()
             conn.close()
- 
+
         return jsonify({
             "success": True,
             "id": attachment_id,
-            "file_name": original_name,
+            "file_name": display_name,
             "file_path": save_path,
+            "category": category,
             "uploaded_at": uploaded_at,
         })
     except Exception as e:
@@ -8697,7 +8736,7 @@ def get_supplier_attachments(supplier_id):
         _ensure_supplier_attachment_table(cur)
         cur.execute(
             """
-            SELECT id, file_name, file_path, uploaded_at
+            SELECT id, file_name, file_path, uploaded_at, COALESCE(category, '')
             FROM supplier_attachments
             WHERE supplier_id = %s
             ORDER BY uploaded_at DESC
@@ -8712,6 +8751,7 @@ def get_supplier_attachments(supplier_id):
                 "file_name": r[1],
                 "file_path": r[2],
                 "uploaded_at": r[3].strftime("%Y-%m-%d %H:%M:%S") if r[3] else "",
+                "category": r[4] or "",
             })
         return jsonify({"success": True, "attachments": result})
     finally:
@@ -8736,7 +8776,10 @@ def view_supplier_attachment(supplier_id, attachment_id):
         row = cur.fetchone()
         if not row:
             return jsonify({"success": False, "message": "Attachment not found"}), 404
-        full_path = _resolve_stored_file_path(row[1])
+        stored = row[1]
+        if object_storage.is_remote_url(str(stored or "")):
+            return redirect(stored)
+        full_path = _resolve_stored_file_path(stored)
         if not full_path or not os.path.isfile(full_path):
             return jsonify({"success": False, "message": "File not found on server"}), 404
         return send_file(full_path, as_attachment=False, download_name=row[0] or "attachment")
@@ -8745,8 +8788,8 @@ def view_supplier_attachment(supplier_id, attachment_id):
     finally:
         cur.close()
         conn.close()
- 
- 
+
+
 @app.route("/api/supplier-attachments/<supplier_id>/<int:attachment_id>/download")
 def download_supplier_attachment(supplier_id, attachment_id):
     supplier_id = (supplier_id or "").strip().upper()
@@ -8764,7 +8807,10 @@ def download_supplier_attachment(supplier_id, attachment_id):
         row = cur.fetchone()
         if not row:
             return jsonify({"success": False, "message": "Attachment not found"}), 404
-        full_path = _resolve_stored_file_path(row[1])
+        stored = row[1]
+        if object_storage.is_remote_url(str(stored or "")):
+            return redirect(stored)
+        full_path = _resolve_stored_file_path(stored)
         if not full_path or not os.path.isfile(full_path):
             return jsonify({"success": False, "message": "File not found on server"}), 404
         return send_file(full_path, as_attachment=True, download_name=row[0] or "attachment")
@@ -8773,8 +8819,8 @@ def download_supplier_attachment(supplier_id, attachment_id):
     finally:
         cur.close()
         conn.close()
- 
- 
+
+
 @app.route("/api/supplier-attachments/<supplier_id>/<int:attachment_id>", methods=["DELETE"])
 def delete_supplier_attachment(supplier_id, attachment_id):
     supplier_id = (supplier_id or "").strip().upper()
@@ -8792,12 +8838,7 @@ def delete_supplier_attachment(supplier_id, attachment_id):
         row = cur.fetchone()
         if not row:
             return jsonify({"success": False, "message": "Attachment not found"}), 404
-        resolved = _resolve_stored_file_path(row[0])
-        if resolved and os.path.isfile(resolved):
-            try:
-                os.remove(resolved)
-            except OSError:
-                pass
+        _remove_stored_upload(row[0], SUPPLIER_ATTACHMENTS_FOLDER)
         cur.execute(
             "DELETE FROM supplier_attachments WHERE id = %s AND supplier_id = %s",
             (attachment_id, supplier_id),
@@ -8810,8 +8851,8 @@ def delete_supplier_attachment(supplier_id, attachment_id):
     finally:
         cur.close()
         conn.close()
- 
- 
+
+
 #----API endpoint to delete a supplier by ID (for supplier list UI)
 @app.route("/api/suppliers/<supplier_id>", methods=["DELETE"])
 def delete_supplier(supplier_id):
@@ -8826,12 +8867,7 @@ def delete_supplier(supplier_id):
             (supplier_id,),
         )
         for (file_path,) in cur.fetchall():
-            resolved = _resolve_stored_file_path(file_path)
-            if resolved and os.path.isfile(resolved):
-                try:
-                    os.remove(resolved)
-                except OSError:
-                    pass
+            _remove_stored_upload(file_path, SUPPLIER_ATTACHMENTS_FOLDER)
         cur.execute("DELETE FROM supplier_attachments WHERE supplier_id = %s", (supplier_id,))
         cur.execute("DELETE FROM suppliers WHERE supplier_id = %s", (supplier_id,))
         conn.commit()
@@ -15461,6 +15497,22 @@ def next_dn_id(notes):
     return f"DN-{max_num+1:04d}"
 
 
+def _dn_pod_allowed(filename):
+    ext = (filename or "").rsplit(".", 1)[-1].lower() if "." in (filename or "") else ""
+    return ext in _DN_POD_EXTENSIONS
+
+
+def _ensure_delivery_note_ack_columns(cur):
+    for col, typ in (
+        ("received_by", "TEXT"),
+        ("contact_number", "TEXT"),
+        ("pod_file_name", "TEXT"),
+        ("pod_file_path", "TEXT"),
+    ):
+        cur.execute(f"ALTER TABLE delivery_notes ADD COLUMN IF NOT EXISTS {col} {typ}")
+    cur.connection.commit()
+
+
 # -----------------------------------------
 # Get DN by ID
 # -----------------------------------------
@@ -15758,13 +15810,20 @@ def api_delivery_notes():
     # INSERT header
     # Keep FK valid: empty SO ref should be stored as NULL, not "".
     so_ref = (record.get("sale_order_ref") or "").strip() or None
+    _ensure_delivery_note_ack_columns(cur)
+    pod_path = (data.get("pod_file_path") or "").strip()
+    pod_name = (data.get("pod_file") or data.get("pod_file_name") or "").strip()
+    if pod_path and not pod_name:
+        pod_name = _upload_basename(pod_path)
+
     cur.execute("""
     INSERT INTO delivery_notes (
         dn_id, so_id, customer_name, destination_address,
         delivery_date, delivery_type,
         status, delivery_status,
-        delivery_by, vehicle_number, tracking_id, delivery_notes
-    ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        delivery_by, vehicle_number, tracking_id, delivery_notes,
+        received_by, contact_number, pod_file_name, pod_file_path
+    ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
     """, (
         record["dn_id"],
         so_ref,   # IMPORTANT mapping
@@ -15777,7 +15836,11 @@ def api_delivery_notes():
         record["delivery_by"],
         record["vehicle_no"],
         record["tracking_id"],
-        record["delivery_notes"]
+        record["delivery_notes"],
+        (data.get("received_by") or "").strip(),
+        (data.get("contact_number") or "").strip(),
+        pod_name or None,
+        pod_path or None,
     ))
 
     # INSERT items
@@ -15821,6 +15884,7 @@ def api_delivery_note_one(dn_id):
     # =========================
     # FETCH HEADER
     # =========================
+    _ensure_delivery_note_ack_columns(cur)
     cur.execute("""
     SELECT
         dn_id,
@@ -15830,7 +15894,8 @@ def api_delivery_note_one(dn_id):
         END AS delivery_date,
         so_id, customer_name, destination_address,
         delivery_type, status, delivery_status,
-        delivery_by, vehicle_number, tracking_id, delivery_notes
+        delivery_by, vehicle_number, tracking_id, delivery_notes,
+        received_by, contact_number, pod_file_name, pod_file_path
     FROM delivery_notes
     WHERE dn_id=%s
     """, (dn_id,))
@@ -15878,6 +15943,12 @@ def api_delivery_note_one(dn_id):
         dn.setdefault("delivery_by", "")
         dn.setdefault("delivery_notes", "")
         dn.setdefault("delivery_status", "draft")
+        dn.setdefault("received_by", "")
+        dn.setdefault("contact_number", "")
+        pod_name = dn.get("pod_file_name") or ""
+        pod_path = dn.get("pod_file_path") or ""
+        dn["pod_file"] = pod_name
+        dn["ack_pod_file_name"] = pod_name
 
         cur.close()
         conn.close()
@@ -15890,6 +15961,21 @@ def api_delivery_note_one(dn_id):
 
     # UPDATE HEADER
     so_ref = (payload.get("sale_order_ref") or "").strip() or None
+    pod_path = (payload.get("pod_file_path") or "").strip()
+    pod_name = (payload.get("pod_file") or payload.get("pod_file_name") or "").strip()
+    if not pod_path or not pod_name:
+        cur.execute(
+            "SELECT pod_file_path, pod_file_name FROM delivery_notes WHERE dn_id = %s",
+            (dn_id,),
+        )
+        prev = cur.fetchone()
+        if prev:
+            if not pod_path:
+                pod_path = (prev[0] or "").strip()
+            if not pod_name:
+                pod_name = (prev[1] or "").strip()
+    if pod_path and not pod_name:
+        pod_name = _upload_basename(pod_path)
     cur.execute("""
     UPDATE delivery_notes SET
     delivery_date=%s,
@@ -15903,6 +15989,10 @@ def api_delivery_note_one(dn_id):
     tracking_id=%s,
     delivery_notes=%s,
     status=%s,
+    received_by=%s,
+    contact_number=%s,
+    pod_file_name=%s,
+    pod_file_path=%s,
     updated_at=NOW()
     WHERE dn_id=%s
     """, (
@@ -15917,6 +16007,10 @@ def api_delivery_note_one(dn_id):
         payload.get("tracking_id"),
         payload.get("delivery_notes"),
         payload.get("status"),
+        (payload.get("received_by") or "").strip(),
+        (payload.get("contact_number") or "").strip(),
+        pod_name or None,
+        pod_path or None,
         dn_id
     ))
 
@@ -15943,6 +16037,179 @@ def api_delivery_note_one(dn_id):
     conn.close()
 
     return jsonify({"success": True, "message": "Delivery Note Updated"})
+
+
+# =========================================
+# DELIVERY NOTE - POD / Customer acknowledgement
+# =========================================
+
+@app.route("/api/delivery-notes/<dn_id>/acknowledgement", methods=["POST"])
+def delivery_note_acknowledgement(dn_id):
+    """Upload POD to S3 deliverynote_attachments/{dn_id}/ and save acknowledgement fields."""
+    dn_id = (dn_id or "").strip()
+    if not dn_id:
+        return jsonify({"success": False, "message": "dn_id is required"}), 400
+
+    received_by = (request.form.get("received_by") or "").strip()
+    contact_number = (request.form.get("contact_number") or "").strip()
+    file = request.files.get("file")
+
+    if not received_by:
+        return jsonify({"success": False, "message": "Received By is required"}), 400
+    if not contact_number:
+        return jsonify({"success": False, "message": "Contact Number is required"}), 400
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        _ensure_delivery_note_ack_columns(cur)
+        cur.execute(
+            "SELECT pod_file_path FROM delivery_notes WHERE dn_id = %s",
+            (dn_id,),
+        )
+        row = cur.fetchone()
+        dn_exists = row is not None
+        old_path = (row[0] or "").strip() if row else ""
+
+        pod_path = old_path or (request.form.get("pod_file_path") or "").strip()
+        pod_name = (request.form.get("pod_file_name") or "").strip()
+        if file and file.filename:
+            if not _dn_pod_allowed(file.filename):
+                return jsonify({
+                    "success": False,
+                    "message": "Invalid file format. Upload only PDF, JPG, or PNG.",
+                }), 400
+            try:
+                file.stream.seek(0, os.SEEK_END)
+                size = file.stream.tell()
+                file.stream.seek(0)
+            except Exception:
+                size = 0
+            if size > MAX_FILE_SIZE_BYTES:
+                return jsonify({
+                    "success": False,
+                    "message": f"File size exceeds {MAX_FILE_SIZE_MB} MB",
+                }), 400
+
+            pod_name = _upload_basename(file.filename)
+            rel_path = _upload_relative_path(dn_id, pod_name)
+            pod_path, _ = _persist_module_upload(
+                object_storage.MODULE_DELIVERY_NOTE_ATTACHMENTS,
+                DELIVERY_NOTE_ATTACHMENTS_FOLDER,
+                file,
+                rel_path,
+            )
+            if old_path and old_path != pod_path:
+                _remove_stored_upload(old_path, DELIVERY_NOTE_ATTACHMENTS_FOLDER)
+        elif not pod_path:
+            return jsonify({
+                "success": False,
+                "message": "Please upload a POD file (PDF, JPG, PNG).",
+            }), 400
+        elif not pod_name:
+            if dn_exists:
+                cur.execute(
+                    "SELECT pod_file_name FROM delivery_notes WHERE dn_id = %s",
+                    (dn_id,),
+                )
+                name_row = cur.fetchone()
+                pod_name = (name_row[0] or "").strip() if name_row else ""
+            if not pod_name:
+                pod_name = _upload_basename(pod_path)
+
+        if dn_exists:
+            cur.execute(
+                """
+                UPDATE delivery_notes
+                SET received_by = %s,
+                    contact_number = %s,
+                    pod_file_name = %s,
+                    pod_file_path = %s,
+                    updated_at = NOW()
+                WHERE dn_id = %s
+                """,
+                (received_by, contact_number, pod_name or None, pod_path or None, dn_id),
+            )
+            conn.commit()
+
+        return jsonify({
+            "success": True,
+            "message": "Acknowledgement saved",
+            "pod_file_name": pod_name,
+            "pod_file_path": pod_path,
+            "pod_file": pod_name,
+        })
+    except Exception as e:
+        conn.rollback()
+        print(f"delivery_note_acknowledgement error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "message": str(e)}), 500
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.route("/api/delivery-notes/<dn_id>/pod/download", methods=["GET"])
+def delivery_note_pod_download(dn_id):
+    dn_id = (dn_id or "").strip()
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        _ensure_delivery_note_ack_columns(cur)
+        cur.execute(
+            "SELECT pod_file_path, pod_file_name FROM delivery_notes WHERE dn_id = %s",
+            (dn_id,),
+        )
+        row = cur.fetchone()
+        if not row or not (row[0] or "").strip():
+            return jsonify({"success": False, "message": "POD file not found"}), 404
+        file_path = (row[0] or "").strip()
+        original_name = (row[1] or "").strip() or _upload_basename(file_path)
+        if object_storage.is_remote_url(file_path):
+            return redirect(file_path)
+        full_path = _resolve_stored_file_path(file_path)
+        if not full_path or not os.path.isfile(full_path):
+            return jsonify({"success": False, "message": "File not found"}), 404
+        return send_file(full_path, as_attachment=True, download_name=original_name)
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.route("/api/delivery-notes/<dn_id>/pod", methods=["DELETE"])
+def delivery_note_pod_delete(dn_id):
+    dn_id = (dn_id or "").strip()
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        _ensure_delivery_note_ack_columns(cur)
+        cur.execute(
+            "SELECT pod_file_path FROM delivery_notes WHERE dn_id = %s",
+            (dn_id,),
+        )
+        row = cur.fetchone()
+        old_path = (row[0] or "").strip() if row else ""
+        if not old_path:
+            old_path = (request.args.get("path") or "").strip()
+        if old_path:
+            _remove_stored_upload(old_path, DELIVERY_NOTE_ATTACHMENTS_FOLDER)
+        if row:
+            cur.execute(
+                """
+                UPDATE delivery_notes
+                SET pod_file_name = NULL, pod_file_path = NULL, updated_at = NOW()
+                WHERE dn_id = %s
+                """,
+                (dn_id,),
+            )
+            conn.commit()
+        elif not old_path:
+            return jsonify({"success": False, "message": "POD file not found"}), 404
+        return jsonify({"success": True, "message": "POD removed"})
+    finally:
+        cur.close()
+        conn.close()
 
 
 # =========================================
@@ -20685,7 +20952,8 @@ def update_invoice_return_items_summary(return_id):
 def dnr_page_list():
 
     return render_template(
-        "deliverynote-return.html"
+        "deliverynote-return.html",
+        page="deliverynote_return",
     )
 
 # =========================================
@@ -21023,7 +21291,8 @@ def dnr_new_page():
 
     return render_template(
         "deliverynotereturn-new.html",
-        dnr_id=dnr_id
+        page="deliverynote_return",
+        dnr_id=dnr_id,
     )
 
 
@@ -21065,9 +21334,88 @@ def api_next_dnr_id():
 
 
 # =========================================
-# DELIVERY NOTE RETURN — ATTACHMENTS (DATABASE ONLY)
-# No static/uploads. No disk storage.
+# DELIVERY NOTE RETURN — ATTACHMENTS (S3 / local uploads)
 # =========================================
+
+def _ensure_deliverynote_return_attachments_schema(cur):
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS deliverynote_return_attachments (
+            id SERIAL PRIMARY KEY,
+            dnr_id TEXT NOT NULL,
+            file_name TEXT NOT NULL,
+            file_path TEXT,
+            file_type TEXT,
+            file_size BIGINT,
+            file_content BYTEA,
+            uploaded_at TIMESTAMP DEFAULT NOW()
+        )
+        """
+    )
+    cur.execute(
+        """
+        ALTER TABLE deliverynote_return_attachments
+        ADD COLUMN IF NOT EXISTS file_path TEXT
+        """
+    )
+    cur.execute(
+        """
+        ALTER TABLE deliverynote_return_attachments
+        ADD COLUMN IF NOT EXISTS file_type TEXT
+        """
+    )
+    cur.execute(
+        """
+        ALTER TABLE deliverynote_return_attachments
+        ADD COLUMN IF NOT EXISTS file_size BIGINT
+        """
+    )
+    cur.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_dnr_attachments_dnr_id
+        ON deliverynote_return_attachments (dnr_id)
+        """
+    )
+    cur.connection.commit()
+
+
+def _dnr_attachment_send(row, as_attachment):
+    """Serve DNR attachment from S3/local path or legacy BYTEA in DB."""
+    file_name = row[0] or "attachment"
+    file_type = row[1] or "application/octet-stream"
+    file_path = (row[2] or "").strip() if len(row) > 2 else ""
+    file_data = row[3] if len(row) > 3 else None
+
+    if file_path:
+        if object_storage.is_remote_url(file_path):
+            return redirect(file_path)
+        resolved = _resolve_stored_file_path(file_path)
+        if resolved and os.path.isfile(resolved):
+            return send_file(
+                resolved,
+                mimetype=file_type,
+                download_name=file_name,
+                as_attachment=as_attachment,
+            )
+
+    if file_data is None:
+        return jsonify({
+            "success": False,
+            "message": "Attachment file not found",
+        }), 404
+
+    if isinstance(file_data, memoryview):
+        file_bytes = file_data.tobytes()
+    else:
+        file_bytes = bytes(file_data)
+
+    return send_file(
+        BytesIO(file_bytes),
+        mimetype=file_type,
+        download_name=file_name,
+        as_attachment=as_attachment,
+    )
+
 
 @app.post("/api/dnr-upload-attachment")
 def dnr_upload_attachment():
@@ -21096,10 +21444,15 @@ def dnr_upload_attachment():
                 "error": "No file selected"
             }), 400
 
-        filename = os.path.basename(file.filename)
-        file_data = file.read()
-        file_size = len(file_data)
+        filename = _upload_basename(file.filename)
         file_type = file.mimetype or "application/octet-stream"
+
+        try:
+            file.stream.seek(0, os.SEEK_END)
+            file_size = file.stream.tell()
+            file.stream.seek(0)
+        except Exception:
+            file_size = 0
 
         if file_size <= 0:
             return jsonify({
@@ -21121,6 +21474,8 @@ def dnr_upload_attachment():
 
         conn = get_db_connection()
         cur = conn.cursor()
+
+        _ensure_deliverynote_return_attachments_schema(cur)
 
         cur.execute("""
             SELECT status
@@ -21165,13 +21520,23 @@ def dnr_upload_attachment():
                 "error": "Maximum 10 files allowed per delivery note return"
             }), 400
 
+        rel_path = _upload_relative_path(dnr_id, filename)
+        stored_path, stored_size = _persist_module_upload(
+            object_storage.MODULE_DELIVERY_NOTE_RETURN_ATTACHMENTS,
+            DELIVERY_NOTE_RETURN_ATTACHMENTS_FOLDER,
+            file,
+            rel_path,
+        )
+        if stored_size and stored_size > 0:
+            file_size = stored_size
+
         cur.execute("""
             INSERT INTO deliverynote_return_attachments (
                 dnr_id,
                 file_name,
+                file_path,
                 file_type,
                 file_size,
-                file_content,
                 uploaded_at
             )
             VALUES (%s, %s, %s, %s, %s, %s)
@@ -21179,9 +21544,9 @@ def dnr_upload_attachment():
         """, (
             dnr_id,
             filename,
+            stored_path,
             file_type,
             file_size,
-            psycopg2.Binary(file_data),
             datetime.now()
         ))
 
@@ -21244,6 +21609,7 @@ def dnr_get_attachments(dnr_id):
 
         conn = get_db_connection()
         cur = conn.cursor()
+        _ensure_deliverynote_return_attachments_schema(cur)
 
         cur.execute("""
             SELECT
@@ -21314,10 +21680,12 @@ def dnr_view_attachment(att_id):
         conn = get_db_connection()
         cur = conn.cursor()
 
+        _ensure_deliverynote_return_attachments_schema(cur)
         cur.execute("""
             SELECT
                 file_name,
                 file_type,
+                file_path,
                 COALESCE(file_data, file_content)
             FROM deliverynote_return_attachments
             WHERE id = %s
@@ -21334,27 +21702,7 @@ def dnr_view_attachment(att_id):
                 "message": "Attachment not found"
             }), 404
 
-        file_name = row[0] or "attachment"
-        file_type = row[1] or "application/octet-stream"
-        file_data = row[2]
-
-        if file_data is None:
-            return jsonify({
-                "success": False,
-                "message": "Attachment file data not found"
-            }), 404
-
-        if isinstance(file_data, memoryview):
-            file_bytes = file_data.tobytes()
-        else:
-            file_bytes = bytes(file_data)
-
-        return send_file(
-            BytesIO(file_bytes),
-            mimetype=file_type,
-            download_name=file_name,
-            as_attachment=False
-        )
+        return _dnr_attachment_send(row, as_attachment=False)
 
     except Exception as e:
         if cur:
@@ -21386,10 +21734,12 @@ def dnr_download_attachment(att_id):
         conn = get_db_connection()
         cur = conn.cursor()
 
+        _ensure_deliverynote_return_attachments_schema(cur)
         cur.execute("""
             SELECT
                 file_name,
                 file_type,
+                file_path,
                 COALESCE(file_data, file_content)
             FROM deliverynote_return_attachments
             WHERE id = %s
@@ -21406,27 +21756,7 @@ def dnr_download_attachment(att_id):
                 "message": "Attachment not found"
             }), 404
 
-        file_name = row[0] or "attachment"
-        file_type = row[1] or "application/octet-stream"
-        file_data = row[2]
-
-        if file_data is None:
-            return jsonify({
-                "success": False,
-                "message": "Attachment file data not found"
-            }), 404
-
-        if isinstance(file_data, memoryview):
-            file_bytes = file_data.tobytes()
-        else:
-            file_bytes = bytes(file_data)
-
-        return send_file(
-            BytesIO(file_bytes),
-            mimetype=file_type,
-            download_name=file_name,
-            as_attachment=True
-        )
+        return _dnr_attachment_send(row, as_attachment=True)
 
     except Exception as e:
         if cur:
@@ -21458,11 +21788,13 @@ def dnr_delete_attachment(att_id):
         conn = get_db_connection()
         cur = conn.cursor()
 
+        _ensure_deliverynote_return_attachments_schema(cur)
         cur.execute("""
             SELECT
                 a.id,
                 a.dnr_id,
-                r.status
+                r.status,
+                a.file_path
             FROM deliverynote_return_attachments a
             JOIN deliverynote_returns r
               ON r.dnr_id = a.dnr_id
@@ -21486,6 +21818,10 @@ def dnr_delete_attachment(att_id):
                 "success": False,
                 "error": "Cannot delete attachments on a cancelled record."
             }), 400
+
+        file_path = (row[3] or "").strip()
+        if file_path:
+            _remove_stored_upload(file_path, DELIVERY_NOTE_RETURN_ATTACHMENTS_FOLDER)
 
         cur.execute("""
             DELETE FROM deliverynote_return_attachments
@@ -22108,7 +22444,8 @@ def deliverynote_return_form():
 
     return render_template(
         "deliverynotereturn-new.html",
-        dnr_id=dnr_id
+        page="deliverynote_return",
+        dnr_id=dnr_id,
     )
 
 # =========================================
