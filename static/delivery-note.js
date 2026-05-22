@@ -9,6 +9,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const API_URL = "/api/delivery-notes";
   const SECOND_PAGE_URL = "/delivery_note/form";
+  const INVOICE_SECOND_PAGE_URL = "/new-invoice";
 
   /* =========================================================
      DOM REFERENCES
@@ -93,7 +94,8 @@ function loadDnStatusFilterOptions(rows) {
   const key = normalizeStatus(v);
   const map = {
     draft: "Draft",
-    
+    pending: "Pending",
+    in_transit: "In Transit",
     delivered: "Delivered",
     partially_delivered: "Partially Delivered",
     returned: "Returned",
@@ -181,6 +183,8 @@ function loadDnStatusFilterOptions(rows) {
   ========================================================== */
   const DN_STATUS_SORT_ORDER = [
     "draft",
+    "pending",
+    "in_transit",
     "delivered",
     "partially_delivered",
     "returned",
@@ -249,8 +253,18 @@ function loadDnStatusFilterOptions(rows) {
     window.location.href = url;
   }
 
-  function generateInvoice(dnId) {
-    window.location.href = `/delivery-invoice/create/${encodeURIComponent(dnId)}`;
+  function generateInvoice(dnId, row) {
+    const r = row || allRows.find((x) => x.dn_id === dnId) || {};
+    const qs = new URLSearchParams();
+    if (dnId) qs.set("dn_id", dnId);
+    const deliveryDate = String(r.delivery_date || "").trim();
+    if (deliveryDate) qs.set("delivery_date", deliveryDate);
+    const soRef = String(r.so_ref || "").trim();
+    if (soRef) qs.set("so_id", soRef);
+    const query = qs.toString();
+    window.location.href = query
+      ? `${INVOICE_SECOND_PAGE_URL}?${query}`
+      : INVOICE_SECOND_PAGE_URL;
   }
 
   function generateDeliveryReturn(dnId) {
@@ -330,7 +344,7 @@ function loadDnStatusFilterOptions(rows) {
 
     flyEl.appendChild(mkItem(firstLabel, () => goSecondPage(dnId, firstMode), false));
     flyEl.appendChild(mkItem("Generate Delivery Return", () => generateDeliveryReturn(dnId), !canReturn));
-    flyEl.appendChild(mkItem("Generate Invoice", () => generateInvoice(dnId), !canInvoice));
+    flyEl.appendChild(mkItem("Generate Invoice", () => generateInvoice(dnId, row), !canInvoice));
 
     flyEl.addEventListener("mouseenter", keepOpen);
     flyEl.addEventListener("mouseleave", scheduleHide);
@@ -377,18 +391,43 @@ function loadDnStatusFilterOptions(rows) {
   window.addEventListener("resize", () => removeFly());
 
   /* =========================================================
-     CHECKBOX -> ENABLE GENERATE BUTTONS
-  ========================================================== */
-  function toggleGenerateButtons() {
-    const anyChecked = document.querySelectorAll(".row-check:checked").length > 0;
-    if (genInvoiceBtn) genInvoiceBtn.disabled = !anyChecked;
-    if (genDeliveryReturnBtn) genDeliveryReturnBtn.disabled = !anyChecked;
+   CHECKBOX -> ENABLE GENERATE BUTTONS
+   Only Delivered / Partially Delivered allowed
+========================================================== */
+function toggleGenerateButtons() {
+  const selected = Array.from(document.querySelectorAll(".row-check:checked"));
+
+  // Default disabled
+  if (genInvoiceBtn) genInvoiceBtn.disabled = true;
+  if (genDeliveryReturnBtn) genDeliveryReturnBtn.disabled = true;
+
+  // Only one row allowed
+  if (selected.length !== 1) return;
+
+  const dnId = selected[0].dataset.id;
+  const row = allRows.find((x) => x.dn_id === dnId);
+
+  if (!row) return;
+
+  const st = normalizeStatus(row.status);
+
+  const allowed = st === "delivered" || st === "partially_delivered";
+
+  if (allowed) {
+    if (genInvoiceBtn) genInvoiceBtn.disabled = false;
+    if (genDeliveryReturnBtn) genDeliveryReturnBtn.disabled = false;
   }
+}
 
   document.addEventListener("change", (e) => {
     if (!e.target.classList.contains("row-check")) return;
+    const row = e.target.closest("tr");
+    if (row) row.classList.toggle("row-selected", e.target.checked);
     toggleGenerateButtons();
   });
+
+
+  
 
   /* =========================================================
      DATA LOAD

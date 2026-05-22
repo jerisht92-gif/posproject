@@ -1241,38 +1241,38 @@ button {
 
 
 .so-status-draft{
-  background:#f50505;
-  color:#000;
+  background:#EAB308;
+  color:#fff;
 }
 
 .so-status-submitted{
-  background:#f89704;
-  color:#000;
+  background:#038d76;
+  color:#fff;
 }
 
 .so-status-purchased{
-  background:#f5f906;
-  color:#000;
+  background:#C2410C;
+  color:#fff;
 }
 
 .so-status-delivered{
-  background:#4bf104;
-  color:#000;
+  background:#15803D;
+  color:#fff;
 }
 
 .so-status-partial{
-  background:#03e3f8;
-  color:#000;
+  background:#7C3AED;
+  color:#fff;
 }
 
 .so-status-returned{
-  background:#0453f0;
-  color:#000;
+  background:#DC2626;
+  color:#fff;
 }
 
 .so-status-cancelled{
-  background:#8b06f1; 
-  color:#000;
+  background:#4B5563;
+  color:#fff;
 }
 
 #genDNBtn:disabled,

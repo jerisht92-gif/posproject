@@ -582,38 +582,38 @@
 
 
 .so-status-draft{
-  background:#ffe28a;
-  color:#000;
+  background:#EAB308;
+  color:#fff;
 }
 
 .so-status-submitted{
-  background:#0b762e;
-  color:#000;
+  background:#038d76;
+  color:#fff;
 }
 
 .so-status-purchased{
-  background:#b65049;
-  color:#000;
+  background:#C2410C;
+  color:#fff;
 }
 
 .so-status-delivered{
-  background:#67c3ff;
-  color:#000;
+  background:#15803D;
+  color:#fff;
 }
 
 .so-status-partial{
-  background:#ff8fb5;
- color:#000;
+  background:#7C3AED;
+  color:#fff;
 }
 
 .so-status-returned{
-  background:#ffb14a;
-  color:#000;
+  background:#DC2626;
+  color:#fff;
 }
 
 .so-status-cancelled{
-  background:#d6d6d6; 
-  color:#000;
+  background:#4B5563;
+  color:#fff;
 }
 
 /* =========================================================

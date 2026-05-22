@@ -3194,6 +3194,29 @@ function buildDnrSavePayload(status){
 let dnrSaveInFlight = false;
 let dnrCancelInFlight = false;
 
+
+// in delivery note automatically status change to returned
+async function updateDeliveryNoteStatusAfterReturn(invoiceReturnRefId) {
+  if(!invoiceReturnRefId)
+    return;
+
+  try{
+    await fetch("/api/update-delivery-note-status-after-return", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        invoice_return_ref_id: invoiceReturnRefId,
+        status: "Returned"
+      })
+    });
+  }
+  catch(err){
+    console.error("Delivery Note status update error:", err);
+  }
+}
+
 async function saveDnr(status){
 
   if(dnrSaveInFlight)
@@ -3277,6 +3300,12 @@ async function saveDnr(status){
 
     if(data && data.success){
 
+    // only update delivery note status if DNR is being submitted, not when saving as draft
+
+      if(status === "Submitted"){
+        await updateDeliveryNoteStatusAfterReturn(invoiceRef);
+      }
+
       if(window.dnrAttApi){
 
         const pending =
@@ -3357,11 +3386,7 @@ async function saveDnr(status){
 
 }
 
-/* =========================================================
-CANCEL — UI only (no DB)
-========================================================= */
 
-/* dnrCancelBtn → DNR_LIST_URL (wired above) */
 
 /* =========================================================
 SAVE DRAFT / SUBMIT — handlers (DB via app.py)

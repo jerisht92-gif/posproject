@@ -21,7 +21,7 @@ let totalComments = 0;
 // ===================================================
 // LIMITS CONFIGURATION
 // ===================================================
-const MAX_ATTACHMENTS = 5;
+const MAX_ATTACHMENTS = 10;
 const MAX_FILE_SIZE_MB = 10;
 const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
 const COMMENTS_PER_PAGE = 5;

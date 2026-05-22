@@ -58,17 +58,17 @@ HEADER
 
 .dnr-status-badge--draft{
   background:#EAB308;
-  color:#3B2F00;
+  color:#fff;
 }
 
 .dnr-status-badge--submitted{
-  background:#8ef6e4;
-  color:#1a4a44;
+  background: #05f7cf;
+  color:#fff;
 }
 
 .dnr-status-badge--cancelled{
   background:#4B5563;
-  color:#ffffff;
+  color:#fff;
 }
 
 /* =========================================================

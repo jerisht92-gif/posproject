@@ -249,24 +249,39 @@
   transition: all 0.15s ease;
 }
 
-/* Hover */
-.dn-gen-btn:hover:not(:disabled) {
-  background: #c4c7cc;
+.dn-gen-btn {
+  padding: 8px 16px;
+  border-radius: 10px;
+  border: none;
+
+  background: linear-gradient(#a12828, #8c1f1f);
+  color: #fff;
+
+  font-size: 13px;
+  font-weight: 500;
+
+  box-shadow: 0 5px 0 #6d1717;
+  cursor: pointer;
+  transition: 0.25s;
 }
 
-/* Press effect */
+.dn-gen-btn:hover:not(:disabled) {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 0 #6d1717;
+}
+
 .dn-gen-btn:active:not(:disabled) {
   transform: translateY(2px);
-  box-shadow: 0 1px 0 #9ca3af;
+  box-shadow: 0 2px 0 #6d1717;
 }
 
-/* Disabled  */
 .dn-gen-btn:disabled {
   background: #d1d5db;
   color: #6b7280;
   box-shadow: 0 3px 0 #bcbfc4;
   cursor: not-allowed;
-  opacity: 1;   
+  opacity: 1;
+  transform: none;
 }
 /* =========================================================
    TABLE WRAPPER
@@ -344,8 +359,46 @@
 
 .dn-th-check input,
 .dn-td-check input{
-  transform: scale(1.15);
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  border: 1.5px solid #a12828;
+  border-radius: 2px;
+  background: #fff;
   cursor: pointer;
+  vertical-align: middle;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.dn-th-check input:hover,
+.dn-td-check input:hover{
+  border-color: #7a1d1d;
+}
+
+.dn-th-check input:checked,
+.dn-td-check input:checked{
+  background: #a12828;
+  border-color: #a12828;
+}
+
+.dn-th-check input:checked::after,
+.dn-td-check input:checked::after{
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 1px;
+  width: 5px;
+  height: 9px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.dn-table tbody tr.row-selected td{
+  background: #e3bdbd;
 }
 
 .dn-mark-text{
@@ -471,39 +524,38 @@
 }
 
 .dn-badge.draft{
-  background: #f75656;
-  color: #000;
+  background: #EAB308;
+  color: #fff;
 }
 
 .dn-badge.delivered{
-  background: #59f663;
-  color: #000;
+  background: #15803D;
+  color: #fff;
 }
 
 .dn-badge.partially_delivered{
-  background: #27e391;
-  color: #000;
+  background: #7C3AED;
+  color: #fff;
 }
 
 .dn-badge.returned{
-  background: #e6a2f2;
-  color: #000;
+  background: #DC2626;
+  color: #fff;
 }
 
 .dn-badge.cancelled{
-  background: #d6d2d2;
-  color: #000;
+  background: #4B5563;
+  color: #fff;
 }
 
 .dn-badge.pending{
-  background: #e9b641;
-  color: #000;
+  background: #C2410C;
+  color: #fff;
 }
 
-/* In Transit */
 .dn-badge.in_transit{
-  background: #ad671612;
-  color: #000;
+  background: #0369A1;
+  color: #fff;
 }
 /* =========================================================
    ACTION MENU
@@ -526,9 +578,9 @@
 .dn-act-fly{
   position: fixed;
   z-index: 999999;
-  width: 160px;
+  width: 182px;
   padding: 4px 0;
-  overflow: hidden;
+  overflow: visible;
   background: #fff;
   border-radius: 8px;
   box-shadow: 0 12px 24px rgba(0, 0, 0, 0.18);

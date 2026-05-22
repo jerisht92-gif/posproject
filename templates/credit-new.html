@@ -4,15 +4,18 @@
 
 {% block extra_css %}
 
-<link rel="stylesheet" href="{{ url_for('static', filename='credit-new.css') }}?v=48">
+<link rel="stylesheet" href="{{ url_for('static', filename='credit-new.css') }}">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 {% endblock %}
 
 {% block content %}
 <div class="cn-page">
+  <input type="hidden" id="creditIdValue" value="{{ credit_id or '' }}">
+  <input type="hidden" id="creditModeValue" value="{{ mode or 'new' }}">
+  <input type="hidden" id="creditUserNameValue" value="{{ user_name or '' }}">
 
   <div class="cn-top">
-    <h2 class="cn-title">New Credit Note</h2>
+    <h2 class="cn-title"><span id="cnPageTitle">New Credit Note</span></h2>
     <span id="cnStatusPill" class="cn-status-pill cn-status-pill--hidden" aria-hidden="true"></span>
   </div>
 
@@ -217,7 +220,7 @@
         <div class="files-section">
           <div class="files-header">
             <h4><i class="fa-solid fa-paperclip"></i> Attached Files</h4>
-            <span class="file-count" id="cnFileCount">0 / 5 files</span>
+            <span class="file-count" id="cnFileCount">0 / 10 files</span>
           </div>
           <div class="files-list" id="cnFilesList">
             <div class="no-files">
@@ -286,6 +289,6 @@
 {% endblock %}
 
 {% block extra_js %}
-<script id="credit-inline-config" type="application/json">{{ {"creditId": credit_id, "mode": mode, "userName": user_name}|tojson }}</script>
-<script src="{{ url_for('static', filename='credit-new.js') }}?v=48" defer></script>
+
+<script src="{{ url_for('static', filename='credit-new.js') }}" defer></script>
 {% endblock %}

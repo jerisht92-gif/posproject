@@ -444,39 +444,39 @@
 }
 
 .dn-badge.draft{
-  background: #f75656;
-  color: #000;
+  background: #EAB308;
+  color: #fff;
 }
 
 .dn-badge.delivered{
-  background: #59f663;
-  color: #000;
+  background: #15803D;
+  color: #fff;
 }
 
 .dn-badge.partially_delivered{
-  background: #27e391;
-  color: #000;
+  background: #7C3AED;
+  color: #fff;
 }
 
 .dn-badge.returned{
-  background: #3c363d;
-  color: #000;
+  background: #DC2626;
+  color: #fff;
 }
 
 .dn-badge.cancelled{
-  background: #d6d2d2;
-  color: #000;
+  background: #4B5563;
+  color: #fff;
 }
 
 .dn-badge.pending{
-  background: #e9b641;
-  color: #000;
+  background: #C2410C;
+  color: #fff;
 }
 
 /* In Transit */
 .dn-badge.in_transit{
-  background: #ad671612;
-  color: #000;
+  background: #0369A1;
+  color: #fff;
 }
 /* =========================================================
    ACTION MENU
@@ -551,37 +551,34 @@
     font-weight: 600;
     text-align: center;
     min-width: 85px;
-    color:#1a1a1a;
+    color:#fff;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
     box-shadow: 0 1px 3px rgba(0,0,0,0.2);
 }
 
-/* Draft - Dark Blue */
+/* Draft */
 .status-draft {
-    background-color: #ffd638;
-    /* border: 1px solid #4A6A8F; */
+    background-color: #EAB308;
 }
 
-/* Send - Dark Orange */
+/* Send / Submitted */
 .status-send {
-    background-color: #8cd8bc;
-    /* border: 1px solid #D97A2A; */
+    background-color: #038d76;
 }
 
-/* Paid - Dark Green */
+/* Paid */
 .status-paid {
-    background-color: #22c55e;
+    background-color: #15803D;
 }
 
-/* Overdue - Dark Red */
+/* Cancelled */
 .status-cancelled {
-    background-color: #ff4d4f;
-    
+    background-color: #4B5563;
 }
 
-/* Cancelled - Dark Gray with line-through */
+/* Overdue */
 .status-overdue {
-    background-color: #e5e7eb;
+    background-color: #C2410C;
 }
 
 /* =========================================================

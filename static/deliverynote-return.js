@@ -965,7 +965,34 @@ if (totalPages === 1) {
 
 function restrictDateInput(input) {
 
+  if (!input) return;
+
+  input.setAttribute("title", "");
+
+  input.addEventListener("focus", () => {
+    input.setAttribute("title", "");
+  });
+
+  input.addEventListener("mouseenter", () => {
+    input.setAttribute("title", "");
+  });
+
+  input.addEventListener("invalid", (e) => {
+    e.preventDefault();
+    input.setCustomValidity("");
+  });
+
+  input.addEventListener("change", () => {
+    input.setCustomValidity("");
+  });
+
+  input.addEventListener("blur", () => {
+    input.setCustomValidity("");
+  });
+
   input.addEventListener("input", () => {
+
+    input.setCustomValidity("");
 
     let value = input.value;
 
@@ -976,16 +1003,9 @@ function restrictDateInput(input) {
     /* YEAR */
 
     if (parts[0] && parts[0].length > 4) {
-
-      showToast(
-        "Year must contain only 4 digits.",
-        "error"
-      );
-
-      input.value = "";
-
+      parts[0] = parts[0].slice(0, 4);
+      input.value = parts.join("-");
       return;
-
     }
 
     /* MONTH */
@@ -1221,7 +1241,7 @@ function setBtnDisabled(btn, disabled) {
     if(dnrToast === "draft"){
 
       showToast(
-        "Delivery Note Return saved in status : Draft",
+        "Delivery note return saved as Draft successfully",
         "success"
       );
 
@@ -1231,7 +1251,7 @@ function setBtnDisabled(btn, disabled) {
     else if(dnrToast === "submitted"){
 
       showToast(
-        "Delivery Note Return saved in status : Submitted",
+        "Delivery note return saved as Submitted successfully",
         "success"
       );
 
@@ -1241,7 +1261,7 @@ function setBtnDisabled(btn, disabled) {
     else if(dnrToast === "cancelled"){
 
       showToast(
-        "Delivery Note Return saved in status : Cancelled",
+        "Delivery note return saved as Cancelled successfully",
         "success"
       );
 

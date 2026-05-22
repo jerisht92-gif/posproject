@@ -68,39 +68,39 @@
 
 /* Status pill colors */
 .dn2-status-pill.draft{
-  background: #f75656;
-  color: #000;
+  background: #EAB308;
+  color: #fff;
 }
 
 .dn2-status-pill.delivered{
-  background: #59f663;
-  color: #000;
+  background: #15803D;
+  color: #fff;
 }
 
 .dn2-status-pill.partially_delivered{
-  background: #27e391;
-  color: #000;
+  background: #7C3AED;
+  color: #fff;
 }
 
 .dn2-status-pill.returned{
-  background: #e6a2f2;
-  color: #000;
+  background: #DC2626;
+  color: #fff;
 }
 
 .dn2-status-pill.cancelled{
-  background: #d6d2d2;
-  color: #000;}
-
-/* .dn2-status-pill.pending{
-  background: #e9b641;
-  color: #000;
+  background: #4B5563;
+  color: #fff;
 }
 
-/* In Transit */
-/* .dn2-status-pill.in_transit{
-  background: #ad671612;
-  color: #000;
-}  */
+.dn2-status-pill.pending{
+  background: #C2410C;
+  color: #fff;
+}
+
+.dn2-status-pill.in_transit{
+  background: #0369A1;
+  color: #fff;
+}
 
 /* Return button */
 .dn2-return-btn{
@@ -255,7 +255,16 @@
   cursor: default !important;
   user-select: none !important;
   pointer-events: none !important;
-  background-color: #f5f5f5 !important;
+  background-color: #fff5f5 !important;
+}
+
+.dn2-table input:disabled,
+.dn2-table select:disabled{
+  opacity: 0.7 !important;
+  cursor: default !important;
+  user-select: none !important;
+  pointer-events: none !important;
+  background-color: #fff5f5 !important;
 }
 
 /* Auto / read-only fields (Delivery Note ID, Customer from SO, etc.) */

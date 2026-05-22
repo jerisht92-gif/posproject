@@ -23,12 +23,12 @@
       <div class="form-grid">
  
         <div class="form-group">
-          <label for="supplierCode">Supplier ID (Auto Generate)</label>
+          <label for="supplierCode" class="req-label">Supplier ID (Auto Generate)</label>
           <input type="text" class="auto-field" id="supplierCode" name="supplier_id" placeholder="Auto Generate" readonly>
         </div>
  
         <div class="form-group">
-          <label for="gstin">GSTIN</label>
+          <label for="gstin" class="req-label">Tax Identification Number (Tax ID/GST IN/VAT ID)</label>
           <input
             type="text"
             id="gstin"
@@ -42,22 +42,22 @@
         </div>
  
         <div class="form-group">
-          <label for="supplierName">Supplier Name</label>
+          <label for="supplierName" class="req-label">Supplier Name</label>
           <input type="text" id="supplierName" name="supplier_name" placeholder="Eg: ABC Industrial Supplies Private Limited">
         </div>
  
         <div class="form-group">
-          <label for="companyRegistrationNumber">Company Registration Number</label>
+          <label for="companyRegistrationNumber" class="req-label">Company Registration Number</label>
           <input type="text" id="companyRegistrationNumber" name="company_registration_number" placeholder="Eg: CIN:U23DRE456YUOU98">
         </div>
  
         <div class="form-group">
-          <label for="legalEntityName">Legal Entity Name</label>
+          <label for="legalEntityName" class="req-label">Legal Entity Name</label>
           <input type="text" id="legalEntityName" name="legal_entity_name" placeholder="Eg: ABC Industrial Supplies Private Limited">
         </div>
  
         <div class="form-group">
-          <label for="countryOfRegistration">Country of Registration</label>
+          <label for="countryOfRegistration" class="req-label">Country of Registration</label>
           <select id="countryOfRegistration" name="country_of_registration">
             <option value="" selected>Select Country</option>
             <option value="India">India</option>
@@ -65,7 +65,7 @@
         </div>
  
         <div class="form-group">
-          <label for="supplierType">Supplier Type</label>
+          <label for="supplierType" class="req-label">Supplier Type</label>
           <select id="supplierType" name="supplier_type">
             <option value="">Select Supplier Type</option>
             <option value="Manufacturer">Manufacturer</option>
@@ -76,7 +76,7 @@
         </div>
  
         <div class="form-group">
-          <label for="supplierTier">Supplier Tier</label>
+          <label for="supplierTier" class="req-label">Supplier Tier</label>
           <select id="supplierTier" name="supplier_tier">
             <option value="">Select Supplier Tier</option>
             <option value="Strategic">Strategic</option>
@@ -86,7 +86,7 @@
         </div>
  
         <div class="form-group">
-          <label for="supplierStatus">Status</label>
+          <label for="supplierStatus" class="req-label">Status</label>
           <select id="supplierStatus" name="status">
             <option value="">Select Status</option>
             <option value="Active">Active</option>
@@ -109,7 +109,7 @@
       <div class="form-grid">
  
         <div class="form-group">
-          <label for="contactFirstName">Primary Contact First Name</label>
+          <label for="contactFirstName" class="req-label">Primary Contact First Name</label>
           <input
             type="text"
             id="contactFirstName"
@@ -121,7 +121,7 @@
         </div>
  
         <div class="form-group">
-          <label for="contactLastName">Last Name</label>
+          <label for="contactLastName" class="req-label">Last Name</label>
           <input
             type="text"
             id="contactLastName"
@@ -150,7 +150,7 @@
         </div>
  
         <div class="form-group">
-          <label for="supplierEmail">Email</label>
+          <label for="supplierEmail" class="req-label">Email</label>
           <input type="email" id="supplierEmail" name="email" placeholder="Eg: supplier@example.com">
         </div>
  
@@ -160,7 +160,7 @@
         </div>
  
         <div class="form-group">
-          <label for="supplierPhone">Phone Number</label>
+          <label for="supplierPhone" class="req-label">Phone Number</label>
           <input
             type="text"
             id="supplierPhone"
@@ -172,19 +172,24 @@
         </div>
  
         <div class="form-group">
-          <label>Relationship Manager (Internal)</label>
-          <select id="relationshipManager" name="relationship_manager">
-            <option value="" selected>Select Manager</option>
-            <option value="No Relationship Manager">No Relationship Manager</option>
-            <option value="custom">Custom</option>
-          </select>
-          <input
-            type="text"
-            id="relationshipManagerCustom"
-            name="relationship_manager_custom"
-            placeholder="Enter Manager Name"
-            style="display: none; margin-top: 8px;"
-          >
+          <label for="relationshipManager">Relationship Manager (Internal)</label>
+          <div class="supplier-rm-wrap" id="relationshipManagerWrap">
+            <select id="relationshipManager" name="relationship_manager">
+              <option value="" selected>Select Manager</option>
+              <option value="No Relationship Manager">No Relationship Manager</option>
+              <option value="custom">Edit custom</option>
+            </select>
+            <input
+              type="text"
+              id="relationshipManagerCustom"
+              name="relationship_manager_custom"
+              class="supplier-rm-custom"
+              placeholder="Enter manager name"
+              maxlength="80"
+              autocomplete="off"
+              disabled
+            >
+          </div>
         </div>
  
       </div>
@@ -195,7 +200,7 @@
  
       <div class="form-grid">
         <div class="form-group full">
-          <label for="registeredOfficeAddress">Registered Office Address</label>
+          <label for="registeredOfficeAddress" class="req-label">Registered Office Address</label>
           <input type="text" id="registeredOfficeAddress" name="registered_office_address" placeholder="Enter Office Address">
         </div>
  
@@ -350,7 +355,7 @@
         </div>
  
         <div class="form-group">
-          <label>Compliance Status</label>
+          <label class="req-label">Compliance Status</label>
           <select name="compliance_status">
             <option value="">Select status</option>
             <option value="Pending">Pending</option>
@@ -361,18 +366,26 @@
         </div>
  
         <div class="form-group">
-          <label>Last Risk Assessment Date</label>
-          <input type="date" name="last_risk_assessment_date">
+          <label for="lastRiskAssessmentDate">Last Risk Assessment Date</label>
+          <div class="supplier-date-wrap" data-date-field="last_risk_assessment_date">
+            <input type="text" id="lastRiskAssessmentDate" name="last_risk_assessment_date" class="supplier-date-text" placeholder="dd-mm-yyyy" maxlength="10" inputmode="numeric" autocomplete="off" title="dd-mm-yyyy">
+            <input type="date" class="supplier-date-native" tabindex="-1" aria-label="Choose last risk assessment date">
+            <button type="button" class="supplier-date-open" tabindex="-1" aria-hidden="true">
+              <i class="fa-regular fa-calendar" aria-hidden="true"></i>
+            </button>
+          </div>
         </div>
  
-        <div class="form-group">
-          <label>Insurance Documents/Info</label>
-          <input type="file">
+        <div class="form-group supplier-doc-upload" data-upload-slot="insurance">
+          <label for="insuranceUpload">Insurance Documents/Info</label>
+          <input type="file" id="insuranceUpload" name="insurance_upload" class="supplier-file-input" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" title="PDF, JPG, PNG (max 10MB)">
+          <div class="supplier-doc-upload__list" id="insuranceUploadList"></div>
         </div>
  
-        <div class="form-group">
-          <label>Mitigation Plans</label>
-          <input type="file">
+        <div class="form-group supplier-doc-upload" data-upload-slot="mitigation">
+          <label for="mitigationUpload">Mitigation Plans</label>
+          <input type="file" id="mitigationUpload" name="mitigation_upload" class="supplier-file-input" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" title="PDF, JPG, PNG (max 10MB)">
+          <div class="supplier-doc-upload__list" id="mitigationUploadList"></div>
         </div>
  
         <div class="form-group full">
@@ -401,8 +414,14 @@
         </div>
  
         <div class="form-group">
-          <label>Last Evaluation Date</label>
-          <input type="date" name="last_evaluation_date" placeholder="mm/dd/yyyy">
+          <label for="lastEvaluationDate">Last Evaluation Date</label>
+          <div class="supplier-date-wrap" data-date-field="last_evaluation_date">
+            <input type="text" id="lastEvaluationDate" name="last_evaluation_date" class="supplier-date-text" placeholder="dd-mm-yyyy" maxlength="10" inputmode="numeric" autocomplete="off" title="dd-mm-yyyy">
+            <input type="date" class="supplier-date-native" tabindex="-1" aria-label="Choose last evaluation date">
+            <button type="button" class="supplier-date-open" tabindex="-1" aria-hidden="true">
+              <i class="fa-regular fa-calendar" aria-hidden="true"></i>
+            </button>
+          </div>
         </div>
  
         <div class="form-group">
@@ -431,19 +450,22 @@
           <input type="text" name="external_key_contact" placeholder="Primary contact name/Title">
         </div>
  
-        <div class="form-group">
-          <label>Dispute Resolutions</label>
-          <input type="file">
+        <div class="form-group supplier-doc-upload" data-upload-slot="dispute">
+          <label for="disputeResolutionUpload">Dispute Resolutions</label>
+          <input type="file" id="disputeResolutionUpload" name="dispute_resolution_upload" class="supplier-file-input" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" title="PDF, JPG, PNG (max 10MB)">
+          <div class="supplier-doc-upload__list" id="disputeResolutionUploadList"></div>
         </div>
  
-        <div class="form-group">
-          <label>Interaction Logs</label>
-          <input type="file">
+        <div class="form-group supplier-doc-upload" data-upload-slot="interaction">
+          <label for="interactionLogsUpload">Interaction Logs (Link to CRM logs)</label>
+          <input type="file" id="interactionLogsUpload" name="interaction_logs_upload" class="supplier-file-input" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" title="PDF, JPG, PNG (max 10MB)">
+          <div class="supplier-doc-upload__list" id="interactionLogsUploadList"></div>
         </div>
  
-        <div class="form-group">
-          <label>Feedback/Surveys</label>
-          <input type="file">
+        <div class="form-group supplier-doc-upload" data-upload-slot="feedback">
+          <label for="feedbackSurveysUpload">Feedback/Surveys</label>
+          <input type="file" id="feedbackSurveysUpload" name="feedback_surveys_upload" class="supplier-file-input" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" title="PDF, JPG, PNG (max 10MB)">
+          <div class="supplier-doc-upload__list" id="feedbackSurveysUploadList"></div>
         </div>
  
         <div class="form-group full">
@@ -487,14 +509,14 @@
  
         <div class="tab-content" id="attachments" style="display:none;">
           <div class="upload-section">
-            <input type="file" id="fileInput" hidden multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png">
-            <div class="upload-card" id="uploadCard">
-              <i class="fa-solid fa-cloud-upload-alt"></i>
-              <h4>Upload Attachment</h4>
-              <p>Click to select or drag & drop</p>
+            <input type="file" id="fileInput" class="supplier-file-input-hidden" hidden multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png">
+            <div class="supplier-upload-card" id="uploadCard" role="button" tabindex="0" aria-label="Upload attachment">
+              <i class="fa-solid fa-cloud-upload-alt" aria-hidden="true"></i>
+              <span class="supplier-upload-card__title">Upload Attachment</span>
+              <span class="supplier-upload-card__hint">Click to select or drag &amp; drop</span>
               <small>PDF, DOC, XLS, JPG, PNG (Max 10MB)</small>
             </div>
-            <button type="button" class="btn-upload" id="uploadBtn"><i class="fa-solid fa-upload"></i> Choose File</button>
+            <button type="button" class="btn-upload" id="uploadBtn"><i class="fa-solid fa-upload" aria-hidden="true"></i> Choose File</button>
           </div>
  
           <div class="files-section">
@@ -502,7 +524,7 @@
               <h4><i class="fa-solid fa-paperclip"></i> Attached Files</h4>
               <span class="file-count" id="fileCount">0 / 10 files</span>
             </div>
-            <div class="files-list" id="filesList">
+            <div class="files-list sup-att__items" id="filesList">
               <div class="no-files">
                 <i class="fa-regular fa-folder-open"></i>
                 <p>No files attached yet</p>
@@ -537,5 +559,6 @@
 </script>
 <script src="{{ url_for('static', filename='supplier-new.js') }}"></script>
 {% endblock %}
+ 
  
  

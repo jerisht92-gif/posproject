@@ -253,6 +253,17 @@
 
   font-size:13px;
   color:#4a1f1a;
+  cursor:text;
+}
+
+.dnr-date-input::-webkit-calendar-picker-indicator{
+  cursor:pointer;
+  opacity:1;
+}
+
+.dnr-date-input::-moz-calendar-picker-indicator{
+  cursor:pointer;
+  opacity:1;
 }
 /* =========================================================
    TABLE
@@ -406,17 +417,17 @@
 
 .dnr-badge.draft{
   background: #EAB308;
-  color: #3B2F00;
+  color: #fff;
 }
 
 .dnr-badge.submitted{
-  background: #8ef6e4;
-  color: #1a4a44;
+  background: #038d76;
+  color: #fff;
 }
 
 .dnr-badge.cancelled{
   background: #4B5563;
-  color: #ffffff;
+  color: #fff;
 }
 
 /* BODY */

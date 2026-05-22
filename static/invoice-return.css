@@ -424,38 +424,38 @@
   }
   
   .dn-badge.draft {
-    background: #f75656;
-    color: #000;
+    background: #EAB308;
+    color: #fff;
   }
   
   .dn-badge.delivered {
-    background: #59f663;
-    color: #000;
+    background: #15803D;
+    color: #fff;
   }
   
   .dn-badge.partially_delivered {
-    background: #27e391;
-    color: #000;
+    background: #7C3AED;
+    color: #fff;
   }
   
   .dn-badge.returned {
-    background: #3c363d;
-    color: #000;
+    background: #DC2626;
+    color: #fff;
   }
   
   .dn-badge.cancelled {
-    background: #d6d2d2;
-    color: #000;
+    background: #4B5563;
+    color: #fff;
   }
   
   .dn-badge.pending {
-    background: #e9b641;
-    color: #000;
+    background: #C2410C;
+    color: #fff;
   }
   
   .dn-badge.in_transit {
-    background: #ad671612;
-    color: #000;
+    background: #0369A1;
+    color: #fff;
   }
   
   /* =========================================================
@@ -542,18 +542,18 @@
   }
   
   .status-draft {
-    background: #e9ecef;
-    color: #495057;
+    background: #EAB308;
+    color: #fff;
   }
   
   .status-submitted {
-    background: #d4edda;
-    color: #155724;
+    background: #038d76;
+    color: #fff;
   }
   
   .status-cancelled {
-    background: #f8d7da;
-    color: #721c24;
+    background: #4B5563;
+    color: #fff;
   }
   
   /* =========================================================
@@ -738,8 +738,8 @@
       text-align: center;
   }
   .so-status-draft {
-      background-color: #ffd638;
-      color:#1a1a1a;
+      background-color: #EAB308;
+      color:#fff;
        padding: 8px;
       border-radius: 10px;
       font-size: 12px;
@@ -749,8 +749,8 @@
   
   }
   .so-status-send{
-      background-color: #8cd8bc;
-      color:#1a1a1a;
+      background-color: #038d76;
+      color:#fff;
        padding: 8px;
       border-radius: 10px;
       font-size: 12px;
@@ -760,8 +760,8 @@
   
   }
   .so-status-cancelled {
-      background-color: #ff4d4f;
-      color:#1a1a1a;
+      background-color: #4B5563;
+      color:#fff;
        padding: 8px;
       border-radius: 10px;
       font-size: 12px;

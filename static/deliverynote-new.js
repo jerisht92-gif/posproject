@@ -310,9 +310,19 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!deliveryNotesEl?.value?.trim()) return false;
     const dataRows = getDnLineItemDataRows();
     if (!dataRows.length) return false;
-    return dataRows.every((tr) =>
-      (tr.querySelector(".prodIdCell")?.textContent || "").trim()
-    );
+    if (!dataRows.every((tr) => (tr.querySelector(".prodIdCell")?.textContent || "").trim())) {
+      return false;
+    }
+    const st = normalizeKey(deliveryStatusEl?.value || "");
+    if (
+      mode !== "view" &&
+      (st === "delivered" || st === "partially_delivered") &&
+      ackSection &&
+      !ackSection.classList.contains("ack-disabled")
+    ) {
+      if (!isAckValid() || !ackSaved) return false;
+    }
+    return true;
   }
 
   let dnLiveValidationActive = false;
@@ -418,6 +428,15 @@ document.addEventListener("DOMContentLoaded", () => {
     //   }
     // }
 
+    const st = normalizeKey(deliveryStatusEl?.value || "");
+    if (
+      (st === "delivered" || st === "partially_delivered") &&
+      ackSection &&
+      !ackSection.classList.contains("ack-disabled")
+    ) {
+      if (!isAckValid() || !ackSaved) ok = false;
+    }
+
     return ok;
   }
 
@@ -481,7 +500,8 @@ document.addEventListener("DOMContentLoaded", () => {
 ========================================================== */
 const DELIVERY_NOTE_STATUSES = [
   "Draft",
-  
+  "Pending",
+  "In Transit",
   "Delivered",
   "Partially Delivered",
   "Returned",
@@ -542,7 +562,8 @@ function formatMoney(value) {
   function statusText(key) {
   const map = {
     draft: "Draft",
-    
+    pending: "Pending",
+    in_transit: "In Transit",
     partially_delivered: "Partially Delivered",
     delivered: "Delivered",
     returned: "Returned",
@@ -618,13 +639,18 @@ function formatMoney(value) {
     `;
 
     document.getElementById("ackDownloadBtn")?.addEventListener("click", () => {
-      const url = URL.createObjectURL(uploadedAckFile);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = uploadedAckFile.name;
-      a.click();
-      URL.revokeObjectURL(url);
-    });
+    if (uploadedAckFile?.isExisting) {
+      showToast("Existing file download needs backend file path/API.", "error");
+      return;
+    }
+
+    const url = URL.createObjectURL(uploadedAckFile);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = uploadedAckFile.name;
+    a.click();
+    URL.revokeObjectURL(url);
+  });
 
     document.getElementById("ackRemoveBtn")?.addEventListener("click", () => {
       uploadedAckFile = null;
@@ -633,6 +659,7 @@ function formatMoney(value) {
       renderAckFiles();
       updatePdfEmailButtons();
       runAckLiveValidation();
+      validateSubmit();
       showToast("POD removed", "info");
     });
   }
@@ -640,13 +667,17 @@ function formatMoney(value) {
   ackReceivedBy?.addEventListener("input", () => {
     const cleaned = filterNameInput(ackReceivedBy.value);
     if (ackReceivedBy.value !== cleaned) ackReceivedBy.value = cleaned;
+    ackSaved = false;
     runAckLiveValidation();
+    validateSubmit();
   });
 
   ackContact?.addEventListener("input", () => {
     const cleaned = filterPhoneInput(ackContact.value);
     if (ackContact.value !== cleaned) ackContact.value = cleaned;
+    ackSaved = false;
     runAckLiveValidation();
+    validateSubmit();
   });
 
   ackPodFile?.addEventListener("change", () => {
@@ -658,6 +689,7 @@ function formatMoney(value) {
       renderAckFiles();
       updatePdfEmailButtons();
       runAckLiveValidation();
+      validateSubmit();
       showToast("Invalid file format. Upload only PDF, JPG, or PNG.", "error");
       return;
     }
@@ -666,6 +698,7 @@ function formatMoney(value) {
     renderAckFiles();
     updatePdfEmailButtons();
     runAckLiveValidation();
+    validateSubmit();
   });
 
   function isAckValid() {
@@ -771,6 +804,7 @@ function formatMoney(value) {
     ackSaved = true;
     showToast("Acknowledgement saved.", "success");
     updatePdfEmailButtons();
+    validateSubmit();
   });
 
   pdfBtn?.addEventListener("click", () => {
@@ -828,7 +862,7 @@ function formatMoney(value) {
       (statusKey === "partially_delivered" || statusKey === "delivered") &&
       mode !== "view";
 
-    setAckDisabled(!canEnableAck);
+    setAckDisabled(mode === "view" ? false : !canEnableAck);
 
     // Return button enable only for partial/delivered (not view)
     const currentStatus = normalizeKey(
@@ -1288,22 +1322,19 @@ function formatMoney(value) {
     itemsBody.innerHTML = "";
 
     const items = so.items || [];
-    if (!items.length) {
-      validateSubmit();
-      return;
+    if (items.length) {
+      items.forEach((it) => {
+        addRow({
+          product_id: it.product_id || "",
+          product_name: it.product_name || "",
+          qty: it.qty ?? it.quantity ?? 1,
+          uom: it.uom || "",
+          serial_no: it.serial_no || ""
+        });
+      });
     }
 
-    items.forEach((it) => {
-    addRow({
-      product_id: it.product_id || "",
-      product_name: it.product_name || "",
-      qty: it.qty ?? it.quantity ?? 1,
-      uom: it.uom || "",
-      serial_no: it.serial_no || ""
-      
-    });
-});
-
+    showToast("Sales Order Reference loaded successfully", "success");
     validateSubmit();
   } catch (e) {
     console.error("Failed to load SO detail:", e);
@@ -1336,6 +1367,32 @@ function formatMoney(value) {
       return;
     }
 
+    if (!dnTypeEl?.value?.trim()) {
+      dnLiveValidationActive = true;
+      setFieldError(dnTypeEl, dnTypeErr, "Please select delivery type.");
+      showToast("Please select delivery type.", "error");
+      return;
+    }
+
+    if (status === "Submitted") {
+      const st = normalizeKey(deliveryStatusEl?.value || "");
+      if (
+        (st === "delivered" || st === "partially_delivered") &&
+        ackSection &&
+        !ackSection.classList.contains("ack-disabled")
+      ) {
+        if (!isAckValid() || !ackSaved) {
+          showToast(
+            "Complete Customer Acknowledgement and click Save Changes before submitting.",
+            "error"
+          );
+          runAckLiveValidation();
+          validateSubmit();
+          return;
+        }
+      }
+    }
+
     const dv = dnDate?.value?.trim() || "";
     if (!dv || !isValidDNDateString(dv)) {
       showToast("Enter the valid date format..", "error");
@@ -1355,6 +1412,11 @@ function formatMoney(value) {
       tracking_id: trackingIdEl?.value || "",
       delivery_notes: deliveryNotesEl?.value || "",
       status: status, // Draft / Submitted
+
+      received_by: ackReceivedBy?.value || "",
+      contact_number: ackContact?.value || "",
+      pod_file: uploadedAckFile?.name || "",
+
       items: collectItems(),
     };
 
@@ -1406,35 +1468,59 @@ function formatMoney(value) {
 
   const dn = json.data;
 
-  setDnIdValue(dn.dn_id || "");
-  if (dnDate) {
-  const rawDate = dn.delivery_date || "";
+  if (ackReceivedBy) {
+    ackReceivedBy.value =
+      dn.received_by ||
+      dn.ack_received_by ||
+      dn.customer_received_by ||
+      "";
+  }
 
-  if (rawDate) {
-    const d = new Date(rawDate);
-    if (!isNaN(d)) {
-      dnDate.value = d.toISOString().split("T")[0];
+  if (ackContact) {
+    ackContact.value =
+      dn.contact_number ||
+      dn.ack_contact ||
+      dn.customer_contact ||
+      dn.phone ||
+      "";
+  }
+
+  if (dn.pod_file || dn.ack_pod_file_name) {
+    uploadedAckFile = {
+      name: dn.pod_file || dn.ack_pod_file_name,
+      isExisting: true
+    };
+    ackSaved = true;
+  } else {
+    uploadedAckFile = null;
+    ackSaved = false;
+  }
+
+  renderAckFiles();
+
+  setDnIdValue(dn.dn_id || "");
+
+  if (dnDate) {
+    const rawDate = dn.delivery_date || "";
+    if (rawDate) {
+      const d = new Date(rawDate);
+      dnDate.value = !isNaN(d) ? d.toISOString().split("T")[0] : "";
     } else {
       dnDate.value = "";
     }
-  } else {
-    dnDate.value = "";
   }
-}
 
   const soRefValue =
     dn.so_ref ||
     dn.sales_order_ref ||
+    dn.sale_order_ref ||
     dn.salesOrderRef ||
     dn.so_id ||
     "";
 
   if (soRefSel) {
-    if (soRefValue) {
-      ensureSoRefOption(soRefValue);
-    } else {
-      soRefSel.value = "";
-    }
+    if (soRefValue) ensureSoRefOption(soRefValue);
+    else soRefSel.value = "";
   }
 
   if (custNameEl) custNameEl.value = dn.customer_name || "";
@@ -1442,22 +1528,22 @@ function formatMoney(value) {
   if (destAddrEl) destAddrEl.value = dn.destination_address || "";
 
   if (deliveryByEl) deliveryByEl.value = dn.delivery_by || "";
- loadDeliveryStatusOptions(normalizeDeliveryStatus(dn.delivery_status || dn.status || "draft"));
+  loadDeliveryStatusOptions(normalizeDeliveryStatus(dn.delivery_status || dn.status || "draft"));
   if (vehicleNoEl) vehicleNoEl.value = dn.vehicle_no || "";
   if (trackingIdEl) trackingIdEl.value = dn.tracking_id || "";
   if (deliveryNotesEl) deliveryNotesEl.value = dn.delivery_notes || "";
 
   itemsBody.innerHTML = "";
 
-(dn.items || []).forEach((it) => {
-  addRow({
-    product_id: it.product_id || "",
-    product_name: it.product_name || "",
-    qty: it.qty ?? it.quantity ?? 1,
-    uom: it.uom || "",
-    serial_no: it.serial_no || ""   
+  (dn.items || []).forEach((it) => {
+    addRow({
+      product_id: it.product_id || "",
+      product_name: it.product_name || "",
+      qty: it.qty ?? it.quantity ?? 1,
+      uom: it.uom || "",
+      serial_no: it.serial_no || ""
+    });
   });
-});
 
   if (!itemsBody.querySelector("tr")) addRow();
 
@@ -1474,6 +1560,21 @@ function formatMoney(value) {
       el.classList.remove("input-invalid");
     });
     ackUploadWrap?.classList.remove("ack-upload-invalid");
+    ackSection?.classList.remove("ack-disabled");
+
+    if (ackReceivedBy) {
+      ackReceivedBy.readOnly = true;
+      ackReceivedBy.setAttribute("aria-readonly", "true");
+      ackReceivedBy.classList.add("auto-field");
+    }
+    if (ackContact) {
+      ackContact.readOnly = true;
+      ackContact.setAttribute("aria-readonly", "true");
+      ackContact.classList.add("auto-field");
+    }
+    if (ackPodFile) ackPodFile.disabled = true;
+    if (ackUploadWrap) ackUploadWrap.style.display = "none";
+    if (ackSaveBtn) ackSaveBtn.style.display = "none";
 
     document
       .querySelectorAll(".dn2-page input, .dn2-page select, .dn2-page textarea, .dn2-page button")
@@ -1481,13 +1582,27 @@ function formatMoney(value) {
         if (el === cancelBtn) return;
         if (el === cancelDnBtn) return;
         if (el === returnBtn) return;
+        if (el === ackReceivedBy) return;
+        if (el === ackContact) return;
+        if (el === ackPodFile) return;
+        if (el === ackSaveBtn) return;
+        if (el.closest("#ackSection")) return;
         if (el.closest("#cancelDnBackdrop")) return;
         el.disabled = true;
       });
 
-  
+    ackSection
+      ?.querySelectorAll("button")
+      .forEach((btn) => {
+        if (btn.id === "ackDownloadBtn") return;
+        btn.disabled = true;
+        btn.style.display = "none";
+      });
+
     saveDraftBtn?.style.setProperty("display", "none");
     submitBtn?.style.setProperty("display", "none");
+
+    updatePdfEmailButtons();
   }
 
   /* =========================================================
@@ -1508,7 +1623,17 @@ function formatMoney(value) {
 
   function validateSubmit() {
     if (!submitBtn) return;
-    submitBtn.disabled = !runLiveDNValidationOrSilent();
+    let canSubmit = runLiveDNValidationOrSilent();
+    const st = normalizeKey(deliveryStatusEl?.value || "");
+    if (
+      mode !== "view" &&
+      (st === "delivered" || st === "partially_delivered") &&
+      ackSection &&
+      !ackSection.classList.contains("ack-disabled")
+    ) {
+      canSubmit = canSubmit && isAckValid() && ackSaved;
+    }
+    submitBtn.disabled = !canSubmit;
     runAckLiveValidation();
   }
 
@@ -1647,11 +1772,36 @@ function formatMoney(value) {
   });
 
   deliveryStatusEl?.addEventListener("change", () => {
-    dnLiveValidationActive = true;
-    const stKey = normalizeKey(deliveryStatusEl.value);
-    applyStatusUI({ mode, statusKey: stKey, isFreshNew: !editId });
-    validateSubmit();
-  });
+  dnLiveValidationActive = true;
+
+  const stKey = normalizeKey(deliveryStatusEl.value);
+
+  // Do NOT update top header status pill while editing.
+  // Header pill should show the status loaded from first page / DB.
+  if (!editId) {
+    applyStatusUI({ mode, statusKey: stKey, isFreshNew: true });
+  } else {
+    // Only update acknowledgement / return button / pdf-email logic
+    const canEnableAck =
+      (stKey === "partially_delivered" || stKey === "delivered") &&
+      mode !== "view";
+
+    setAckDisabled(!canEnableAck);
+
+    if (returnBtn) {
+      returnBtn.disabled = !(stKey === "partially_delivered" || stKey === "delivered");
+    }
+
+    if (!canEnableAck && mode !== "view") {
+      ackSaved = false;
+    }
+
+    updatePdfEmailButtons();
+    runAckLiveValidation();
+  }
+
+  validateSubmit();
+});
 
   /* =========================================================
      INIT
@@ -1761,6 +1911,7 @@ async function prefillFromSalesOrder() {
         });
       });
     }
+    showToast("Sales Order Reference loaded successfully", "success");
     return true;
   } catch (err) {
     console.error("Prefill from sales order failed:", err);

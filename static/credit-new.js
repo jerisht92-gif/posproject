@@ -1,7 +1,9 @@
 function cnCfg() {
-  const el = document.getElementById("credit-inline-config");
-  if (!el) return {};
-  try { return JSON.parse(el.textContent || "{}"); } catch { return {}; }
+  return {
+    creditId: document.getElementById("creditIdValue")?.value || "",
+    mode: document.getElementById("creditModeValue")?.value || "new",
+    userName: document.getElementById("creditUserNameValue")?.value || ""
+  };
 }
 
 function cnSet(id, value) {
@@ -19,16 +21,72 @@ function cnSetText(id, value) {
 }
 
 function cnToast(message, type = "success") {
-  const toast = document.createElement("div");
+  if (!message) return;
+  document.querySelectorAll(".success-notification, .error-notification").forEach((el) => el.remove());
   const isErrorLike = type === "error" || type === "warning";
+  if (type !== "success" && !isErrorLike) return;
+
+  const toast = document.createElement("div");
   toast.className = isErrorLike ? "error-notification" : "success-notification";
-  toast.textContent = message;
+
+  const text = document.createElement("span");
+  text.textContent = message;
+
+  if (isErrorLike) {
+    const icon = document.createElement("span");
+    icon.setAttribute("aria-hidden", "true");
+    icon.textContent = "✕";
+    icon.style.cssText = "font-size:18px;font-weight:bold;line-height:1;flex-shrink:0;";
+    toast.appendChild(icon);
+  }
+
+  toast.appendChild(text);
+
+  Object.assign(toast.style, {
+    position: "fixed",
+    top: "20px",
+    left: "50%",
+    transform: "translateX(-50%) translateY(-100px)",
+    padding: "14px 28px",
+    borderRadius: "10px",
+    fontSize: "15px",
+    fontWeight: "600",
+    zIndex: "10000",
+    opacity: "0",
+    transition: "all 0.4s cubic-bezier(0.68,-0.55,0.265,1.55)",
+    pointerEvents: "none",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: "8px",
+    maxWidth: "min(700px, calc(100vw - 32px))",
+    boxSizing: "border-box",
+    textAlign: "center",
+    background: isErrorLike
+      ? "linear-gradient(135deg,#ffe6e6,#ffc2c2)"
+      : "linear-gradient(135deg,#fff4f4,#ffe8e8)",
+    color: "#a12828",
+    border: "1.5px solid #a12828",
+    boxShadow: isErrorLike
+      ? "0 8px 24px rgba(161,40,40,0.35)"
+      : "0 8px 24px rgba(161,40,40,0.25)",
+  });
+  text.style.cssText = "line-height:1.3;white-space:normal;overflow-wrap:anywhere;word-break:break-word;";
+
   document.body.appendChild(toast);
-  requestAnimationFrame(() => toast.classList.add("show"));
+  requestAnimationFrame(() => {
+    toast.style.opacity = "1";
+    toast.style.transform = "translateX(-50%) translateY(0)";
+    toast.style.pointerEvents = "auto";
+    toast.classList.add("show");
+  });
   setTimeout(() => {
+    toast.style.opacity = "0";
+    toast.style.transform = "translateX(-50%) translateY(-100px)";
+    toast.style.pointerEvents = "none";
     toast.classList.remove("show");
-    setTimeout(() => toast.remove(), 250);
-  }, isErrorLike ? 2200 : 3000);
+    setTimeout(() => toast.remove(), 400);
+  }, 3000);
 }
 
 function cnRenderRows(items) {
@@ -65,8 +123,14 @@ function cnCalcRefund() {
   if (amountPaid > invoiceTotal) amountPaid = invoiceTotal;
   let returned = 0;
   document.querySelectorAll("#cnItemsBody tr").forEach((row) => {
-    const cell = row.children[9];
-    if (cell && cell.innerText) returned += parseFloat(cell.innerText) || 0;
+    const qty = parseFloat(row.children[3]?.innerText) || 0;
+    const unit = parseFloat(row.children[6]?.innerText) || 0;
+    const tax = parseFloat(row.children[7]?.innerText) || 0;
+    const disc = parseFloat(row.children[8]?.innerText) || 0;
+    const lineTotal =
+      Math.round(qty * unit * (1 + tax / 100) * (1 - disc / 100) * 100) / 100;
+    if (row.children[9]) row.children[9].innerText = String(lineTotal);
+    returned += lineTotal;
   });
   if (returned > invoiceTotal) returned = invoiceTotal;
   const refundableBase = Math.min(returned, amountPaid);
@@ -86,8 +150,8 @@ function cnCalcRefund() {
     }
   }
 
-  // Balance Due = Invoice Total - Invoice Return Amount - Amount Paid
-  cnSetText("cnBalanceDue", Math.max(invoiceTotal - returned - amountPaid, 0).toFixed(2));
+  // Balance Due = Invoice Total - Amount Paid (outstanding on original invoice)
+  cnSetText("cnBalanceDue", Math.max(invoiceTotal - amountPaid, 0).toFixed(2));
   cnSetText("cnInvoiceReturnAmount", returned.toFixed(2));
   cnSetText("cnBalanceToRefund", Math.max(refundableBase - refundPaid, 0).toFixed(2));
 }
@@ -117,23 +181,102 @@ function cnSanitizeCreatedBy(raw) {
 }
 
 function cnGetCreatedByValidationMessage(v) {
-  if (!v) return "Created By is required (3 to 30 characters).";
-  if (v.length < 3 || v.length > 30) return "Created By must be 3 to 30 characters.";
+  if (!v || v.length < 3 || v.length > 30) return "Created By must be 3 to 30 characters.";
   if (!/^[A-Za-z ]+$/.test(v)) return "Created By can contain only letters and spaces.";
   return "";
 }
 
-function cnValidateCreatedByUI({ silent = false } = {}) {
+function cnValidateCreatedByUI({
+  silent = false,
+  live = false,
+  includeBranch = true,
+  includeCreatedBy = true,
+} = {}) {
+  let valid = true;
+
+  if (includeBranch) {
+    const branchEl = document.getElementById("cnBranch");
+    if (branchEl) {
+      const branchMsg = (branchEl.value || "").trim() ? "" : "Please select Branch.";
+      const branchWrap = branchEl.closest(".cn-field");
+      let branchErr = branchWrap ? branchWrap.querySelector(".cn-field-error") : null;
+      if (!branchErr && branchWrap) {
+        branchErr = document.createElement("span");
+        branchErr.className = "cn-field-error";
+        branchErr.id = "cnBranchError";
+        branchErr.setAttribute("role", "alert");
+        branchErr.setAttribute("aria-live", "polite");
+        branchErr.hidden = true;
+        branchWrap.appendChild(branchErr);
+      }
+      if (branchMsg) {
+        branchEl.classList.add("input-invalid");
+        branchEl.setAttribute("aria-invalid", "true");
+        branchEl.setAttribute("aria-describedby", "cnBranchError");
+        if (branchErr) {
+          branchErr.textContent = branchMsg;
+          branchErr.hidden = false;
+          branchErr.classList.add("is-visible");
+        }
+        if (!silent && !live) cnToast("Please select branch.", "error");
+        valid = false;
+      } else {
+        branchEl.classList.remove("input-invalid");
+        branchEl.removeAttribute("aria-invalid");
+        branchEl.removeAttribute("aria-describedby");
+        if (branchErr) {
+          branchErr.textContent = "";
+          branchErr.hidden = true;
+          branchErr.classList.remove("is-visible");
+        }
+      }
+    }
+  }
+
+  if (!includeCreatedBy) return valid;
+
   const el = document.getElementById("cnCreatedBy");
-  if (!el) return true;
+  if (!el) return valid;
   const sanitized = cnSanitizeCreatedBy(el.value);
   if (el.value !== sanitized) el.value = sanitized;
   const msg = cnGetCreatedByValidationMessage(sanitized);
-  if (msg) {
-    if (!silent) cnToast(msg, "error");
-    return false;
+  const fieldWrap = el.closest(".cn-field");
+  let errEl = fieldWrap ? fieldWrap.querySelector(".cn-field-error") : null;
+  if (!errEl && fieldWrap) {
+    errEl = document.createElement("span");
+    errEl.className = "cn-field-error";
+    errEl.id = "cnCreatedByError";
+    errEl.setAttribute("role", "alert");
+    errEl.setAttribute("aria-live", "polite");
+    errEl.hidden = true;
+    fieldWrap.appendChild(errEl);
   }
-  return true;
+  if (msg) {
+    el.classList.add("input-invalid");
+    el.setAttribute("aria-invalid", "true");
+    el.setAttribute("aria-describedby", "cnCreatedByError");
+    if (errEl) {
+      errEl.textContent = msg;
+      errEl.hidden = false;
+      errEl.classList.add("is-visible");
+    }
+    if (!silent && !live) {
+      const needsEnter =
+        !sanitized || sanitized.length < 3 || sanitized.length > 30;
+      cnToast(needsEnter ? "Please enter created by." : msg, "error");
+    }
+    valid = false;
+  } else {
+    el.classList.remove("input-invalid");
+    el.removeAttribute("aria-invalid");
+    el.removeAttribute("aria-describedby");
+    if (errEl) {
+      errEl.textContent = "";
+      errEl.hidden = true;
+      errEl.classList.remove("is-visible");
+    }
+  }
+  return valid;
 }
 
 function cnSanitizeRefundPaidInput(el) {
@@ -168,14 +311,13 @@ function cnFormatRefundPaidOnBlur(el) {
 function cnMapInvoiceLinesToReturnRows(invItems) {
   if (!Array.isArray(invItems) || !invItems.length) return [];
   return invItems.map((row) => {
-    const qty = Number(row.quantity ?? 0);
+    const qty = Number(
+      row.return_qty ?? row.return_quantity ?? row.returned_qty ?? row.quantity ?? 0
+    );
     const unit = Number(row.unit_price ?? 0);
     const tax = Number(row.tax_percent ?? 0);
     const disc = Number(row.discount ?? 0);
-    const lineTotal =
-      row.total != null
-        ? Number(row.total)
-        : Math.round(qty * unit * (1 + tax / 100) * (1 - disc / 100) * 100) / 100;
+    const lineTotal = Math.round(qty * unit * (1 + tax / 100) * (1 - disc / 100) * 100) / 100;
     return {
       product_name: row.product_name ?? "",
       product_id: row.product_id ?? "",
@@ -279,20 +421,47 @@ function cnMergeReturnTaxDiscountFromInvoice(returnRows, invoiceLineRows) {
 async function cnLoadInvoiceIds() {
   const sel = document.getElementById("cnInvoiceRef");
   if (!sel) return;
-  const res = await fetch("/api/invoices-credit");
-  const data = await res.json();
-  const invoices = Array.isArray(data?.invoices) ? data.invoices : [];
+  const currentCreditId = String(cnGet("cnId") || "").trim();
+  const [irRes, cnRes] = await Promise.all([
+    fetch("/api/invoice-returns"),
+    fetch("/api/credit-notes"),
+  ]);
+  const data = await irRes.json().catch(() => []);
+  const list = Array.isArray(data) ? data : [];
+  const usedIrIds = new Set();
+  const usedInvoiceIds = new Set();
+  if (cnRes.ok) {
+    const cnPayload = await cnRes.json().catch(() => ({}));
+    const notes = Array.isArray(cnPayload?.items) ? cnPayload.items : [];
+    notes.forEach((n) => {
+      const ref = String(n.invoice_ref_id || "").trim();
+      const cnId = String(n.crn_id || n.credit_note_id || "").trim();
+      if (!ref) return;
+      if (currentCreditId && cnId === currentCreditId) return;
+      if (/^ir-/i.test(ref)) usedIrIds.add(ref);
+      else usedInvoiceIds.add(ref);
+    });
+  }
   sel.innerHTML = '<option value="">Select Invoice Ref. ID</option>';
-  invoices.forEach((id) => {
+  list.forEach((item) => {
+    const st = String(item?.status || "")
+      .trim()
+      .toLowerCase();
+    if (st !== "submitted") return;
+    const rid = String(item?.return_id || item?.invoice_return_id || "").trim();
+    const linkedInv = String(item?.invoice_ref || item?.invoice_id || "").trim();
+    if (!rid) return;
+    if (usedIrIds.has(rid)) return;
+    if (linkedInv && usedInvoiceIds.has(linkedInv)) return;
     const opt = document.createElement("option");
-    opt.value = String(id || "");
-    opt.textContent = String(id || "");
+    opt.value = rid;
+    opt.textContent = rid;
     sel.appendChild(opt);
   });
 }
 
-async function cnFillFromInvoice(invoiceId) {
-  if (!invoiceId) {
+async function cnFillFromInvoice(invoiceReturnRef) {
+  if (!invoiceReturnRef) {
     cnSet("cnCustomerName", "");
     cnSet("cnCustomerId", "");
     cnSet("cnBillingAddress", "");
@@ -308,6 +477,21 @@ async function cnFillFromInvoice(invoiceId) {
     cnCalcRefund();
     return;
   }
+  const irRes = await fetch(`/api/invoice-return/${encodeURIComponent(invoiceReturnRef)}`);
+  const irJson = await irRes.json().catch(() => ({}));
+  if (!irRes.ok || irJson?.success === false) {
+    throw new Error(irJson?.error || irJson?.message || "Invoice return fetch failed");
+  }
+  const ir = irJson.invoice_return || {};
+  const irStatus = String(ir.status || "")
+    .trim()
+    .toLowerCase();
+  if (irStatus !== "submitted") {
+    cnToast("Only submitted invoice returns can be used for a credit note.", "error");
+    return;
+  }
+  const invoiceId = String(ir.invoice_id || "").trim();
+  if (!invoiceId) throw new Error("Invoice return has no linked invoice");
   const detailsRes = await fetch(`/api/invoice-details-credit/${encodeURIComponent(invoiceId)}`);
   const details = await detailsRes.json();
   if (!detailsRes.ok || !details.success) throw new Error("details fetch failed");
@@ -327,19 +511,26 @@ async function cnFillFromInvoice(invoiceId) {
   cnSet("cnRefundPaid", "");
   cnSetText("invoice_total_display", Number(inv.grand_total || 0).toFixed(2));
 
-  // Prefer lines from an existing Invoice Return for this invoice; otherwise use invoice line items
-  // (invoice-return-items is empty until a return is saved — credit notes still need the sold lines).
-  const retRes = await fetch(`/api/invoice-return-items/${encodeURIComponent(invoiceId)}`);
-  const retData = retRes.ok ? await retRes.json() : { items: [] };
-  const fromReturn = Array.isArray(retData?.items) ? retData.items : [];
-  const fromInvoice = cnMapInvoiceLinesToReturnRows(details.items);
-  let rows = fromReturn.length ? fromReturn : fromInvoice;
+  const fromReturn = (Array.isArray(irJson.items) ? irJson.items : []).map((row) => ({
+    product_name: row.product_name ?? "",
+    product_id: row.product_id ?? "",
+    return_qty: row.return_quantity ?? row.return_qty ?? 0,
+    uom: row.uom ?? "",
+    reason: row.return_reason ?? row.reason ?? "",
+    unit_price: row.unit_price ?? 0,
+    tax_percent: row.tax_pct ?? row.tax_percent ?? 0,
+    discount: row.disc_pct ?? row.discount ?? 0,
+    total: row.total ?? 0
+  }));
+  const fromInvoice = Array.isArray(details.items) ? details.items : [];
+  let rawRows = fromReturn.length ? fromReturn : fromInvoice;
   if (fromReturn.length && fromInvoice.length) {
-    rows = cnMergeReturnTaxDiscountFromInvoice(fromReturn, fromInvoice);
+    rawRows = cnMergeReturnTaxDiscountFromInvoice(fromReturn, fromInvoice);
   }
+  const rows = cnMapInvoiceLinesToReturnRows(rawRows);
   cnRenderRows(rows);
   cnCalcRefund();
-  cnToast(`Invoice ${invoiceId} loaded successfully`);
+  cnToast(`Invoice return ${invoiceReturnRef} loaded successfully`);
 }
 
 /** In-page comments (Comments tab; not persisted until API support). */
@@ -515,8 +706,8 @@ async function cnLoadCreditNoteById(creditId) {
 }
 
 function cnEnableViewOnlyMode() {
+  document.querySelector(".cn-page")?.classList.add("cn-view-only");
   document.querySelectorAll(".cn-card input, .cn-card textarea").forEach((el) => {
-    if (el.id === "cnId") return;
     el.readOnly = true;
   });
   document.querySelectorAll(".cn-card select").forEach((el) => {
@@ -680,7 +871,7 @@ function cnSuppressNativeFieldTooltips() {
   }).observe(cnRoot, { subtree: true, attributes: true, attributeFilter: ["title"] });
 }
 
-const MAX_CN_ATTACHMENTS = 5;
+const MAX_CN_ATTACHMENTS = 10;
 const MAX_CN_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 
 function cnCreditNoteAttachmentsReadOnly() {
@@ -1081,8 +1272,40 @@ function cnInitTabsAndComments(userName) {
 }
 
 async function cnSaveDraftInternal({ redirectOnSuccess = false, silent = false } = {}) {
-  if (!cnValidateCreatedByUI({ silent: true })) {
-    if (!silent) cnToast("Please enter a valid Created By (3-30 letters/spaces only).", "error");
+  if (!cnGet("cnInvoiceRef")) {
+    if (!silent) cnToast("Select Invoice Reference ID", "error");
+    return false;
+  }
+  const createdByVal = cnSanitizeCreatedBy(cnGet("cnCreatedBy"));
+  if (!createdByVal || createdByVal.length < 3 || createdByVal.length > 30) {
+    cnValidateCreatedByUI({
+      silent: true,
+      live: false,
+      includeBranch: false,
+      includeCreatedBy: true,
+    });
+    if (!silent) cnToast("Please enter created by.", "error");
+    return false;
+  }
+  if (
+    !cnValidateCreatedByUI({
+      silent: true,
+      live: false,
+      includeBranch: false,
+      includeCreatedBy: true,
+    })
+  ) {
+    return false;
+  }
+  if (
+    !cnValidateCreatedByUI({
+      silent: true,
+      live: false,
+      includeBranch: true,
+      includeCreatedBy: false,
+    })
+  ) {
+    if (!silent) cnToast("Please select branch.", "error");
     return false;
   }
   const payload = cnCollectPayload("Draft");
@@ -1101,9 +1324,9 @@ async function cnSaveDraftInternal({ redirectOnSuccess = false, silent = false }
     throw new Error(data.message || "Failed to save credit note");
   }
   if (redirectOnSuccess) {
-    window.location.href = `/credit-note?toast=${encodeURIComponent("Credit note saved as draft")}&type=success`;
+    window.location.href = `/credit-note?toast=${encodeURIComponent("Credit Note saved as draft successfully")}&type=success`;
   } else if (!silent) {
-    cnToast("Credit note saved as draft", "success");
+    cnToast("Credit Note saved as draft successfully", "success");
   }
   return true;
 }
@@ -1119,8 +1342,26 @@ async function cnDoSaveDraft() {
 async function cnDoMarkPaid() {
   try {
     // Ensure Created By stays valid before collecting payload.
-    if (!cnValidateCreatedByUI({ silent: false })) return;
-    const payload = cnCollectPayload("Approved");
+    if (
+      !cnValidateCreatedByUI({
+        silent: false,
+        live: true,
+        includeBranch: true,
+        includeCreatedBy: true,
+      })
+    ) {
+      return;
+    }
+    if (!cnGet("cnInvoiceRef")) {
+      cnToast("Select Invoice Reference ID", "error");
+      return;
+    }
+    const saved = await cnSaveDraftInternal({ redirectOnSuccess: false, silent: true });
+    if (!saved) {
+      cnToast("Save the credit note first, then mark as paid.", "error");
+      return;
+    }
+    const payload = cnCollectPayload("Submitted");
     if (!payload.credit_note_id) return cnToast("Credit Note ID is required", "error");
     const res = await fetch(`/api/credit-notes/${encodeURIComponent(payload.credit_note_id)}/mark-paid`, {
       method: "POST",
@@ -1130,7 +1371,7 @@ async function cnDoMarkPaid() {
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || data.success === false) throw new Error(data.message || "Failed to mark as paid");
-    window.location.href = `/credit-note?toast=${encodeURIComponent("Credit note marked as paid")}&type=success`;
+    window.location.href = `/credit-note?toast=${encodeURIComponent("Credit Note submitted successfully")}&type=success`;
   } catch (e) {
     cnToast(e.message || "Failed to mark as paid", "error");
   }
@@ -1158,7 +1399,7 @@ async function cnDoCancelCreditNote() {
       );
       return;
     }
-    window.location.href = `/credit-note?toast=${encodeURIComponent(`Credit note ${creditId} cancelled`)}&type=success`;
+    window.location.href = `/credit-note?toast=${encodeURIComponent("Credit Note cancelled successfully")}&type=success`;
   } catch (e) {
     cnToast(e.message || "Failed to cancel credit note", "error");
   }
@@ -1173,6 +1414,14 @@ document.addEventListener("DOMContentLoaded", async () => {
   if (!cnGet("cnDate")) cnSet("cnDate", new Date().toISOString().split("T")[0]);
 
   const mode = (qs.get("mode") || cfg.mode || "new").toString().trim().toLowerCase();
+  const cnPageTitleEl = document.getElementById("cnPageTitle");
+  if (cnPageTitleEl) {
+    let cnPageTitle = "New Credit Note";
+    if (creditIdForPage && mode !== "new") {
+      cnPageTitle = mode === "view" ? "View Credit Note" : "Edit Credit Note";
+    }
+    cnPageTitleEl.textContent = cnPageTitle;
+  }
   cnCurrentStatus = "New";
   cnCurrentPaymentStatus = "";
   cnIsSavedNote = false;
@@ -1305,8 +1554,22 @@ document.addEventListener("DOMContentLoaded", async () => {
         // Ensure the invoice dropdown contains options before finalizing selection.
         await invoiceIdsPromise;
         const invoiceRefEl = document.getElementById("cnInvoiceRef");
-        if (invoiceRefEl && it?.invoice_ref_id) {
-          invoiceRefEl.value = String(it.invoice_ref_id);
+        const savedRef = String(it?.invoice_ref_id || "").trim();
+        if (invoiceRefEl && savedRef) {
+          let hasRef = false;
+          for (const opt of invoiceRefEl.options) {
+            if (opt.value === savedRef) {
+              hasRef = true;
+              break;
+            }
+          }
+          if (!hasRef) {
+            const opt = document.createElement("option");
+            opt.value = savedRef;
+            opt.textContent = savedRef;
+            invoiceRefEl.appendChild(opt);
+          }
+          invoiceRefEl.value = savedRef;
         }
         if (mode === "view" || !isDraft) cnEnableViewOnlyMode();
         else if (mode === "edit") {
@@ -1361,10 +1624,38 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
     document.getElementById("cnRefundMode")?.addEventListener("change", cnMaybeAutoSetRefundDate);
 
+    const branchEl = document.getElementById("cnBranch");
+    const runBranchLiveValidation = () => {
+      cnValidateCreatedByUI({
+        silent: true,
+        live: true,
+        includeBranch: true,
+        includeCreatedBy: false,
+      });
+    };
+    branchEl?.addEventListener("focus", runBranchLiveValidation);
+    branchEl?.addEventListener("change", runBranchLiveValidation);
+    branchEl?.addEventListener("input", runBranchLiveValidation);
+    branchEl?.addEventListener("blur", runBranchLiveValidation);
+
     const createdByEl = document.getElementById("cnCreatedBy");
     createdByEl?.addEventListener("input", () => {
       if (!createdByEl) return;
       createdByEl.value = cnSanitizeCreatedBy(createdByEl.value);
+      cnValidateCreatedByUI({
+        silent: true,
+        live: true,
+        includeBranch: false,
+        includeCreatedBy: true,
+      });
+    });
+    createdByEl?.addEventListener("blur", () => {
+      cnValidateCreatedByUI({
+        silent: true,
+        live: true,
+        includeBranch: false,
+        includeCreatedBy: true,
+      });
     });
     createdByEl?.addEventListener("keydown", (e) => {
       // Block digits/special chars; allow letters, space, and control/navigation keys.

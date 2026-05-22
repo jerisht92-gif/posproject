@@ -1252,7 +1252,7 @@ body.view-mode #submitBtn {
 
 /* Draft - Dark Blue */
 .status-draft { 
-    background-color: #ffd638; 
+    background-color: #EAB308; 
      display: inline-block;
     padding: 10px;
     border-radius: 30px;
@@ -1269,7 +1269,7 @@ body.view-mode #submitBtn {
 
 /* Send - Dark Orange */
 .status-send{
-    background-color: #8cd8bc;
+    background-color: #038d76;
   display: inline-block;
     padding: 10px;
     border-radius: 30px;
@@ -1285,7 +1285,7 @@ body.view-mode #submitBtn {
 
 /* Paid - Dark Green */
 .status-paid {
-    background-color: #22c55e;
+    background-color: #15803D;
   display: inline-block;
     padding: 10px;
     border-radius: 30px;
@@ -1301,7 +1301,7 @@ body.view-mode #submitBtn {
 
 /* Overdue - Dark Red */
 .status-overdue {
-    background-color: #e5e7eb;
+    background-color: #C2410C;
   display: inline-block;
     padding: 10px;
     border-radius: 30px;
@@ -1317,7 +1317,7 @@ body.view-mode #submitBtn {
 
 /* Cancelled - Dark Gray */
 .status-cancelled {
-    background-color: #ff4d4f;
+    background-color: #4B5563;
      display: inline-block;
     padding: 10px;
     border-radius: 30px;

@@ -1052,8 +1052,9 @@ function fillOrderSummary(data) {
 function fillDates(data) {
     const invoiceDate = document.getElementById('invoiceDate');
     if (invoiceDate) {
-        const today = new Date().toISOString().split('T')[0];
-        invoiceDate.value = today;
+        const urlDnDate = (new URLSearchParams(window.location.search).get('delivery_date') || '').trim();
+        const relatedDate = urlDnDate || (data && (data.delivery_date || data.invoice_date)) || '';
+        invoiceDate.value = relatedDate || new Date().toISOString().split('T')[0];
     }
     const dueDate = document.getElementById('dueDate');
     if (dueDate && data.due_date) dueDate.value = data.due_date;
@@ -2366,6 +2367,20 @@ else {
     startOverdueMonitor();
     
     if (!invoiceIdParam) {
+        const dnDeliveryDate = (urlParams.get('delivery_date') || '').trim();
+        const dnSoId = (urlParams.get('so_id') || '').trim();
+        if (dnDeliveryDate) fillDates({ delivery_date: dnDeliveryDate });
+        if (dnSoId) {
+            const hiddenInput = document.getElementById('saleOrderRef');
+            const soSelected = document.getElementById('saleOrderSelected');
+            if (hiddenInput) {
+                hiddenInput.value = dnSoId;
+                if (soSelected) soSelected.textContent = dnSoId;
+                setTimeout(() => {
+                    hiddenInput.dispatchEvent(new Event('change', { bubbles: true }));
+                }, 100);
+            }
+        }
         const dueDateField = document.getElementById('dueDate');
         const paymentStatusField = document.getElementById('paymentStatus');
         if (dueDateField) dueDateField.addEventListener('change', checkOverdueStatus);

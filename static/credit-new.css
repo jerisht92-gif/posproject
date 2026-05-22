@@ -11,25 +11,25 @@
   min-height: 28px;
   padding: 0 12px;
   border-radius: 8px;
-  background: #f4ba57;
-  color: #111;
+  background: #EAB308;
+  color: #fff;
   font-size: 14px;
   font-weight: 600;
 }
 
 .cn-status-pill.draft {
-  background: #f4ba57;
-  color: #111;
+  background: #EAB308;
+  color: #fff;
 }
 
 .cn-status-pill.submitted {
-  background: #85f057;
-  color: #111;
+  background: #038d76;
+  color: #fff;
 }
 
 .cn-status-pill.cancelled {
-  background: #ec44c8;
-  color: #111;
+  background: #4B5563;
+  color: #fff;
 }
 
 .cn-status-pill.cn-status-pill--hidden {
@@ -1492,7 +1492,34 @@
   border-color: #b9473e;
   box-shadow: 0 4px 10px rgba(161, 40, 40, 0.12);
 }
+/* View Details - simple readonly style */
+.cn-page.cn-view-only .cn-card:hover {
+  transform: none;
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.12);
+}
 
+.cn-page.cn-view-only input,
+.cn-page.cn-view-only select,
+.cn-page.cn-view-only textarea {
+  background: #fff5f5 !important;
+  border: 1px solid #e7b7b5 !important;
+  color: #000 !important;
+  box-shadow: none !important;
+  transform: none !important;
+  cursor: default;
+}
+
+.cn-page.cn-view-only input:hover,
+.cn-page.cn-view-only select:hover,
+.cn-page.cn-view-only textarea:hover,
+.cn-page.cn-view-only input:focus,
+.cn-page.cn-view-only select:focus,
+.cn-page.cn-view-only textarea:focus {
+  background: #fff5f5 !important;
+  border-color: #e7b7b5 !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
 .cn-field input:focus,
 .cn-field select:focus {
   border-color: #a12828;
@@ -1502,6 +1529,37 @@
 .cn-field select {
   background-color: #fff5f5 !important;
   color: #000 !important;
+}
+
+.cn-page.cn-view-only .cn-field select:disabled,
+.cn-page.cn-view-only .cn-field select:disabled:hover,
+.cn-page.cn-view-only .cn-field select:disabled:focus {
+  background-color: #fff5f5 !important;
+  color: #000 !important;
+}
+
+.cn-field .cn-field-error {
+  display: none;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+}
+
+.cn-field .cn-field-error.is-visible {
+  display: block;
+  margin-top: 6px;
+  color: #b3261e;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+.cn-field input.input-invalid,
+.cn-field select.input-invalid {
+  background-color: #f5d4d4;
+  border-color: #b9473e;
 }
 
 .cn-page select option {
@@ -1659,6 +1717,11 @@
 .cn-row select:focus {
   border-color: #a12828;
   box-shadow: 0 0 0 1px rgba(161, 40, 40, 0.25);
+}
+
+.cn-page.cn-view-only .cn-card:hover {
+  transform: none;
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.12);
 }
 
 /* =========================================
@@ -1888,9 +1951,238 @@
   display: none;
 }
 
-#cnAttachmentsPanel .upload-section,
+#cnAttachmentsPanel .upload-section {
+  text-align: center;
+  margin-bottom: 30px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid #eee;
+  max-width: 100%;
+}
+
+#cnAttachmentsPanel .upload-card {
+  background: #f8f9fa;
+  border: 2px dashed #ddd;
+  border-radius: 12px;
+  padding: 30px 20px;
+  margin: 0 auto 15px;
+  max-width: 500px;
+  cursor: pointer;
+  transition: border-color 0.3s, background 0.3s;
+}
+
+#cnAttachmentsPanel .upload-card:hover {
+  border-color: #a12828;
+  background: #f0f7ff;
+}
+
+#cnAttachmentsPanel .upload-card i {
+  font-size: 48px;
+  color: #6c757d;
+  margin-bottom: 10px;
+}
+
+#cnAttachmentsPanel .upload-card h4 {
+  font-size: 18px;
+  color: #333;
+  margin: 0 0 5px;
+}
+
+#cnAttachmentsPanel .upload-card p {
+  color: #666;
+  font-size: 14px;
+  margin: 0 0 5px;
+}
+
+#cnAttachmentsPanel .upload-card small {
+  color: #999;
+  font-size: 12px;
+}
+
+#cnAttachmentsPanel .btn-upload {
+  background: #a12828;
+  color: #fff;
+  border: none;
+  padding: 10px 30px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+#cnAttachmentsPanel .btn-upload:hover {
+  background: #8c1f1f;
+}
+
+#cnAttachmentsPanel .btn-upload:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 #cnAttachmentsPanel .files-section {
   max-width: 100%;
+  background: #fff;
+  border-radius: 8px;
+}
+
+#cnAttachmentsPanel .files-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 15px 0;
+  margin-bottom: 15px;
+  border-bottom: 2px solid #f0f0f0;
+}
+
+#cnAttachmentsPanel .files-header h4 {
+  margin: 0;
+  font-size: 16px;
+  color: #333;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+#cnAttachmentsPanel .files-header h4 i {
+  color: #a12828;
+}
+
+#cnAttachmentsPanel .file-count {
+  flex-shrink: 0;
+  background: #e9ecef;
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #495057;
+}
+
+#cnAttachmentsPanel .files-list {
+  min-height: 100px;
+}
+
+#cnAttachmentsPanel .no-files {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 40px 20px;
+  color: #999;
+}
+
+#cnAttachmentsPanel .no-files i {
+  font-size: 48px;
+  color: #ddd;
+  margin-bottom: 10px;
+}
+
+#cnAttachmentsPanel .no-files p {
+  margin: 0;
+  font-size: 14px;
+  color: #999;
+}
+
+#cnAttachmentsPanel .file-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 15px;
+  background: #f8f9fa;
+  border: 1px solid #eee;
+  border-radius: 8px;
+  margin-bottom: 8px;
+}
+
+#cnAttachmentsPanel .file-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+#cnAttachmentsPanel .file-icon {
+  font-size: 24px;
+  min-width: 30px;
+}
+
+#cnAttachmentsPanel .file-icon.pdf { color: #dc3545; }
+#cnAttachmentsPanel .file-icon.doc { color: #0d6efd; }
+#cnAttachmentsPanel .file-icon.xls { color: #198754; }
+#cnAttachmentsPanel .file-icon.jpg,
+#cnAttachmentsPanel .file-icon.png { color: #6f42c1; }
+#cnAttachmentsPanel .file-icon.default { color: #6c757d; }
+
+#cnAttachmentsPanel .file-details {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+#cnAttachmentsPanel .file-name {
+  font-weight: 500;
+  color: #333;
+  font-size: 14px;
+  margin-bottom: 3px;
+  word-break: break-word;
+}
+
+#cnAttachmentsPanel .file-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 11px;
+  color: #888;
+}
+
+#cnAttachmentsPanel .file-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 5px;
+}
+
+#cnAttachmentsPanel .btn-action {
+  background: none;
+  border: none;
+  padding: 5px 10px;
+  font-size: 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+#cnAttachmentsPanel .btn-view {
+  color: #007bff;
+  background: #e7f1ff;
+}
+
+#cnAttachmentsPanel .btn-view:hover {
+  background: #cfe2ff;
+}
+
+#cnAttachmentsPanel .btn-download {
+  color: #198754;
+  background: #e8f5e9;
+}
+
+#cnAttachmentsPanel .btn-download:hover {
+  background: #d4edda;
+}
+
+#cnAttachmentsPanel .btn-delete {
+  color: #dc3545;
+  background: #f8d7da;
+}
+
+#cnAttachmentsPanel .btn-delete:hover {
+  background: #f5c2c7;
 }
 
 /* =========================================
@@ -2347,4 +2639,23 @@ transform: translateY(-2px);
   justify-content: center;
   padding: 20px;
   background: rgba(0, 0, 0, 0.35);
+}
+
+/* Created By live validation */
+.cn-field input.cn-input-error,
+.cn-field input.cn-input-error:hover,
+.cn-field input.cn-input-error:focus {
+  border: 2px solid #e63946 !important;
+  background-color: #fff5f5 !important;
+  box-shadow: 0 0 0 1px rgba(230, 57, 70, 0.15);
+  transform: none;
+}
+
+.cn-field-error {
+  display: block;
+  margin-top: 4px;
+  color: #d9534f;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.3;
 }

@@ -43,6 +43,38 @@ function isDataRow(row) {
   return !!row && !row.querySelector("td.empty");
 }
  
+/** Center-align supplier table headers and data cells (overrides products.css defaults). */
+function applySupplierTableAlignment() {
+  const table = document.querySelector(".supplier-page .product-table");
+  if (!table) return;
+ 
+  table.querySelectorAll("thead th, tbody td").forEach((cell) => {
+    cell.style.textAlign = "center";
+  });
+ 
+  table.querySelectorAll(".supplier-action-buttons").forEach((wrap) => {
+    wrap.style.justifyContent = "center";
+  });
+}
+ 
+/** Show full value on hover when cell text is truncated with ellipsis. */
+function applySupplierCellTitles() {
+  const table = document.querySelector(".supplier-page .product-table");
+  if (!table) return;
+ 
+  table.querySelectorAll("tbody tr").forEach((row) => {
+    if (!isDataRow(row)) return;
+    row.querySelectorAll("td:not(.supplier-action-cell)").forEach((cell) => {
+      const text = (cell.textContent || "").trim();
+      if (text) {
+        cell.setAttribute("title", text);
+      } else {
+        cell.removeAttribute("title");
+      }
+    });
+  });
+}
+ 
 function rowMatches(row) {
   if (!isDataRow(row)) return false;
   const q = (searchInput?.value || "").trim().toLowerCase();
@@ -51,11 +83,11 @@ function rowMatches(row) {
   const statusVal = (statusFilter?.value || "all").toLowerCase();
   const typeVal = (typeFilter?.value || "all types").toLowerCase();
   const tierVal = (tierFilter?.value || "all").toLowerCase();
-  const status = (row.children[3]?.innerText || "").toLowerCase();
+  const status = (row.children[3]?.innerText || "").trim().toLowerCase();
   const type = (row.children[4]?.innerText || "").toLowerCase();
   const tier = (row.children[5]?.innerText || "").toLowerCase();
  
-  if (statusVal !== "all" && !status.includes(statusVal)) return false;
+  if (statusVal !== "all" && status !== statusVal) return false;
   if (typeVal !== "all types" && !type.includes(typeVal)) return false;
   if (tierVal !== "all" && !tier.includes(tierVal)) return false;
   return true;
@@ -101,6 +133,7 @@ function updatePagination() {
   }
  
   showCurrentPageRows();
+  applySupplierCellTitles();
 }
  
 searchInput?.addEventListener("input", () => {
@@ -190,8 +223,11 @@ function attachActionButtonsToRows() {
 }
  
 document.addEventListener("DOMContentLoaded", () => {
+  applySupplierTableAlignment();
+  applySupplierCellTitles();
   updatePagination();
   attachActionButtonsToRows();
 });
+ 
  
  

@@ -1,5 +1,18 @@
 /* Supplier Master — layout/table/footer from products.css; overrides below */
  
+.supplier-page {
+  /* Match create-new-product.css (product detail) */
+  --sup-field-bg: #fff5f5;
+  --sup-field-border: #e7b7b5;
+  --sup-box-border: #e7b7b5;
+  --sup-box-border-soft: #e5c1c1;
+  --sup-field-hover-bg: #f5d4d4;
+  --sup-field-hover-border: #b9473e;
+  --sup-field-hover-shadow: 0 4px 10px rgba(161, 40, 40, 0.12);
+  --sup-field-focus-border: #a12828;
+  --sup-field-focus-shadow: 0 0 0 1px rgba(161, 40, 40, 0.25);
+}
+ 
 .supplier-page .manage-header-right a.btn-primary {
   text-decoration: none;
   display: inline-flex;
@@ -21,14 +34,15 @@
   color: #4a1f1a;
 }
  
+/* Filter dropdowns — same uniform field hover as delivery note / supplier form */
 .supplier-page .filter-group select {
   width: 100%;
   height: 30px;
   padding: 6px 12px;
   font-size: 13px;
-  border-radius: 10px;
-  border: 1px solid #e7b7b5;
-  background-color: #fff5f5;
+  border-radius: 8px;
+  border: 1px solid var(--sup-field-border);
+  background-color: var(--sup-field-bg);
   outline: none;
   color: #000;
   box-sizing: border-box;
@@ -36,18 +50,26 @@
 }
  
 .supplier-page .filter-group select option {
-  background-color: #d7aaaa;
+  background-color: #c99a9a;
   color: #000;
 }
  
 .supplier-page .filter-group select:hover {
-  background-color: #f5d4d4;
-  border-color: #b9473e;
+  background: var(--sup-field-hover-bg);
+  border-color: var(--sup-field-hover-border);
+  box-shadow: var(--sup-field-hover-shadow);
+  transform: scale(1.01);
 }
  
 .supplier-page .filter-group select:focus {
-  background-color: #fff5f5;
-  border-color: #a12828;
+  background-color: var(--sup-field-bg);
+  border-color: var(--sup-field-focus-border);
+  box-shadow: var(--sup-field-focus-shadow);
+}
+ 
+/* Override products.css filter hover (use product-detail colors above) */
+.supplier-page .filter-group input:hover {
+  transform: none;
 }
  
 @media (max-width: 1024px) {
@@ -77,6 +99,16 @@
 .supplier-page .product-table thead th,
 .supplier-page .product-table tbody td {
   vertical-align: middle;
+  text-align: center;
+}
+ 
+/* Fixed columns: truncate long text with ellipsis (…) */
+.supplier-page .product-table thead th:not(:last-child),
+.supplier-page .product-table tbody td:not(.supplier-action-cell) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 0;
 }
  
 /* Keep each supplier column in a straight, predictable grid */
@@ -93,27 +125,26 @@
 .supplier-page .product-table th:nth-child(6),
 .supplier-page .product-table td:nth-child(6) { width: 11%; }
 .supplier-page .product-table th:nth-child(7),
-.supplier-page .product-table td:nth-child(7) { width: 14%; text-align: right; }
+.supplier-page .product-table td:nth-child(7) { width: 14%; }
  
-/* Override products.css last-column right padding */
+/* Override products.css last-column right alignment */
 .supplier-page .product-table thead th:last-child {
-  text-align: right;
-  padding-right: 24px;
+  text-align: center;
+  padding-right: 12px;
 }
  
 .supplier-page .product-table tbody td:last-child {
-  text-align: right;
+  text-align: center;
 }
  
 .supplier-action-cell {
   vertical-align: middle;
-  padding-right: 12px;
 }
  
 .supplier-action-buttons {
   display: inline-flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: center;
   gap: 10px;
   white-space: nowrap;
 }
@@ -193,5 +224,6 @@
   font-size: 18px;
   font-weight: bold;
 }
+ 
  
  
