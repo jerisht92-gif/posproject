@@ -212,6 +212,8 @@ function selectSalesRep(el) {
   document.getElementById("salesRepSelected").textContent = name || "Select Sales Rep";
   document.getElementById("salesRep").value = name;
   document.getElementById("salesRepDropdown").style.display = "none";
+  runLiveSalesOrderValidation();
+  updateSubmitButton();
 }
 
 function filterSalesRep() {
@@ -291,6 +293,7 @@ if (salesRepInput) {
 
 if (salesRepSelected) {
   salesRepSelected.textContent = salesRepValue || "Select Sales Rep";
+  setFieldError(salesRepSelected, "salesRepErr", "");
 }
 
 // Highlight correct rep in dropdown
@@ -308,6 +311,7 @@ const salesRepDropdown = document.getElementById("salesRepDropdown");
 if (salesRepDropdown) {
   salesRepDropdown.style.display = "none";
 }
+runLiveSalesOrderValidation();
 updateSubmitButton();
 }
 
@@ -325,15 +329,349 @@ function isCustomerSelected() {
 // DATE AND FIELD VALIDATION
 // =========================================
 function setFieldError(inputEl, errEl, msg) {
-  if (!inputEl || !errEl) return;
+  const err =
+    typeof errEl === "string" ? document.getElementById(errEl) : errEl;
+  if (!inputEl || !err) return;
 
   if (msg) {
     inputEl.classList.add("input-invalid");
-    errEl.textContent = msg;
+    err.textContent = msg;
   } else {
     inputEl.classList.remove("input-invalid");
-    errEl.textContent = "";
+    err.textContent = "";
   }
+}
+
+function isSalesOrderFormLocked() {
+  const status = getCurrentSOStatus().replace(/\s+/g, "").toLowerCase();
+  return [
+    "submitted",
+    "purchased",
+    "delivered",
+    "partiallydelivered",
+    "partially_delivered",
+    "cancelled",
+  ].includes(status);
+}
+
+function soTierOrderDateReady() {
+  return !!document.getElementById("orderDate")?.value;
+}
+
+function soTierOrderTypeReady() {
+  return (
+    soTierOrderDateReady() &&
+    !!document.getElementById("orderType")?.value?.trim()
+  );
+}
+
+function soTierCustomerReady() {
+  return soTierOrderTypeReady() && isCustomerSelected();
+}
+
+function validateOrderDateLive() {
+  const el = document.getElementById("orderDate");
+  if (!el || isSalesOrderFormLocked()) return;
+  if (!el.value) {
+    setFieldError(el, "orderDateErr", "Please select order date.");
+  } else {
+    setFieldError(el, "orderDateErr", "");
+  }
+}
+
+function validateOrderTypeLive() {
+  const el = document.getElementById("orderType");
+  if (!el || isSalesOrderFormLocked()) return;
+  if (!soTierOrderDateReady()) {
+    setFieldError(el, "orderTypeErr", "");
+    return;
+  }
+  if (!el.value?.trim()) {
+    setFieldError(el, "orderTypeErr", "Please select order type.");
+  } else {
+    setFieldError(el, "orderTypeErr", "");
+  }
+}
+
+function validateCustomerLive() {
+  const selected = document.getElementById("customerSelected");
+  if (!selected || isSalesOrderFormLocked()) return;
+  if (!soTierOrderTypeReady()) {
+    setFieldError(selected, "customerErr", "");
+    return;
+  }
+  if (!isCustomerSelected()) {
+    setFieldError(selected, "customerErr", "Please select a customer name.");
+  } else {
+    setFieldError(selected, "customerErr", "");
+  }
+}
+
+function validateEmailLive() {
+  const el = document.getElementById("email");
+  if (!el || isSalesOrderFormLocked()) return;
+  if (!soTierCustomerReady()) {
+    setFieldError(el, "emailErr", "");
+    return;
+  }
+  const v = (el.value || "").trim();
+  if (!v) {
+    setFieldError(el, "emailErr", "");
+    return;
+  }
+  const ok = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
+  setFieldError(el, "emailErr", ok ? "" : "Please enter a valid email address.");
+}
+
+function validatePhoneLive() {
+  const el = document.getElementById("phone");
+  if (!el || isSalesOrderFormLocked()) return;
+  if (!soTierCustomerReady()) {
+    setFieldError(el, "phoneErr", "");
+    return;
+  }
+  const digits = (el.value || "").replace(/\D/g, "");
+  if (!digits) {
+    setFieldError(el, "phoneErr", "");
+    return;
+  }
+  if (digits.length !== 10) {
+    setFieldError(el, "phoneErr", "Phone number must be 10 digits.");
+  } else {
+    setFieldError(el, "phoneErr", "");
+  }
+}
+
+function validatePaymentMethodLive() {
+  const el = document.getElementById("paymentMethod");
+  if (!el || isSalesOrderFormLocked()) return;
+  if (!soTierCustomerReady()) {
+    setFieldError(el, "paymentMethodErr", "");
+    return;
+  }
+  if (!el.value?.trim()) {
+    setFieldError(el, "paymentMethodErr", "Please select payment method.");
+  } else {
+    setFieldError(el, "paymentMethodErr", "");
+  }
+}
+
+function validateShippingMethodLive() {
+  const el = document.getElementById("shippingMethod");
+  if (!el || isSalesOrderFormLocked()) return;
+  if (!soTierCustomerReady()) {
+    setFieldError(el, "shippingMethodErr", "");
+    return;
+  }
+  if (!el.value?.trim()) {
+    setFieldError(el, "shippingMethodErr", "Please select shipping method.");
+  } else {
+    setFieldError(el, "shippingMethodErr", "");
+  }
+}
+
+function validateDueDateLive() {
+  const el = document.getElementById("dueDate");
+  if (!el || isSalesOrderFormLocked()) return;
+  if (!soTierCustomerReady()) {
+    setFieldError(el, "dueDateErr", "");
+    return;
+  }
+  if (!el.value) {
+    setFieldError(el, "dueDateErr", "Please select due date.");
+    return;
+  }
+  if (isPastDateStr(el.value)) {
+    setFieldError(
+      el,
+      "dueDateErr",
+      "Past date is not allowed. Choose today or a future date."
+    );
+  } else {
+    setFieldError(el, "dueDateErr", "");
+  }
+}
+
+function validateDeliveryDateLive() {
+  const el = document.getElementById("deliveryDate");
+  const orderDate = document.getElementById("orderDate");
+  if (!el || isSalesOrderFormLocked()) return;
+  if (!soTierCustomerReady()) {
+    setFieldError(el, "deliveryDateErr", "");
+    return;
+  }
+  if (!el.value) {
+    setFieldError(el, "deliveryDateErr", "Please select expected delivery.");
+    return;
+  }
+  if (isPastDateStr(el.value)) {
+    setFieldError(
+      el,
+      "deliveryDateErr",
+      "Past date is not allowed. Choose today or a future date."
+    );
+    return;
+  }
+  if (orderDate?.value && el.value < orderDate.value) {
+    setFieldError(
+      el,
+      "deliveryDateErr",
+      "Expected Delivery cannot be earlier than Order Date."
+    );
+    return;
+  }
+  setFieldError(el, "deliveryDateErr", "");
+}
+
+function validateTermsLive() {
+  const el = document.getElementById("terms");
+  if (!el || isSalesOrderFormLocked()) return;
+  if (!soTierCustomerReady()) {
+    setFieldError(el, "termsErr", "");
+    return;
+  }
+  const v = (el.value || "").trim();
+  // Allow letters, numbers, spaces, and common punctuation used in T&C text
+  if (v && !/^[A-Za-z0-9 .,'\-/&()]+$/.test(v)) {
+    setFieldError(el, "termsErr", "Special characters are not allowed.");
+  } else {
+    setFieldError(el, "termsErr", "");
+  }
+}
+
+function validateInternalNotesLive() {
+  const el = document.getElementById("internalNotes");
+  if (!el || isSalesOrderFormLocked()) return;
+  if (!soTierCustomerReady()) {
+    setFieldError(el, "internalNotesErr", "");
+    return;
+  }
+  const v = (el.value || "").trim();
+  if (v && !/^[A-Za-z0-9 ]+$/.test(v)) {
+    setFieldError(el, "internalNotesErr", "Special characters are not allowed.");
+  } else {
+    setFieldError(el, "internalNotesErr", "");
+  }
+}
+
+function validateCustomerNotesLive() {
+  const el = document.getElementById("customerNotes");
+  if (!el || isSalesOrderFormLocked()) return;
+  if (!soTierCustomerReady()) {
+    setFieldError(el, "customerNotesErr", "");
+    return;
+  }
+  const v = (el.value || "").trim();
+  if (v && !/^[A-Za-z0-9 ]+$/.test(v)) {
+    setFieldError(el, "customerNotesErr", "Special characters are not allowed.");
+  } else {
+    setFieldError(el, "customerNotesErr", "");
+  }
+}
+
+function validateTrackingLive() {
+  const el = document.getElementById("trackingNumber");
+  const shippingMethod = document.getElementById("shippingMethod");
+  if (!el || isSalesOrderFormLocked()) return;
+  if (!soTierCustomerReady()) {
+    setFieldError(el, "trackingError", "");
+    return;
+  }
+
+  const method = (shippingMethod?.value || "").trim();
+  if (!method) {
+    setFieldError(el, "trackingError", "");
+    return;
+  }
+
+  const v = (el.value || "").trim().toUpperCase();
+  if (!v) {
+    setFieldError(el, "trackingError", "Please enter tracking number.");
+    return;
+  }
+
+  if (!/^[A-Z0-9-]+$/.test(v)) {
+    setFieldError(el, "trackingError", "Only letters, numbers, and hyphen are allowed.");
+    return;
+  }
+
+  if (!validateTracking(v)) {
+    setFieldError(el, "trackingError", "Tracking number must be 6–25 characters.");
+    return;
+  }
+
+  setFieldError(el, "trackingError", "");
+}
+
+function validateItemsLive() {
+  if (isSalesOrderFormLocked()) {
+    updateProductValidationForAllRows(false);
+    return;
+  }
+  updateProductValidationForAllRows(soTierCustomerReady());
+}
+
+function runLiveSalesOrderValidation() {
+  if (isSalesOrderFormLocked()) {
+    document
+      .querySelectorAll(".sales-wrapper .field-error")
+      .forEach((el) => {
+        el.textContent = "";
+      });
+    document
+      .querySelectorAll(".sales-wrapper .input-invalid")
+      .forEach((el) => el.classList.remove("input-invalid"));
+    updateProductValidationForAllRows(false);
+    return;
+  }
+
+  const salesRepSelected = document.getElementById("salesRepSelected");
+  if (salesRepSelected) setFieldError(salesRepSelected, "salesRepErr", "");
+
+  validateOrderDateLive();
+  validateOrderTypeLive();
+  validateCustomerLive();
+  validateEmailLive();
+  validatePhoneLive();
+  validatePaymentMethodLive();
+  validateShippingMethodLive();
+  validateDueDateLive();
+  validateDeliveryDateLive();
+  validateTermsLive();
+  validateInternalNotesLive();
+  validateCustomerNotesLive();
+  validateTrackingLive();
+  validateItemsLive();
+}
+
+function wireSalesOrderLiveValidation() {
+  const pairs = [
+    ["orderDate", ["change", "blur", "input"]],
+    ["orderType", ["change", "blur"]],
+    ["email", ["input", "blur"]],
+    ["phone", ["input", "blur"]],
+    ["paymentMethod", ["change", "blur"]],
+    ["shippingMethod", ["change", "blur"]],
+    ["dueDate", ["change", "blur", "input"]],
+    ["deliveryDate", ["change", "blur", "input"]],
+    ["terms", ["input", "blur"]],
+    ["internalNotes", ["input", "blur"]],
+    ["customerNotes", ["input", "blur"]],
+    ["trackingNumber", ["input", "blur"]],
+  ];
+
+  pairs.forEach(([id, events]) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    events.forEach((ev) => {
+      el.addEventListener(ev, runLiveSalesOrderValidation);
+    });
+  });
+
+  document.getElementById("customerSelected")?.addEventListener(
+    "click",
+    () => setTimeout(runLiveSalesOrderValidation, 0)
+  );
 }
 
 function setMinTodayByEl(el) {
@@ -592,6 +930,8 @@ function onProductChange(selectEl) {
 
   calculateRow(selectEl);
   refreshProductDropdowns();
+  runLiveSalesOrderValidation();
+  updateSubmitButton();
 }
 
 function calculateRow(el) {
@@ -671,9 +1011,9 @@ if (sel && sel.value) {
   if (totalCell) totalCell.textContent = `${CURRENCY} ${total.toFixed(2)}`;
 
   calculateTotals();
+  runLiveSalesOrderValidation();
+  updateSubmitButton();
 }
-
-
 
 function deleteRow(btn) {
   const row = btn.closest("tr");
@@ -683,6 +1023,7 @@ function deleteRow(btn) {
   updateSerialNumbers();
   calculateTotals();
   refreshProductDropdowns();
+  runLiveSalesOrderValidation();
   updateSubmitButton();
 }
 
@@ -1056,27 +1397,65 @@ function addComment() {
 
   input.value = "";
   updateCommentAddButton();
+  updateSubmitButton();
 
   showToast("Comment added", "success");
 }
 // =========================================
-// FOOTER ACTIONS
+// FOOTER ACTIONS  
 // =========================================
 function validateSalesOrder() {
   const customerOk = isCustomerSelected();
 
   const orderDate = document.getElementById("orderDate")?.value;
-  const salesRep = document.getElementById("salesRep")?.value;
-  const orderType = document.getElementById("orderType")?.value;
+  const orderType = document.getElementById("orderType")?.value?.trim();
+  const paymentMethod = document.getElementById("paymentMethod")?.value?.trim();
+  const shippingMethod = document.getElementById("shippingMethod")?.value?.trim();
+
+  const emailVal = (document.getElementById("email")?.value || "").trim();
+  const emailOk =
+    !emailVal || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailVal);
+
+  const phoneDigits = (document.getElementById("phone")?.value || "").replace(/\D/g, "");
+  const phoneOk = !phoneDigits || phoneDigits.length === 10;
+
+  const dueDate = document.getElementById("dueDate");
+  const dueDateOk =
+    !!dueDate?.value && !isPastDateStr(dueDate.value);
+
+  const deliveryDate = document.getElementById("deliveryDate");
+  const deliveryDateOk =
+    !!deliveryDate?.value &&
+    !isPastDateStr(deliveryDate.value) &&
+    (!orderDate || deliveryDate.value >= orderDate);
+
+  const trackingVal = (
+    document.getElementById("trackingNumber")?.value || ""
+  ).trim();
+  const trackingOk = !shippingMethod || !!trackingVal;
 
   const itemsOk = allItemsValid();
+
+  const inlineOk = !Array.from(
+    document.querySelectorAll(".sales-wrapper .field-error")
+  ).some((el) => (el.textContent || "").trim());
+
+  const commentOk = getSOIdSafe() ? true : hasAtLeastOneComment();
 
   return (
     customerOk &&
     orderDate &&
-    salesRep &&
     orderType &&
-    itemsOk
+    paymentMethod &&
+    shippingMethod &&
+    emailOk &&
+    phoneOk &&
+    dueDateOk &&
+    deliveryDateOk &&
+    trackingOk &&
+    itemsOk &&
+    inlineOk &&
+    commentOk
   );
 }
 
@@ -1084,6 +1463,8 @@ function validateSalesOrder() {
 function updateSubmitButton() {
   const submitBtn = document.getElementById("submitBtn");
   if (!submitBtn) return;
+
+  runLiveSalesOrderValidation();
 
   const status = getCurrentSOStatus()
     .replace(/\s+/g, "")
@@ -1237,22 +1618,67 @@ function collectSalesOrderPayload() {
 // SAVE / SUBMIT
 // =========================================
 async function saveDraft() {
-  const rep = document.getElementById("salesRep")?.value?.trim() || "";
-  const type = document.getElementById("orderType")?.value?.trim() || "";
+  runLiveSalesOrderValidation();
+
+  if (!isCustomerSelected()) {
+    showToast("Please select a customer name", "error");
+    return;
+  }
+
+  if (!document.getElementById("orderType")?.value?.trim()) {
+    showToast("Please select Order Type", "error");
+    return;
+  }
+
+  if (!document.getElementById("paymentMethod")?.value?.trim()) {
+    showToast("Please select payment method", "error");
+    return;
+  }
+
+  const dueDateErr = (document.getElementById("dueDateErr")?.textContent || "").trim();
+  if (!document.getElementById("dueDate")?.value) {
+    showToast("Please select due date", "error");
+    return;
+  }
+  if (dueDateErr) {
+    showToast(dueDateErr, "error");
+    return;
+  }
+
+  if (!document.getElementById("shippingMethod")?.value?.trim()) {
+    showToast("Please select Shipping Method", "error");
+    return;
+  }
+
+  const deliveryDateErr = (document.getElementById("deliveryDateErr")?.textContent || "").trim();
+  if (!document.getElementById("deliveryDate")?.value) {
+    showToast("Please select Expected Delivery", "error");
+    return;
+  }
+  if (deliveryDateErr) {
+    showToast(deliveryDateErr, "error");
+    return;
+  }
+
+  const trackingErr = (document.getElementById("trackingError")?.textContent || "").trim();
+  if (!document.getElementById("trackingNumber")?.value?.trim()) {
+    showToast("Please enter Tracking Number", "error");
+    return;
+  }
+  if (trackingErr) {
+    showToast(trackingErr, "error");
+    return;
+  }
+
+  if (!allItemsValid()) {
+    updateProductValidationForAllRows(true);
+    showToast("Please select product", "error");
+    return;
+  }
 
   const payload = collectSalesOrderPayload();
 
   console.log("PAYLOAD:", payload);
-
-  if (!rep) {
-    showToast("Please select Sales Rep", "error");
-    return;
-  }
-
-  if (!type) {
-    showToast("Please select Order Type", "error");
-    return;
-  }
 
   try {
     // STEP 1: Save draft
@@ -1264,17 +1690,22 @@ async function saveDraft() {
       body: JSON.stringify(payload)
     });
 
-    const data = await res.json();
+    let data = {};
+    try {
+      data = await res.json();
+    } catch (e) {
+      data = {};
+    }
 
-    if (!data.success) {
-      throw new Error("Draft save failed");
+    if (!res.ok || !data.success) {
+      throw new Error(data.message || data.error || "Unable to save draft");
     }
 
     const so_id = payload.so_id || data.so_id;
 
     // STEP 2: Save comments
     for (const c of window.SO_COMMENTS) {
-      await fetch(`/api/sales-orders/${so_id}/comments`, {
+      const cRes = await fetch(`/api/sales-orders/${so_id}/comments`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
@@ -1284,6 +1715,9 @@ async function saveDraft() {
           user: c.by
         })
       });
+      if (!cRes.ok) {
+        console.warn("Comment save skipped for draft:", await cRes.text());
+      }
     }
 
     // Clear local temp comments after DB save
@@ -1294,7 +1728,7 @@ async function saveDraft() {
 
   } catch (err) {
     console.error(err);
-    showToast("Draft Save Error", "error");
+    showToast(err.message || "Unable to save draft", "error");
   }
 }
 
@@ -1322,8 +1756,8 @@ async function submitOrder() {
       console.warn("JSON parse issue");
     }
 
-    if (data.success === false) {
-      throw new Error("Submit failed");
+    if (!res.ok || data.success === false) {
+      throw new Error(data.message || data.error || "Submit failed");
     }
 
     const so_id = payload.so_id || data.so_id;
@@ -1341,8 +1775,11 @@ async function submitOrder() {
 
     window.SO_COMMENTS = [];
 
-    localStorage.setItem("salesOrderSuccess", "1");
-    console.log("FLAG SET SUCCESS");
+    const qp = new URLSearchParams(window.location.search);
+    const isEdit =
+      !!getSOIdSafe() ||
+      (qp.get("mode") || "").toLowerCase() === "edit";
+    localStorage.setItem("salesOrderSuccess", isEdit ? "updated" : "added");
 
     window.location.href = SALES_LIST_URL;
 
@@ -1353,7 +1790,7 @@ async function submitOrder() {
   }
 }
 // =========================================
-// PDF / EMAIL ACTIONS
+// PDF / EMAIL ACTIONS 
 // =========================================
 function canEnablePdf(status) {
   const s = String(status || "").trim().toLowerCase().replace(/\s+/g, "");
@@ -2184,52 +2621,17 @@ document.addEventListener("DOMContentLoaded", async () => {
     setMinTodayByEl(dueDate);
     setMinTodayByEl(deliveryDate);
 
-    dueDate?.addEventListener("blur", () => {
-      if (isPastDateStr(dueDate.value)) {
-        setFieldError(dueDate, dueDateErr, "Past date is not allowed. Choose today or a future date.");
-      } else {
-        setFieldError(dueDate, dueDateErr, "");
-      }
-    });
-
-    deliveryDate?.addEventListener("blur", () => {
-      if (isPastDateStr(deliveryDate.value)) {
-        setFieldError(deliveryDate, deliveryDateErr, "Past date is not allowed. Choose today or a future date.");
-        return;
-      }
-
-      if (orderDate?.value && deliveryDate.value && deliveryDate.value < orderDate.value) {
-        setFieldError(deliveryDate, deliveryDateErr, "Expected Delivery cannot be earlier than Order Date.");
-        return;
-      }
-
-      setFieldError(deliveryDate, deliveryDateErr, "");
-    });
+    wireSalesOrderLiveValidation();
 
     const tracking = document.getElementById("trackingNumber");
-    const trackingErr = document.getElementById("trackingError");
-
     tracking?.addEventListener("input", () => {
       let v = (tracking.value || "").toUpperCase();
       v = v.replace(/[^A-Z0-9-]/g, "");
-      if (v.length > 14) v = v.slice(0, 14);
+      if (v.length > 25) v = v.slice(0, 25);
       tracking.value = v;
-      setFieldError(tracking, trackingErr, "");
+      runLiveSalesOrderValidation();
     });
 
-    tracking?.addEventListener("blur", () => {
-      const v = (tracking.value || "").trim().toUpperCase();
-      tracking.value = v;
-
-      if (v && !/^[A-Z0-9-]+$/.test(v)) {
-        setFieldError(tracking, trackingErr, "Only letters, numbers, and hyphen are allowed.");
-        return;
-      }
-
-      setFieldError(tracking, trackingErr, "");
-    });
-
-    // Phone number: allow only digits, max length 10
     const phoneInput = document.getElementById("phone");
     if (phoneInput) {
       phoneInput.addEventListener("input", () => {
@@ -2239,31 +2641,26 @@ document.addEventListener("DOMContentLoaded", async () => {
       });
     }
 
-    function attachAlphaNumOnly(inputId, errId) {
-      const el = document.getElementById(inputId);
-      const err = document.getElementById(errId);
-      if (!el || !err) return;
-
-      el.addEventListener("input", () => {
-        el.value = (el.value || "").replace(/[^A-Za-z0-9 ]/g, "");
-        setFieldError(el, err, "");
+    const termsEl = document.getElementById("terms");
+    if (termsEl) {
+      termsEl.addEventListener("input", () => {
+        termsEl.value = (termsEl.value || "").replace(/[^A-Za-z0-9 .,'\-/&()]/g, "");
       });
-
-      el.addEventListener("blur", () => {
-        const v = (el.value || "").trim();
-        el.value = v;
-
-        if (v && !/^[A-Za-z0-9 ]+$/.test(v)) {
-          setFieldError(el, err, "Special characters are not allowed.");
-        } else {
-          setFieldError(el, err, "");
-        }
+      termsEl.addEventListener("blur", () => {
+        termsEl.value = (termsEl.value || "").trim();
       });
     }
 
-    attachAlphaNumOnly("terms", "termsErr");
-    attachAlphaNumOnly("internalNotes", "internalNotesErr");
-    attachAlphaNumOnly("customerNotes", "customerNotesErr");
+    ["internalNotes", "customerNotes"].forEach((id) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.addEventListener("input", () => {
+        el.value = (el.value || "").replace(/[^A-Za-z0-9 ]/g, "");
+      });
+      el.addEventListener("blur", () => {
+        el.value = (el.value || "").trim();
+      });
+    });
 
     const qp = new URLSearchParams(window.location.search);
     const hasSoInUrl =
@@ -2298,19 +2695,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
 
     if (shippingMethod && trackingInput) {
-      shippingMethod.addEventListener("change", function () {
-        const method = this.value;
-
-        if (method === "FedEx") {
-          trackingInput.placeholder = "Enter 12–14 digits";
-        } else if (method === "DHL") {
-          trackingInput.placeholder = "Enter 2 letters + 9 digits";
-        } else if (method === "UPS") {
-          trackingInput.placeholder = "Must start with 1Z";
-        } else {
-          trackingInput.placeholder = "Enter tracking number";
-        }
-      });
+      shippingMethod.addEventListener("change", runLiveSalesOrderValidation);
     }
 
     document.getElementById("globalDiscount")?.addEventListener("input", calculateTotals);
@@ -2350,6 +2735,7 @@ updateGenerateDNButton();
 
     updateCommentAddButton();
     calculateTotals();
+    runLiveSalesOrderValidation();
     updateSubmitButton();
     updateDocumentButtons();
     setActiveTab("comments");
@@ -2420,31 +2806,8 @@ function setFormReadOnly() {
   });
 }
 
-document.getElementById("submitBtn").addEventListener("click", async () => {
-    const payload = collectSalesOrderPayload();
-
-    try {
-        const res = await fetch("/api/sales-orders/submit", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify(payload)
-        });
-
-        const data = await res.json();
-
-        if (data.success) {
-            // alert("Order Submitted Successfully");
-            window.location.href = "/sales-order";
-        } else {
-            alert("Submit Failed");
-        }
-
-    } catch (err) {
-        console.error(err);
-        alert("Submit Error");
-    }
+document.getElementById("submitBtn")?.addEventListener("click", () => {
+  submitOrder();
 });
 
 function openDropdown(input) {

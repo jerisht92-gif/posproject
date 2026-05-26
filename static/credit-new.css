@@ -1556,6 +1556,11 @@
   line-height: 1.5;
 }
 
+.cn-row .cn-field-error.is-visible {
+  grid-column: 1 / -1;
+  margin-top: 4px;
+}
+
 .cn-field input.input-invalid,
 .cn-field select.input-invalid {
   background-color: #f5d4d4;

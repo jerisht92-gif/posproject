@@ -1,5 +1,16 @@
 console.log("✅ deliverynote-new.js loaded v100");
 
+/* Master delivery statuses — add new values here; list page reads window.DN_DELIVERY_STATUSES */
+window.DN_DELIVERY_STATUSES = [
+  "Draft",
+  "Pending",
+  "In Transit",
+  "Delivered",
+  "Partially Delivered",
+  "Returned",
+  "Cancelled",
+];
+
 document.addEventListener("DOMContentLoaded", () => {
   /* =========================================================
      DOM REFERENCES
@@ -497,16 +508,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
   /* =========================================================
    DELIVERY NOTE STATUS MASTER
-========================================================== */
-const DELIVERY_NOTE_STATUSES = [
-  "Draft",
-  "Pending",
-  "In Transit",
-  "Delivered",
-  "Partially Delivered",
-  "Returned",
-  "Cancelled"
-];
+  ========================================================== */
+  const DELIVERY_NOTE_STATUSES = window.DN_DELIVERY_STATUSES;
 
 function loadDeliveryStatusOptions(selectedValue = "") {
   if (!deliveryStatusEl) return;
@@ -560,17 +563,12 @@ function formatMoney(value) {
   }
 
   function statusText(key) {
-  const map = {
-    draft: "Draft",
-    pending: "Pending",
-    in_transit: "In Transit",
-    partially_delivered: "Partially Delivered",
-    delivered: "Delivered",
-    returned: "Returned",
-    cancelled: "Cancelled",
-  };
-  return map[key] || "";
-}
+    const k = normalizeKey(key);
+    for (const label of DELIVERY_NOTE_STATUSES) {
+      if (normalizeKey(label) === k) return label;
+    }
+    return "";
+  }
   /* =========================================================
      ACK UI STATE + VALIDATION
   ========================================================== */
@@ -1292,14 +1290,18 @@ function formatMoney(value) {
     const blockedRefs = new Set();
     const currentEditDnId = editId ? String(editId).trim() : "";
 
+    const soRefNonBlocking = new Set([
+      "cancelled",
+      "partially_delivered",
+    ]);
+
     dnNotes.forEach((note) => {
       const noteDnId = String(note.dn_id || "").trim();
       if (currentEditDnId && noteDnId === currentEditDnId) return;
-      if (isPartiallyDeliveredNote(note)) return;
       const st = normalizeDnDeliveryStatusKey(
         note.delivery_status ?? note.status ?? ""
       );
-      if (st === "cancelled") return;
+      if (soRefNonBlocking.has(st)) return;
 
       const ref = String(
         note.sale_order_ref || note.so_ref || note.so_id || ""
@@ -1956,6 +1958,15 @@ async function prefillFromSalesOrder() {
     if (custName) custName.value = so.customer_name || so.customer || "";
     if (destAddr) destAddr.value = so.shipping_address || so.destination_address || "";
     if (dnType) dnType.value = "regular";
+
+    const trackingId = document.getElementById("trackingId");
+    if (trackingId) {
+      trackingId.value =
+        so.tracking_number ||
+        so.tracking_id ||
+        so.trackingNo ||
+        "";
+    }
 
     // line items (same structure as addRow, incl. Action column)
     const itemsBodyEl = document.getElementById("itemsBody");

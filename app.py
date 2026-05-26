@@ -15865,6 +15865,47 @@ def api_delivery_notes():
             it.get("serial_no", "")
         ))
 
+    # DN delivery status → linked Sales Order status
+    if so_ref:
+        dn_ds = str(record.get("delivery_status") or "").strip().lower().replace(" ", "_")
+        so_norm = "LOWER(REPLACE(COALESCE(status, ''), ' ', '_'))"
+        if dn_ds == "delivered":
+            cur.execute(
+                f"""
+                UPDATE sales_orders SET status = %s
+                WHERE so_id = %s
+                  AND {so_norm} NOT IN (
+                    'cancelled', 'returned', 'delivered',
+                    'draft', 'pending', 'in_transit'
+                  )
+                """,
+                ("Delivered", so_ref),
+            )
+        elif dn_ds == "partially_delivered":
+            cur.execute(
+                f"""
+                UPDATE sales_orders SET status = %s
+                WHERE so_id = %s
+                  AND {so_norm} NOT IN (
+                    'cancelled', 'returned', 'delivered', 'partially_delivered',
+                    'draft', 'pending', 'in_transit'
+                  )
+                """,
+                ("Partially Delivered", so_ref),
+            )
+        elif dn_ds == "returned":
+            cur.execute(
+                f"""
+                UPDATE sales_orders SET status = %s
+                WHERE so_id = %s
+                  AND {so_norm} NOT IN (
+                    'cancelled', 'returned',
+                    'draft', 'pending', 'in_transit'
+                  )
+                """,
+                ("Returned", so_ref),
+            )
+
     conn.commit()
     cur.close()
     conn.close()
@@ -16031,6 +16072,47 @@ def api_delivery_note_one(dn_id):
             it.get("uom"),
             it.get("serial_no", "")
         ))
+
+    # DN delivery status → linked Sales Order status
+    if so_ref:
+        dn_ds = str(payload.get("delivery_status") or "").strip().lower().replace(" ", "_")
+        so_norm = "LOWER(REPLACE(COALESCE(status, ''), ' ', '_'))"
+        if dn_ds == "delivered":
+            cur.execute(
+                f"""
+                UPDATE sales_orders SET status = %s
+                WHERE so_id = %s
+                  AND {so_norm} NOT IN (
+                    'cancelled', 'returned', 'delivered',
+                    'draft', 'pending', 'in_transit'
+                  )
+                """,
+                ("Delivered", so_ref),
+            )
+        elif dn_ds == "partially_delivered":
+            cur.execute(
+                f"""
+                UPDATE sales_orders SET status = %s
+                WHERE so_id = %s
+                  AND {so_norm} NOT IN (
+                    'cancelled', 'returned', 'delivered', 'partially_delivered',
+                    'draft', 'pending', 'in_transit'
+                  )
+                """,
+                ("Partially Delivered", so_ref),
+            )
+        elif dn_ds == "returned":
+            cur.execute(
+                f"""
+                UPDATE sales_orders SET status = %s
+                WHERE so_id = %s
+                  AND {so_norm} NOT IN (
+                    'cancelled', 'returned',
+                    'draft', 'pending', 'in_transit'
+                  )
+                """,
+                ("Returned", so_ref),
+            )
 
     conn.commit()
     cur.close()

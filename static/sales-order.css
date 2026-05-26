@@ -316,9 +316,41 @@
 
 .so-check-td input,
 .so-check-th input {
+  -webkit-appearance: none;
+  appearance: none;
   width: 16px;
   height: 16px;
-  accent-color: #a12828;
+  margin: 0;
+  border: 1.5px solid #a12828;
+  border-radius: 2px;
+  background: #fff;
+  cursor: pointer;
+  vertical-align: middle;
+  position: relative;
+}
+
+.so-check-td input:hover,
+.so-check-th input:hover {
+  border-color: #7a1d1d;
+}
+
+.so-check-td input:checked,
+.so-check-th input:checked {
+  background: #a12828;
+  border-color: #a12828;
+}
+
+.so-check-td input:checked::after,
+.so-check-th input:checked::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 1px;
+  width: 5px;
+  height: 9px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
 }
 
 /* =========================================================

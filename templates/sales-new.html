@@ -51,6 +51,7 @@
         <div class="form-group">
           <label>Order Date</label>
           <input type="date" id="orderDate">
+          <small class="field-error" id="orderDateErr" aria-live="polite"></small>
         </div>
 
         <div class="form-group">
@@ -86,6 +87,7 @@
               </div>
             </div>
           </div>
+          <small class="field-error" id="salesRepErr" aria-live="polite"></small>
 
           <input type="hidden" id="salesRep" name="sales_rep">
         </div>
@@ -98,6 +100,7 @@
             <option value="Rush">Rush</option>
             <option value="Backorder">Backorder</option>
           </select>
+          <small class="field-error" id="orderTypeErr" aria-live="polite"></small>
         </div>
       </div>
     </div>
@@ -158,6 +161,7 @@
               </div>
             </div>
           </div>
+          <small class="field-error" id="customerErr" aria-live="polite"></small>
           <input type="hidden" id="customer_name" name="customer_name">
         </div>
 
@@ -179,11 +183,13 @@
         <div class="form-group">
           <label>Email ID</label>
           <input type="email" id="email" placeholder="abc@gmail.com">
+          <small class="field-error" id="emailErr" aria-live="polite"></small>
         </div>
 
         <div class="form-group">
           <label>Phone Number</label>
           <input type="text" id="phone" placeholder="9876541230">
+          <small class="field-error" id="phoneErr" aria-live="polite"></small>
         </div>
       </div>
     </div>
@@ -204,6 +210,7 @@
             <option value="UPI">UPI</option>
             <option value="Bank Transfer">Bank Transfer</option>
           </select>
+          <small class="field-error" id="paymentMethodErr" aria-live="polite"></small>
         </div>
 
         <div class="form-group">
@@ -236,10 +243,13 @@
           <label>Shipping Method</label>
           <select id="shippingMethod">
             <option value="">Select Method</option>
-            <option value="FedEx">FedEx</option>
-            <option value="DHL">DHL</option>
-            <option value="UPS">UPS</option>
+            <option value="DTDC">DTDC</option>
+            <option value="Blue Dart">Blue Dart</option>
+            <option value="Delhivery">Delhivery</option>
+            <option value="India Post / Speed Post">India Post / Speed Post</option>
+            <option value="Professional Courier">Professional Courier</option>
           </select>
+          <small class="field-error" id="shippingMethodErr" aria-live="polite"></small>
         </div>
 
         <div class="form-group">
@@ -250,7 +260,7 @@
 
         <div class="form-group">
           <label>Tracking Number</label>
-          <input type="text" id="trackingNumber" placeholder="Enter tracking number">
+          <input type="text" id="trackingNumber" placeholder="Enter Tracking Number">
           <small class="field-error" id="trackingError"></small>
         </div>
 

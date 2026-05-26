@@ -115,6 +115,7 @@ function cnRenderRows(items) {
     body.appendChild(tr);
   });
   cnSyncRowDeleteButtonsLockState();
+  runLiveCreditNoteValidation();
 }
 
 function cnCalcRefund() {
@@ -154,6 +155,7 @@ function cnCalcRefund() {
   cnSetText("cnBalanceDue", Math.max(invoiceTotal - amountPaid, 0).toFixed(2));
   cnSetText("cnInvoiceReturnAmount", returned.toFixed(2));
   cnSetText("cnBalanceToRefund", Math.max(refundableBase - refundPaid, 0).toFixed(2));
+  runLiveCreditNoteValidation();
 }
 
 function cnMaybeAutoSetRefundDate() {
@@ -186,97 +188,284 @@ function cnGetCreatedByValidationMessage(v) {
   return "";
 }
 
-function cnValidateCreatedByUI({
-  silent = false,
-  live = false,
-  includeBranch = true,
-  includeCreatedBy = true,
-} = {}) {
-  let valid = true;
+function cnIsFormLocked() {
+  return !!document.querySelector(".cn-page.cn-view-only");
+}
 
-  if (includeBranch) {
-    const branchEl = document.getElementById("cnBranch");
-    if (branchEl) {
-      const branchMsg = (branchEl.value || "").trim() ? "" : "Please select Branch.";
-      const branchWrap = branchEl.closest(".cn-field");
-      let branchErr = branchWrap ? branchWrap.querySelector(".cn-field-error") : null;
-      if (!branchErr && branchWrap) {
-        branchErr = document.createElement("span");
-        branchErr.className = "cn-field-error";
-        branchErr.id = "cnBranchError";
-        branchErr.setAttribute("role", "alert");
-        branchErr.setAttribute("aria-live", "polite");
-        branchErr.hidden = true;
-        branchWrap.appendChild(branchErr);
-      }
-      if (branchMsg) {
-        branchEl.classList.add("input-invalid");
-        branchEl.setAttribute("aria-invalid", "true");
-        branchEl.setAttribute("aria-describedby", "cnBranchError");
-        if (branchErr) {
-          branchErr.textContent = branchMsg;
-          branchErr.hidden = false;
-          branchErr.classList.add("is-visible");
-        }
-        if (!silent && !live) cnToast("Please select branch.", "error");
-        valid = false;
-      } else {
-        branchEl.classList.remove("input-invalid");
-        branchEl.removeAttribute("aria-invalid");
-        branchEl.removeAttribute("aria-describedby");
-        if (branchErr) {
-          branchErr.textContent = "";
-          branchErr.hidden = true;
-          branchErr.classList.remove("is-visible");
-        }
-      }
+function cnFieldEditable(el) {
+  if (!el || cnIsFormLocked()) return false;
+  if (el.disabled) return false;
+  if (el.readOnly) return false;
+  return true;
+}
+
+function cnSetFieldError(inputEl, errEl, msg) {
+  let err = typeof errEl === "string" ? document.getElementById(errEl) : errEl;
+  if (!err && inputEl && typeof errEl === "string") {
+    const host =
+      inputEl.closest(".cn-field") ||
+      inputEl.closest(".cn-row") ||
+      inputEl.closest(".cn-section");
+    if (host) {
+      err = document.createElement("span");
+      err.className = "cn-field-error";
+      err.id = errEl;
+      err.setAttribute("aria-live", "polite");
+      err.hidden = true;
+      const tableWrap = host.querySelector(".cn-table-wrap");
+      if (tableWrap) host.insertBefore(err, tableWrap);
+      else host.appendChild(err);
     }
   }
-
-  if (!includeCreatedBy) return valid;
-
-  const el = document.getElementById("cnCreatedBy");
-  if (!el) return valid;
-  const sanitized = cnSanitizeCreatedBy(el.value);
-  if (el.value !== sanitized) el.value = sanitized;
-  const msg = cnGetCreatedByValidationMessage(sanitized);
-  const fieldWrap = el.closest(".cn-field");
-  let errEl = fieldWrap ? fieldWrap.querySelector(".cn-field-error") : null;
-  if (!errEl && fieldWrap) {
-    errEl = document.createElement("span");
-    errEl.className = "cn-field-error";
-    errEl.id = "cnCreatedByError";
-    errEl.setAttribute("role", "alert");
-    errEl.setAttribute("aria-live", "polite");
-    errEl.hidden = true;
-    fieldWrap.appendChild(errEl);
-  }
+  if (!inputEl || !err) return;
   if (msg) {
-    el.classList.add("input-invalid");
-    el.setAttribute("aria-invalid", "true");
-    el.setAttribute("aria-describedby", "cnCreatedByError");
-    if (errEl) {
-      errEl.textContent = msg;
-      errEl.hidden = false;
-      errEl.classList.add("is-visible");
+    if (inputEl.matches("input, select, textarea")) {
+      inputEl.classList.add("input-invalid");
+      inputEl.setAttribute("aria-invalid", "true");
     }
-    if (!silent && !live) {
-      const needsEnter =
-        !sanitized || sanitized.length < 3 || sanitized.length > 30;
-      cnToast(needsEnter ? "Please enter created by." : msg, "error");
-    }
-    valid = false;
+    err.textContent = msg;
+    err.hidden = false;
+    err.classList.add("is-visible");
   } else {
-    el.classList.remove("input-invalid");
-    el.removeAttribute("aria-invalid");
-    el.removeAttribute("aria-describedby");
-    if (errEl) {
-      errEl.textContent = "";
-      errEl.hidden = true;
-      errEl.classList.remove("is-visible");
+    if (inputEl.matches("input, select, textarea")) {
+      inputEl.classList.remove("input-invalid");
+      inputEl.removeAttribute("aria-invalid");
+    }
+    err.textContent = "";
+    err.hidden = true;
+    err.classList.remove("is-visible");
+  }
+}
+
+function cnIsValidDateString(value) {
+  if (!value || typeof value !== "string") return false;
+  const trimmed = value.trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return false;
+  const parts = trimmed.split("-");
+  const y = parseInt(parts[0], 10);
+  const m = parseInt(parts[1], 10) - 1;
+  const d = parseInt(parts[2], 10);
+  if (y < 1900 || y > 2100) return false;
+  const date = new Date(y, m, d);
+  return date.getFullYear() === y && date.getMonth() === m && date.getDate() === d;
+}
+
+function cnInvoiceRefReady() {
+  return !!(document.getElementById("cnInvoiceRef")?.value || "").trim();
+}
+
+function cnHasLineItems() {
+  const body = document.getElementById("cnItemsBody");
+  if (!body) return false;
+  if (body.querySelector(".cn-empty")) return false;
+  return body.querySelectorAll("tr").length > 0;
+}
+
+function runLiveCreditNoteValidation({ strictRefund = false, forSave = false } = {}) {
+  const pageMode = (new URLSearchParams(window.location.search).get("mode") || cnCfg().mode || "new")
+    .toString()
+    .trim()
+    .toLowerCase();
+  if (!forSave && (cnIsFormLocked() || pageMode === "edit")) {
+    document.querySelectorAll(".cn-page .cn-field-error").forEach((el) => {
+      el.textContent = "";
+      el.hidden = true;
+      el.classList.remove("is-visible");
+    });
+    document
+      .querySelectorAll(".cn-page .input-invalid")
+      .forEach((el) => el.classList.remove("input-invalid"));
+    return true;
+  }
+
+  let ok = true;
+
+  const dateEl = document.getElementById("cnDate");
+  if (cnFieldEditable(dateEl)) {
+    const dv = (dateEl.value || "").trim();
+    if (!dv) {
+      cnSetFieldError(dateEl, "cnDateErr", "Please select credit note date.");
+      ok = false;
+    } else if (!cnIsValidDateString(dv)) {
+      cnSetFieldError(dateEl, "cnDateErr", "Invalid date. Use format YYYY-MM-DD.");
+      ok = false;
+    } else {
+      cnSetFieldError(dateEl, "cnDateErr", "");
     }
   }
-  return valid;
+
+  const invRefEl = document.getElementById("cnInvoiceRef");
+  if (cnFieldEditable(invRefEl)) {
+    if (!(invRefEl.value || "").trim()) {
+      cnSetFieldError(invRefEl, "cnInvoiceRefErr", "Please select invoice reference ID.");
+      ok = false;
+    } else {
+      cnSetFieldError(invRefEl, "cnInvoiceRefErr", "");
+    }
+  }
+
+  const createdEl = document.getElementById("cnCreatedBy");
+  if (cnFieldEditable(createdEl)) {
+    const sanitized = cnSanitizeCreatedBy(createdEl.value);
+    if (createdEl.value !== sanitized) createdEl.value = sanitized;
+    const msg = cnGetCreatedByValidationMessage(sanitized);
+    if (msg) {
+      cnSetFieldError(
+        createdEl,
+        "cnCreatedByErr",
+        !sanitized ? "Please enter created by." : msg
+      );
+      ok = false;
+    } else {
+      cnSetFieldError(createdEl, "cnCreatedByErr", "");
+    }
+  }
+
+  const branchEl = document.getElementById("cnBranch");
+  if (cnFieldEditable(branchEl)) {
+    if (!(branchEl.value || "").trim()) {
+      cnSetFieldError(branchEl, "cnBranchErr", "Please select branch.");
+      ok = false;
+    } else {
+      cnSetFieldError(branchEl, "cnBranchErr", "");
+    }
+  }
+
+  const payTermsEl = document.getElementById("cnPaymentTerms");
+  if (cnFieldEditable(payTermsEl) && cnInvoiceRefReady()) {
+    if (!(payTermsEl.value || "").trim()) {
+      cnSetFieldError(payTermsEl, "cnPaymentTermsErr", "Please select payment terms.");
+      ok = false;
+    } else {
+      cnSetFieldError(payTermsEl, "cnPaymentTermsErr", "");
+    }
+  } else if (payTermsEl) {
+    cnSetFieldError(payTermsEl, "cnPaymentTermsErr", "");
+  }
+
+  const billEl = document.getElementById("cnBillingAddress");
+  if (cnFieldEditable(billEl) && cnInvoiceRefReady()) {
+    if (!(billEl.value || "").trim()) {
+      cnSetFieldError(billEl, "cnBillingAddressErr", "Please enter billing address.");
+      ok = false;
+    } else {
+      cnSetFieldError(billEl, "cnBillingAddressErr", "");
+    }
+  } else if (billEl) {
+    cnSetFieldError(billEl, "cnBillingAddressErr", "");
+  }
+
+  const itemsTable = document.getElementById("cnItemsTable");
+  if (cnInvoiceRefReady()) {
+    if (!cnHasLineItems()) {
+      cnSetFieldError(itemsTable, "cnItemsErr", "Please add at least one returned line item.");
+      ok = false;
+    } else {
+      cnSetFieldError(itemsTable, "cnItemsErr", "");
+    }
+  } else {
+    cnSetFieldError(itemsTable, "cnItemsErr", "");
+  }
+
+  const amountEl = document.getElementById("cnAmountPaid");
+  if (cnFieldEditable(amountEl) && cnInvoiceRefReady()) {
+    const raw = String(amountEl.value ?? "").trim();
+    const invoiceTotal = Math.max(parseFloat(cnGet("cnInvoiceTotal")) || 0, 0);
+    if (!raw) {
+      cnSetFieldError(amountEl, "cnAmountPaidErr", "Please enter amount paid by customer.");
+      ok = false;
+    } else {
+      const n = parseFloat(raw);
+      if (!Number.isFinite(n) || n < 0) {
+        cnSetFieldError(amountEl, "cnAmountPaidErr", "Amount paid must be 0 or greater.");
+        ok = false;
+      } else if (n > invoiceTotal) {
+        cnSetFieldError(amountEl, "cnAmountPaidErr", "Amount paid cannot exceed invoice total.");
+        ok = false;
+      } else {
+        cnSetFieldError(amountEl, "cnAmountPaidErr", "");
+      }
+    }
+  } else if (amountEl) {
+    cnSetFieldError(amountEl, "cnAmountPaidErr", "");
+  }
+
+  const refundModeEl = document.getElementById("cnRefundMode");
+  const refundPaidEl = document.getElementById("cnRefundPaid");
+  const refundDateEl = document.getElementById("cnRefundDate");
+
+  if (strictRefund) {
+    if (cnFieldEditable(refundModeEl) && !(refundModeEl.value || "").trim()) {
+      cnSetFieldError(refundModeEl, "cnRefundModeErr", "Please select refund mode.");
+      ok = false;
+    } else if (refundModeEl) {
+      cnSetFieldError(refundModeEl, "cnRefundModeErr", "");
+    }
+
+    if (cnFieldEditable(refundPaidEl)) {
+      const raw = String(refundPaidEl.value ?? "").trim();
+      const n = parseFloat(raw);
+      const max = parseFloat(refundPaidEl.max) || 0;
+      if (!raw || !Number.isFinite(n) || n <= 0) {
+        cnSetFieldError(refundPaidEl, "cnRefundPaidErr", "Please enter refund paid amount.");
+        ok = false;
+      } else if (n > max && max >= 0) {
+        cnSetFieldError(
+          refundPaidEl,
+          "cnRefundPaidErr",
+          `Refund paid cannot exceed ${max.toFixed(2)}.`
+        );
+        ok = false;
+      } else {
+        cnSetFieldError(refundPaidEl, "cnRefundPaidErr", "");
+      }
+    }
+
+    const mode = (refundModeEl?.value || "").trim();
+    if (cnFieldEditable(refundDateEl) && mode) {
+      const rv = (refundDateEl.value || "").trim();
+      if (!rv) {
+        cnSetFieldError(refundDateEl, "cnRefundDateErr", "Please select refund date.");
+        ok = false;
+      } else if (!cnIsValidDateString(rv)) {
+        cnSetFieldError(refundDateEl, "cnRefundDateErr", "Invalid date. Use format YYYY-MM-DD.");
+        ok = false;
+      } else {
+        cnSetFieldError(refundDateEl, "cnRefundDateErr", "");
+      }
+    } else if (refundDateEl) {
+      cnSetFieldError(refundDateEl, "cnRefundDateErr", "");
+    }
+  } else {
+    if (refundModeEl) cnSetFieldError(refundModeEl, "cnRefundModeErr", "");
+    if (refundPaidEl) {
+      const raw = String(refundPaidEl.value ?? "").trim();
+      if (raw) {
+        const n = parseFloat(raw);
+        const max = parseFloat(refundPaidEl.max) || 0;
+        if (Number.isFinite(n) && n > max && max >= 0) {
+          cnSetFieldError(
+            refundPaidEl,
+            "cnRefundPaidErr",
+            `Refund paid cannot exceed ${max.toFixed(2)}.`
+          );
+          ok = false;
+        } else {
+          cnSetFieldError(refundPaidEl, "cnRefundPaidErr", "");
+        }
+      } else {
+        cnSetFieldError(refundPaidEl, "cnRefundPaidErr", "");
+      }
+    }
+    if (refundDateEl) cnSetFieldError(refundDateEl, "cnRefundDateErr", "");
+  }
+
+  return ok;
+}
+
+function validateCreditNoteForm(strictRefund = false) {
+  if (cnIsFormLocked()) return true;
+  return runLiveCreditNoteValidation({ strictRefund, forSave: true });
 }
 
 function cnSanitizeRefundPaidInput(el) {
@@ -475,6 +664,7 @@ async function cnFillFromInvoice(invoiceReturnRef) {
     cnSetText("invoice_total_display", "0.00");
     cnRenderRows([]);
     cnCalcRefund();
+    runLiveCreditNoteValidation();
     return;
   }
   const irRes = await fetch(`/api/invoice-return/${encodeURIComponent(invoiceReturnRef)}`);
@@ -530,6 +720,7 @@ async function cnFillFromInvoice(invoiceReturnRef) {
   const rows = cnMapInvoiceLinesToReturnRows(rawRows);
   cnRenderRows(rows);
   cnCalcRefund();
+  runLiveCreditNoteValidation();
   cnToast(`Invoice return ${invoiceReturnRef} loaded successfully`);
 }
 
@@ -580,6 +771,14 @@ function cnLockCoreSectionsForEditMode() {
 
   // Returned line items should be view-only in edit flow.
   cnSyncRowDeleteButtonsLockState();
+  document.querySelectorAll(".cn-page .cn-field-error").forEach((el) => {
+    el.textContent = "";
+    el.hidden = true;
+    el.classList.remove("is-visible");
+  });
+  document
+    .querySelectorAll(".cn-page .input-invalid")
+    .forEach((el) => el.classList.remove("input-invalid"));
 }
 
 function cnGetSortedComments() {
@@ -702,6 +901,7 @@ async function cnLoadCreditNoteById(creditId) {
   }
   cnRenderComments();
   cnRefreshHistory();
+  runLiveCreditNoteValidation();
   return it;
 }
 
@@ -716,12 +916,13 @@ function cnEnableViewOnlyMode() {
   document.querySelectorAll(".cn-delete-row-btn").forEach((btn) => {
     btn.style.display = "none";
   });
-  ["cnSaveDraftBtn", "cnMarkPaidBtn", "cnDeleteBtn"].forEach((id) => {
+  ["cnSaveDraftBtn", "cnMarkPaidBtn"].forEach((id) => {
     const btn = document.getElementById(id);
     if (btn) btn.style.display = "none";
   });
   const refundPick = document.getElementById("cnRefundDateOpenBtn");
   if (refundPick) refundPick.disabled = true;
+  runLiveCreditNoteValidation();
   const cIn = document.getElementById("cnCommentInput");
   if (cIn) {
     cIn.readOnly = true;
@@ -797,14 +998,15 @@ function cnApplyWorkflowActions({ status, paymentStatus, isSaved }) {
     canMarkPaid = true;
   } else if (st === "draft") {
     canSave = true;
-    // Allow finalization from draft; backend will convert to Submitted+Paid.
     canMarkPaid = true;
-    canCancel = true;
+    canCancel = false;
   } else if (st === "submitted") {
     canPdf = true;
     canEmail = true;
     canMarkPaid = ps !== "paid";
-    canCancel = ps !== "paid";
+    canCancel = true;
+  } else if (st === "cancelled" || st === "canceled") {
+    canCancel = false;
   }
 
   // DNR-like rule: final action requires at least one comment.
@@ -1272,40 +1474,11 @@ function cnInitTabsAndComments(userName) {
 }
 
 async function cnSaveDraftInternal({ redirectOnSuccess = false, silent = false } = {}) {
-  if (!cnGet("cnInvoiceRef")) {
-    if (!silent) cnToast("Select Invoice Reference ID", "error");
-    return false;
-  }
-  const createdByVal = cnSanitizeCreatedBy(cnGet("cnCreatedBy"));
-  if (!createdByVal || createdByVal.length < 3 || createdByVal.length > 30) {
-    cnValidateCreatedByUI({
-      silent: true,
-      live: false,
-      includeBranch: false,
-      includeCreatedBy: true,
-    });
-    if (!silent) cnToast("Please enter created by.", "error");
-    return false;
-  }
-  if (
-    !cnValidateCreatedByUI({
-      silent: true,
-      live: false,
-      includeBranch: false,
-      includeCreatedBy: true,
-    })
-  ) {
-    return false;
-  }
-  if (
-    !cnValidateCreatedByUI({
-      silent: true,
-      live: false,
-      includeBranch: true,
-      includeCreatedBy: false,
-    })
-  ) {
-    if (!silent) cnToast("Please select branch.", "error");
+  if (!validateCreditNoteForm(false)) {
+    if (!silent) {
+      const err = document.querySelector(".cn-page .cn-field-error.is-visible");
+      cnToast(err?.textContent || "Please complete required fields.", "error");
+    }
     return false;
   }
   const payload = cnCollectPayload("Draft");
@@ -1324,9 +1497,9 @@ async function cnSaveDraftInternal({ redirectOnSuccess = false, silent = false }
     throw new Error(data.message || "Failed to save credit note");
   }
   if (redirectOnSuccess) {
-    window.location.href = `/credit-note?toast=${encodeURIComponent("Credit Note saved as draft successfully")}&type=success`;
+    window.location.href = `/credit-note?toast=${encodeURIComponent("Credit note saved as Draft successfully")}&type=success`;
   } else if (!silent) {
-    cnToast("Credit Note saved as draft successfully", "success");
+    cnToast("Credit note saved as Draft successfully", "success");
   }
   return true;
 }
@@ -1341,19 +1514,9 @@ async function cnDoSaveDraft() {
 
 async function cnDoMarkPaid() {
   try {
-    // Ensure Created By stays valid before collecting payload.
-    if (
-      !cnValidateCreatedByUI({
-        silent: false,
-        live: true,
-        includeBranch: true,
-        includeCreatedBy: true,
-      })
-    ) {
-      return;
-    }
-    if (!cnGet("cnInvoiceRef")) {
-      cnToast("Select Invoice Reference ID", "error");
+    if (!validateCreditNoteForm(true)) {
+      const err = document.querySelector(".cn-page .cn-field-error.is-visible");
+      cnToast(err?.textContent || "Please complete required fields.", "error");
       return;
     }
     const saved = await cnSaveDraftInternal({ redirectOnSuccess: false, silent: true });
@@ -1371,7 +1534,7 @@ async function cnDoMarkPaid() {
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || data.success === false) throw new Error(data.message || "Failed to mark as paid");
-    window.location.href = `/credit-note?toast=${encodeURIComponent("Credit Note submitted successfully")}&type=success`;
+    window.location.href = `/credit-note?toast=${encodeURIComponent("Credit note saved as Submitted successfully")}&type=success`;
   } catch (e) {
     cnToast(e.message || "Failed to mark as paid", "error");
   }
@@ -1399,7 +1562,7 @@ async function cnDoCancelCreditNote() {
       );
       return;
     }
-    window.location.href = `/credit-note?toast=${encodeURIComponent("Credit Note cancelled successfully")}&type=success`;
+    window.location.href = `/credit-note?toast=${encodeURIComponent("Credit note saved as Cancelled successfully")}&type=success`;
   } catch (e) {
     cnToast(e.message || "Failed to cancel credit note", "error");
   }
@@ -1436,6 +1599,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (cnCoreSectionsLocked) return;
     btn.closest("tr")?.remove();
     cnCalcRefund();
+    runLiveCreditNoteValidation();
   });
 
   document.getElementById("cnCancelBtn")?.addEventListener("click", () => {
@@ -1535,7 +1699,11 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   // Only `change` on <select> — do not also use `input` or `onchange` or the handler runs multiple times per pick (duplicate toasts).
   const onInvoiceRefChanged = function () {
-    cnFillFromInvoice(this.value).catch(() => cnToast("Failed to fetch invoice details", "error"));
+    cnFillFromInvoice(this.value)
+      .catch(() => cnToast("Failed to fetch invoice details", "error"))
+      .finally(() => {
+        if (mode !== "edit") runLiveCreditNoteValidation();
+      });
   };
   if (invoiceRef) {
     invoiceRef.addEventListener("change", onInvoiceRefChanged);
@@ -1588,6 +1756,7 @@ document.addEventListener("DOMContentLoaded", async () => {
           paymentStatus: cnCurrentPaymentStatus,
           isSaved: cnIsSavedNote
         });
+        runLiveCreditNoteValidation();
         void cnLoadCreditAttachments();
       })
       .catch(() => cnToast("Failed to load credit note details", "error"));
@@ -1622,52 +1791,53 @@ document.addEventListener("DOMContentLoaded", async () => {
       // Prevent negatives and scientific notation.
       if (["-", "+", "e", "E"].includes(e.key)) e.preventDefault();
     });
-    document.getElementById("cnRefundMode")?.addEventListener("change", cnMaybeAutoSetRefundDate);
-
-    const branchEl = document.getElementById("cnBranch");
-    const runBranchLiveValidation = () => {
-      cnValidateCreatedByUI({
-        silent: true,
-        live: true,
-        includeBranch: true,
-        includeCreatedBy: false,
-      });
-    };
-    branchEl?.addEventListener("focus", runBranchLiveValidation);
-    branchEl?.addEventListener("change", runBranchLiveValidation);
-    branchEl?.addEventListener("input", runBranchLiveValidation);
-    branchEl?.addEventListener("blur", runBranchLiveValidation);
+    document.getElementById("cnRefundMode")?.addEventListener("change", () => {
+      cnMaybeAutoSetRefundDate();
+      if (mode !== "edit") runLiveCreditNoteValidation();
+    });
 
     const createdByEl = document.getElementById("cnCreatedBy");
-    createdByEl?.addEventListener("input", () => {
-      if (!createdByEl) return;
-      createdByEl.value = cnSanitizeCreatedBy(createdByEl.value);
-      cnValidateCreatedByUI({
-        silent: true,
-        live: true,
-        includeBranch: false,
-        includeCreatedBy: true,
-      });
-    });
-    createdByEl?.addEventListener("blur", () => {
-      cnValidateCreatedByUI({
-        silent: true,
-        live: true,
-        includeBranch: false,
-        includeCreatedBy: true,
-      });
-    });
     createdByEl?.addEventListener("keydown", (e) => {
-      // Block digits/special chars; allow letters, space, and control/navigation keys.
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       if (e.key.length === 1 && !/^[A-Za-z ]$/.test(e.key)) {
         e.preventDefault();
       }
-      // Hard cap at 30 (unless backspace/delete).
       const isBackspace = e.key === "Backspace" || e.key === "Delete";
       const current = String(createdByEl?.value || "");
       if (!isBackspace && current.length >= 30) e.preventDefault();
     });
+
+    if (mode !== "edit") {
+      [
+        ["cnDate", ["change", "blur", "input"]],
+        ["cnInvoiceRef", ["change", "blur"]],
+        ["cnCreatedBy", ["input", "blur"]],
+        ["cnBranch", ["change", "blur", "input"]],
+        ["cnPaymentTerms", ["change", "blur"]],
+        ["cnBillingAddress", ["input", "blur"]],
+        ["cnAmountPaid", ["input", "blur", "change"]],
+        ["cnRefundMode", ["change", "blur"]],
+        ["cnRefundPaid", ["input", "blur", "change"]],
+        ["cnRefundDate", ["change", "blur", "input"]],
+      ].forEach(([id, events]) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        events.forEach((ev) => {
+          el.addEventListener(ev, () => runLiveCreditNoteValidation());
+        });
+      });
+      createdByEl?.addEventListener("input", () => {
+        if (!createdByEl) return;
+        createdByEl.value = cnSanitizeCreatedBy(createdByEl.value);
+        runLiveCreditNoteValidation();
+      });
+      runLiveCreditNoteValidation();
+    } else {
+      createdByEl?.addEventListener("input", () => {
+        if (!createdByEl) return;
+        createdByEl.value = cnSanitizeCreatedBy(createdByEl.value);
+      });
+    }
   }
   cnMaybeAutoSetRefundDate();
 

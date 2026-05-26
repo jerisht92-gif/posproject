@@ -1,7 +1,7 @@
 document.addEventListener("DOMContentLoaded", () => {
 
   /* =====================================================
-     DOM ELEMENTS
+     DOM ELEMENTSs
   ===================================================== */
 
   const tbody = document.getElementById("dnrTbody");

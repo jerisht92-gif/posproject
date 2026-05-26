@@ -149,15 +149,16 @@ label {
 .sales-wrapper select:focus {
   background-color: #fff5f5;
   border-color: #a12828;
-
 }
 
-
-
-/* TEXT COLOR FIX */
 .sales-wrapper select option {
-  background-color: #c99a9a !important;
+  background-color: #c99a9a;
   color: #000;
+}
+
+.sales-wrapper select option:hover {
+  background-color: #6e6e6e;
+  color: #fff;
 }
 /* =========================================
    SUCCESS / ERROR TOASTS 
@@ -244,6 +245,11 @@ textarea:disabled {
   background: #fff5f5 !important;
 }
 
+.dropdown-selected.input-invalid {
+  border: 1.5px solid #b3261e !important;
+  background: #fff5f5 !important;
+}
+
 /* =========================================
    CUSTOM DROPDOWN
 ========================================= */
@@ -306,8 +312,12 @@ textarea:disabled {
   padding-bottom: 6px;
   border: 1px solid #e7b7b5;
   border-radius: 10px;
-  background: #c99a9a !important;   /* 🔥 DARK PINK */
+  background: #c99a9a;
   box-shadow: 0 10px 26px rgba(0, 0, 0, 0.12);
+}
+
+.dropdown-list {
+  background: #c99a9a;
 }
 
 .dropdown-menu input {
@@ -322,7 +332,6 @@ textarea:disabled {
   transition: 0.25s ease-in-out;
 }
 
-/* Match hover/focus style of main Sales Rep select */
 .dropdown-menu input:hover,
 .dropdown-menu input:focus {
   background: #f5d4d4;
@@ -337,12 +346,18 @@ textarea:disabled {
   color: #000;
   cursor: pointer;
   font-size: 13px;
-  background: #c99a9a !important;   /* 🔥 SAME DARK PINK */
+  background: #c99a9a;
 }
 
-.dropdown-item:hover {
-  background: #6e6e6e;   /* ✅ grey */
+.dropdown-item:hover,
+.dropdown-item:focus-visible,
+.dropdown-item.active {
+  background: #6e6e6e;
   color: #fff;
+}
+
+.dropdown-item.active {
+  font-weight: 600;
 }
 
 /* =========================================
@@ -446,6 +461,16 @@ button {
 .so-items-table input:focus {
   border-color: #a12828;
   box-shadow: 0 0 0 1px rgba(161, 40, 40, 0.25);
+}
+
+.so-items-table select option {
+  background-color: #c99a9a;
+  color: #000;
+}
+
+.so-items-table select option:hover {
+  background-color: #6e6e6e;
+  color: #fff;
 }
 
 .so-small-col {
@@ -1293,14 +1318,6 @@ button {
   color: #666666 !important;
   box-shadow: 0 2px 0 #999999 !important;
 }
-/* =========================================
-   auto-selected rep highlighted
-========================================= */
-.dropdown-item.active{
-  background:#6e6e6e;   /* ✅ grey */
-  color:#fff;
-  font-weight:600;
-}
 .productList {
   display: none;
   position: absolute;
@@ -1314,15 +1331,6 @@ button {
 
 .product-dropdown {
   position: relative;
-}
-
-.dropdown-item {
-  padding: 8px;
-  cursor: pointer;
-}
-
-.dropdown-item:hover {
-  background: #f2f2f2;
 }
 
 /* =========================================

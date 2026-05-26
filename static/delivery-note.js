@@ -1,6 +1,4 @@
 
-
-
 document.addEventListener("DOMContentLoaded", () => {
   /* =========================================================
      CONFIG
@@ -67,9 +65,9 @@ function loadDnStatusFilterOptions(rows) {
   allOpt.textContent = "All";
   statusFilter.appendChild(allOpt);
 
-  const uniqueStatuses = [...new Set(
-    (rows || []).map((r) => r.status).filter(Boolean)
-  )].sort((a, b) => dnStatusRank(a) - dnStatusRank(b));
+  const uniqueStatuses = [...new Set((rows || []).map((r) => r.status).filter(Boolean))].sort(
+    (a, b) => dnStatusRank(a) - dnStatusRank(b)
+  );
 
   uniqueStatuses.forEach((status) => {
     const opt = document.createElement("option");
@@ -91,18 +89,8 @@ function loadDnStatusFilterOptions(rows) {
   const statusBadgeClass = (status) => normalizeStatus(status);
 
   function statusLabel(v) {
-  const key = normalizeStatus(v);
-  const map = {
-    draft: "Draft",
-    pending: "Pending",
-    in_transit: "In Transit",
-    delivered: "Delivered",
-    partially_delivered: "Partially Delivered",
-    returned: "Returned",
-    cancelled: "Cancelled",
-  };
-  return map[key] || "—";
-}
+    return titleCase(normalizeStatus(v)) || "—";
+  }
 
   function setBtnDisabled(btn, disabled) {
     if (!btn) return;
@@ -178,23 +166,8 @@ function loadDnStatusFilterOptions(rows) {
     return true;
   }
 
-  /* =========================================================
-     STATUS COLUMN SORT (match sales-order list)
-  ========================================================== */
-  const DN_STATUS_SORT_ORDER = [
-    "draft",
-    "pending",
-    "in_transit",
-    "delivered",
-    "partially_delivered",
-    "returned",
-    "cancelled",
-  ];
-
   function dnStatusRank(status) {
-    const key = normalizeStatus(status);
-    const i = DN_STATUS_SORT_ORDER.indexOf(key);
-    return i === -1 ? 999 : i;
+    return normalizeStatus(status);
   }
 
   function parseDeliveryDateMs(d) {
@@ -740,13 +713,13 @@ function toggleGenerateButtons() {
   try {
     const dnToast = localStorage.getItem("deliveryNoteListToast");
     if (dnToast === "draft") {
-      showToast("Delivery Note draft saved Successfully", "success");
+      showToast("Delivery note saved as Draft successfully", "success");
       localStorage.removeItem("deliveryNoteListToast");
     } else if (dnToast === "updated") {
-      showToast("Delivery Note updated Successfully", "success");
+      showToast("Delivery note updated successfully", "success");
       localStorage.removeItem("deliveryNoteListToast");
     } else if (dnToast === "submitted") {
-      showToast("Delivery Note submitted Successfully", "success");
+      showToast("Delivery note submitted successfully", "success");
       localStorage.removeItem("deliveryNoteListToast");
     }
   } catch (e) {}

@@ -79,9 +79,13 @@ const pageTotal = document.getElementById("pageTotal");
   // Show cross-page success toast if set by form page
   try {
     const flag = localStorage.getItem("salesOrderSuccess");
-    console.log("FLAG TOP:", flag);
 
-    if (flag === "1") {
+    if (flag === "updated") {
+      setTimeout(() => {
+        showToast("Sales order updated successfully.", "success");
+        localStorage.removeItem("salesOrderSuccess");
+      }, 300);
+    } else if (flag === "added" || flag === "1") {
       setTimeout(() => {
         showToast("Sales order added successfully.", "success");
         localStorage.removeItem("salesOrderSuccess");
@@ -244,11 +248,21 @@ const pageTotal = document.getElementById("pageTotal");
   }
 
   function generateDeliveryNote(soId) {
-    console.log("Generate Delivery Note:", soId);
+    const id = String(soId || "").trim();
+    if (!id) {
+      showToast("Sales Order ID missing", "error");
+      return;
+    }
+    window.location.href = `/delivery_note/new?so_id=${encodeURIComponent(id)}`;
   }
 
   function generateInvoice(soId) {
-    console.log("Generate Invoice:", soId);
+    const id = String(soId || "").trim();
+    if (!id) {
+      showToast("Sales Order ID missing", "error");
+      return;
+    }
+    window.location.href = `/new-invoice?so_id=${encodeURIComponent(id)}`;
   }
 
   function openPdfSO(soId) {
@@ -571,6 +585,29 @@ flyEl.appendChild(
   }
 
   function fillSalesRepsDropdown() {
+    if (statusFilter) {
+      const prevStatus = statusFilter.value || "";
+      statusFilter.innerHTML = '<option value="">All</option>';
+
+      const uniqueStatuses = [
+        ...new Set(
+          allOrders
+            .map((order) => String(order.status || "").trim())
+            .filter(Boolean)
+        ),
+      ].sort((a, b) => statusRank(a) - statusRank(b));
+
+      uniqueStatuses.forEach((status) => {
+        const opt = document.createElement("option");
+        opt.value = status;
+        opt.textContent = status;
+        statusFilter.appendChild(opt);
+      });
+
+      const hasPrev = [...statusFilter.options].some((o) => o.value === prevStatus);
+      statusFilter.value = hasPrev ? prevStatus : "";
+    }
+
     if (!salesRepFilter) return;
 
     const reps = [
@@ -617,6 +654,7 @@ flyEl.appendChild(
       console.error(error);
       allOrders = [];
       filteredOrders = [];
+      fillSalesRepsDropdown();
       renderTable();
     }
   }
@@ -691,7 +729,6 @@ flyEl.appendChild(
   ========================================================== */
   loadSalesOrders();
 });
-
 
 
 
