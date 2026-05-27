@@ -591,6 +591,33 @@
   padding: 14px 16px 18px;
 }
 
+.pos-modal-label {
+  display: block;
+  margin-bottom: 8px;
+  color: #7a1f1f;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.pos-modal-textarea {
+  width: 90%;
+  min-height: 100px;
+  padding: 12px;
+  resize: vertical;
+  border: 1px solid #e7b7b5;
+  border-radius: 12px;
+  background: #fff5f5;
+  font-size: 13px;
+  outline: none;
+  font-family: "Poppins", sans-serif;
+  box-sizing: border-box;
+}
+
+.pos-modal-textarea:focus {
+  border-color: #a23737;
+  box-shadow: 0 0 0 1px rgba(161, 40, 40, 0.25);
+}
+
 .pos-btn {
   min-width: 110px;
   height: 40px;
@@ -2592,16 +2619,40 @@ transform: translateY(-2px);
   cursor: not-allowed;
 }
 
-/* Keep invoice reference dropdown width stable */
+/* Invoice Reference ID — keep select + list inside column width */
 .cn-grid .cn-field {
   min-width: 0;
 }
 
+.cn-field--invoice-ref {
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.cn-select-clip {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.cn-select-clip select,
 #cnInvoiceRef {
-  width: 100% !important;
-  max-width: 100% !important;
-  min-width: 0 !important;
-  box-sizing: border-box !important;
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  field-sizing: fixed;
+}
+
+#cnInvoiceRef:hover,
+#cnInvoiceRef:focus {
+  transform: none;
 }
 
 /* ---------------------------------------------------------------------------

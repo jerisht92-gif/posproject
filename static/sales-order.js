@@ -242,7 +242,12 @@ const pageTotal = document.getElementById("pageTotal");
 }
 
   function generatePurchaseOrder(soId) {
-    console.log("Generate Purchase Order:", soId);
+    const id = String(soId || "").trim();
+    if (!id) {
+      showToast("Sales Order ID missing", "error");
+      return;
+    }
+    window.location.href = `/purchase-order?so_id=${encodeURIComponent(id)}`;
   }
 
   function generateDeliveryNote(soId) {

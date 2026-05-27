@@ -13372,75 +13372,17 @@ def check_emails():
     )
     return jsonify({"exists": bool(row)})
 
+ 
 # =========================================
 # QUICK BILLING PAGE
 # =========================================
-
+ 
 @app.route("/quick-billing")
 def quick_billing():
     user_email = session.get("user")
     if not user_email:
         return redirect(url_for("login", message="session_expired"))
-
-    users = load_users()
-    user_name = "User"
-    for u in users:
-        if isinstance(u, dict) and (u.get("email") or "").lower() == user_email.lower():
-            user_name = u.get("name") or "User"
-            break
-
-    return render_template(
-        "quick-billing.html",
-        page="quick_billing",
-        title="Quick Billing - Stackly",
-        user_email=user_email,
-        user_name=user_name,
-    )
-
-# =========================================
-# PRODUCTS ENDPOINT - UPDATED FOR YOUR SCHEMA
-# =========================================
-
-@app.route("/api/products/qb") 
-def api_products_qb():
-    """Fetch products from database using actual table schema."""
-    try:
-        rows = fetch_all("""
-            SELECT 
-                product_id,
-                product_name,
-                unit_price,
-                COALESCE(discount, 0) as discount,
-                tax_code,
-                tax_percent
-            FROM products 
-            WHERE status = 'Active'
-            ORDER BY product_id
-        """)
-        products = []
-        for row in rows:
-            products.append({
-                "code": row["product_id"],
-                "name": row["product_name"],
-                "price": float(row["unit_price"]) if row["unit_price"] else 0,
-                "discount": float(row["discount"]) if row["discount"] else 0,
-                "tax_code": row["tax_code"] or "NONE"
-            })
-        return jsonify({"success": True, "products": products})
-    except Exception as e:
-        print(f"❌ Error fetching products: {e}")
-        return jsonify({"success": False, "message": "Could not load products"}), 500
-
-# =========================================
-# DELETED ITEMS PAGE
-# =========================================
-
-@app.route("/quick-billing/deleted")
-def quick_billing_deleted():
-    user_email = session.get("user")
-    if not user_email:
-        return redirect(url_for("login", message="session_expired"))
-
+ 
     users = load_users()
     user_name = "User"
     role = session.get("role", "")
@@ -13449,16 +13391,104 @@ def quick_billing_deleted():
             user_name = u.get("name") or "User"
             role = (u.get("role") or role or "").strip()
             break
-
+ 
     return render_template(
-        "quickbilling-deleted.html",
-        page="quick-billing-deleted",
+        "quick-billing.html",
+        page="quick_billing",
+        title="Quick Billing - Stackly",
+        user_email=user_email,
+        user_name=user_name,
         role=role,
-        title="Removed Items - Stackly",
+    )
+ 
+# =========================================
+# PRODUCTS ENDPOINT - UPDATED FOR YOUR SCHEMA
+# =========================================
+ 
+@app.route("/api/products/qb")
+def api_products_qb():
+    """Fetch products from database using actual table schema."""
+    try:
+        rows = fetch_all("""
+            SELECT
+                product_id,
+                product_name,
+                unit_price,
+                COALESCE(discount, 0) as discount,
+                tax_code,
+                tax_percent,
+                category_name,
+                specifications
+            FROM products
+            WHERE status = 'Active'
+            ORDER BY product_id
+        """)
+        products = []
+        for row in rows:
+            pid = row["product_id"]
+            specs = str(row.get("specifications") or "")
+            barcode = ""
+            for token in specs.replace(",", " ").split():
+                digits = "".join(c for c in token if c.isdigit())
+                if len(digits) in (8, 12, 13):
+                    barcode = digits
+                    break
+            if not barcode and pid:
+                pid_digits = "".join(c for c in str(pid) if c.isdigit())
+                if len(pid_digits) >= 8:
+                    barcode = pid_digits
+ 
+            products.append({
+                "product_id": pid,
+                "code": pid,
+                "name": row["product_name"],
+                "price": float(row["unit_price"]) if row["unit_price"] else 0,
+                "discount": float(row["discount"]) if row["discount"] else 0,
+                "tax_code": row["tax_code"] or "NONE",
+                "tax_percent": row.get("tax_percent"),
+                "category": row.get("category_name") or "",
+                "barcode": barcode,
+            })
+        return jsonify({"success": True, "products": products})
+    except Exception as e:
+        print(f"❌ Error fetching products: {e}")
+        return jsonify({"success": False, "message": "Could not load products"}), 500
+ 
+# =========================================
+# DELETED ITEMS PAGE
+# =========================================
+ 
+@app.route("/quick-billing/deleted")
+def quick_billing_deleted():
+    """Legacy URL kept for compatibility."""
+    return redirect(url_for("quick_removebilling"))
+ 
+ 
+@app.route("/quick-removebilling")
+def quick_removebilling():
+    """Standalone Quick Remove Billing page (Removed Items view)."""
+    user_email = session.get("user")
+    if not user_email:
+        return redirect(url_for("login", message="session_expired"))
+ 
+    users = load_users()
+    user_name = "User"
+    role = session.get("role", "")
+    for u in users:
+        if isinstance(u, dict) and (u.get("email") or "").lower() == user_email.lower():
+            user_name = u.get("name") or "User"
+            role = (u.get("role") or role or "").strip()
+            break
+ 
+    return render_template(
+        "quick-removebilling.html",
+        page="quick-removebilling",
+        role=role,
+        title="Quick Remove Billing - Stackly",
         user_email=user_email,
         user_name=user_name,
     )
-
+ 
 @app.get("/removed-items")
 def removed_items_metadata():
     """Small JSON endpoint so /quick-billing/deleted page has a named Fetch/XHR entry."""
@@ -13467,7 +13497,7 @@ def removed_items_metadata():
         return jsonify(
             {"success": False, "message": "Session expired. Please login first."}
         ), 401
-
+ 
     users = load_users()
     user_name = "User"
     role = session.get("role", "")
@@ -13476,7 +13506,7 @@ def removed_items_metadata():
             user_name = u.get("name") or "User"
             role = (u.get("role") or role or "").strip()
             break
-
+ 
     return jsonify(
         {
             "success": True,
@@ -13484,15 +13514,15 @@ def removed_items_metadata():
             "current_user": {"email": user_email, "name": user_name, "role": role},
         }
     ), 200
-
+ 
 # =========================================
 # HOLD BILL ENDPOINT (DATABASE VERSION)
 # =========================================
-
+ 
 @app.route("/api/hold-bill", methods=["GET", "POST", "DELETE"])
 def handle_hold_bill():
     """Store temporary hold bill in database."""
-    
+   
     if request.method == "POST":
         data = request.get_json(silent=True) or {}
         try:
@@ -13504,7 +13534,7 @@ def handle_hold_bill():
             return jsonify({"status": "success"})
         except Exception as e:
             return jsonify({"status": "error", "message": str(e)}), 500
-
+ 
     if request.method == "GET":
         try:
             row = fetch_one("SELECT data FROM hold_bill LIMIT 1")
@@ -13513,14 +13543,14 @@ def handle_hold_bill():
             return jsonify({"held": False})
         except Exception as e:
             return jsonify({"status": "error", "message": str(e)}), 500
-
+ 
     # DELETE
     try:
         execute_query("DELETE FROM hold_bill")
         return jsonify({"status": "success"})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
-
+ 
 # =========================================
 # SAVE QUICK BILL ENDPOINT (DATABASE VERSION)
 # =========================================
@@ -13531,12 +13561,12 @@ def save_quick_bill():
         items = data.get("items") or []
         totals = data.get("totals") or {}
         payment = data.get("payment") or {}
-
+ 
         if not items:
             return jsonify({"success": False, "message": "No items to save"}), 400
-
+ 
         user_email = session.get("user") or ""
-
+ 
         conn = get_db_connection()
         try:
             with conn.cursor() as cur:
@@ -13546,14 +13576,14 @@ def save_quick_bill():
                     RETURNING id
                 """, (user_email, payment.get("mode"), totals.get("invoice_total")))
                 bill_id = cur.fetchone()[0]
-
+ 
                 for item in items:   # note: there was a duplicate loop in your original, fix that too
                     quantity = item.get("quantity") or item.get("qty")
                     if quantity is None or quantity == "":
                         quantity = 1
                     price = item.get("price") or 0
                     total = item.get("total") or (quantity * price)
-
+ 
                     cur.execute("""
                         INSERT INTO bill_items
                         (bill_id, product_code, product_name, quantity, price, total)
@@ -13562,7 +13592,7 @@ def save_quick_bill():
                 conn.commit()
         finally:
             conn.close()
-
+ 
         return jsonify({"success": True, "billId": bill_id}), 201
     except Exception as e:
         print(f"❌ Unexpected error in save_quick_bill: {e}")
@@ -13570,60 +13600,60 @@ def save_quick_bill():
 # =========================================
 # QUICK BILLING REST API (DATABASE VERSION)
 # =========================================
-
+ 
 def _require_login_json():
     """Helper to check login for JSON endpoints."""
     user_email = session.get("user")
     if not user_email:
         return None, jsonify({"success": False, "message": "Session expired"}), 401
     return user_email, None, None
-
+ 
 @app.route("/api/quick-billing", methods=["GET"])
 def api_quick_billing_list():
     """List all quick bills with filters and pagination."""
     user_email, resp, status = _require_login_json()
     if resp is not None:
         return resp, status
-
+ 
     conditions = []
     params = []
-    
+   
     q = (request.args.get("q") or "").strip()
     if q:
         conditions.append("(b.id::text ILIKE %s OR b.user_email ILIKE %s OR b.created_at::text ILIKE %s)")
         like = f"%{q}%"
         params.extend([like, like, like])
-    
+   
     user_filter = (request.args.get("user") or "").strip()
     if user_filter:
         conditions.append("b.user_email ILIKE %s")
         params.append(f"%{user_filter}%")
-    
+   
     date_from = (request.args.get("date_from") or "").strip()
     if date_from:
         conditions.append("b.created_at >= %s")
         params.append(date_from)
-    
+   
     date_to = (request.args.get("date_to") or "").strip()
     if date_to:
         conditions.append("b.created_at <= %s")
         params.append(date_to)
-    
+   
     where_clause = " AND ".join(conditions) if conditions else "1=1"
-    
+   
     count_sql = f"SELECT COUNT(*) FROM quick_bills b WHERE {where_clause}"
     total_items = fetch_one(count_sql, params)["count"]
-    
+   
     try:
         page = max(1, int(request.args.get("page") or 1))
         page_size = min(1000, max(1, int(request.args.get("page_size") or 10)))
     except (TypeError, ValueError):
         return jsonify({"success": False, "message": "Invalid page or page_size"}), 400
-    
+   
     offset = (page - 1) * page_size
     total_pages = max(1, (total_items + page_size - 1) // page_size)
     page = min(page, total_pages)
-    
+   
     sql = f"""
         SELECT
             b.id, b.created_at, b.user_email AS user,
@@ -13647,7 +13677,7 @@ def api_quick_billing_list():
     """
     params_page = params + [page_size, offset]
     rows = fetch_all(sql, params_page)
-    
+   
     items = []
     for row in rows:
         items.append({
@@ -13658,7 +13688,7 @@ def api_quick_billing_list():
             "totals": {"invoice_total": float(row["invoice_total"]) if row["invoice_total"] else 0},
             "payment": {"mode": row["payment_mode"] or ""}
         })
-    
+   
     return jsonify({
         "success": True,
         "data": {
@@ -13668,14 +13698,14 @@ def api_quick_billing_list():
             "total_items": total_items,
         }
     }), 200
-
+ 
 @app.route("/api/quick-billing/<int:bill_id>", methods=["GET"])
 def api_quick_billing_get(bill_id):
     """Return a single bill by id."""
     user_email, resp, status = _require_login_json()
     if resp is not None:
         return resp, status
-
+ 
     sql = """
         SELECT
             b.id, b.created_at, b.user_email AS user,
@@ -13698,7 +13728,7 @@ def api_quick_billing_get(bill_id):
     row = fetch_one(sql, (bill_id,))
     if not row:
         return jsonify({"success": False, "message": "Bill not found"}), 404
-
+ 
     bill = {
         "id": row["id"],
         "created_at": row["created_at"].isoformat(timespec="seconds") if row["created_at"] else "",
@@ -13708,25 +13738,25 @@ def api_quick_billing_get(bill_id):
         "payment": {"mode": row["payment_mode"] or ""}
     }
     return jsonify({"success": True, "data": bill}), 200
-
+ 
 @app.route("/api/quick-billing", methods=["POST"])
 def api_quick_billing_create():
     """Create a new quick bill."""
     user_email, resp, status = _require_login_json()
     if resp is not None:
         return resp, status
-
+ 
     if not request.is_json:
         return jsonify({"success": False, "message": "Content-Type must be application/json"}), 400
-
+ 
     data = request.get_json(silent=True) or {}
     items = data.get("items") or []
     totals = data.get("totals") or {}
     payment = data.get("payment") or {}
-
+ 
     if not items:
         return jsonify({"success": False, "message": "At least one item is required"}), 400
-
+ 
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
@@ -13736,12 +13766,12 @@ def api_quick_billing_create():
                     RETURNING id, created_at
                 """, (session.get("user") or "", payment.get("mode"), totals.get("invoice_total")))
                 bill_id, created_at = cur.fetchone()
-
+ 
                 for item in items:
                     quantity = item.get("quantity") or 1
                     price = item.get("price") or 0
                     total = item.get("total") or (quantity * price)
-                    
+                   
                     cur.execute("""
                         INSERT INTO bill_items
                         (bill_id, product_code, product_name, quantity, price, total)
@@ -13755,7 +13785,7 @@ def api_quick_billing_create():
                         total
                     ))
                 conn.commit()
-
+ 
         bill_entry = {
             "id": bill_id,
             "created_at": created_at.isoformat(timespec="seconds"),
@@ -13769,33 +13799,33 @@ def api_quick_billing_create():
             "message": "Bill created successfully",
             "data": bill_entry,
         }), 201
-
+ 
     except Exception as e:
         print(f"❌ Error creating bill: {e}")
         return jsonify({"success": False, "message": "Could not save bill"}), 500
-
+ 
 @app.route("/api/quick-billing/<int:bill_id>", methods=["PUT"])
 def api_quick_billing_update(bill_id):
     """Update an existing bill."""
     user_email, resp, status = _require_login_json()
     if resp is not None:
         return resp, status
-
+ 
     if not request.is_json:
         return jsonify({"success": False, "message": "Content-Type must be application/json"}), 400
-
+ 
     data = request.get_json(silent=True) or {}
     items = data.get("items")
     totals = data.get("totals")
     payment = data.get("payment")
-
+ 
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute("SELECT 1 FROM quick_bills WHERE id = %s", (bill_id,))
                 if not cur.fetchone():
                     return jsonify({"success": False, "message": "Bill not found"}), 404
-
+ 
                 if totals is not None or payment is not None:
                     cur.execute("""
                         UPDATE quick_bills
@@ -13807,14 +13837,14 @@ def api_quick_billing_update(bill_id):
                         totals.get("invoice_total") if totals else None,
                         bill_id
                     ))
-
+ 
                 if items is not None:
                     cur.execute("DELETE FROM bill_items WHERE bill_id = %s", (bill_id,))
                     for item in items:
                         quantity = item.get("quantity") or 1
                         price = item.get("price") or 0
                         total = item.get("total") or (quantity * price)
-                        
+                       
                         cur.execute("""
                             INSERT INTO bill_items
                             (bill_id, product_code, product_name, quantity, price, total)
@@ -13828,37 +13858,42 @@ def api_quick_billing_update(bill_id):
                             total
                         ))
                 conn.commit()
-
+ 
         return api_quick_billing_get(bill_id)
-
+ 
     except Exception as e:
         print(f"❌ Error updating bill {bill_id}: {e}")
         return jsonify({"success": False, "message": "Could not update bill"}), 500
-
+ 
 @app.route("/api/quick-billing/<int:bill_id>", methods=["DELETE"])
 def api_quick_billing_delete(bill_id):
     """Remove a bill."""
     user_email, resp, status = _require_login_json()
     if resp is not None:
         return resp, status
-
+ 
     try:
         execute_query("DELETE FROM quick_bills WHERE id = %s", (bill_id,))
         return jsonify({"success": True, "message": "Bill deleted successfully"}), 200
     except Exception as e:
         print(f"❌ Error deleting bill {bill_id}: {e}")
         return jsonify({"success": False, "message": "Could not delete bill"}), 500
-
+ 
 @app.route("/api/quick-billing/new-id", methods=["GET"])
 def api_quick_billing_new_id():
     """Return the next bill id for UI use."""
     user_email, resp, status = _require_login_json()
     if resp is not None:
         return resp, status
-    
+   
     row = fetch_one("SELECT nextval('quick_bills_id_seq') AS next_id")
     return jsonify({"billId": row["next_id"]}), 200
-
+#--------------------------------------------------------------------------------------------------------
+ 
+ 
+ 
+ 
+ 
 
 
 # ---------- Helpers ----------
@@ -23085,23 +23120,19 @@ def generate_delivery_note_return_pdf_bytes(dnr):
     return pdf_bytes
 
 
-
-
-
 # ========================================
 # Purchase order page
 # ========================================
 @app.route("/api/purchase-list", methods=["GET"])
 def purchase_list_api():
-
+ 
     conn = get_db_connection()
     cur = conn.cursor()
-
+ 
     try:
-
+ 
         cur.execute("""
             SELECT
-                id,
                 po_number,
                 supplier_name,
                 pdate,
@@ -23110,51 +23141,49 @@ def purchase_list_api():
                 payment_terms,
                 p_value
             FROM purchase_orders
-            ORDER BY id DESC
+            ORDER BY created_at DESC
         """)
-
+ 
         rows = cur.fetchall()
-
+ 
         orders = []
-
+ 
         for r in rows:
-
+ 
             orders.append({
-                "id": r[0],
-                "po_number": r[1] or "",
-                "supplier": r[2] or "",
-                "pdate": str(r[3]) if r[3] else "",
-                "ddate": str(r[4]) if r[4] else "",
-                "status": r[5] or "Draft",
-                "payment_terms": r[6] or "",
-                "grand_total": float(r[7] or 0)
+                "po_number": r[0] or "",
+                "supplier": r[1] or "",
+                "pdate": str(r[2]) if r[2] else "",
+                "ddate": str(r[3]) if r[3] else "",
+                "status": r[4] or "Draft",
+                "payment_terms": r[5] or "",
+                "grand_total": float(r[6] or 0)
             })
-
+ 
         return jsonify(orders)
-
+ 
     except Exception as e:
-
+ 
         print("purchase_list_api error:", e)
-
+ 
         return jsonify([]), 500
-
+ 
     finally:
-
+ 
         cur.close()
         conn.close()
-
+ 
+ 
 @app.route("/purchase")
 def purchase_page():
-
+ 
     conn = get_db_connection()
     cur = conn.cursor()
-
+ 
     try:
-
+ 
         cur.execute("""
-
             SELECT
-                id,
                 po_number,
                 supplier_name,
                 pdate,
@@ -23163,26 +23192,25 @@ def purchase_page():
                 payment_terms,
                 COALESCE(p_value, 0) AS p_value
             FROM purchase_orders
-            ORDER BY id DESC
+            ORDER BY created_at DESC
         """)
-
+ 
         rows = cur.fetchall()
-
+ 
         orders = []
-
+ 
         for r in rows:
-
+ 
             orders.append({
-                "id": r[0],
-                "po_number": r[1],
-                "supplier": r[2] or "-",
-                "pdate": str(r[3]) if r[3] else "",
-                "ddate": str(r[4]) if r[4] else "",
-                "status": r[5] or "Draft",
-                "payment_terms": r[6] or "-",
-                "grand_total": float(r[7]) if r[7] is not None else 0
+                "po_number": r[0],
+                "supplier": r[1] or "-",
+                "pdate": str(r[2]) if r[2] else "",
+                "ddate": str(r[3]) if r[3] else "",
+                "status": r[4] or "Draft",
+                "payment_terms": r[5] or "-",
+                "grand_total": float(r[6]) if r[6] is not None else 0
             })
-
+ 
         cur.execute("""
             SELECT
                 supplier_id,
@@ -23191,59 +23219,59 @@ def purchase_page():
             FROM suppliers
             ORDER BY supplier_name ASC
         """)
-
+ 
         supplier_rows = cur.fetchall()
-
+ 
         suppliers = []
-
+ 
         for s in supplier_rows:
-
+ 
             suppliers.append({
                 "supplier_id": s[0],
                 "supplier_name": s[1],
                 "email": s[2]
             })
-
+ 
         return render_template(
             "purchase.html",
             orders=orders,
             suppliers=suppliers,
             page="purchase"
         )
-
+ 
     except Exception as e:
-
+ 
         print("PURCHASE PAGE ERROR:", e)
-
-        return "ERROR", 500
-
+ 
+        return str(e), 500
+ 
     finally:
-
+ 
         cur.close()
         conn.close()
-
+ 
 @app.route("/purchase-order")
 def purchase_order():
-
+ 
     conn = get_db_connection()
     cur = conn.cursor()
-
+ 
     po_number = generate_po_number()
-
+ 
     today = date.today().isoformat()
-
+ 
     # SALES ORDERS
-
+ 
     cur.execute("""
         SELECT so_id
         FROM sales_orders
         ORDER BY so_id DESC
     """)
-
+ 
     sales_orders = [r[0] for r in cur.fetchall()]
-
+ 
     # SUPPLIERS
-
+ 
     cur.execute("""
         SELECT
             supplier_id,
@@ -23252,20 +23280,20 @@ def purchase_order():
         FROM suppliers
         ORDER BY supplier_name
     """)
-
+ 
     suppliers = []
-
+ 
     for r in cur.fetchall():
-
+ 
         suppliers.append({
             "id": r[0],
             "name": r[1],
             "email": r[2]
         })
-
+ 
     cur.close()
     conn.close()
-
+ 
     return render_template(
         "purchase-order.html",
         po_number=po_number,
@@ -23273,58 +23301,56 @@ def purchase_order():
         sales_orders=sales_orders,
         suppliers=suppliers
     )
-
+ 
 # ========================================
 # GENERATE PO NUMBER
 # ========================================
-
+ 
 def generate_po_number():
-
+ 
     conn = get_db_connection()
     cur = conn.cursor()
-
+ 
     cur.execute("""
         SELECT po_number
         FROM purchase_orders
-        ORDER BY id DESC
+        ORDER BY created_at DESC
         LIMIT 1
     """)
-
+ 
     row = cur.fetchone()
-
+ 
     if row and row[0]:
-
+ 
         last_po = row[0]
-
+ 
         try:
-
             last_num = int(last_po.split("-")[1])
-
+ 
         except:
-
             last_num = 0
-
+ 
         new_num = last_num + 1
-
+ 
     else:
-
+ 
         new_num = 1
-
+ 
     cur.close()
     conn.close()
-
+ 
     return f"PO-{new_num:03d}"
-
+ 
 # Sales Order id
-
+ 
 @app.route("/api/sales-order-purchase/<so_id>")
 def get_sales_order_purchase(so_id):
-
+ 
     conn = get_db_connection()
     cur = conn.cursor()
-
+ 
     try:
-
+ 
         cur.execute("""
             SELECT
                 product_id,
@@ -23337,13 +23363,13 @@ def get_sales_order_purchase(so_id):
             FROM sales_order_items
             WHERE so_id=%s
         """, (so_id,))
-
+ 
         rows = cur.fetchall()
-
+ 
         items = []
-
+ 
         for r in rows:
-
+ 
             items.append({
                 "product_id": r[0],
                 "product_name": r[1],
@@ -23353,32 +23379,79 @@ def get_sales_order_purchase(so_id):
                 "tax_pct": r[5],
                 "disc_pct": r[6]
             })
-
+ 
         return jsonify({
             "items": items
         })
-
+ 
     except Exception as e:
-
+ 
         print("SO FETCH ERROR:", e)
-
+ 
         return jsonify({"items": []}), 500
-
+ 
     finally:
-
+ 
         cur.close()
         conn.close()
-
-
-
-
-
-@app.route("/api/products-new")
-def get_products_new():
-
+ 
+ 
+ 
+ 
+ 
+# ========================================
+# SUPPLIER API
+# ========================================
+ 
+@app.route("/api/suppliers")
+def get_suppliers_purchase():
+ 
     conn = get_db_connection()
     cur = conn.cursor()
-
+ 
+    try:
+ 
+        cur.execute("""
+            SELECT
+                supplier_id,
+                supplier_name,
+                email
+            FROM suppliers
+            ORDER BY supplier_id ASC
+        """)
+ 
+        rows = cur.fetchall()
+ 
+        suppliers = []
+ 
+        for row in rows:
+ 
+            suppliers.append({
+                "id": row[0],
+                "name": row[1],
+                "email": row[2]
+            })
+ 
+        return jsonify(suppliers)
+ 
+    except Exception as e:
+ 
+        print("SUPPLIER ERROR:", e)
+ 
+        return jsonify([]), 500
+ 
+    finally:
+ 
+        cur.close()
+        conn.close()
+ 
+       
+@app.route("/api/products-new")
+def get_products_new():
+ 
+    conn = get_db_connection()
+    cur = conn.cursor()
+ 
     cur.execute("""
         SELECT
             product_id,
@@ -23389,14 +23462,14 @@ def get_products_new():
             stock_level
         FROM products
     """)
-
+ 
     rows = cur.fetchall()
-
+ 
     cur.close()
     conn.close()
-
+ 
     return jsonify([
-
+ 
         {
             "product_id": r[0],
             "product_name": r[1],
@@ -23405,105 +23478,106 @@ def get_products_new():
             "uom_name": r[4],
             "stock_level": r[5]
         }
-
+ 
         for r in rows
-
+ 
     ])
-
+ 
 # ========================================
 # SALES ORDER IDS API
 # ========================================
-
+ 
 @app.get("/api/sales-orders/ids")
 def get_sales_order_ids():
-
+ 
     conn = get_db_connection()
     cur = conn.cursor()
-
+ 
     try:
-
+ 
         cur.execute("""
             SELECT so_id
             FROM sales_orders
             ORDER BY so_id DESC
         """)
-
+ 
         rows = cur.fetchall()
-
+ 
         sales_order_ids = [r[0] for r in rows]
-
+ 
         return jsonify(sales_order_ids)
-
+ 
     except Exception as e:
-
+ 
         print("SALES ORDER LIST ERROR:", e)
-
+ 
         return jsonify([]), 500
-
+ 
     finally:
-
+ 
         cur.close()
         conn.close()
-
-
+ 
+ 
 @app.route("/api/save-po-purchase", methods=["POST"])
 def save_po_purchase():
-
+ 
     conn = None
     cur = None
-
+ 
     try:
-
+ 
         data = request.json
-
+ 
         conn = get_db_connection()
         cur = conn.cursor()
-
-        po_number = (data.get("po_number") or "").strip()
-
+ 
+        po_number = str(data.get("po_number") or "").strip()
+ 
         if not po_number:
-
+ 
             po_number = generate_po_number()
-
+ 
         supplier_id = data.get("supplier_id")
         supplier_name = data.get("supplier_name")
         supplier_email = data.get("supplier_email")
-
+ 
         so_id = data.get("so_id")
-
+ 
         pdate = data.get("pdate")
         ddate = data.get("ddate")
-
+ 
         payment_terms = data.get("payment_terms")
-
+        inco_terms = data.get("inco_terms")
+ 
         status = data.get("status", "Draft")
-
+ 
         items = data.get("items", [])
-
+ 
         # =================================
         # CALCULATE TOTAL
         # =================================
-
+ 
         total_value = float(data.get("grand_total", 0))
-
+ 
         # =================================
         # CHECK EXISTING
         # =================================
-
+ 
         cur.execute("""
-            SELECT id
+            SELECT po_number
             FROM purchase_orders
             WHERE po_number=%s
         """, (po_number,))
-
+ 
         existing = cur.fetchone()
-
+ 
         # =================================
         # INSERT
         # =================================
-
+ 
         if not existing:
-
+ 
             cur.execute("""
                 INSERT INTO purchase_orders
                 (
@@ -23517,13 +23591,13 @@ def save_po_purchase():
                     p_value,
                     status,
                     payment_terms,
+                    inco_terms,
                     created_at
                 )
                 VALUES
                 (
-                    %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW()
+                    %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW()
                 )
-                RETURNING id
             """, (
                 po_number,
                 supplier_id,
@@ -23534,19 +23608,20 @@ def save_po_purchase():
                 ddate,
                 round(total_value, 2),
                 status,
-                payment_terms
+                payment_terms,
+                inco_terms
             ))
-
-            po_id = cur.fetchone()[0]
-
+ 
+           
+ 
         # =================================
         # UPDATE
         # =================================
-
+ 
         else:
-
-            po_id = existing[0]
-
+ 
+           
+ 
             cur.execute("""
                 UPDATE purchase_orders
                 SET
@@ -23558,7 +23633,8 @@ def save_po_purchase():
                     ddate=%s,
                     p_value=%s,
                     status=%s,
-                    payment_terms=%s
+                    payment_terms=%s,
+                    inco_terms=%s
                 WHERE po_number=%s
             """, (
                 supplier_id,
@@ -23570,34 +23646,36 @@ def save_po_purchase():
                 round(total_value, 2),
                 status,
                 payment_terms,
+                inco_terms,
                 po_number
             ))
-
+ 
         # =================================
         # DELETE OLD ITEMS
         # =================================
-
+ 
         cur.execute("""
             DELETE FROM purchase_items
-            WHERE po_id=%s
-        """, (po_id,))
-
+            WHERE po_number=%s
+        """, (po_number,))
+ 
         # =================================
         # INSERT ITEMS
         # =================================
-
+ 
         for item in items:
-
+ 
             cur.execute("""
                 INSERT INTO purchase_items
                 (
-                    po_id,
+                   
+                    po_number,
                     product_id,
                     product_name,
                     qty,
                     price,
-                    tax_pct,
-                    disc_pct,
+                    tax,
+                    discount,
                     uom
                 )
                 VALUES
@@ -23605,123 +23683,124 @@ def save_po_purchase():
                     %s,%s,%s,%s,%s,%s,%s,%s
                 )
             """, (
-
-                po_id,
+ 
+           
+                po_number,
                 item.get("product_id"),
                 item.get("product_name"),
                 float(item.get("qty", 0)),
                 float(item.get("price", 0)),
-                float(item.get("tax_pct", 0)),
-                float(item.get("disc_pct", 0)),
+                float(item.get("tax", 0)),
+                float(item.get("discount", 0)),
                 item.get("uom")
-
+ 
             ))
-
+ 
         conn.commit()
-
+ 
         return jsonify({
-
+ 
             "success": True,
             "message": "Purchase Order Saved Successfully",
             "po_number": po_number,
             "status": status
-
+ 
         })
-
+ 
     except Exception as e:
-
+ 
         if conn:
             conn.rollback()
-
+ 
         print("SAVE PO ERROR:", e)
-
+ 
         return jsonify({
-
+ 
             "success": False,
             "error": str(e)
-
+ 
         }), 500
-
+ 
     finally:
-
+ 
         if cur:
             cur.close()
-
+ 
         if conn:
             conn.close()
-
+ 
 # ========================================
 # DELETE PURCHASE ORDER
 # ========================================
-
+ 
 @app.route("/delete_po/<string:po_number>", methods=["DELETE"])
 def delete_po(po_number):
-
+ 
     conn = get_db_connection()
     cur = conn.cursor()
-
+ 
     try:
-
+ 
         cur.execute("""
             SELECT
-                id,
+                po_number,
                 status
             FROM purchase_orders
             WHERE po_number=%s
         """, (po_number,))
-
+ 
         po = cur.fetchone()
-
+ 
         if not po:
-
+ 
             return jsonify({
                 "error": "PO Not Found"
             }), 404
-
-        po_id, status = po
-
+ 
+        po_number, status = po
+ 
         if status != "Draft":
-
+ 
             return jsonify({
                 "error": "Only Draft PO Can Delete"
             }), 400
-
+ 
         cur.execute("""
             DELETE FROM purchase_items
-            WHERE po_id=%s
-        """, (po_id,))
-
+            WHERE po_number=%s
+        """, (po_number,))
+ 
         cur.execute("""
             DELETE FROM purchase_orders
             WHERE po_number=%s
         """, (po_number,))
-
+ 
         conn.commit()
-
+ 
         return jsonify({
             "success": True
         })
-
+ 
     except Exception as e:
-
+ 
         print("DELETE ERROR:", e)
-
+ 
         return jsonify({
             "error": str(e)
         }), 500
-
+ 
     finally:
-
+ 
         cur.close()
         conn.close()
-
+ 
 @app.route("/generate-purchase-pdf", methods=["POST"])
 def generate_purchase_pdf():
-
+ 
     data = request.json
-
+ 
     buffer = BytesIO()
-
+ 
     doc = SimpleDocTemplate(
         buffer,
         pagesize=A4,
@@ -23730,13 +23809,13 @@ def generate_purchase_pdf():
         topMargin=20,
         bottomMargin=20
     )
-
+ 
     styles = getSampleStyleSheet()
-
+ 
     # =========================================
     # STYLES
     # =========================================
-
+ 
     company_style = ParagraphStyle(
         "CompanyStyle",
         parent=styles["Heading1"],
@@ -23747,7 +23826,7 @@ def generate_purchase_pdf():
         textColor=colors.darkred,
         spaceAfter=5,
     )
-
+ 
     address_style = ParagraphStyle(
         "AddressStyle",
         parent=styles["Normal"],
@@ -23756,7 +23835,7 @@ def generate_purchase_pdf():
         leading=14,
         alignment=TA_CENTER,
     )
-
+ 
     title_style = ParagraphStyle(
         "TitleStyle",
         parent=styles["Heading2"],
@@ -23767,7 +23846,7 @@ def generate_purchase_pdf():
         textColor=colors.green,
         spaceAfter=20,
     )
-
+ 
     section_style = ParagraphStyle(
         "SectionStyle",
         parent=styles["Heading3"],
@@ -23776,94 +23855,94 @@ def generate_purchase_pdf():
         textColor=colors.darkred,
         spaceAfter=10,
     )
-
+ 
     normal_style = ParagraphStyle(
         "NormalStyle",
         parent=styles["Normal"],
         fontName="DejaVuSans",
         fontSize=10,
     )
-
+ 
     elements = []
-
+ 
     # =========================================
     # COMPANY HEADER
     # =========================================
-
+ 
     elements.append(Paragraph("STACKLY", company_style))
-
+ 
     elements.append(Paragraph(
         "MMR Complex, Chinna Tirupathi, Salem, Tamil Nadu - 636008",
         address_style
     ))
-
+ 
     elements.append(Paragraph(
         "Phone: +91 7010792745",
         address_style
     ))
-
+ 
     elements.append(Paragraph(
         "Email: info@stackly.com",
         address_style
     ))
-
+ 
     elements.append(Spacer(1, 25))
-
+ 
     # =========================================
     # TITLE
     # =========================================
-
+ 
     elements.append(Paragraph("PURCHASE ORDER", title_style))
-
+ 
     # =========================================
     # INFO TABLE
     # =========================================
-
+ 
     info_data = [
         ["PO Number:", data.get("po_number"), "Date:", data.get("pdate")],
         ["Supplier:", data.get("supplier"), "Delivery Date:", data.get("ddate")],
         ["Status:", data.get("status"), "Payment Terms:", data.get("payment_terms")]
     ]
-
+ 
     info_table = Table(
         info_data,
         colWidths=[120, 170, 120, 140]
     )
-
+ 
     info_table.setStyle(TableStyle([
-
+ 
         ("FONTNAME", (0, 0), (-1, -1), "DejaVuSans"),
         ("FONTNAME", (0, 0), (0, -1), "DejaVuSans-Bold"),
         ("FONTNAME", (2, 0), (2, -1), "DejaVuSans-Bold"),
-
+ 
         ("GRID", (0, 0), (-1, -1), 0.8, colors.grey),
-
+ 
         ("BACKGROUND", (0, 0), (0, -1), colors.whitesmoke),
         ("BACKGROUND", (2, 0), (2, -1), colors.whitesmoke),
-
+ 
         ("TEXTCOLOR", (0, 0), (0, -1), colors.darkred),
         ("TEXTCOLOR", (2, 0), (2, -1), colors.darkred),
-
+ 
         ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
         ("TOPPADDING", (0, 0), (-1, -1), 10),
-
+ 
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
     ]))
-
+ 
     elements.append(info_table)
-
+ 
     elements.append(Spacer(1, 25))
-
+ 
     # =========================================
     # ITEMS TITLE
     # =========================================
-
+ 
     elements.append(Paragraph("PURCHASE ORDER ITEMS", section_style))
-
+ 
     # =========================================
     # ITEMS TABLE
     # =========================================
-
+ 
     table_data = [[
         "S.No",
         "Product Name",
@@ -23873,14 +23952,14 @@ def generate_purchase_pdf():
         "Disc %",
         "Total"
     ]]
-
+ 
     for i, item in enumerate(data.get("items", []), start=1):
-
+ 
         qty = float(item.get("qty", 0))
         price = float(item.get("price", 0))
-
+ 
         total = qty * price
-
+ 
         table_data.append([
             str(i),
             item.get("product_name"),
@@ -23890,114 +23969,114 @@ def generate_purchase_pdf():
             str(item.get("discount")),
             f"₹ {total:.2f}"
         ])
-
+ 
     item_table = Table(
         table_data,
         repeatRows=1,
         colWidths=[45, 180, 55, 75, 55, 60, 90]
     )
-
+ 
     item_table.setStyle(TableStyle([
-
+ 
         ("FONTNAME", (0, 0), (-1, -1), "DejaVuSans"),
         ("FONTNAME", (0, 0), (-1, 0), "DejaVuSans-Bold"),
-
+ 
         ("BACKGROUND", (0, 0), (-1, 0), colors.darkred),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-
+ 
         ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-
+ 
         ("GRID", (0, 0), (-1, -1), 0.8, colors.grey),
-
+ 
         ("BOTTOMPADDING", (0, 0), (-1, 0), 10),
         ("TOPPADDING", (0, 0), (-1, 0), 10),
-
+ 
         ("BOTTOMPADDING", (0, 1), (-1, -1), 8),
         ("TOPPADDING", (0, 1), (-1, -1), 8),
-
+ 
         ("BACKGROUND", (0, 1), (-1, -1), colors.white),
     ]))
-
+ 
     elements.append(item_table)
-
+ 
     elements.append(Spacer(1, 25))
-
+ 
     # =========================================
     # TOTALS TABLE
     # =========================================
-
+ 
     totals_data = [
         ["Subtotal", data.get("subtotal")],
         ["Tax", data.get("tax")],
         ["Rounding", data.get("rounding")],
         ["Grand Total", data.get("grand_total")],
     ]
-
+ 
     totals_table = Table(
         totals_data,
         colWidths=[450, 110]
     )
-
+ 
     totals_table.setStyle(TableStyle([
-
+ 
         ("FONTNAME", (0, 0), (-1, -1), "DejaVuSans"),
         ("FONTNAME", (0, -1), (-1, -1), "DejaVuSans-Bold"),
-
+ 
         ("GRID", (0, 0), (-1, -1), 0.8, colors.grey),
-
+ 
         ("ALIGN", (1, 0), (1, -1), "RIGHT"),
-
+ 
         ("BACKGROUND", (0, -1), (-1, -1), colors.lightgrey),
-
+ 
         ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
         ("TOPPADDING", (0, 0), (-1, -1), 10),
     ]))
-
+ 
     elements.append(totals_table)
-
+ 
     elements.append(Spacer(1, 25))
-
+ 
     # =========================================
     # NOTES
     # =========================================
-
+ 
     elements.append(Paragraph("Notes", section_style))
-
+ 
     notes = data.get("notes") or "Thank you for your business!"
-
+ 
     elements.append(Paragraph(notes, normal_style))
-
+ 
     # =========================================
     # BUILD PDF
     # =========================================
-
+ 
     doc.build(elements)
-
+ 
     buffer.seek(0)
-
+ 
     return send_file(
         buffer,
         as_attachment=True,
         download_name=f"{data.get('po_number')}.pdf",
         mimetype="application/pdf"
     )
-
+ 
 @app.route("/api/purchase-orders/<po_number>/email", methods=["POST"])
 def email_purchase_order(po_number):
-
+ 
     try:
         data = request.json
         data["po_number"] = po_number
-
+ 
         supplier_email = data.get("supplier_email")
-
+ 
         if not supplier_email:
-
+ 
             return jsonify({
                 "success": False,
                 "message": "Supplier email missing"
             })
-
+ 
         # =========================================
         # GENERATE PDF
         # =========================================
@@ -24005,32 +24084,32 @@ def email_purchase_order(po_number):
         # =========================================
         # EMAIL CONTENT
         # =========================================
-
+ 
         subject = f"Purchase Order - {po_number}"
-
+ 
         body = f"""
 Dear Supplier,
-
+ 
 We hope this message finds you well.
-
+ 
 Please find attached the official Purchase Order issued by our company for your processing.
-
+ 
 Purchase Order Information:
 - PO Number: {po_number}
-
+ 
 We request you to acknowledge receipt of this order and proceed with the necessary arrangements.
-
+ 
 Should you require any clarification, please do not hesitate to contact us.
-
+ 
 Regards,
 Procurement Department
 Stackly
 """
-
+ 
         # =========================================
         # SEND EMAIL
         # =========================================
-
+ 
         success = send_email_with_pdf(
             to_email=supplier_email,
             subject=subject,
@@ -24038,25 +24117,25 @@ Stackly
             pdf_bytes=pdf_bytes,
             pdf_filename=f"{po_number}.pdf"
         )
-
+ 
         if success:
             return jsonify({"success": True})
-
+ 
         else:
             return jsonify({
                 "success": False,
                 "message": "Email send failed"
             })
-
+ 
     except Exception as e:
-
+ 
         print("EMAIL ERROR:", str(e))
-
+ 
         return jsonify({
             "success": False,
             "message": str(e)
         })
-
+ 
 def send_email_with_pdf(
     to_email,
     subject,
@@ -24064,18 +24143,18 @@ def send_email_with_pdf(
     pdf_bytes,
     pdf_filename="purchase_order.pdf"
 ):
-
+ 
     try:
-
+ 
         msg = MIMEMultipart()
-
+ 
         msg["From"] = EMAIL_ADDRESS
         msg["To"] = to_email
         msg["Subject"] = subject
-
+ 
         # ✅ BODY (this is your subject/body you mentioned)
         msg.attach(MIMEText(body, "plain"))
-
+ 
         # ✅ PDF ATTACHMENT
         part = MIMEApplication(pdf_bytes, _subtype="pdf")
         part.add_header(
@@ -24084,25 +24163,26 @@ def send_email_with_pdf(
             filename=pdf_filename
         )
         msg.attach(part)
-
+ 
         # ✅ SMTP SEND
         server = smtplib.SMTP("smtp.gmail.com", 587)
         server.starttls()
         server.login(EMAIL_ADDRESS, EMAIL_PASSWORD)
-
+ 
         server.send_message(msg)   # IMPORTANT
-
+ 
         server.quit()
-
+ 
         return True
-
+ 
     except Exception as e:
         print("Email send error:", e)
         return False
+   
 def build_purchase_order_pdf(data):
-
+ 
     buffer = BytesIO()
-
+ 
     doc = SimpleDocTemplate(
         buffer,
         pagesize=A4,
@@ -24111,13 +24191,13 @@ def build_purchase_order_pdf(data):
         topMargin=20,
         bottomMargin=20
     )
-
+ 
     styles = getSampleStyleSheet()
-
+ 
     # =========================================
     # STYLES
     # =========================================
-
+ 
     company_style = ParagraphStyle(
         "CompanyStyle",
         parent=styles["Heading1"],
@@ -24128,7 +24208,7 @@ def build_purchase_order_pdf(data):
         textColor=colors.darkred,
         spaceAfter=5,
     )
-
+ 
     address_style = ParagraphStyle(
         "AddressStyle",
         parent=styles["Normal"],
@@ -24137,7 +24217,7 @@ def build_purchase_order_pdf(data):
         leading=14,
         alignment=TA_CENTER,
     )
-
+ 
     title_style = ParagraphStyle(
         "TitleStyle",
         parent=styles["Heading2"],
@@ -24148,7 +24228,7 @@ def build_purchase_order_pdf(data):
         textColor=colors.green,
         spaceAfter=20,
     )
-
+ 
     section_style = ParagraphStyle(
         "SectionStyle",
         parent=styles["Heading3"],
@@ -24157,97 +24237,97 @@ def build_purchase_order_pdf(data):
         textColor=colors.darkred,
         spaceAfter=10,
     )
-
+ 
     normal_style = ParagraphStyle(
         "NormalStyle",
         parent=styles["Normal"],
         fontName="DejaVuSans",
         fontSize=10,
     )
-
+ 
     elements = []
-
+ 
     # =========================================
     # COMPANY HEADER
     # =========================================
-
+ 
     elements.append(Paragraph("STACKLY", company_style))
-
+ 
     elements.append(Paragraph(
         "MMR Complex, Chinna Tirupathi, Salem, Tamil Nadu - 636008",
         address_style
     ))
-
+ 
     elements.append(Paragraph(
         "Phone: +91 7010792745",
         address_style
     ))
-
+ 
     elements.append(Paragraph(
         "Email: info@stackly.com",
         address_style
     ))
-
+ 
     elements.append(Spacer(1, 25))
-
+ 
     # =========================================
     # TITLE
     # =========================================
-
+ 
     elements.append(Paragraph("PURCHASE ORDER", title_style))
-
+ 
     # =========================================
     # INFO TABLE
     # =========================================
-
+ 
     po_number = data.get("po_number", "")
     po_number = po_number.replace("PO ", "").strip()
-
+ 
     info_data = [
         ["PO Number:", po_number, "Date:", data.get("pdate")],
         ["Supplier:", data.get("supplier"), "Delivery Date:", data.get("ddate")],
         ["Status:", data.get("status"), "Payment Terms:", data.get("payment_terms")]
     ]
-
+ 
     info_table = Table(
         info_data,
         colWidths=[120, 170, 120, 140]
     )
-
+ 
     info_table.setStyle(TableStyle([
-
+ 
         ("FONTNAME", (0, 0), (-1, -1), "DejaVuSans"),
         ("FONTNAME", (0, 0), (0, -1), "DejaVuSans-Bold"),
         ("FONTNAME", (2, 0), (2, -1), "DejaVuSans-Bold"),
-
+ 
         ("GRID", (0, 0), (-1, -1), 0.8, colors.grey),
-
+ 
         ("BACKGROUND", (0, 0), (0, -1), colors.whitesmoke),
         ("BACKGROUND", (2, 0), (2, -1), colors.whitesmoke),
-
+ 
         ("TEXTCOLOR", (0, 0), (0, -1), colors.darkred),
         ("TEXTCOLOR", (2, 0), (2, -1), colors.darkred),
-
+ 
         ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
         ("TOPPADDING", (0, 0), (-1, -1), 10),
-
+ 
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
     ]))
-
+ 
     elements.append(info_table)
-
+ 
     elements.append(Spacer(1, 25))
-
+ 
     # =========================================
     # ITEMS TITLE
     # =========================================
-
+ 
     elements.append(Paragraph("PURCHASE ORDER ITEMS", section_style))
-
+ 
     # =========================================
     # ITEMS TABLE
     # =========================================
-
+ 
     table_data = [[
         "S.No",
         "Product Name",
@@ -24257,16 +24337,16 @@ def build_purchase_order_pdf(data):
         "Disc %",
         "Total"
     ]]
-
+ 
     for i, item in enumerate(data.get("items", []), start=1):
-
+ 
         qty = float(item.get("qty", 0))
         price = float(item.get("price", 0))
         tax = float(item.get("tax", 0))
         discount = float(item.get("discount", 0))
-
+ 
         total = qty * price
-
+ 
         table_data.append([
             str(i),
             item.get("product_name"),
@@ -24276,50 +24356,50 @@ def build_purchase_order_pdf(data):
             f"{discount:.2f}",
             f"₹ {total:.2f}"
         ])
-
+ 
     item_table = Table(
         table_data,
         repeatRows=1,
         colWidths=[45, 180, 55, 75, 55, 60, 90]
     )
-
+ 
     item_table.setStyle(TableStyle([
-
+ 
         ("FONTNAME", (0, 0), (-1, -1), "DejaVuSans"),
         ("FONTNAME", (0, 0), (-1, 0), "DejaVuSans-Bold"),
-
+ 
         ("BACKGROUND", (0, 0), (-1, 0), colors.darkred),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-
+ 
         ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-
+ 
         ("GRID", (0, 0), (-1, -1), 0.8, colors.grey),
-
+ 
         ("BOTTOMPADDING", (0, 0), (-1, 0), 10),
         ("TOPPADDING", (0, 0), (-1, 0), 10),
-
+ 
         ("BOTTOMPADDING", (0, 1), (-1, -1), 8),
         ("TOPPADDING", (0, 1), (-1, -1), 8),
-
+ 
         ("BACKGROUND", (0, 1), (-1, -1), colors.white),
     ]))
-
+ 
     elements.append(item_table)
-
+ 
     elements.append(Spacer(1, 25))
-
+ 
     # =========================================
     # ORDER SUMMARY / TOTALS
     # =========================================
-
-
-
+ 
+ 
+ 
     subtotal = float(data.get("subtotal") or 0)
     tax_total = float(data.get("tax") or 0)
     discount_total = float(data.get("discount_total") or 0)
     rounding = float(data.get("rounding") or 0)
     grand_total = float(data.get("grand_total") or 0)
-
+ 
     totals_data = [
         ["Subtotal", f"₹ {subtotal:.2f}"],
         ["Tax", f"₹ {tax_total:.2f}"],
@@ -24327,88 +24407,100 @@ def build_purchase_order_pdf(data):
         ["Rounding", f"₹ {rounding:.2f}"],
         ["Grand Total", f"₹ {grand_total:.2f}"],
     ]
-
+ 
     totals_table = Table(
         totals_data,
         colWidths=[450, 110]
     )
-
+ 
     totals_table.setStyle(TableStyle([
-
+ 
         ("FONTNAME", (0, 0), (-1, -1), "DejaVuSans"),
         ("FONTNAME", (0, -1), (-1, -1), "DejaVuSans-Bold"),
-
+ 
         ("GRID", (0, 0), (-1, -1), 0.8, colors.grey),
-
+ 
         ("ALIGN", (1, 0), (1, -1), "RIGHT"),
-
+ 
         ("BACKGROUND", (0, -1), (-1, -1), colors.lightgrey),
-
+ 
         ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
         ("TOPPADDING", (0, 0), (-1, -1), 10),
-
+ 
         ("TEXTCOLOR", (0, -1), (-1, -1), colors.black),
     ]))
-
+ 
     elements.append(totals_table)
     elements.append(Spacer(1, 25))
-
+ 
     # =========================================
     # NOTES
     # =========================================
-
+ 
     elements.append(Paragraph("Notes", section_style))
-
+ 
     notes = data.get("notes") or "Thank you for your business!"
-
+ 
     elements.append(Paragraph(notes, normal_style))
-
+ 
     # =========================================
     # BUILD PDF
     # =========================================
-
+ 
     doc.build(elements)
-
+ 
     buffer.seek(0)
-
+ 
     return buffer.read()
-
-
+ 
+ 
 @app.route("/purchase/view/<po_number>")
 def view_po(po_number):
+ 
     from psycopg2.extras import RealDictCursor
+ 
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
+ 
     try:
-        cur.execute("SELECT id FROM purchase_orders WHERE po_number=%s", (po_number,))
-        po_row = cur.fetchone()
-        if not po_row:
-            return "PO Not Found", 404
-        po_id = po_row["id"]
-        
+ 
         cur.execute("""
             SELECT po.*, s.email as supplier_email
             FROM purchase_orders po
-            LEFT JOIN suppliers s ON po.supplier_id = s.supplier_id
-            WHERE po.id=%s
-        """, (po_id,))
+            LEFT JOIN suppliers s
+            ON po.supplier_id = s.supplier_id
+            WHERE po.po_number=%s
+        """, (po_number,))
+ 
         po = cur.fetchone()
-        
-        cur.execute("SELECT * FROM purchase_items WHERE po_id=%s", (po_id,))
+ 
+        if not po:
+            return "PO Not Found", 404
+ 
+        cur.execute("""
+            SELECT *
+            FROM purchase_items
+            WHERE po_number=%s
+        """, (po_number,))
+ 
         items = cur.fetchall()
-        
+ 
         po_dict = dict(po)
+ 
         po_dict["items"] = [dict(i) for i in items]
+ 
         po_dict["pdate"] = str(po_dict["pdate"]) if po_dict.get("pdate") else ""
+ 
         po_dict["ddate"] = str(po_dict["ddate"]) if po_dict.get("ddate") else ""
-        
-        # fetch sales orders for dropdown
-        try:
-            cur.execute("SELECT so_id FROM sales_orders ORDER BY so_id DESC")
-            sales_orders = [r["so_id"] for r in cur.fetchall()]
-        except Exception:
-            sales_orders = []
-        
+ 
+        cur.execute("""
+            SELECT so_id
+            FROM sales_orders
+            ORDER BY so_id DESC
+        """)
+ 
+        sales_orders = [r["so_id"] for r in cur.fetchall()]
+ 
         return render_template(
             "purchase-order.html",
             po_number=po_dict["po_number"],
@@ -24418,49 +24510,95 @@ def view_po(po_number):
             mode="view",
             page="purchase",
         )
+ 
     except Exception as e:
-        print(f"view_po error:", e)
-        import traceback; traceback.print_exc()
+ 
+        print("view_po error:", e)
+ 
         return str(e), 500
+ 
     finally:
+ 
         cur.close()
         conn.close()
-
 @app.route("/purchase/edit/<po_number>")
 def edit_po(po_number):
+ 
     from psycopg2.extras import RealDictCursor
+ 
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
+ 
     try:
-        cur.execute("SELECT id FROM purchase_orders WHERE po_number=%s", (po_number,))
-        po_row = cur.fetchone()
-        if not po_row:
-            return "PO Not Found", 404
-        po_id = po_row["id"]
-        
+ 
+        # ====================================
+        # GET PURCHASE ORDER
+        # ====================================
+ 
         cur.execute("""
-            SELECT po.*, s.email as supplier_email
+            SELECT
+                po.*,
+                s.email AS supplier_email
             FROM purchase_orders po
-            LEFT JOIN suppliers s ON po.supplier_id = s.supplier_id
-            WHERE po.id=%s
-        """, (po_id,))
+            LEFT JOIN suppliers s
+            ON po.supplier_id = s.supplier_id
+            WHERE po.po_number=%s
+        """, (po_number,))
+ 
         po = cur.fetchone()
-        
-        cur.execute("SELECT * FROM purchase_items WHERE po_id=%s", (po_id,))
+ 
+        if not po:
+            return "PO Not Found", 404
+ 
+        # ====================================
+        # GET PURCHASE ITEMS
+        # ====================================
+ 
+        cur.execute("""
+            SELECT *
+            FROM purchase_items
+            WHERE po_number=%s
+        """, (po_number,))
+ 
         items = cur.fetchall()
-        
+ 
         po_dict = dict(po)
+ 
         po_dict["items"] = [dict(i) for i in items]
-        po_dict["pdate"] = str(po_dict["pdate"]) if po_dict.get("pdate") else ""
-        po_dict["ddate"] = str(po_dict["ddate"]) if po_dict.get("ddate") else ""
-        
-        # fetch sales orders for dropdown
+ 
+        po_dict["pdate"] = (
+            str(po_dict["pdate"])
+            if po_dict.get("pdate")
+            else ""
+        )
+ 
+        po_dict["ddate"] = (
+            str(po_dict["ddate"])
+            if po_dict.get("ddate")
+            else ""
+        )
+ 
+        # ====================================
+        # SALES ORDERS
+        # ====================================
+ 
         try:
-            cur.execute("SELECT so_id FROM sales_orders ORDER BY so_id DESC")
-            sales_orders = [r["so_id"] for r in cur.fetchall()]
+ 
+            cur.execute("""
+                SELECT so_id
+                FROM sales_orders
+                ORDER BY so_id DESC
+            """)
+ 
+            sales_orders = [
+                r["so_id"]
+                for r in cur.fetchall()
+            ]
+ 
         except Exception:
+ 
             sales_orders = []
-        
+ 
         return render_template(
             "purchase-order.html",
             po_number=po_dict["po_number"],
@@ -24470,14 +24608,20 @@ def edit_po(po_number):
             mode="edit",
             page="purchase",
         )
+ 
     except Exception as e:
-        print(f"edit_po error:", e)
-        import traceback; traceback.print_exc()
+ 
+        print("edit_po error:", e)
+ 
+        import traceback
+        traceback.print_exc()
+ 
         return str(e), 500
+ 
     finally:
+ 
         cur.close()
         conn.close()
-
 # ========================================
 # Comments
 # ========================================
@@ -24485,120 +24629,122 @@ def edit_po(po_number):
 def add_purchase_comment():
     try:
         data = request.json
-
+ 
         po_number = data.get("po_number")
         comment = data.get("comment")
         created_by = data.get("created_by", "Admin")
-
+ 
         conn = get_db_connection()
         cur = conn.cursor()
-
+ 
         cur.execute("""
             INSERT INTO purchase_comments (po_number, comment, created_by)
             VALUES (%s, %s, %s)
         """, (po_number, comment, created_by))
-
+ 
         conn.commit()
         cur.close()
         conn.close()
-
+ 
         return jsonify({"success": True, "message": "Comment added"})
-
+ 
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
-
-
+ 
+ 
 # ========================================
 # Attachments
 # ========================================
-
+ 
+UPLOAD_FOLDER = "uploads/purchase_attachments"
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+ 
 @app.route("/api/purchase-attachments", methods=["POST"])
 def upload_purchase_attachment():
     try:
         po_number = request.form.get("po_number")
         file = request.files.get("file")
-
+ 
         if not file:
             return jsonify({"success": False, "message": "No file uploaded"}), 400
-
-        display_name = file.filename or "attachment"
-        rel_path = _upload_relative_path(po_number, display_name)
-        save_path, _ = _persist_module_upload(
-            object_storage.MODULE_PURCHASE_ATTACHMENTS,
-            PURCHASE_ATTACHMENTS_FOLDER,
-            file,
-            rel_path,
-        )
-
+ 
+        filename = secure_filename(file.filename)
+        save_path = os.path.join(UPLOAD_FOLDER, filename)
+        file.save(save_path)
+ 
         conn = get_db_connection()
         cur = conn.cursor()
-
+ 
         cur.execute("""
             INSERT INTO purchase_attachments (po_number, file_name, file_path)
             VALUES (%s, %s, %s)
-        """, (po_number, display_name, save_path))
-        cur.execute(
-            """
-            DELETE FROM purchase_attachments
-            WHERE po_number = %s AND file_name = %s AND file_path != %s
-            RETURNING file_path
-            """,
-            (po_number, display_name, save_path),
-        )
-        for old in cur.fetchall() or []:
-            _remove_stored_upload(old[0], PURCHASE_ATTACHMENTS_FOLDER)
-
+        """, (po_number, filename, save_path))
+ 
         conn.commit()
         cur.close()
         conn.close()
-
+ 
         return jsonify({
             "success": True,
-            "file_name": display_name,
+            "file_name": filename,
             "file_path": save_path
         })
-
+ 
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
-
+ 
 @app.route("/api/purchase-comments/<po_number>")
 def get_purchase_comments(po_number):
+ 
     conn = get_db_connection()
     cur = conn.cursor()
-
+ 
     cur.execute("""
-        SELECT comment, created_by, created_at
+        SELECT
+            comment,
+            created_by,
+            created_at
         FROM purchase_comments
         WHERE po_number = %s
         ORDER BY created_at DESC
     """, (po_number,))
-
+ 
     rows = cur.fetchall()
-
+ 
+    comments = []
+ 
+    for r in rows:
+ 
+        comments.append({
+            "comment": r[0],
+            "created_by": r[1],
+            "created_at": str(r[2])
+        })
+ 
     cur.close()
     conn.close()
-
-    return jsonify(rows)
-
+ 
+    return jsonify(comments)
+ 
 @app.route("/api/purchase-attachments/<po_number>")
 def get_purchase_attachments(po_number):
     conn = get_db_connection()
     cur = conn.cursor()
-
+ 
     cur.execute("""
         SELECT file_name, file_path, uploaded_at
         FROM purchase_attachments
         WHERE po_number = %s
         ORDER BY uploaded_at DESC
     """, (po_number,))
-
+ 
     rows = cur.fetchall()
-
+ 
     cur.close()
     conn.close()
-
+ 
     return jsonify(rows)
-
+ 
 
 # ========================================
 # Stock-reciept
@@ -25895,16 +26041,27 @@ def get_invoices_credit():
 
             cur.execute(
                 """
-                SELECT invoice_id
+                SELECT invoice_id,
+                       customer_name,
+                       status
                 FROM invoices
+                WHERE LOWER(TRIM(COALESCE(status, ''))) NOT IN ('cancelled', 'draft')
                 ORDER BY id DESC
                 """
             )
 
             rows = cur.fetchall()
-            invoice_list = [r[0] for r in rows]
+            invoice_list = [
+                {
+                    "invoice_id": r[0] or "",
+                    "customer_name": r[1] or "",
+                    "status": r[2] or "",
+                }
+                for r in rows
+            ]
 
             return jsonify({
+                "success": True,
                 "invoices": invoice_list
             })
 
@@ -26235,11 +26392,11 @@ def get_credit_note_by_id(credit_note_id):
         cur.execute(
             """
             SELECT
-                line_no, product_name, product_id, returned_qty, uom, return_reason,
+                product_name, product_id, returned_qty, uom, return_reason,
                 unit_price, tax_percent, discount_percent, line_total
             FROM credit_note_items
             WHERE credit_note_id = %s
-            ORDER BY COALESCE(line_no, 999999), item_id
+            ORDER BY item_id
             """,
             (credit_note_id,),
         )
@@ -26250,20 +26407,20 @@ def get_credit_note_by_id(credit_note_id):
 
         for ir in item_rows:
             items.append({
-                "sno": int(ir[0]) if ir[0] is not None else None,
-                "product_name": ir[1] or "",
-                "product_id": ir[2] or "",
-                "returned_qty": float(ir[3] or 0),
-                "return_qty": float(ir[3] or 0),
-                "uom": ir[4] or "",
-                "reason": ir[5] or "",
-                "return_reason": ir[5] or "",
-                "unit_price": float(ir[6] or 0),
-                "tax_percent": float(ir[7] or 0),
-                "discount": float(ir[8] or 0),
-                "discount_percent": float(ir[8] or 0),
-                "total": float(ir[9] or 0),
-                "line_total": float(ir[9] or 0),
+                "sno": None,
+                "product_name": ir[0] or "",
+                "product_id": ir[1] or "",
+                "returned_qty": float(ir[2] or 0),
+                "return_qty": float(ir[2] or 0),
+                "uom": ir[3] or "",
+                "reason": ir[4] or "",
+                "return_reason": ir[4] or "",
+                "unit_price": float(ir[5] or 0),
+                "tax_percent": float(ir[6] or 0),
+                "discount": float(ir[7] or 0),
+                "discount_percent": float(ir[7] or 0),
+                "total": float(ir[8] or 0),
+                "line_total": float(ir[8] or 0),
             })
 
         cur.execute(
@@ -26407,11 +26564,11 @@ def credit_note_pdf(credit_note_id):
         cur.execute(
             """
             SELECT
-                line_no, product_name, product_id, returned_qty, uom, return_reason,
+                product_name, product_id, returned_qty, uom, return_reason,
                 unit_price, tax_percent, discount_percent, line_total
             FROM credit_note_items
             WHERE credit_note_id = %s
-            ORDER BY COALESCE(line_no, 999999), item_id
+            ORDER BY item_id
             """,
             (credit_note_id,),
         )
@@ -26422,16 +26579,16 @@ def credit_note_pdf(credit_note_id):
 
         for ir in item_rows:
             items.append({
-                "sno": int(ir[0]) if ir[0] is not None else None,
-                "product_name": ir[1] or "",
-                "product_id": ir[2] or "",
-                "returned_qty": float(ir[3] or 0),
-                "uom": ir[4] or "",
-                "reason": ir[5] or "",
-                "unit_price": float(ir[6] or 0),
-                "tax_percent": float(ir[7] or 0),
-                "discount": float(ir[8] or 0),
-                "total": float(ir[9] or 0),
+                "sno": None,
+                "product_name": ir[0] or "",
+                "product_id": ir[1] or "",
+                "returned_qty": float(ir[2] or 0),
+                "uom": ir[3] or "",
+                "reason": ir[4] or "",
+                "unit_price": float(ir[5] or 0),
+                "tax_percent": float(ir[6] or 0),
+                "discount": float(ir[7] or 0),
+                "total": float(ir[8] or 0),
             })
 
         cur.close()
@@ -26819,11 +26976,11 @@ def credit_note_email(credit_note_id):
         cur.execute(
             """
             SELECT
-                line_no, product_name, product_id, returned_qty, uom, return_reason,
+                product_name, product_id, returned_qty, uom, return_reason,
                 unit_price, tax_percent, discount_percent, line_total
             FROM credit_note_items
             WHERE credit_note_id = %s
-            ORDER BY COALESCE(line_no, 999999), item_id
+            ORDER BY item_id
             """,
             (credit_note_id,),
         )
@@ -26834,16 +26991,16 @@ def credit_note_email(credit_note_id):
 
         for ir in item_rows:
             items.append({
-                "sno": int(ir[0]) if ir[0] is not None else None,
-                "product_name": ir[1] or "",
-                "product_id": ir[2] or "",
-                "returned_qty": float(ir[3] or 0),
-                "uom": ir[4] or "",
-                "reason": ir[5] or "",
-                "unit_price": float(ir[6] or 0),
-                "tax_percent": float(ir[7] or 0),
-                "discount": float(ir[8] or 0),
-                "total": float(ir[9] or 0),
+                "sno": None,
+                "product_name": ir[0] or "",
+                "product_id": ir[1] or "",
+                "returned_qty": float(ir[2] or 0),
+                "uom": ir[3] or "",
+                "reason": ir[4] or "",
+                "unit_price": float(ir[5] or 0),
+                "tax_percent": float(ir[6] or 0),
+                "discount": float(ir[7] or 0),
+                "total": float(ir[8] or 0),
             })
 
         cur.close()
@@ -27162,6 +27319,73 @@ def credit_note_email(credit_note_id):
             "message": str(e)
         }), 500
 
+def _ensure_credit_note_tables(cur):
+    """Create credit note tables if missing (list GET must work before first save)."""
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS credit_notes (
+            credit_note_id TEXT PRIMARY KEY,
+            credit_note_date DATE,
+            invoice_ref_id TEXT,
+            created_by TEXT,
+            branch TEXT,
+            currency TEXT,
+            customer_name TEXT,
+            customer_id TEXT,
+            billing_address TEXT,
+            phone TEXT,
+            invoice_date DATE,
+            due_date DATE,
+            payment_terms TEXT,
+            invoice_status TEXT,
+            payment_status TEXT,
+            invoice_total NUMERIC,
+            amount_paid NUMERIC,
+            balance_due NUMERIC,
+            invoice_return_amount NUMERIC,
+            balance_to_refund NUMERIC,
+            refund_mode TEXT,
+            refund_paid NUMERIC,
+            refund_date DATE,
+            status TEXT DEFAULT 'Draft',
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW()
+        )
+        """
+    )
+    cur.execute("ALTER TABLE credit_notes ADD COLUMN IF NOT EXISTS email VARCHAR(100)")
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS credit_note_items (
+            item_id SERIAL PRIMARY KEY,
+            credit_note_id VARCHAR(50) NOT NULL,
+            product_id VARCHAR(100),
+            product_name VARCHAR(200),
+            returned_qty NUMERIC(12,2) DEFAULT 0,
+            uom VARCHAR(50),
+            unit_price NUMERIC(12,2) DEFAULT 0,
+            discount_percent NUMERIC(5,2) DEFAULT 0,
+            tax_percent NUMERIC(5,2) DEFAULT 0,
+            line_total NUMERIC(12,2) DEFAULT 0,
+            return_reason TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS credit_note_activity (
+            activity_id SERIAL PRIMARY KEY,
+            credit_note_id VARCHAR(50) NOT NULL,
+            activity_type VARCHAR(50),
+            message TEXT,
+            created_by VARCHAR(200),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+
+
 # -------------------------------
 # GET / SAVE CREDIT NOTE LIST
 # -------------------------------
@@ -27275,72 +27499,7 @@ def get_credit_notes():
 
             conn = get_db_connection()
             cur = conn.cursor()
-
-            cur.execute(
-                """
-                CREATE TABLE IF NOT EXISTS credit_notes (
-                    credit_note_id TEXT PRIMARY KEY,
-                    credit_note_date DATE,
-                    invoice_ref_id TEXT,
-                    created_by TEXT,
-                    branch TEXT,
-                    currency TEXT,
-                    customer_name TEXT,
-                    customer_id TEXT,
-                    billing_address TEXT,
-                    phone TEXT,
-                    invoice_date DATE,
-                    due_date DATE,
-                    payment_terms TEXT,
-                    invoice_status TEXT,
-                    payment_status TEXT,
-                    invoice_total NUMERIC,
-                    amount_paid NUMERIC,
-                    balance_due NUMERIC,
-                    invoice_return_amount NUMERIC,
-                    balance_to_refund NUMERIC,
-                    refund_mode TEXT,
-                    refund_paid NUMERIC,
-                    refund_date DATE,
-                    status TEXT DEFAULT 'Draft',
-                    created_at TIMESTAMP DEFAULT NOW(),
-                    updated_at TIMESTAMP DEFAULT NOW()
-                )
-                """
-            )
-            cur.execute("ALTER TABLE credit_notes ADD COLUMN IF NOT EXISTS email VARCHAR(100)")
-            cur.execute(
-                """
-                CREATE TABLE IF NOT EXISTS credit_note_items (
-                    item_id SERIAL PRIMARY KEY,
-                    credit_note_id VARCHAR(50) NOT NULL,
-                    line_no INT,
-                    product_id VARCHAR(100),
-                    product_name VARCHAR(200),
-                    description TEXT,
-                    returned_qty NUMERIC(12,2) DEFAULT 0,
-                    uom VARCHAR(50),
-                    unit_price NUMERIC(12,2) DEFAULT 0,
-                    discount_percent NUMERIC(5,2) DEFAULT 0,
-                    tax_percent NUMERIC(5,2) DEFAULT 0,
-                    line_total NUMERIC(12,2) DEFAULT 0,
-                    return_reason TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-                """
-            )
-            cur.execute(
-                """
-                CREATE TABLE IF NOT EXISTS credit_note_activity (
-                    activity_id SERIAL PRIMARY KEY,
-                    credit_note_id VARCHAR(50) NOT NULL,
-                    activity_type VARCHAR(50),
-                    message TEXT,
-                    created_by VARCHAR(200),
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-                """
-            )
+            _ensure_credit_note_tables(cur)
 
             if not email_value and invoice_ref_id:
                 cur.execute(
@@ -27464,19 +27623,17 @@ def get_credit_notes():
                 cur.execute(
                     """
                     INSERT INTO credit_note_items (
-                        credit_note_id, line_no, product_id, product_name, description,
+                        credit_note_id, product_id, product_name,
                         returned_qty, uom, unit_price, discount_percent, tax_percent, line_total, return_reason
                     ) VALUES (
-                        %s, %s, %s, %s, %s,
+                        %s, %s, %s,
                         %s, %s, %s, %s, %s, %s, %s
                     )
                     """,
                     (
                         credit_note_id,
-                        idx,
                         str(item.get("product_id") or "").strip(),
                         str(item.get("product_name") or "").strip(),
-                        str(item.get("description") or "").strip(),
                         max(
                             float(
                                 str(
@@ -27549,6 +27706,8 @@ def get_credit_notes():
     try:
         conn = get_db_connection()
         cur = conn.cursor()
+        _ensure_credit_note_tables(cur)
+        conn.commit()
 
         cur.execute(
             """

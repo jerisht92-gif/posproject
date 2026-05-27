@@ -1084,6 +1084,7 @@
   font-size: 13px;
   outline: none;
   font-family: "Poppins", sans-serif;
+  box-sizing: border-box;
 }
 
 .pos-modal-textarea:focus{

@@ -611,13 +611,18 @@ async function cnLoadInvoiceIds() {
   const sel = document.getElementById("cnInvoiceRef");
   if (!sel) return;
   const currentCreditId = String(cnGet("cnId") || "").trim();
-  const [irRes, cnRes] = await Promise.all([
-    fetch("/api/invoice-returns"),
+  const [invRes, cnRes] = await Promise.all([
+    fetch("/api/invoices-credit"),
     fetch("/api/credit-notes"),
   ]);
-  const data = await irRes.json().catch(() => []);
-  const list = Array.isArray(data) ? data : [];
-  const usedIrIds = new Set();
+  const invPayload = await invRes.json().catch(() => ({}));
+  const rawList = Array.isArray(invPayload?.invoices) ? invPayload.invoices : [];
+  const list = rawList.map((item) => {
+    if (typeof item === "string") {
+      return { invoice_id: item, customer_name: "", status: "" };
+    }
+    return item;
+  });
   const usedInvoiceIds = new Set();
   if (cnRes.ok) {
     const cnPayload = await cnRes.json().catch(() => ({}));
@@ -627,30 +632,27 @@ async function cnLoadInvoiceIds() {
       const cnId = String(n.crn_id || n.credit_note_id || "").trim();
       if (!ref) return;
       if (currentCreditId && cnId === currentCreditId) return;
-      if (/^ir-/i.test(ref)) usedIrIds.add(ref);
-      else usedInvoiceIds.add(ref);
+      usedInvoiceIds.add(ref);
     });
   }
   sel.innerHTML = '<option value="">Select Invoice Ref. ID</option>';
   list.forEach((item) => {
-    const st = String(item?.status || "")
-      .trim()
-      .toLowerCase();
-    if (st !== "submitted") return;
-    const rid = String(item?.return_id || item?.invoice_return_id || "").trim();
-    const linkedInv = String(item?.invoice_ref || item?.invoice_id || "").trim();
-    if (!rid) return;
-    if (usedIrIds.has(rid)) return;
-    if (linkedInv && usedInvoiceIds.has(linkedInv)) return;
+    const invId = String(item?.invoice_id || "").trim();
+    if (!invId) return;
+    const st = String(item?.status || "").trim().toLowerCase();
+    if (st === "cancelled" || st === "draft") return;
+    if (usedInvoiceIds.has(invId)) return;
+    const customerName = String(item?.customer_name || "").trim();
     const opt = document.createElement("option");
-    opt.value = rid;
-    opt.textContent = rid;
+    opt.value = invId;
+    opt.textContent = customerName ? `${invId} - ${customerName}` : invId;
     sel.appendChild(opt);
   });
 }
 
-async function cnFillFromInvoice(invoiceReturnRef) {
-  if (!invoiceReturnRef) {
+async function cnFillFromInvoice(invoiceRef) {
+  const paymentTermsEl = document.getElementById("cnPaymentTerms");
+  if (!invoiceRef) {
     cnSet("cnCustomerName", "");
     cnSet("cnCustomerId", "");
     cnSet("cnBillingAddress", "");
@@ -658,6 +660,7 @@ async function cnFillFromInvoice(invoiceReturnRef) {
     cnSet("cnInvoiceDate", "");
     cnSet("cnDueDate", "");
     cnSet("cnPaymentTerms", "");
+    if (paymentTermsEl) paymentTermsEl.disabled = false;
     cnSet("cnInvoiceStatus", "");
     cnSet("cnPaymentStatus", "");
     cnSet("cnInvoiceTotal", "");
@@ -667,25 +670,25 @@ async function cnFillFromInvoice(invoiceReturnRef) {
     runLiveCreditNoteValidation();
     return;
   }
-  const irRes = await fetch(`/api/invoice-return/${encodeURIComponent(invoiceReturnRef)}`);
-  const irJson = await irRes.json().catch(() => ({}));
-  if (!irRes.ok || irJson?.success === false) {
-    throw new Error(irJson?.error || irJson?.message || "Invoice return fetch failed");
+  let invoiceId = String(invoiceRef || "").trim();
+  if (/^ir-/i.test(invoiceId)) {
+    const irRes = await fetch(`/api/invoice-return/${encodeURIComponent(invoiceId)}`);
+    const irJson = await irRes.json().catch(() => ({}));
+    if (!irRes.ok || irJson?.success === false) {
+      throw new Error(irJson?.error || irJson?.message || "Invoice return fetch failed");
+    }
+    invoiceId = String(irJson.invoice_return?.invoice_id || "").trim();
+    if (!invoiceId) throw new Error("Invoice return has no linked invoice");
   }
-  const ir = irJson.invoice_return || {};
-  const irStatus = String(ir.status || "")
-    .trim()
-    .toLowerCase();
-  if (irStatus !== "submitted") {
-    cnToast("Only submitted invoice returns can be used for a credit note.", "error");
-    return;
-  }
-  const invoiceId = String(ir.invoice_id || "").trim();
-  if (!invoiceId) throw new Error("Invoice return has no linked invoice");
   const detailsRes = await fetch(`/api/invoice-details-credit/${encodeURIComponent(invoiceId)}`);
   const details = await detailsRes.json();
-  if (!detailsRes.ok || !details.success) throw new Error("details fetch failed");
+  if (!detailsRes.ok || !details.success) throw new Error("Invoice details fetch failed");
   const inv = details.invoice || {};
+  const invStatus = String(inv.status || "").trim().toLowerCase();
+  if (invStatus === "cancelled" || invStatus === "draft") {
+    cnToast("Cancelled or draft invoices cannot be used for a credit note.", "error");
+    return;
+  }
   cnSet("cnCustomerName", inv.customer_name || "");
   cnSet("cnCustomerId", inv.customer_id || "");
   cnSet("cnBillingAddress", inv.billing_address || "");
@@ -693,6 +696,7 @@ async function cnFillFromInvoice(invoiceReturnRef) {
   cnSet("cnInvoiceDate", inv.invoice_date || "");
   cnSet("cnDueDate", inv.due_date || "");
   cnSet("cnPaymentTerms", inv.payment_terms || "");
+  if (paymentTermsEl) paymentTermsEl.disabled = true;
   cnSet("cnInvoiceStatus", inv.status || "");
   cnSet("cnPaymentStatus", inv.payment_status || "");
   cnSet("cnInvoiceTotal", Number(inv.grand_total || 0).toFixed(2));
@@ -701,27 +705,12 @@ async function cnFillFromInvoice(invoiceReturnRef) {
   cnSet("cnRefundPaid", "");
   cnSetText("invoice_total_display", Number(inv.grand_total || 0).toFixed(2));
 
-  const fromReturn = (Array.isArray(irJson.items) ? irJson.items : []).map((row) => ({
-    product_name: row.product_name ?? "",
-    product_id: row.product_id ?? "",
-    return_qty: row.return_quantity ?? row.return_qty ?? 0,
-    uom: row.uom ?? "",
-    reason: row.return_reason ?? row.reason ?? "",
-    unit_price: row.unit_price ?? 0,
-    tax_percent: row.tax_pct ?? row.tax_percent ?? 0,
-    discount: row.disc_pct ?? row.discount ?? 0,
-    total: row.total ?? 0
-  }));
   const fromInvoice = Array.isArray(details.items) ? details.items : [];
-  let rawRows = fromReturn.length ? fromReturn : fromInvoice;
-  if (fromReturn.length && fromInvoice.length) {
-    rawRows = cnMergeReturnTaxDiscountFromInvoice(fromReturn, fromInvoice);
-  }
-  const rows = cnMapInvoiceLinesToReturnRows(rawRows);
+  const rows = cnMapInvoiceLinesToReturnRows(fromInvoice);
   cnRenderRows(rows);
   cnCalcRefund();
   runLiveCreditNoteValidation();
-  cnToast(`Invoice return ${invoiceReturnRef} loaded successfully`);
+  cnToast(`Invoice ${invoiceId} loaded successfully`);
 }
 
 /** In-page comments (Comments tab; not persisted until API support). */
@@ -1006,7 +995,7 @@ function cnApplyWorkflowActions({ status, paymentStatus, isSaved }) {
   } else if (st === "draft") {
     canSave = true;
     canMarkPaid = true;
-    canCancel = false;
+    canCancel = true;
   } else if (st === "submitted") {
     canPdf = true;
     canEmail = true;
@@ -1263,6 +1252,14 @@ async function cnUploadCreditFile(file) {
     cnToast("Credit Note ID missing", "error");
     return;
   }
+  if (!cnIsSavedNote) {
+    const saved = await cnSaveDraftInternal({ redirectOnSuccess: false, silent: true });
+    if (!saved) {
+      cnToast("Please complete required fields and save draft before uploading attachments.", "error");
+      return;
+    }
+    cnIsSavedNote = true;
+  }
   cnShowCreditUploading(file.name);
   const formData = new FormData();
   formData.append("file", file);
@@ -1272,13 +1269,13 @@ async function cnUploadCreditFile(file) {
     let data = await response.json();
     const uploadError = String(data?.error || data?.message || "").toLowerCase();
 
-    // If note is not persisted yet, silently save draft and retry upload once.
     if (
       !data?.success &&
       uploadError.includes("save the credit note as draft first")
     ) {
       const saved = await cnSaveDraftInternal({ redirectOnSuccess: false, silent: true });
       if (saved) {
+        cnIsSavedNote = true;
         response = await fetch("/api/cn-upload-attachment", { method: "POST", body: formData });
         data = await response.json();
       }
@@ -1551,6 +1548,38 @@ async function cnDoCancelCreditNote() {
   try {
     const creditId = cnGet("cnId");
     if (!creditId) return cnToast("Credit Note ID is required", "error");
+
+    const backdrop = document.getElementById("cancelCnBackdrop");
+    const reasonEl = document.getElementById("cancelCnReason");
+    const okBtn = document.getElementById("cancelCnOkBtn");
+    const dismissBtn = document.getElementById("cancelCnDismissBtn");
+    const closeBtn = document.getElementById("cancelCnCloseBtn");
+    if (!backdrop || !reasonEl || !okBtn || !dismissBtn || !closeBtn) {
+      cnToast("Cancel popup not found", "error");
+      return;
+    }
+
+    const reason = await new Promise((resolve) => {
+      reasonEl.value = "";
+      const done = (val) => {
+        backdrop.style.display = "none";
+        okBtn.onclick = null;
+        dismissBtn.onclick = null;
+        closeBtn.onclick = null;
+        backdrop.onclick = null;
+        resolve(val);
+      };
+      okBtn.onclick = () => done((reasonEl.value || "").trim());
+      dismissBtn.onclick = () => done(null);
+      closeBtn.onclick = () => done(null);
+      backdrop.onclick = (e) => {
+        if (e.target === backdrop) done(null);
+      };
+      backdrop.style.display = "flex";
+      reasonEl.focus();
+    });
+    if (reason === null) return;
+
     const res = await fetch(`/api/credit-notes/${encodeURIComponent(creditId)}/cancel`, {
       method: "POST",
       headers: { Accept: "application/json" },
@@ -1741,7 +1770,8 @@ document.addEventListener("DOMContentLoaded", async () => {
           if (!hasRef) {
             const opt = document.createElement("option");
             opt.value = savedRef;
-            opt.textContent = savedRef;
+            const savedCustomer = String(it?.customer_name || "").trim();
+            opt.textContent = savedCustomer ? `${savedRef} - ${savedCustomer}` : savedRef;
             invoiceRefEl.appendChild(opt);
           }
           invoiceRefEl.value = savedRef;

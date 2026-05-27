@@ -1,44 +1,44 @@
 {% extends "menu.html" %}
-
+ 
 {% block title %}Purchase Order{% endblock %}
-
+ 
 {% block extra_css %}
 <link rel="stylesheet" href="{{ url_for('static', filename='purchase.css') }}">
 {% endblock %}
-
+ 
 {% block content %}
-
+ 
 <div class="purchase-wrapper">
-
+ 
     <!-- HEADER -->
     <div class="header">
         <h2>Purchase Order</h2>
-
+ 
         <a href="{{ url_for('purchase_order') }}" class="new-btn">
             + New Purchase Order
         </a>
     </div>
-
-
+ 
+ 
     <div class="card">
-
+ 
         <!-- SEARCH -->
         <div class="search-box">
             <input type="text" id="searchInput" placeholder="Search by ID number">
         </div>
-
+ 
         <!-- FILTER -->
-
+ 
        <div class="filter-bar">
-
+ 
     <!-- CLEAR FILTER -->
     <div class="clear-container">
         <button class="clear-btn">Clear Filter</button>
     </div>
-
+ 
     <!-- FILTERS -->
     <div class="filters">
-
+ 
         <div>
             <label>Status</label>
             <div class="custom-select">
@@ -53,24 +53,24 @@
                 </select>
             </div>
         </div>
-
+ 
         <div>
             <label>Supplier</label>
             <div class="custom-select">
                 <select id="supplierFilter">
-
+ 
                     <option value="">All</option>
-
+ 
                     {% for supplier in suppliers %}
                     <option value="{{ supplier[0] }}">
                         {{ supplier[0] }}
                     </option>
                     {% endfor %}
-
+ 
                 </select>
             </div>
         </div>
-
+ 
         <div>
             <label>Payment Method</label>
             <div class="custom-select">
@@ -86,18 +86,18 @@
                 </select>
             </div>
         </div>
-
+ 
     </div>
-
+ 
 </div>
-
+ 
         <!-- TABLE -->
         <div class="table-wrapper">
             <table>
-
+ 
                 <thead>
                     <tr>
-                        
+                       
                         <th>PO ID</th>
                         <th>Supplier</th>
                         <th>PO Date</th>
@@ -108,19 +108,19 @@
                         <th>Action</th>
                     </tr>
                 </thead>
-
+ 
                 <tbody id="purchaseTableBody">
-
+ 
                 {% for order in orders %}
                 <tr>
                     <td>{{ order.po_number }}</td>
                     <td>{{ order.supplier }}</td>
                     <td>{{ order.pdate or "-" }}</td>
                     <td>{{ order.ddate or "-" }}</td>
-
+ 
                     <!-- STATUS -->
                     <td>
-                        <span class="status-badge 
+                        <span class="status-badge
                         {% if order.status == 'Draft' %}status-draft
                         {% elif order.status == 'Submitted' %}status-submitted
                         {% elif order.status == 'Partially Received' %}status-partial
@@ -131,19 +131,19 @@
                         {{ order.status }}
                         </span>
                     </td>
-
+ 
                     <td>{{ order.payment_terms or "-" }}</td>
                     <td>{{ order.value if order.value else '-' }}</td>
-
+ 
                     <!-- ACTION -->
                     <!-- ACTION -->
                 <td>
                     <div class="dropdown">
-
+ 
                         <button class="btn-more">⋮</button>
-
+ 
                         <div class="dropdown-menu">
-
+ 
                             <button
                                 class="dropdown-item delete"
                                 data-id="{{ order.po_number }}"
@@ -151,7 +151,7 @@
                             >
                                 Delete
                             </button>
-
+ 
                             <button
                                 class="dropdown-item edit"
                                 data-id="{{ order.po_number }}"
@@ -159,7 +159,7 @@
                             >
                                 Edit
                             </button>
-
+ 
                             <button
                                 class="dropdown-item view"
                                 data-id="{{ order.po_number }}"
@@ -167,7 +167,7 @@
                             >
                                 View
                             </button>
-
+ 
                             <button
                                 class="dropdown-item stock-receipt"
                                 data-id="{{ order.po_number }}"
@@ -175,26 +175,26 @@
                             >
                                 Generate Stock Receipt
                             </button>
-
+ 
                         </div>
-
+ 
                     </div>
                 </td>
                 </tr>
                 {% endfor %}
-
+ 
                 </tbody>
-
+ 
             </table>
         </div>
    
-
+ 
     <!-- PAGINATION -->
     <div class="pagination">
         <div class="showing">
         <span>Showing {{ orders|length }} Entries</span>
         </div>
-
+ 
         <div class="page-controls">
             <button class="btn-prev">Prev</button>
             <span class="page-info"></span>
@@ -202,11 +202,12 @@
         </div>
     </div>
     </div>
-
+ 
 </div>
-
+ 
 {% endblock %}
-
+ 
 {% block extra_js %}
 <script src="{{ url_for('static', filename='purchase.js') }}"></script>
 {% endblock %}
+ 

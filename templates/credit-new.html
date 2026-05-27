@@ -33,11 +33,13 @@
         </div>
       </div>
       <div class="cn-grid">
-        <div class="cn-field">
+        <div class="cn-field cn-field--invoice-ref">
           <label for="cnInvoiceRef">Invoice Reference ID</label>
-          <select id="cnInvoiceRef">
-            <option value="">Select Invoice Ref. ID</option>
-          </select>
+          <div class="cn-select-clip">
+            <select id="cnInvoiceRef">
+              <option value="">Select Invoice Ref. ID</option>
+            </select>
+          </div>
         </div>
         <div class="cn-field">
           <label for="cnCreatedBy">Created By</label>
@@ -267,6 +269,27 @@
         <button id="cnSendEmailBtn" class="btn-save">Send</button>
         <button id="cnCancelEmailBtn" class="btn-discard">Cancel</button>
       </div>
+    </div>
+  </div>
+</div>
+
+<div class="pos-modal-backdrop" id="cancelCnBackdrop" style="display:none;">
+  <div class="pos-modal">
+    <div class="pos-modal-head">
+      <h4>Cancel Credit Note</h4>
+      <button type="button" class="pos-modal-x" id="cancelCnCloseBtn">✕</button>
+    </div>
+    <div class="pos-modal-body">
+      <label class="pos-modal-label" for="cancelCnReason">Reason for cancellation (optional)</label>
+      <textarea
+        id="cancelCnReason"
+        class="pos-modal-textarea"
+        placeholder="Example: Customer cancelled order / Wrong items / Duplicate CN created"
+      ></textarea>
+    </div>
+    <div class="pos-modal-actions">
+      <button type="button" class="pos-btn pos-btn-outline" id="cancelCnDismissBtn">Cancel</button>
+      <button type="button" class="pos-btn pos-btn-primary" id="cancelCnOkBtn">OK</button>
     </div>
   </div>
 </div>

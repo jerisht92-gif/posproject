@@ -1,10 +1,10 @@
 /* ========================= */
 /* PAGE LAYOUT ✅ */
 /* ========================= */
-
+ 
 .page {
-
-
+ 
+ 
   min-height: 100vh;
   padding: 20px;
   background: #f6f1f1;
@@ -18,14 +18,14 @@
   box-shadow: 0 10px 20px rgba(0, 0, 0, 0.12);
   transition: 0.3s ease;
 }
-
+ 
 .so-page-body:hover {
   transform: translateY(-5px);
   box-shadow: 0 14px 26px rgba(0, 0, 0, 0.18);
 }
-
-
-
+ 
+ 
+ 
 /* HEADER */
 .top-bar {
     display: flex;
@@ -46,7 +46,7 @@ h1{
   margin-bottom:12px;
   text-shadow:1px 1px 2px #d8b7b7;
 }
-
+ 
 .status-badge{
     padding:10px 16px;
     border-radius:30px;
@@ -56,52 +56,57 @@ h1{
     text-align:center;
     box-shadow:0 2px 8px rgba(0,0,0,0.08);
 }
-
-/* STATUS COLORS */
-
+  .page label {
+    margin-bottom: 6px;
+    color: #333;
+    font-size: 12px;
+    font-weight: 500;
+  }
+ 
+ 
 .status-draft{
-  background:#EAB308;
-  color:#3B2F00;
+  background: #EAB308;
+  color: #fff;
 }
-
+ 
 .status-submitted{
-  background:linear-gradient(135deg,#D1FAE5,#A7F3D0);
-  color:#047857;
+  background: #15803D;
+  color: #fff;
 }
-
+ 
 .status-partial{
-  background:#7C3AED;
-  color:#ffffff;
+  background: #7C3AED;
+  color: #fff;
 }
-
+ 
 .status-received{
-  background:linear-gradient(135deg,#E0ECFF,#B6CCFF);
-  color:#1D4ED8;
+  background: #C2410C;
+  color: #fff;
 }
-
+ 
 .status-cancelled{
-  background:#4B5563;
-  color:#ffffff;
+  background: #4B5563;
+  color: #fff;
 }
-
+ 
 .status-closed{
   background:linear-gradient(135deg,#E5E7EB,#D1D5DB);
   color:#374151;
 }
-
+ 
 /* ROW ALIGNMENT FIX */
 .row {
     display: flex;
     gap: 20px;
     margin-bottom: 20px;
 }
-
+ 
 .field {
     flex: 1;
     display: flex;
     flex-direction: column;
 }
-
+ 
 .field.full {
     flex: 100%;
 }
@@ -110,7 +115,7 @@ h1 {
     font-weight: 600;
     margin-bottom: 10px;
 }
-
+ 
 h3 {
     color: #a12828;
     font-weight: 600;
@@ -118,40 +123,40 @@ h3 {
 /* =========================
    REFERRAL STYLE BASE (PURCHASE PAGE)
 ========================= */
-
+ 
 .page .field input,
 .page .field select,
 .page .field textarea {
   width: 100%;
   box-sizing: border-box;
-
+ 
   border: 1px solid #e7b7b5;
   border-radius: 10px;
-
+ 
   background: #fff5f5;  
   color: #000;
-
+ 
   outline: none;
   font-family: "Poppins", sans-serif;
-
+ 
   transition: all 0.2s ease;
 }
-
-
+ 
+ 
 .page .field input,
 .page .field select {
   height: 30px;
   padding: 6px 12px;
   font-size: 13px;
 }
-
+ 
 .page .field textarea {
   height: 90px;
   padding: 10px 12px;
   font-size: 13px;
   resize: none;
 }
-
+ 
 .page .field input:hover,
 .page .field select:hover,
 .page .field textarea:hover {
@@ -159,7 +164,7 @@ h3 {
   border-color: #b9473e;
   box-shadow: 0 0 6px rgba(185, 71, 62, 0.4);
 }
-
+ 
 .page .field input:focus,
 .page .field select:focus,
 .page .field textarea:focus {
@@ -167,7 +172,7 @@ h3 {
   border-color: #a12828;
   box-shadow: 0 0 0 1px rgba(161, 40, 40, 0.25);
 }
-
+ 
 .summary-row.has-input input,
 #global_discount,
 #shipping {
@@ -175,24 +180,24 @@ h3 {
   height: 30px;
   padding: 6px 12px;
   text-align: right;
-
+ 
   border: 1px solid #e7b7b5;
   border-radius: 8px;
-
+ 
   background: #fff5f5 !important;
   font-size: 13px;
   font-weight: 500;
-
+ 
   outline: none;
   box-sizing: border-box;
 }
-
+ 
 .page select {
   appearance: none;
   -webkit-appearance: none;
   -moz-appearance: none;
 }
-
+ 
 .page .field input:disabled,
 .page .field select:disabled,
 .page .field textarea:disabled {
@@ -211,14 +216,14 @@ h3 {
 .page .field textarea:focus {
   transform: translateY(-1px);
 }
-
+ 
 /* ========================= */
 /* TITLES */
 .title {
     color: #a12828;
     margin-top: 25px;
 }
-
+ 
 /* ========================= */
 /* BUTTON STYLING */
 button {
@@ -230,22 +235,22 @@ button {
     cursor: pointer;
     transition: 0.3s;
 }
-
+ 
 button:hover {
     background: #7f2a2a;
     transform: translateY(-1px);
 }
-
+ 
 .btn-close {
     font-size: 16px;
     padding: 8px 12px;
 }
-
+ 
 .btn-light {
     background: #A23737;
     color: white;
 }
-
+ 
 /* ========================= */
 /* LINE TABLE */
 /* =========================== */
@@ -256,66 +261,66 @@ button:hover {
   border-radius: 6px;
    overflow-x: auto;
 }
-
+ 
 .so-items-table {
   width: 100%;
-  border-collapse: collapse; 
+  border-collapse: collapse;
   border-spacing: 0;
   table-layout: auto;
 }
 .so-items-table th:nth-child(2),
 .so-items-table td:nth-child(2) {
   width: 200px;
-    
+   
 }
-
+ 
 .so-items-table th:last-child,
 .so-items-table td:last-child {
   width: 60px;
   text-align: center;
 }
-
+ 
 .priceInput{
-
+ 
     border:none !important;
     background:transparent !important;
-
+ 
     color:#222 !important;
     font-weight:500;
-
+ 
     text-align:center;
-
+ 
     width:100px;
     min-width:100px;
-
+ 
     outline:none !important;
     box-shadow:none !important;
-
+ 
     pointer-events:none;
-
+ 
     overflow:visible;
-
+ 
     white-space:nowrap;
 }
-
-
+ 
+ 
 .so-items-table thead tr {
   background: linear-gradient(#f2bcbc, #f2bcbc) bottom / 100% 1px no-repeat;
 }
-
+ 
 .so-items-table tbody tr {
   background: linear-gradient(#f2bcbc, #f2bcbc) bottom / 100% 1px no-repeat;
 }
-
+ 
 .so-items-table th,
 .so-items-table td {
-  padding: 12px; 
-  border-bottom: 1px solid #f2bcbc; 
+  padding: 12px;
+  border-bottom: 1px solid #f2bcbc;
   text-align: center;
   vertical-align: middle;
   font-size: 12px;
 }
-
+ 
 .so-items-table select.productSelect {
   width: 100%;
 }
@@ -333,7 +338,7 @@ button:hover {
   box-sizing: border-box;
   width: 100%;
 }
-
+ 
 .so-items-table select:hover,
 .so-items-table input:hover {
   transform: none;
@@ -341,32 +346,32 @@ button:hover {
   border-color: #d9a4a1;
   box-shadow: none;
 }
-
+ 
 .so-items-table select:focus,
 .so-items-table input:focus {
   border-color: #a12828;
   box-shadow: 0 0 0 1px rgba(161, 40, 40, 0.25);
 }
-
+ 
 .so-small-col {
   width: 70px;
 }
-
+ 
 .so-action-col {
   width: 80px;
   text-align: center !important;
 }
-
+ 
 .so-items-table select.productSelect {
   width: 100%;
 }
-
+ 
 .so-items-table input.qtyInput,
 .so-items-table input.discInput {
   width: 100%;
   min-width: 60px;
 }
-
+ 
 .so-items-table td.uomCell,
 .so-items-table td.taxCell,
 .so-items-table td.prodIdCell,
@@ -375,12 +380,12 @@ button:hover {
   color: #333;
   font-size: 12px;
 }
-
+ 
 .so-add-item-wrap {
   margin-top: 10px;
   padding: 0;
 }
-
+ 
 .so-add-item-btn {
   margin-left: 30px;
   padding: 6px 10px;
@@ -392,45 +397,43 @@ button:hover {
   font-size: 12px;
   font-weight: 600;
 }
-
+ 
 .so-add-item-btn:hover {
   background: #8c1f1f;
 }
-
+ 
 .so-delete-btn {
-    background: transparent !important;
-    border: none !important;
-    cursor: pointer;
-
-    color: #ff1a1a;
-
-    display: flex;
+    display: inline-flex;
     align-items: center;
     justify-content: center;
-
-    margin: 0 auto;
-
-    padding: 0;
-
+    padding: 0 !important;
+    border: none !important;
+    background: none !important;
+    box-shadow: none !important;
+    cursor: pointer;
+}
+ 
+.so-delete-btn i {
+    color: #ff1a1a !important;
+    line-height: 1;
+    font-family: "Font Awesome 6 Free" !important;
+    font-size: 15px !important;
+    font-weight: 900 !important;
     transition: 0.2s ease;
 }
-
-.so-delete-btn:hover {
-    color: #cc0000;
-    transform: scale(1.1);
+ 
+.so-delete-btn:hover i {
+    transform: scale(1.05);
+    color: #d10000 !important;
 }
-
-.so-delete-btn:focus {
-    outline: none;
-    box-shadow: 0 0 0 2px rgba(162, 55, 55, 0.3);
-}
-
+ 
+ 
 .productSelect option:disabled {
   color: #9b9b9b;
   background: #f1f1f1;
 }
-
-
+ 
+ 
 /* =========================================
    ORDER SUMMARY
 ========================================= */
@@ -440,23 +443,23 @@ button:hover {
   padding: 15px 10px;
   border-bottom: 1px solid #eee;
 }
-
+ 
 .summary-row span,
 .summary-row strong {
   font-size: 12px;
 }
-
+ 
 .summary-row .money {
   min-width: auto;
   color: #4a1f1a;
   text-align: right;
   font-size: 12px;
 }
-
+ 
 .summary-row.has-input {
   gap: 0;
 }
-
+ 
 .summary-row .amt-right,
 .summary-row.has-input .amt-right,
 .summary-row.has-input .amt-right.stacked {
@@ -467,7 +470,7 @@ button:hover {
   gap: 0;
   min-width: auto;
 }
-
+ 
 .summary-row.has-input .amt-right input,
 .summary-row.has-input .amt-right.stacked input,
 #globalDiscount,
@@ -482,12 +485,12 @@ button:hover {
   font-size: 13px;
   font-weight: 500;
 }
-
+ 
 .summary-row.total {
   font-weight: bold;
   background: #fafafa;
 }
-
+ 
 .summary-row.total .money,
 .summary-row.total strong {
   color: #4a1f1a;
@@ -504,39 +507,39 @@ button:hover {
   display: none;
   z-index: 1000;
 }
-
+ 
 .dropdown-item {
   padding: 8px;
   cursor: pointer;
 }
-
+ 
 .dropdown-item:hover {
   background: #f0f0f0;
 }
-
+ 
 /* ========================= */
 /* CUSTOM DROPDOWN STYLE */
 /* ========================= */
-
+ 
 .custom-select {
   position: relative;
   width: 100%;
 }
-
+ 
 .custom-select select {
   appearance: none;
   -webkit-appearance: none;
   -moz-appearance: none;
-
+ 
   width: 100%;
   padding: 6px 35px 6px 12px;
   border-radius: 8px;
   border: 1px solid #e7b7b5;
-
+ 
   background: linear-gradient(135deg, #fff5f5 0%, #f5f5f5 100%);
   cursor: pointer;
 }
-
+ 
 /* Arrow */
 .custom-select::after {
   position: absolute;
@@ -547,21 +550,21 @@ button:hover {
   font-size: 12px;
   pointer-events: none;
 }
-
+ 
 /* Dropdown options (works in some browsers) */
 select option {
   background: #e6b3b3;  /* pink background */
   color: #000;
 }
-
+ 
 /* Hover effect (limited browser support) */
 select option:hover {
   background: #d99898;
 }
-
+ 
 /* ========================= */
 /* COMMENT BOX */
-
+ 
 .comment-box {
   background: #ffffff;
   border-radius: 12px;
@@ -569,51 +572,51 @@ select option:hover {
   border: 1px solid #ddd;
   margin-top: 30px;  
 }
-
-
+ 
+ 
 /* TOP RED HEADER BAR */
 .comment-tabs {
   background: #a52a2a;
-  padding: 12px 15px;
+  padding: 8px 15px;
   display: flex;
   justify-content: space-between;
 }
-
+ 
 /* TAB BUTTON BASE */
 .tab {
   background: black;
   color: white;
   border: none;
-  padding: 6px 16px;
+  padding: 4px 16px;
   border-radius: 20px;
-  font-size: 14px;
+  font-size: 10px;
   cursor: pointer;
   transition: all 0.3s ease;
 }
-
+ 
 /* HOVER EFFECT */
 .tab:hover {
   background: #333;
   transform: scale(1.05);
 }
-
+ 
 /* ACTIVE TAB */
 .tab.active {
   background: black;
 }
-
+ 
 /* COMMENT BODY */
 .comment-body {
   padding: 20px;
 }
-
+ 
 /* LABEL */
 .comment-body label {
   font-size: 16px;
   font-weight: 500;
   color: #333;
 }
-
+ 
 /* COMMENT TEXTAREA */
 #commentText {
   width: 100%;
@@ -621,38 +624,38 @@ select option:hover {
   min-height: 70px;
   margin-top: 8px;
   padding: 14px 16px;
-
+ 
   border: 1px solid #e7b7b5;
   border-radius: 10px;
-
+ 
   background: #fff5f5;
   font-size: 13px;
   color: #000;
-
+ 
   outline: none;
   resize: none;
-
+ 
   transition: all 0.3s ease;
 }
-
+ 
 /* PLACEHOLDER */
 #commentText::placeholder {
   color: #d18a84;
 }
-
+ 
 /* HOVER */
 #commentText:hover {
   background: #fff0f0;
   border-color: #d9a4a1;
 }
-
+ 
 /* FOCUS */
 #commentText:focus {
   background: #fff5f5;
   border-color: #a12828;
   box-shadow: 0 0 0 1px rgba(161, 40, 40, 0.25);
 }
-
+ 
 /* ADD BUTTON */
 .add-btn {
   margin-top: 15px;
@@ -664,30 +667,34 @@ select option:hover {
   cursor: not-allowed;
   transition: all 0.3s ease;
 }
-
+ 
 /* ENABLED BUTTON */
 .add-btn.enabled {
   background: #a52a2a;
   cursor: pointer;
 }
-
+ 
 /* BUTTON HOVER */
 .add-btn.enabled:hover {
   background: #7d1f1f;
   transform: translateY(-1px);
 }
-
+.add-btn:disabled{
+    background:#ccc;
+    cursor:not-allowed;
+    opacity:0.7;
+}
 /* HISTORY SECTION */
 .comment-history {
   padding: 20px;
 }
-
+ 
 /* EMPTY TEXT */
 .no-history-message {
   color: #555;
   font-size: 14px;
 }
-
+ 
 /* COMMENT ITEM */
 .history-item {
   background: #ffffff;
@@ -696,13 +703,13 @@ select option:hover {
   margin-top: 10px;
   transition: all 0.2s ease;
 }
-
+ 
 /* HOVER COMMENT */
 .history-item:hover {
   background: #f9f9f9;
   transform: translateX(3px);
 }
-
+ 
 /* COMMENT HEADER */
 .comment-top {
   display: flex;
@@ -710,50 +717,62 @@ select option:hover {
   font-size: 12px;
   color: #666;
 }
-
+ 
 /* COMMENT TEXT */
 .comment-text {
   margin-top: 5px;
   font-size: 14px;
 }
-
-
+ 
+ 
 /* Upload Wrapper */
 .upload-wrapper {
   text-align: center;
   padding: 30px;
 }
 .upload-box {
-  border: 2px dashed #d3d3d3;
-  border-radius: 12px;
-  padding: 40px;
-  cursor: pointer;
-  transition: 0.3s;
-  background: #fafafa;
+ 
+    border:2px dashed #d3d3d3;
+    border-radius:12px;
+ 
+    padding:40px;
+ 
+    cursor:pointer;
+ 
+    transition:0.3s;
+ 
+    background: #f8f9fa;
+ 
+    max-width: 400px;
+    height:120px;
+ 
+    margin:0 auto;
 }
+ 
 .upload-box:hover {
-  border-color: #a52a2a;
-  background: #fff5f5;
+   border-color: #a12828;
+  background: #f0f7ff;
 }
-
+ 
+ 
 .upload-icon {
     display: flex;
     justify-content: center;
     align-items: center;
-
+ 
     margin-bottom: 10px;
-
+ 
     background: transparent;
     border: none;
     box-shadow: none;
 }
-
-.upload-icon i {
-    font-size: 40px !important;
-    color: #9ca3af !important;   /* grey color */
-    line-height: 1;
+ 
+.upload-icon {
+    font-size: 48px;
+  color: #6c757d;
+  margin-bottom: 10px;
 }
-
+ 
 /* Button */
 .choose-btn {
   margin-top: 15px;
@@ -764,23 +783,23 @@ select option:hover {
   border: none;
   cursor: pointer;
 }
-
+ 
 .choose-btn:hover {
   background: #8b1f1f;
 }
-
+ 
 /* File Section */
 .files-section {
   margin-top: 20px;
   padding: 20px;
 }
-
+ 
 .files-header {
   display: flex;
   justify-content: space-between;
   margin-bottom: 10px;
 }
-
+ 
 /* File List */
 .file-item {
   display: flex;
@@ -791,129 +810,433 @@ select option:hover {
   margin-bottom: 8px;
   background: #fff;
 }
-
+ 
 .delete-file {
   background: none;
   border: none;
   color: red;
   cursor: pointer;
 }
-
+ 
 .no-files {
   text-align: center;
+  padding: 32px 16px;
   color: #999;
 }
-/* ========================= */
-/* FOOTER ICON BAR */
-.modal-footer {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    flex-wrap: nowrap; 
-    gap: 10px;
-    margin-top: 10px;
+ 
+.no-files i {
+  font-size: 44px;
+  color: #ddd;
+  background: none !important;
+  width: auto !important;
+  height: auto !important;
 }
-
-/* Left + Right sections aligned */
+.no-files p {
+  font-size: 14px;
+  margin: 0;
+}
+.upload-box {
+  caret-color: transparent;
+}
+ 
+.files-list > div:not(.no-files) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+ 
+  padding: 4px 8px;  
+  min-height: 36px;    
+ 
+  gap: 6px;
+  box-sizing: border-box;
+}
+ 
+.files-list > div:not(.no-files) i {
+  font-size: 14px;    
+  width: 18px;
+  height: 18px;
+ 
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+ 
+.files-list > div:not(.no-files) i {
+  border-radius: 8px;
+  padding: 3px;
+}
+ 
+.files-list i:not(.no-files) i  {
+  font-size: 14px;
+ 
+  width: 10px;    
+  height: 10px;    
+ 
+  line-height: 20px;
+  text-align: center;
+  background: transparent !important;
+}
+.file-item .file-icon {
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent !important;
+}
+ 
+.file-item .file-icon i {
+  font-size: 16px;
+  background: none !important;
+}
+ 
+.file-details .file-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: #333;
+}
+ 
+.file-details .file-meta {
+  font-size: 11px;
+  font-weight: 400;
+  color: #888;
+}
+ 
+.file-details {
+  line-height: 1.2;
+}
+.upload-box p{
+     color: #666;
+  font-size: 14px;
+  margin-bottom: 4px;
+}
+ 
+.upload-box small{
+  color: #999;
+  font-size: 12px;
+}
+.upload-box h4 {
+  font-size: 18px;
+  color: #333;
+  margin-bottom: 5px;
+  font-weight: 600;
+}
+/* =========================================
+   FOOTER MAIN
+========================================= */
+ 
+.modal-footer{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    flex-wrap:wrap;
+    gap:12px;
+ 
+    margin-top:20px;
+    padding:8px 0 0;
+ 
+    border:none;
+    border-radius:0;
+ 
+    background:transparent;
+    box-shadow:none;
+}
+ 
+/* =========================================
+   LEFT + RIGHT AREA
+========================================= */
+ 
 .footer-icon-bar,
-.modal-footer-button {
-    display: flex;
-    align-items: center;
-    gap: 10px;
+.modal-footer-button{
+    display:flex;
+    align-items:center;
 }
-
-/* Make all items look like buttons */
-.footer-item,
-.modal-footer-button button {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 8px 14px;
-    border-radius: 6px;
-    border: none;
-    cursor: pointer;
-    font-size: 14px;
-    background: #A23737;
-    transition: 0.2s;
+ 
+.modal-footer-button{
+    gap:10px;
 }
-
-/* Hover effect */
-.footer-item:hover,
-.modal-footer-button button:hover {
-    background: #A23737;
+ 
+/* =========================================
+   REMOVE EXTRA SPACE FROM PDF + EMAIL
+========================================= */
+ 
+.footer-item.icon-card{
+ 
+    padding:0 !important;
+ 
+    margin:0 !important;
+ 
+    min-width:auto !important;
+ 
+    gap:2px !important;
 }
-/* ========================= */
-/* PDF + EMAIL ONLY */
-/* ========================= */
-
-.icon-card {
-    background: transparent !important;
-
-    display: flex !important;
-    flex-direction: column !important;
-
-    align-items: center;
-    justify-content: center;
-
-    gap: 6px;
-
-    min-width: 70px;
-    height: 50px;
-
-    padding: 4px 0 !important;
-
-    border: none !important;
-    box-shadow: none !important;
+ 
+ 
+ 
+/* =========================================
+   PDF + EMAIL BUTTON
+========================================= */
+ 
+.icon-card{
+ 
+    background:transparent !important;
+ 
+    display:flex !important;
+    flex-direction:column !important;
+ 
+    align-items:center;
+    justify-content:center;
+ 
+    gap:4px;
+ 
+    width:42px;
+    min-width:42px;
+ 
+    padding:0 !important;
+ 
+    border:none !important;
+    box-shadow:none !important;
+ 
+    cursor:pointer;
 }
-
-/* ICON BOX */
-.icon-card i {
-    width: 20px;
-    height: 20px;
-
-    display: flex;
-    align-items: center;
-    justify-content: center;
-
-    background: #f1f1f1;
-    border-radius: 12px;
-
-    font-size: 20px;
-    line-height: 1;
-
-    transition: 0.2s ease;
+ 
+ 
+ 
+/* =========================================
+   ICON BOX
+========================================= */
+ 
+.icon-card i{
+ 
+    width:38px;
+    height:38px;
+ 
+    display:flex !important;
+ 
+    align-items:center !important;
+    justify-content:center !important;
+ 
+    text-align:center;
+ 
+    padding:0 !important;
+    margin:0 auto !important;
+ 
+    line-height:38px !important;
+ 
+    border-radius:10px;
+ 
+    font-size:18px;
+ 
+    box-sizing:border-box;
+ 
+    position:relative;
+ 
+    top:0;
+    left:0;
 }
-
-/* PDF */
-.icon-card.pdf i {
-    color: #e74c3c;
+ 
+/* =========================================
+   PDF ENABLED
+========================================= */
+ 
+.icon-card.pdf i{
+ 
+    color:#d94b4b;
+ 
+    background:#fdeaea;
 }
-
-/* EMAIL */
-.icon-card.email i {
-    color: #3b82f6;
+ 
+/* =========================================
+   EMAIL ENABLED
+========================================= */
+ 
+.icon-card.email i{
+ 
+    color:#3b82f6;
+ 
+    background:#e8f1ff;
 }
-
-/* TEXT */
-.icon-card span {
-    font-size: 14px;
-    color: #555;
-    font-weight: 500;
-    line-height: 1;
+ 
+/* =========================================
+   TEXT
+========================================= */
+ 
+.icon-card span{
+ 
+    font-size:10px;
+    font-weight:400;
+ 
+    color:#777;
+ 
+    line-height:1;
 }
-
-/* HOVER */
-.icon-card:hover i {
-    transform: translateY(-2px);
-    background: #e5e5e5;
+ 
+/* =========================================
+   HOVER
+========================================= */
+ 
+.icon-card:hover i{
+ 
+    transform:translateY(-2px);
 }
-
-
-
-.btn-save { background: #28a745; color: white; }
-.btn-draft { background: #6c757d; color: white; }
-.btn-discard { background: #dc3545; color: white; }
-
+ 
+/* =========================================
+   DISABLED STATE
+========================================= */
+ 
+.icon-card.disabled i{
+ 
+    background:#eeeeee !important;
+ 
+    color:#bdbdbd !important;
+ 
+    cursor:not-allowed;
+}
+ 
+.icon-card.disabled span{
+ 
+    color:#bdbdbd !important;
+}
+ 
+/* =========================================
+   COMMON FOOTER BUTTONS
+========================================= */
+ 
+.modal-footer-button button{
+ 
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+ 
+    min-width:auto;
+    height:auto;
+ 
+    padding:9px 24px;
+ 
+    line-height:1;
+ 
+    white-space:nowrap;
+ 
+    text-decoration:none;
+ 
+    font-size:14px;
+    font-weight:500;
+    font-family:"Poppins", sans-serif;
+ 
+    border-radius:10px;
+ 
+    cursor:pointer;
+ 
+    transition:0.2s;
+}
+ 
+/* =========================================
+   CANCEL BUTTON
+========================================= */
+ 
+.btn-discard{
+ 
+    color:#a12828;
+ 
+    border:1.5px solid #a12828;
+ 
+    background:#ffffff;
+ 
+    box-shadow:0 3px 0 rgba(0,0,0,0.08);
+}
+ 
+.btn-discard:hover{
+ 
+    transform:translateY(-2px);
+ 
+    color:#ffffff;
+ 
+    background:#a12828;
+}
+ 
+/* =========================================
+   SAVE DRAFT BUTTON
+========================================= */
+ 
+.btn-draft{
+ 
+    color:#fff;
+ 
+    border:none;
+ 
+    background:linear-gradient(
+        #a12828,
+        #8c1f1f
+    );
+ 
+    box-shadow:0 5px 0 #6d1717;
+}
+ 
+.btn-draft:hover{
+ 
+    transform:translateY(-3px);
+ 
+    box-shadow:0 8px 0 #6d1717;
+}
+ 
+/* =========================================
+   SUBMIT BUTTON
+========================================= */
+ 
+.btn-save{
+ 
+    color:#666666 !important;
+ 
+    cursor:default !important;
+ 
+    border:none !important;
+ 
+    background:#cccccc !important;
+ 
+    box-shadow:0 2px 0 #999999 !important;
+ 
+    transform:none !important;
+}
+ 
+/* =========================================
+   ENABLED SUBMIT BUTTON
+========================================= */
+ 
+.btn-save:not(:disabled){
+ 
+    color:#fff !important;
+ 
+    background:linear-gradient(
+        #a12828,
+        #8c1f1f
+    ) !important;
+ 
+    box-shadow:0 5px 0 #6d1717 !important;
+ 
+    cursor:pointer !important;
+}
+ 
+/* =========================================
+   CANCEL ORDER BUTTON
+========================================= */
+ 
+.cancel-order-btn{
+ 
+    color:#666666 !important;
+ 
+    cursor:default !important;
+ 
+    border-color:#cccccc !important;
+ 
+    background:#cccccc !important;
+ 
+    box-shadow:0 2px 0 #999999 !important;
+ 
+    transform:none !important;
+}
+ 
+ 
+ 
 /* ========================= */
 /* MODALS */
 .reject-modal-overlay,
@@ -928,7 +1251,7 @@ select option:hover {
     justify-content: center;
     align-items: center;
 }
-
+ 
 .reject-modal,
 .otp-modal-content {
     background: white;
@@ -936,7 +1259,7 @@ select option:hover {
     border-radius: 10px;
     width: 350px;
 }
-
+ 
 /* OTP INPUT CONTAINER */
 .otp-input-container {
     display: flex;
@@ -944,103 +1267,103 @@ select option:hover {
     justify-content: center;
     margin: 10px 0;
 }
-
+ 
 /* =========================================
    MODERN ALERT / TOAST DESIGN
 ========================================= */
-
+ 
 .top-alert{
     position: fixed;
     top: 20px;
     left: 50%;
-
+ 
     transform: translateX(-50%) translateY(-100px);
-
+ 
     display: none;
     align-items: center;
     justify-content: center;
     gap: 10px;
-
+ 
     padding: 14px 28px;
-
+ 
     border-radius: 12px;
-
+ 
     font-size: 15px;
     font-weight: 600;
-
+ 
     z-index: 99999;
-
+ 
     min-width: 350px;
     max-width: 560px;
-
+ 
     text-align: center;
-
+ 
     opacity: 0;
     pointer-events: none;
-
+ 
     transition: all 0.4s cubic-bezier(0.68,-0.55,0.265,1.55);
 }
-
+ 
 /* SHOW */
 .top-alert.show{
     opacity: 1;
     transform: translateX(-50%) translateY(0);
     pointer-events: auto;
 }
-
+ 
 /* SUCCESS */
 .top-alert.success{
     background: linear-gradient(135deg,#fff4f4,#ffe8e8);
     color: #a12828;
-
+ 
     border: 1.5px solid #a12828;
-
+ 
     box-shadow: 0 8px 24px rgba(161,40,40,0.25);
 }
-
+ 
 /* ERROR */
 .top-alert.error{
     background: linear-gradient(135deg,#ffe6e6,#ffc2c2);
     color: #a12828;
-
+ 
     border: 1.5px solid #a12828;
-
+ 
     box-shadow: 0 8px 24px rgba(161,40,40,0.35);
 }
-
+ 
 .top-alert.warning{
     background: linear-gradient(135deg,#fff4f4,#ffe8e8);
     color: #a12828;
-
+ 
     border: 1.5px solid #a12828;
-
+ 
     box-shadow: 0 8px 24px rgba(161,40,40,0.25);
 }
-
+ 
 /* ICON */
 .alert-icon{
     font-size: 18px;
     font-weight: bold;
     flex-shrink: 0;
 }
-
+ 
 #so_id {
-    width: 440px !important;   
+    width: 440px !important;  
     height: 32px !important;
     font-size: 13px !important;
     padding: 4px 8px !important;
     box-sizing: border-box;
 }
-
+ 
 .comment-body {
     display: flex;
     flex-direction: column;
 }
-
+ 
 #addCommentBtn {
     align-self: flex-start;
 }
-
+ 
 .search-icon {
     color: #a12828;
     font-size: 16px;
@@ -1058,12 +1381,21 @@ select option:hover {
     padding-left: 38px !important;
     height: 20px !important;
 }
-
+ 
+ .page h3 {
+    margin-bottom: 15px;
+    color: #7a1d1d;
+    font-size: 22px;
+    font-weight: 700;
+  }
+ 
+ 
+ 
 /* =============================== */
 /* Purchase Order - Titles fix    */
 /* =============================== */
-
-
+ 
+ 
 /* Apply to your actual wrapper */
 .page h1,
 .page h2,
@@ -1075,10 +1407,10 @@ select option:hover {
     user-select: none;
     -webkit-user-select: none;
     -ms-user-select: none;
-
+ 
     -webkit-tap-highlight-color: transparent;
 }
-
+ 
 /* Remove selection highlight */
 .page h1::selection,
 .page h2::selection,
@@ -1089,303 +1421,298 @@ select option:hover {
 .page label::selection {
     background: transparent;
 }
-
+ 
 /* =============================== */
 /* Purchase Order - TH fix only   */
 /* =============================== */
-
+ 
 .so-items-table th {
     user-select: none;
     -webkit-user-select: none;
     -ms-user-select: none;
-
+ 
     -webkit-tap-highlight-color: transparent;
     cursor: default;
 }
-
+ 
 /* Remove blue selection highlight */
 .so-items-table th::selection {
     background: transparent;
 }
-
+ 
 /* Remove focus outline (if any click/keyboard focus) */
 .so-items-table th:focus {
     outline: none;
 }
-
+ 
 i.fa-solid,
 i.fa-regular {
     display: inline-block !important;
     font-family: "Font Awesome 6 Free" !important;
     font-weight: 900;
 }
-
+ 
 .live-error{
-
+ 
     color:#A23737;
-
+ 
     font-size:12px;
-
+ 
     font-weight:600;
-
+ 
     margin-top:2px;
-
+ 
     line-height:11px;
-
+ 
     padding-left:2px;
-
+ 
     display:none;
 }
-
+ 
 /* =========================
    FILE ITEM
 ========================= */
-
+ 
 .file-item{
-
+ 
     display:flex;
     justify-content:space-between;
     align-items:center;
-
+ 
     padding:18px;
-
+ 
     border:1px solid #e8e8e8;
     border-radius:12px;
-
+ 
     background:#fff;
-
+ 
     margin-bottom:12px;
 }
-
+ 
 /* LEFT */
 .file-left{
-
+ 
     display:flex;
     align-items:center;
     gap:14px;
 }
-
+ 
 /* PDF ICON */
 .file-icon{
-
+ 
     width:50px;
     height:50px;
-
+ 
     border-radius:10px;
-
+ 
     background:#ffeaea;
-
+ 
     display:flex;
     align-items:center;
     justify-content:center;
 }
-
+ 
 .file-icon i{
-
+ 
     color:#e53935;
     font-size:28px;
 }
-
+ 
 /* DETAILS */
 .file-name{
-
+ 
     font-size:16px;
     font-weight:600;
     color:#4a1f1a;
 }
-
+ 
 .file-meta{
-
+ 
     font-size:13px;
     color:#777;
-
+ 
     margin-top:3px;
 }
-
+ 
 /* RIGHT BUTTONS */
 .file-actions{
-
+ 
     display:flex;
     gap:10px;
 }
-
+ 
 /* COMMON BUTTON */
 .file-btn{
-
+ 
     width:38px;
     height:38px;
-
+ 
     border:none;
     border-radius:8px;
-
+ 
     display:flex;
     align-items:center;
     justify-content:center;
-
+ 
     cursor:pointer;
-
+ 
     transition:0.2s ease;
 }
-
+ 
 /* VIEW */
 .view-btn{
-
+ 
     background:#e8f1ff;
     color:#1e88e5;
 }
-
+ 
 /* DOWNLOAD */
 .download-btn{
-
+ 
     background:#e7f8ee;
     color:#1b8f4d;
 }
-
+ 
 /* DELETE */
 .delete-btn{
-
+ 
     background:#ffeaea;
     color:#e53935;
 }
-
+ 
 /* HOVER */
 .file-btn:hover{
-
+ 
     transform:translateY(-2px);
 }
 /* =========================
    DELETE MODAL
 ========================= */
-
-.delete-modal{
-
-    position:fixed;
-    inset:0;
-
-    background:rgba(0,0,0,0.45);
-
-    display:none;
-
-    align-items:center;
-    justify-content:center;
-
-    z-index:99999;
+ 
+.delete-modal {
+ 
+    position: fixed;
+    inset: 0;
+ 
+    background: rgba(0,0,0,0.35);
+ 
+    display: none;
+ 
+    align-items: center;
+    justify-content: center;
+ 
+    z-index: 99999;
 }
-
-/* BOX */
-.delete-modal-content{
-
-    width:360px;
-
-    background:#fff;
-
-    border-radius:18px;
-
-    padding:30px 25px;
-
-    text-align:center;
-
-    animation:popupFade 0.2s ease;
+ 
+/* MODAL BOX */
+.delete-modal-content {
+ 
+    width: 480px;
+ 
+    background: #ffffff;
+ 
+    border-radius: 14px;
+ 
+    padding: 28px 30px 22px;
+ 
+    animation: popupFade 0.2s ease;
 }
-
-/* ICON */
-.delete-icon{
-
-    width:70px;
-    height:70px;
-
-    margin:0 auto 15px;
-
-    border-radius:50%;
-
-    background:#ffeaea;
-
-    display:flex;
-    align-items:center;
-    justify-content:center;
-}
-
-.delete-icon i{
-
-    font-size:32px;
-    color:#e53935;
-}
-
+ 
 /* TITLE */
-.delete-modal-content h3{
-
-    margin-bottom:10px;
-
-    color:#222;
+.delete-modal-content h3 {
+ 
+    margin: 0 0 10px;
+ 
+    font-size: 18px;
+    font-weight: 700;
+ 
+    color: #a12424;
 }
-
+ 
 /* TEXT */
-.delete-modal-content p{
-
-    color:#666;
-
-    font-size:14px;
-
-    margin-bottom:25px;
+.delete-modal-content p {
+ 
+    margin: 0;
+ 
+    font-size: 15px;
+ 
+    color: #4b2e2e;
 }
-
-/* BUTTONS */
-.delete-modal-actions{
-
-    display:flex;
-    justify-content:center;
-    gap:12px;
+ 
+/* BUTTON AREA */
+.delete-modal-actions {
+ 
+    display: flex;
+    justify-content: flex-end;
+ 
+    gap: 14px;
+ 
+    margin-top: 22px;
 }
-
-/* COMMON BTN */
-.delete-modal-actions button{
-
-    border:none;
-
-    padding:10px 18px;
-
-    border-radius:8px;
-
-    cursor:pointer;
-
-    font-weight:600;
+ 
+/* COMMON BUTTON */
+.delete-modal-actions button {
+ 
+    min-width: 120px;
+ 
+    height: 46px;
+ 
+    border-radius: 12px;
+ 
+    border: none;
+ 
+    font-size: 15px;
+    font-weight: 600;
+ 
+    cursor: pointer;
+ 
+    transition: 0.2s ease;
 }
-
+ 
 /* CANCEL */
-.cancel-delete-btn{
-
-    background:#e5e7eb;
-    color:#333;
+.cancel-delete-btn {
+ 
+    background: #f3f3f3;
+ 
+    color: #333;
+ 
+    border: 2px solid #d8d8d8;
 }
-
+ 
+.cancel-delete-btn:hover {
+ 
+    background: #e9e9e9;
+}
+ 
 /* DELETE */
-.confirm-delete-btn{
-
-    background:#e53935;
-    color:#fff;
+.confirm-delete-btn {
+ 
+    background: linear-gradient(to bottom, #b52a2a, #8e1717);
+ 
+    color: #fff;
+ 
+    box-shadow: 0 4px 0 #6f0f0f;
 }
-
-/* HOVER */
-.confirm-delete-btn:hover{
-
-    background:#c62828;
+ 
+.confirm-delete-btn:hover {
+ 
+    transform: translateY(1px);
 }
-
-.cancel-delete-btn:hover{
-
-    background:#d1d5db;
-}
-
+ 
 /* ANIMATION */
-@keyframes popupFade{
-
-    from{
-        transform:scale(0.9);
-        opacity:0;
+@keyframes popupFade {
+ 
+    from {
+ 
+        opacity: 0;
+        transform: scale(0.95);
     }
-
-    to{
-        transform:scale(1);
-        opacity:1;
+ 
+    to {
+ 
+        opacity: 1;
+        transform: scale(1);
     }
 }
+ 
+ 
