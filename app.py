@@ -15876,7 +15876,7 @@ def api_delivery_notes():
                 WHERE so_id = %s
                   AND {so_norm} NOT IN (
                     'cancelled', 'returned', 'delivered',
-                    'draft', 'pending', 'in_transit'
+                    'draft', 'in_transit'
                   )
                 """,
                 ("Delivered", so_ref),
@@ -15888,7 +15888,7 @@ def api_delivery_notes():
                 WHERE so_id = %s
                   AND {so_norm} NOT IN (
                     'cancelled', 'returned', 'delivered', 'partially_delivered',
-                    'draft', 'pending', 'in_transit'
+                    'draft', 'in_transit'
                   )
                 """,
                 ("Partially Delivered", so_ref),
@@ -15899,11 +15899,11 @@ def api_delivery_notes():
                 UPDATE sales_orders SET status = %s
                 WHERE so_id = %s
                   AND {so_norm} NOT IN (
-                    'cancelled', 'returned',
-                    'draft', 'pending', 'in_transit'
+                    'cancelled', 'delivered', 'partially_delivered',
+                    'draft', 'in_transit'
                   )
                 """,
-                ("Returned", so_ref),
+                ("Partially Delivered", so_ref),
             )
 
     conn.commit()
@@ -16084,7 +16084,7 @@ def api_delivery_note_one(dn_id):
                 WHERE so_id = %s
                   AND {so_norm} NOT IN (
                     'cancelled', 'returned', 'delivered',
-                    'draft', 'pending', 'in_transit'
+                    'draft', 'in_transit'
                   )
                 """,
                 ("Delivered", so_ref),
@@ -16096,7 +16096,7 @@ def api_delivery_note_one(dn_id):
                 WHERE so_id = %s
                   AND {so_norm} NOT IN (
                     'cancelled', 'returned', 'delivered', 'partially_delivered',
-                    'draft', 'pending', 'in_transit'
+                    'draft', 'in_transit'
                   )
                 """,
                 ("Partially Delivered", so_ref),
@@ -16107,11 +16107,11 @@ def api_delivery_note_one(dn_id):
                 UPDATE sales_orders SET status = %s
                 WHERE so_id = %s
                   AND {so_norm} NOT IN (
-                    'cancelled', 'returned',
-                    'draft', 'pending', 'in_transit'
+                    'cancelled', 'delivered', 'partially_delivered',
+                    'draft', 'in_transit'
                   )
                 """,
-                ("Returned", so_ref),
+                ("Partially Delivered", so_ref),
             )
 
     conn.commit()

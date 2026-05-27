@@ -83,7 +83,8 @@ function loadDnStatusFilterOptions(rows) {
   }
 }
   function normalizeStatus(v) {
-    return String(v || "").trim().toLowerCase().replaceAll(" ", "_");
+    const s = String(v || "").trim().toLowerCase().replaceAll(" ", "_");
+    return s === "pending" ? "draft" : s;
   }
 
   const statusBadgeClass = (status) => normalizeStatus(status);
@@ -293,11 +294,11 @@ function loadDnStatusFilterOptions(rows) {
     const firstLabel = isDraft ? "Edit details" : "View details";
     const firstMode = isDraft ? "edit" : "view";
 
-    // Generate rules (same logic you had)
-    let canReturn = isPartial || isDelivered || isReturned;
-    let canInvoice = isPartial || isDelivered || isReturned;
+    // Partially Delivered — return on, invoice off; Delivered — both on
+    let canReturn = isPartial || isDelivered;
+    let canInvoice = isDelivered;
 
-    if (isCancelled || isDraft) {
+    if (isCancelled || isDraft || isReturned) {
       canReturn = false;
       canInvoice = false;
     }
@@ -370,32 +371,50 @@ function loadDnStatusFilterOptions(rows) {
 function toggleGenerateButtons() {
   const selected = Array.from(document.querySelectorAll(".row-check:checked"));
 
-  // Default disabled
   if (genInvoiceBtn) genInvoiceBtn.disabled = true;
   if (genDeliveryReturnBtn) genDeliveryReturnBtn.disabled = true;
 
-  // Only one row allowed
-  if (selected.length !== 1) return;
+  if (!selected.length) return;
 
-  const dnId = selected[0].dataset.id;
-  const row = allRows.find((x) => x.dn_id === dnId);
+  const dnId = String(selected[0].dataset.id || "").trim();
+  const allSameId = selected.every(
+    (cb) => String(cb.dataset.id || "").trim() === dnId
+  );
+
+  if (!allSameId || !dnId) return;
+
+  const row = allRows.find((x) => String(x.dn_id || "").trim() === dnId);
 
   if (!row) return;
 
   const st = normalizeStatus(row.status);
 
-  const allowed = st === "delivered" || st === "partially_delivered";
-
-  if (allowed) {
-    if (genInvoiceBtn) genInvoiceBtn.disabled = false;
+  if (st === "partially_delivered" || st === "delivered") {
     if (genDeliveryReturnBtn) genDeliveryReturnBtn.disabled = false;
+  }
+  if (st === "delivered") {
+    if (genInvoiceBtn) genInvoiceBtn.disabled = false;
   }
 }
 
   document.addEventListener("change", (e) => {
     if (!e.target.classList.contains("row-check")) return;
-    const row = e.target.closest("tr");
-    if (row) row.classList.toggle("row-selected", e.target.checked);
+
+    if (e.target.checked) {
+      const currentId = String(e.target.dataset.id || "").trim();
+      document.querySelectorAll(".row-check:checked").forEach((cb) => {
+        if (cb === e.target) return;
+        const otherId = String(cb.dataset.id || "").trim();
+        if (otherId !== currentId) cb.checked = false;
+      });
+    }
+
+    if (tbody) {
+      tbody.querySelectorAll("tr").forEach((tr) => {
+        const cb = tr.querySelector(".row-check");
+        if (cb) tr.classList.toggle("row-selected", cb.checked);
+      });
+    }
     toggleGenerateButtons();
   });
 

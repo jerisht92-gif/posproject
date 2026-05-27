@@ -7396,7 +7396,7 @@ document.addEventListener("DOMContentLoaded", () => {
             // Re-enable button on validation error
             if (submitBtn) {
               submitBtn.disabled = false;
-              submitBtn.textContent = submitBtn.dataset.originalText || "Add Product";
+              submitBtn.textContent = submitBtn.dataset.originalText || "Save";
               updateAddProductButtonState();
             }
             return;
@@ -7414,7 +7414,7 @@ document.addEventListener("DOMContentLoaded", () => {
               if (data.success) {
                 // Reset button text immediately after successful creation
                 if (submitBtn) {
-                  submitBtn.textContent = submitBtn.dataset.originalText || "Add Product";
+                  submitBtn.textContent = submitBtn.dataset.originalText || "Save";
                   delete submitBtn.dataset.originalText;
                   submitBtn.disabled = false;
                   updateAddProductButtonState();
@@ -7441,7 +7441,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 // Re-enable button on error
                 if (submitBtn) {
                   submitBtn.disabled = false;
-                  submitBtn.textContent = submitBtn.dataset.originalText || "Add Product";
+                  submitBtn.textContent = submitBtn.dataset.originalText || "Save";
                   updateAddProductButtonState();
                 }
               }
@@ -7452,7 +7452,7 @@ document.addEventListener("DOMContentLoaded", () => {
               // Re-enable button on error
               if (submitBtn) {
                 submitBtn.disabled = false;
-                submitBtn.textContent = submitBtn.dataset.originalText || "Add Product";
+                submitBtn.textContent = submitBtn.dataset.originalText || "Save";
                 updateAddProductButtonState();
               }
             });

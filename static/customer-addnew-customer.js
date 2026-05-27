@@ -932,7 +932,7 @@ async function loadDropdownsFromCustomerJson() {
     function resetSubmitBtn() {
       if (!submitBtn) return;
       submitBtn.disabled = false;
-      submitBtn.textContent = submitBtn.dataset.originalText || "Submit";
+      submitBtn.textContent = submitBtn.dataset.originalText || "Save";
       delete submitBtn.dataset.originalText;
     }
     

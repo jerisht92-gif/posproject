@@ -886,15 +886,20 @@ async function cnLoadCreditNoteById(creditId) {
   cnPageComments.length = 0;
   const com = it.comments;
   if (Array.isArray(com)) {
+    const cnDisplayUser = (cnCfg().userName || "User").toString().trim() || "User";
     const normalized = com
-      .map((x) => ({
-        user: String(x.user || x.author || x.created_by || "User").trim() || "User",
+      .map((x) => {
+        let user = String(x.user || x.author || x.created_by || "User").trim() || "User";
+        if (user.includes("@") && cnDisplayUser) user = cnDisplayUser;
+        return {
+        user,
         message: String(x.message || x.text || x.comment || "").trim(),
         at:
           x.at != null && Number.isFinite(Number(x.at))
             ? Number(x.at)
             : cnParseTimeMs(x.created_at || x.time) || Date.now()
-      }))
+        };
+      })
       .filter((x) => x.message);
     normalized.sort((a, b) => (b.at || 0) - (a.at || 0));
     normalized.forEach((c) => cnPageComments.push(c));
@@ -920,6 +925,8 @@ function cnEnableViewOnlyMode() {
     const btn = document.getElementById(id);
     if (btn) btn.style.display = "none";
   });
+  const cancelBtn = document.getElementById("cnDeleteBtn");
+  if (cancelBtn) cnSetActionEnabled(cancelBtn, false);
   const refundPick = document.getElementById("cnRefundDateOpenBtn");
   if (refundPick) refundPick.disabled = true;
   runLiveCreditNoteValidation();
@@ -1004,7 +1011,7 @@ function cnApplyWorkflowActions({ status, paymentStatus, isSaved }) {
     canPdf = true;
     canEmail = true;
     canMarkPaid = ps !== "paid";
-    canCancel = true;
+    canCancel = false;
   } else if (st === "cancelled" || st === "canceled") {
     canCancel = false;
   }

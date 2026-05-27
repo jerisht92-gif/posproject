@@ -3,7 +3,6 @@ console.log("✅ deliverynote-new.js loaded v100");
 /* Master delivery statuses — add new values here; list page reads window.DN_DELIVERY_STATUSES */
 window.DN_DELIVERY_STATUSES = [
   "Draft",
-  "Pending",
   "In Transit",
   "Delivered",
   "Partially Delivered",
@@ -12,6 +11,14 @@ window.DN_DELIVERY_STATUSES = [
 ];
 
 document.addEventListener("DOMContentLoaded", () => {
+  /* =========================================================
+     CONFIG
+  ========================================================== */
+  const DN_LINE_ITEMS_COLSPAN = 7;
+  const DN_LINE_ITEMS_EMPTY_MSG =
+    "Select an Sales Order Reference ID to load items";
+
+
   /* =========================================================
      DOM REFERENCES
   ========================================================== */
@@ -78,6 +85,13 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   /* =========================================================
+     STATE
+  ========================================================== */
+  let dnLiveValidationActive = false;
+  let uploadedAckFile = null;
+  let ackSaved = false;
+
+  /* =========================================================
      QUERY PARAMS (new/edit/view)
   ========================================================== */
   function qs(name) {
@@ -86,10 +100,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const editId = qs("id");
   const mode = (qs("mode") || (editId ? "edit" : "new")).toLowerCase(); // new/edit/view
-
-  const DN_LINE_ITEMS_COLSPAN = 7;
-  const DN_LINE_ITEMS_EMPTY_MSG =
-    "Select an Sales Order Reference ID to load items";
 
   function getDnLineItemDataRows() {
     if (!itemsBody) return [];
@@ -336,7 +346,6 @@ document.addEventListener("DOMContentLoaded", () => {
     return true;
   }
 
-  let dnLiveValidationActive = false;
 
   function runLiveDNValidation() {
     if (mode === "view") return true;
@@ -559,7 +568,8 @@ function formatMoney(value) {
 }
 
   function normalizeKey(v) {
-    return String(v || "").trim().toLowerCase().replaceAll(" ", "_");
+    const k = String(v || "").trim().toLowerCase().replaceAll(" ", "_");
+    return k === "pending" ? "draft" : k;
   }
 
   function statusText(key) {
@@ -572,8 +582,6 @@ function formatMoney(value) {
   /* =========================================================
      ACK UI STATE + VALIDATION
   ========================================================== */
-  let uploadedAckFile = null;
-  let ackSaved = false;
 
   function showAckSection() {
     if (ackSection) ackSection.style.display = "";
@@ -689,43 +697,6 @@ function formatMoney(value) {
     });
   }
 
-  ackReceivedBy?.addEventListener("input", () => {
-    const cleaned = filterNameInput(ackReceivedBy.value);
-    if (ackReceivedBy.value !== cleaned) ackReceivedBy.value = cleaned;
-    ackSaved = false;
-    runAckLiveValidation();
-    validateSubmit();
-  });
-
-  ackContact?.addEventListener("input", () => {
-    const cleaned = filterPhoneInput(ackContact.value);
-    if (ackContact.value !== cleaned) ackContact.value = cleaned;
-    ackSaved = false;
-    runAckLiveValidation();
-    validateSubmit();
-  });
-
-  ackPodFile?.addEventListener("change", () => {
-    const picked = ackPodFile.files && ackPodFile.files[0] ? ackPodFile.files[0] : null;
-    if (picked && !isAllowedPodFile(picked)) {
-      uploadedAckFile = null;
-      ackSaved = false;
-      ackPodFile.value = "";
-      renderAckFiles();
-      updatePdfEmailButtons();
-      runAckLiveValidation();
-      validateSubmit();
-      showToast("Invalid file format. Upload only PDF, JPG, or PNG.", "error");
-      return;
-    }
-    uploadedAckFile = picked;
-    ackSaved = false;
-    renderAckFiles();
-    updatePdfEmailButtons();
-    runAckLiveValidation();
-    validateSubmit();
-  });
-
   function isAckValid() {
     const nameOk = isNameValid();
     const phoneOk = isPhoneValid();
@@ -794,110 +765,20 @@ function formatMoney(value) {
      PDF / EMAIL ENABLE RULES
   ========================================================== */
   function updatePdfEmailButtons() {
+    const id = (dnId?.value || dnIdView?.value || "").trim();
     const stKey = normalizeKey(deliveryStatusEl?.value || "");
     const statusOk = stKey === "partially_delivered" || stKey === "delivered";
 
-    // In view: allow based on status only
-    // In edit/new: require acknowledgement saved
-    const canEnable = statusOk && (mode === "view" ? true : ackSaved);
+    // New / Draft / no saved DN — PDF & Email off
+    const canEnable =
+      !!id &&
+      statusOk &&
+      (mode === "view" ? true : ackSaved);
 
     if (pdfBtn) pdfBtn.disabled = !canEnable;
     if (emailBtn) emailBtn.disabled = !canEnable;
   }
 
-  ackSaveBtn?.addEventListener("click", async () => {
-    if (!ackSection || ackSection.classList.contains("ack-disabled")) {
-      showToast("Acknowledgement is disabled for this status.", "warn");
-      return;
-    }
-
-    if (!isAckValid()) {
-      const nameTrim = (ackReceivedBy?.value || "").trim();
-      if (!nameTrim) {
-        showToast("Please enter received by name.", "error");
-      } else if (!isNameValid()) {
-        showToast("Received By: letters and spaces only (3–20 characters). No numbers or symbols.", "error");
-      } else if (!isPhoneValid()) {
-        showToast("Contact Number must be exactly 10 digits.", "error");
-      } else if (!uploadedAckFile) {
-        showToast("Please upload POD file (PDF/JPG/PNG).", "error");
-      }
-      return;
-    }
-
-    const id = dnId?.value || dnIdView?.value || "";
-    if (!id) {
-      showToast("Delivery Note ID missing", "error");
-      return;
-    }
-
-    const form = new FormData();
-    form.append("received_by", (ackReceivedBy?.value || "").trim());
-    form.append("contact_number", (ackContact?.value || "").trim());
-    if (uploadedAckFile && !uploadedAckFile.isExisting) {
-      form.append("file", uploadedAckFile, uploadedAckFile.name);
-    } else if (uploadedAckFile?.pod_file_path) {
-      form.append("pod_file_path", uploadedAckFile.pod_file_path);
-      form.append("pod_file_name", uploadedAckFile.name || "");
-    }
-
-    try {
-      const res = await fetch(
-        `/api/delivery-notes/${encodeURIComponent(id)}/acknowledgement`,
-        { method: "POST", body: form }
-      );
-      const data = await res.json();
-      if (!data.success) {
-        showToast(data.message || "Acknowledgement save failed", "error");
-        return;
-      }
-      uploadedAckFile = {
-        name: data.pod_file_name || data.pod_file || uploadedAckFile.name,
-        pod_file_path: data.pod_file_path || "",
-        isExisting: true,
-      };
-      ackSaved = true;
-      showToast("Acknowledgement saved.", "success");
-      updatePdfEmailButtons();
-      validateSubmit();
-    } catch {
-      showToast("Network error", "error");
-    }
-  });
-
-  pdfBtn?.addEventListener("click", () => {
-    console.log("PDF button clicked");
-
-    const id = dnId?.value || dnIdView?.value || "";
-    if (!id) {
-      showToast("DN ID missing", "error");
-      return;
-    }
-
-    window.open(`/api/delivery-notes/${encodeURIComponent(id)}/pdf`, "_blank");
-  });
-
-  emailBtn?.addEventListener("click", async () => {
-  console.log("Email button clicked");
-
-  const id = dnId?.value || dnIdView?.value || "";
-  if (!id) {
-    showToast("DN ID missing. Save the Delivery Note first.", "error");
-    return;
-  }
-
-  // show instantly
-  showToast("Email sent successfully", "success");
-
-  try {
-    await fetch(`/api/delivery-notes/${encodeURIComponent(id)}/email`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-    });
-  } catch (err) {
-    console.error(err);
-  }
-});
   /* =========================================================
      STATUS UI (title pill + ack enable + return enable)
   ========================================================== */
@@ -1218,33 +1099,9 @@ function formatMoney(value) {
 
   window.dnAddRow = addRow;
 
-  const dnAddItemBtn = document.getElementById("dnAddItemBtn");
-  if (dnAddItemBtn && !dnAddItemBtn.dataset.bound) {
-    dnAddItemBtn.dataset.bound = "1";
-    dnAddItemBtn.addEventListener("click", () => addRow());
-  }
-
-  if (itemsBody && itemsBody.dataset.dnDeleteBound !== "1") {
-    itemsBody.dataset.dnDeleteBound = "1";
-    itemsBody.addEventListener("click", (e) => {
-      const btn = e.target.closest(".dn-delete-btn");
-      if (!btn || !itemsBody.contains(btn)) return;
-      e.preventDefault();
-      const row = btn.closest("tr");
-      if (!row) return;
-      row.remove();
-      renumber();
-      if (!getDnLineItemDataRows().length && !soRefSel?.value?.trim()) {
-        showDnLineItemsEmptyPlaceholder();
-      }
-      // dnRefreshProductDropdowns();
-      validateSubmit();
-    });
-  }
-
   /* =========================================================
      SALES ORDER REF -> AUTO FILL
-     Only SO refs that appear on a Delivery Note with status Partially Delivered.
+     Draft / cancelled SO and SO already on another DN are excluded.
   ========================================================== */
   function normalizeDnDeliveryStatusKey(v) {
     return String(v || "").trim().toLowerCase().replace(/\s+/g, "_");
@@ -1290,18 +1147,9 @@ function formatMoney(value) {
     const blockedRefs = new Set();
     const currentEditDnId = editId ? String(editId).trim() : "";
 
-    const soRefNonBlocking = new Set([
-      "cancelled",
-      "partially_delivered",
-    ]);
-
     dnNotes.forEach((note) => {
       const noteDnId = String(note.dn_id || "").trim();
       if (currentEditDnId && noteDnId === currentEditDnId) return;
-      const st = normalizeDnDeliveryStatusKey(
-        note.delivery_status ?? note.status ?? ""
-      );
-      if (soRefNonBlocking.has(st)) return;
 
       const ref = String(
         note.sale_order_ref || note.so_ref || note.so_id || ""
@@ -1312,7 +1160,10 @@ function formatMoney(value) {
     const refs = new Set();
     list.forEach((so) => {
       const id = (so.so_id || "").trim();
-      if (id && !blockedRefs.has(id)) refs.add(id);
+      if (!id || blockedRefs.has(id)) return;
+      const st = normalizeDnDeliveryStatusKey(so.status);
+      if (st === "draft" || st === "cancelled") return;
+      refs.add(id);
     });
 
     const sorted = [...refs].sort();
@@ -1404,7 +1255,6 @@ function formatMoney(value) {
   }
 }
 
-  soRefSel?.addEventListener("change", onSORefChange);
 
   /* =========================================================
      COLLECT + SAVE
@@ -1721,6 +1571,254 @@ function formatMoney(value) {
     validateSubmit();
   });
 
+// =========================================
+// GET SALES ORDER ID FROM DELIVERY NOTE PAGE
+// (Used to Prefill DN from Sales Order)
+// =========================================
+function getSoIdFromDnPage() {
+  const fromHidden = (document.getElementById("prefillSoId")?.value || "").trim();
+  if (fromHidden) return fromHidden;
+
+  const qp = new URLSearchParams(window.location.search);
+  return (qp.get("so_id") || "").trim();
+}
+
+
+async function prefillFromSalesOrder() {
+  const soId = getSoIdFromDnPage();
+  if (!soId) return false;
+
+  try {
+    const res = await fetch(`/api/sales-orders/${encodeURIComponent(soId)}`, {
+      cache: "no-store"
+    });
+
+    const data = await res.json();
+    const so = data.order || data.data || data;
+
+    if (!so) {
+      showToast("Sales Order details not found", "error");
+      return false;
+    }
+
+    // basic fields
+    const soRef = document.getElementById("soRef");
+    const custName = document.getElementById("custName");
+    const destAddr = document.getElementById("destAddr");
+    const dnType = document.getElementById("dnType");
+
+    if (soRef) {
+      const v = so.so_id || soId;
+      soRef.value = v;
+      if (v && soRef.value !== v) {
+        const opt = document.createElement("option");
+        opt.value = v;
+        opt.textContent = v;
+        soRef.appendChild(opt);
+        soRef.value = v;
+      }
+    }
+    if (custName) custName.value = so.customer_name || so.customer || "";
+    if (destAddr) destAddr.value = so.shipping_address || so.destination_address || "";
+    if (dnType) dnType.value = "regular";
+
+    const trackingId = document.getElementById("trackingId");
+    if (trackingId) {
+      trackingId.value =
+        so.tracking_number ||
+        so.tracking_id ||
+        so.trackingNo ||
+        "";
+    }
+
+    // line items (same structure as addRow, incl. Action column)
+    const itemsBodyEl = document.getElementById("itemsBody");
+    const add = typeof window.dnAddRow === "function" ? window.dnAddRow : null;
+    if (itemsBodyEl && add) {
+      itemsBodyEl.innerHTML = "";
+      const items = Array.isArray(so.items) ? so.items : [];
+      items.forEach((item) => {
+        add({
+          product_id: item.product_id || "",
+          product_name: item.product_name || "",
+          qty: item.qty ?? item.quantity ?? 1,
+          uom: item.uom || "",
+          serial_no: item.serial_no || ""
+        });
+      });
+    }
+    showToast("Sales Order Reference loaded successfully", "success");
+    return true;
+  } catch (err) {
+    console.error("Prefill from sales order failed:", err);
+    showToast("Failed to load Sales Order details", "error");
+    return false;
+  }
+}
+
+
+  /* =========================================================
+     EVENTS
+  ========================================================== */
+  updatePdfEmailButtons();
+
+  ackReceivedBy?.addEventListener("input", () => {
+    const cleaned = filterNameInput(ackReceivedBy.value);
+    if (ackReceivedBy.value !== cleaned) ackReceivedBy.value = cleaned;
+    ackSaved = false;
+    runAckLiveValidation();
+    validateSubmit();
+  });
+
+  ackContact?.addEventListener("input", () => {
+    const cleaned = filterPhoneInput(ackContact.value);
+    if (ackContact.value !== cleaned) ackContact.value = cleaned;
+    ackSaved = false;
+    runAckLiveValidation();
+    validateSubmit();
+  });
+
+  ackPodFile?.addEventListener("change", () => {
+    const picked = ackPodFile.files && ackPodFile.files[0] ? ackPodFile.files[0] : null;
+    if (picked && !isAllowedPodFile(picked)) {
+      uploadedAckFile = null;
+      ackSaved = false;
+      ackPodFile.value = "";
+      renderAckFiles();
+      updatePdfEmailButtons();
+      runAckLiveValidation();
+      validateSubmit();
+      showToast("Invalid file format. Upload only PDF, JPG, or PNG.", "error");
+      return;
+    }
+    uploadedAckFile = picked;
+    ackSaved = false;
+    renderAckFiles();
+    updatePdfEmailButtons();
+    runAckLiveValidation();
+    validateSubmit();
+  });
+
+  updatePdfEmailButtons();
+
+  ackSaveBtn?.addEventListener("click", async () => {
+    if (!ackSection || ackSection.classList.contains("ack-disabled")) {
+      showToast("Acknowledgement is disabled for this status.", "warn");
+      return;
+    }
+
+    if (!isAckValid()) {
+      const nameTrim = (ackReceivedBy?.value || "").trim();
+      if (!nameTrim) {
+        showToast("Please enter received by name.", "error");
+      } else if (!isNameValid()) {
+        showToast("Received By: letters and spaces only (3–20 characters). No numbers or symbols.", "error");
+      } else if (!isPhoneValid()) {
+        showToast("Contact Number must be exactly 10 digits.", "error");
+      } else if (!uploadedAckFile) {
+        showToast("Please upload POD file (PDF/JPG/PNG).", "error");
+      }
+      return;
+    }
+
+    const id = dnId?.value || dnIdView?.value || "";
+    if (!id) {
+      showToast("Delivery Note ID missing", "error");
+      return;
+    }
+
+    const form = new FormData();
+    form.append("received_by", (ackReceivedBy?.value || "").trim());
+    form.append("contact_number", (ackContact?.value || "").trim());
+    if (uploadedAckFile && !uploadedAckFile.isExisting) {
+      form.append("file", uploadedAckFile, uploadedAckFile.name);
+    } else if (uploadedAckFile?.pod_file_path) {
+      form.append("pod_file_path", uploadedAckFile.pod_file_path);
+      form.append("pod_file_name", uploadedAckFile.name || "");
+    }
+
+    try {
+      const res = await fetch(
+        `/api/delivery-notes/${encodeURIComponent(id)}/acknowledgement`,
+        { method: "POST", body: form }
+      );
+      const data = await res.json();
+      if (!data.success) {
+        showToast(data.message || "Acknowledgement save failed", "error");
+        return;
+      }
+      uploadedAckFile = {
+        name: data.pod_file_name || data.pod_file || uploadedAckFile.name,
+        pod_file_path: data.pod_file_path || "",
+        isExisting: true,
+      };
+      ackSaved = true;
+      showToast("Acknowledgement saved.", "success");
+      updatePdfEmailButtons();
+      validateSubmit();
+    } catch {
+      showToast("Network error", "error");
+    }
+  });
+
+  pdfBtn?.addEventListener("click", () => {
+    console.log("PDF button clicked");
+
+    const id = dnId?.value || dnIdView?.value || "";
+    if (!id) {
+      showToast("DN ID missing", "error");
+      return;
+    }
+
+    window.open(`/api/delivery-notes/${encodeURIComponent(id)}/pdf`, "_blank");
+  });
+
+  emailBtn?.addEventListener("click", async () => {
+  console.log("Email button clicked");
+
+  const id = dnId?.value || dnIdView?.value || "";
+  if (!id) {
+    showToast("DN ID missing. Save the Delivery Note first.", "error");
+    return;
+  }
+
+  // show instantly
+  showToast("Email sent successfully", "success");
+
+  try {
+    await fetch(`/api/delivery-notes/${encodeURIComponent(id)}/email`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (err) {
+    console.error(err);
+  }
+});
+  const dnAddItemBtn = document.getElementById("dnAddItemBtn");
+  if (dnAddItemBtn && !dnAddItemBtn.dataset.bound) {
+    dnAddItemBtn.dataset.bound = "1";
+    dnAddItemBtn.addEventListener("click", () => addRow());
+  }
+
+  if (itemsBody && itemsBody.dataset.dnDeleteBound !== "1") {
+    itemsBody.dataset.dnDeleteBound = "1";
+    itemsBody.addEventListener("click", (e) => {
+      const btn = e.target.closest(".dn-delete-btn");
+      if (!btn || !itemsBody.contains(btn)) return;
+      e.preventDefault();
+      const row = btn.closest("tr");
+      if (!row) return;
+      row.remove();
+      renumber();
+      if (!getDnLineItemDataRows().length && !soRefSel?.value?.trim()) {
+        showDnLineItemsEmptyPlaceholder();
+      }
+      // dnRefreshProductDropdowns();
+      validateSubmit();
+    });
+  }
+
+
   /* =========================================================
      INPUT EVENTS (Logistics live filters)
   ========================================================== */
@@ -1867,6 +1965,8 @@ function formatMoney(value) {
   validateSubmit();
 });
 
+  soRefSel?.addEventListener("change", onSORefChange);
+
   /* =========================================================
      INIT
   ========================================================== */
@@ -1906,89 +2006,3 @@ function formatMoney(value) {
     updatePdfEmailButtons();
   })();
 });
-
-
-// =========================================
-// GET SALES ORDER ID FROM DELIVERY NOTE PAGE
-// (Used to Prefill DN from Sales Order)
-// =========================================
-function getSoIdFromDnPage() {
-  const fromHidden = (document.getElementById("prefillSoId")?.value || "").trim();
-  if (fromHidden) return fromHidden;
-
-  const qp = new URLSearchParams(window.location.search);
-  return (qp.get("so_id") || "").trim();
-}
-
-
-async function prefillFromSalesOrder() {
-  const soId = getSoIdFromDnPage();
-  if (!soId) return false;
-
-  try {
-    const res = await fetch(`/api/sales-orders/${encodeURIComponent(soId)}`, {
-      cache: "no-store"
-    });
-
-    const data = await res.json();
-    const so = data.order || data.data || data;
-
-    if (!so) {
-      showToast("Sales Order details not found", "error");
-      return false;
-    }
-
-    // basic fields
-    const soRef = document.getElementById("soRef");
-    const custName = document.getElementById("custName");
-    const destAddr = document.getElementById("destAddr");
-    const dnType = document.getElementById("dnType");
-
-    if (soRef) {
-      const v = so.so_id || soId;
-      soRef.value = v;
-      if (v && soRef.value !== v) {
-        const opt = document.createElement("option");
-        opt.value = v;
-        opt.textContent = v;
-        soRef.appendChild(opt);
-        soRef.value = v;
-      }
-    }
-    if (custName) custName.value = so.customer_name || so.customer || "";
-    if (destAddr) destAddr.value = so.shipping_address || so.destination_address || "";
-    if (dnType) dnType.value = "regular";
-
-    const trackingId = document.getElementById("trackingId");
-    if (trackingId) {
-      trackingId.value =
-        so.tracking_number ||
-        so.tracking_id ||
-        so.trackingNo ||
-        "";
-    }
-
-    // line items (same structure as addRow, incl. Action column)
-    const itemsBodyEl = document.getElementById("itemsBody");
-    const add = typeof window.dnAddRow === "function" ? window.dnAddRow : null;
-    if (itemsBodyEl && add) {
-      itemsBodyEl.innerHTML = "";
-      const items = Array.isArray(so.items) ? so.items : [];
-      items.forEach((item) => {
-        add({
-          product_id: item.product_id || "",
-          product_name: item.product_name || "",
-          qty: item.qty ?? item.quantity ?? 1,
-          uom: item.uom || "",
-          serial_no: item.serial_no || ""
-        });
-      });
-    }
-    showToast("Sales Order Reference loaded successfully", "success");
-    return true;
-  } catch (err) {
-    console.error("Prefill from sales order failed:", err);
-    showToast("Failed to load Sales Order details", "error");
-    return false;
-  }
-}

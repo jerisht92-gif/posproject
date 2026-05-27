@@ -548,11 +548,6 @@
   color: #fff;
 }
 
-.dn-badge.pending{
-  background: #C2410C;
-  color: #fff;
-}
-
 .dn-badge.in_transit{
   background: #0369A1;
   color: #fff;

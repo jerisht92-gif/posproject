@@ -26,6 +26,9 @@ const pageTotal = document.getElementById("pageTotal");
   const statusSortMenu = document.getElementById("statusSortMenu");
 
   const newSalesOrderBtn = document.getElementById("newSalesOrderBtn");
+  const genPOBtn = document.getElementById("genPOBtn");
+  const genDNBtn = document.getElementById("genDNBtn");
+  const genINVBtn = document.getElementById("genINVBtn");
 
   /* =========================================================
      PAGE STATE
@@ -46,8 +49,7 @@ const pageTotal = document.getElementById("pageTotal");
   ========================================================== */
   const STATUS_ORDER = [
     "Draft",
-    "Submitted(PA)",
-    "Purchased",
+    "Submitted",
     "Partially Delivered",
     "Delivered",
     "Cancelled"
@@ -108,15 +110,11 @@ const pageTotal = document.getElementById("pageTotal");
   const s = norm(status);
 
   if (s === "draft") return "so-status-badge so-status-draft";
-  if (s === "submitted" || s === "submitted(pa)" || s === "submitted (pa)") {
-    return "so-status-badge so-status-submitted";
-  }
-  if (s === "purchased") return "so-status-badge so-status-purchased";
+  if (s === "submitted") return "so-status-badge so-status-submitted";
   if (s === "delivered") return "so-status-badge so-status-delivered";
   if (s === "partially delivered" || s === "partially_delivered") {
     return "so-status-badge so-status-partial";
   }
-  if (s === "returned") return "so-status-badge so-status-returned";
   if (s === "cancelled") return "so-status-badge so-status-cancelled";
 
   return "so-status-badge";
@@ -302,46 +300,36 @@ const pageTotal = document.getElementById("pageTotal");
     canGenerateInvoice: false
   };
 
-  // Draft
+  // Draft — PO / DN / Invoice off
   if (s === "draft") {
     state.firstLabel = "Edit Details";
     state.firstMode = "edit";
-    state.canGeneratePO = true;
     return state;
   }
 
-  // Submitted
+  // Submitted — PO on, DN on, Invoice off
   if (s === "submitted") {
     state.canGeneratePO = true;
     state.canGenerateDN = true;
+    return state;
+  }
+
+  // Partially Delivered — PO off, DN on, Invoice off
+  if (
+    s === "partially delivered" ||
+    s === "partially_delivered"
+  ) {
+    state.canGenerateDN = true;
+    return state;
+  }
+
+  // Delivered — Invoice on only
+  if (s === "delivered") {
     state.canGenerateInvoice = true;
     return state;
   }
 
-  // Submitted(PD)
-  if (s === "submitted(pd)") {
-    state.canGenerateDN = true;
-    return state;
-  }
-
-  // Purchased
-  if (s === "purchased") {
-    state.canGenerateDN = true;
-    return state;
-  }
-
-  // Partially Delivered
-  if (s === "partially delivered") {
-    state.canGenerateDN = true;
-    return state;
-  }
-
-  // Delivered
-  if (s === "delivered") {
-    return state;
-  }
-
-  // Cancelled
+  // Cancelled — all off
   if (s === "cancelled") {
     return state;
   }
@@ -556,6 +544,7 @@ flyEl.appendChild(
 
     updateShowing();
     updatePagerUI();
+    toggleButtons();
   }
 
   /* =========================================================
@@ -568,7 +557,9 @@ flyEl.appendChild(
     const salesRep = salesRepFilter?.value || "";
 
     filteredOrders = allOrders.filter((order) => {
-      const idMatch = safeText(order.so_id).toLowerCase().includes(q);
+      const idMatch = !q ||
+        safeText(order.so_id).toLowerCase().includes(q) ||
+        safeText(order.customer_name).toLowerCase().includes(q);
       const statusMatch = !status || safeText(order.status) === status;
       const typeMatch = !orderType || safeText(order.order_type) === orderType;
       const repMatch = !salesRep || safeText(order.sales_rep) === salesRep;
@@ -721,6 +712,71 @@ flyEl.appendChild(
     window.location.href = "/sales-order/new";
   });
 
+  function toggleButtons() {
+    const checked = [...document.querySelectorAll(".so-row-check:checked")];
+
+    if (!checked.length) {
+      if (genPOBtn) genPOBtn.disabled = true;
+      if (genDNBtn) genDNBtn.disabled = true;
+      if (genINVBtn) genINVBtn.disabled = true;
+      return;
+    }
+
+    const soId = String(checked[0].dataset.id || "").trim();
+    const allSameId = checked.every(
+      (cb) => String(cb.dataset.id || "").trim() === soId
+    );
+
+    if (!allSameId || !soId) {
+      if (genPOBtn) genPOBtn.disabled = true;
+      if (genDNBtn) genDNBtn.disabled = true;
+      if (genINVBtn) genINVBtn.disabled = true;
+      return;
+    }
+
+    const order = allOrders.find(
+      (o) => String(o.so_id || "").trim() === soId
+    );
+    const state = order ? getSOActionState(order.status) : null;
+
+    if (genPOBtn) genPOBtn.disabled = !(state && state.canGeneratePO);
+    if (genDNBtn) genDNBtn.disabled = !(state && state.canGenerateDN);
+    if (genINVBtn) genINVBtn.disabled = !(state && state.canGenerateInvoice);
+  }
+
+  tbody?.addEventListener("change", (e) => {
+    if (!e.target.classList.contains("so-row-check")) return;
+
+    if (e.target.checked) {
+      const currentId = String(e.target.dataset.id || "").trim();
+      document.querySelectorAll(".so-row-check:checked").forEach((cb) => {
+        if (cb === e.target) return;
+        const otherId = String(cb.dataset.id || "").trim();
+        if (otherId !== currentId) cb.checked = false;
+      });
+    }
+
+    toggleButtons();
+  });
+
+  genPOBtn?.addEventListener("click", () => {
+    const checked = document.querySelector(".so-row-check:checked");
+    const soId = checked ? String(checked.dataset.id || "").trim() : "";
+    if (soId) generatePurchaseOrder(soId);
+  });
+
+  genDNBtn?.addEventListener("click", () => {
+    const checked = document.querySelector(".so-row-check:checked");
+    const soId = checked ? String(checked.dataset.id || "").trim() : "";
+    if (soId) generateDeliveryNote(soId);
+  });
+
+  genINVBtn?.addEventListener("click", () => {
+    const checked = document.querySelector(".so-row-check:checked");
+    const soId = checked ? String(checked.dataset.id || "").trim() : "";
+    if (soId) generateInvoice(soId);
+  });
+
   window.addEventListener("scroll", () => removeFly(), true);
   window.addEventListener("resize", () => removeFly());
 
@@ -728,21 +784,4 @@ flyEl.appendChild(
      INITIAL LOAD
   ========================================================== */
   loadSalesOrders();
-});
-
-
-
-const checkboxes = document.querySelectorAll('.so-row-check');
-
-function toggleButtons() {
-  const anyChecked = [...document.querySelectorAll('.so-row-check')]
-    .some(cb => cb.checked);
-
-  buttons.forEach(btn => btn.disabled = !anyChecked);
-}
-
-document.addEventListener('change', function (e) {
-  if (e.target.classList.contains('so-row-check')) {
-    toggleButtons();
-  }
 });

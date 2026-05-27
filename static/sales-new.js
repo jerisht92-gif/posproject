@@ -44,10 +44,8 @@ function formatSalesStatusText(status) {
 
   if (s === "draft") return "Draft";
   if (s === "submitted") return "Submitted";
-  if (s === "purchased") return "Purchased";
   if (s === "delivered") return "Delivered";
   if (s === "partially delivered" || s === "partially_delivered") return "Partially Delivered";
-  if (s === "returned") return "Returned";
   if (s === "cancelled") return "Cancelled";
 
   return String(status || "").trim();
@@ -57,15 +55,11 @@ function getSalesStatusBadgeClass(status) {
   const s = String(status || "").trim().toLowerCase();
 
   if (s === "draft") return "so-head-status so-status-draft";
-  if (s === "submitted" || s === "submitted(pa)" || s === "submitted (pa)") {
-    return "so-head-status so-status-submitted";
-  }
-  if (s === "purchased") return "so-head-status so-status-purchased";
+  if (s === "submitted") return "so-head-status so-status-submitted";
   if (s === "delivered") return "so-head-status so-status-delivered";
   if (s === "partially delivered" || s === "partially_delivered") {
     return "so-head-status so-status-partial";
   }
-  if (s === "returned") return "so-head-status so-status-returned";
   if (s === "cancelled") return "so-head-status so-status-cancelled";
 
   return "so-head-status";
@@ -346,7 +340,6 @@ function isSalesOrderFormLocked() {
   const status = getCurrentSOStatus().replace(/\s+/g, "").toLowerCase();
   return [
     "submitted",
-    "purchased",
     "delivered",
     "partiallydelivered",
     "partially_delivered",
@@ -1375,7 +1368,7 @@ function hasAtLeastOneComment() {
 }
 function addComment() {
   const input = document.getElementById("commentInput");
-  if (!input) return;
+  if (!input || getModeFromQuery() === "view") return;
 
   const text = (input.value || "").trim();
   if (!text) {
@@ -1472,10 +1465,9 @@ function updateSubmitButton() {
 
   const nonEditableStatuses = [
     "submitted",
-    
-    "purchased",
     "delivered",
     "partiallydelivered",
+    "partially_delivered",
     "cancelled"
   ];
 
@@ -1496,14 +1488,7 @@ function updateSubmitButton() {
 
   const status = getCurrentSOStatus();
 
-  const allowed = [
-    "draft",
-    "submitted",
-    "submitted po",
-    "submitted_po",
-    "partially delivered",
-    "partially_delivered"
-  ];
+  const allowed = [];
 
   cancelBtn.disabled = !allowed.includes(status);
 }
@@ -1522,19 +1507,24 @@ function updateGenerateDNButton() {
   deliveryBtn.disabled = true;
   invoiceBtn.disabled = true;
 
-  // Submitted
+  // Submitted — DN on, Invoice off
   if (status === "submitted") {
     deliveryBtn.disabled = false;
-    invoiceBtn.disabled = false;
+    return;
   }
 
-  // Partially Delivered
-  else if (
+  // Partially Delivered — DN on, Invoice off
+  if (
     status === "partiallydelivered" ||
     status === "partially_delivered"
   ) {
     deliveryBtn.disabled = false;
-    invoiceBtn.disabled = true;
+    return;
+  }
+
+  // Delivered — Invoice on, DN off
+  if (status === "delivered") {
+    invoiceBtn.disabled = false;
   }
 }
 
@@ -1795,13 +1785,9 @@ async function submitOrder() {
 function canEnablePdf(status) {
   const s = String(status || "").trim().toLowerCase().replace(/\s+/g, "");
   
-  // Enabled for: Submitted, Purchased, Delivered, Partially Delivered
+  // Enabled for: Submitted, Partially Delivered, Delivered
   return [
     "submitted",
-    "submitted(pa)",
-    "submittedpa",
-    "submitted(pa)",
-    "purchased",
     "partiallydelivered",
     "delivered"
   ].includes(s);
@@ -1810,14 +1796,10 @@ function canEnablePdf(status) {
 function canEnableEmail(status) {
   const s = String(status || "").trim().toLowerCase().replace(/\s+/g, "");
   
-  // Enabled for: Submitted, Purchased, Delivered, Partially Delivered
+  // Enabled for: Submitted, Partially Delivered, Delivered
   // Email is NOT enabled for Draft and Cancelled
   return [
     "submitted",
-    "submitted(pa)",
-    "submittedpa",
-    "submitted(pa)",
-    "purchased",
     "partiallydelivered",
     "delivered"
   ].includes(s);
@@ -2254,6 +2236,8 @@ async function prefillSalesOrderIfEdit() {
 
   if (!so || !so.so_id) {
     showToast("Sales Order not found", "error");
+    const generatePOBtn = document.getElementById("generatePOBtn");
+    if (generatePOBtn) generatePOBtn.disabled = true;
     return;
   }
 
@@ -2360,7 +2344,7 @@ const statusForButtons = getCurrentSOStatus()
 // Get all buttons
 const saveDraftBtn = document.querySelector('button[onclick="saveDraft()"]');
 const submitBtn = document.getElementById("submitBtn");
-const generatePOBtns = document.querySelectorAll(".generatePOBtn");
+const generatePOBtn = document.getElementById("generatePOBtn");
 const cancelOrderBtn = document.querySelector('.cancel-order') || document.querySelector('button[onclick*="cancelOrder"]');
 
 // ===============================
@@ -2369,24 +2353,14 @@ const cancelOrderBtn = document.querySelector('.cancel-order') || document.query
 if (statusForButtons === "draft") {
   if (saveDraftBtn) saveDraftBtn.disabled = false;
   if (submitBtn) submitBtn.disabled = false;
-  if (generatePOBtn) generatePOBtn.disabled = false;
-  if (cancelOrderBtn) cancelOrderBtn.disabled = true;  // Disabled in action menu
+  if (generatePOBtn) generatePOBtn.disabled = true;
+  if (cancelOrderBtn) cancelOrderBtn.disabled = true;
 }
 
 // ===============================
 // 🔵 SUBMITTED STATUS
 // ===============================
-else if (statusForButtons === "submitted" || statusForButtons === "submitted(pa)" || statusForButtons === "submitted(pa)" || statusForButtons === "submittedpa") {
-  if (saveDraftBtn) saveDraftBtn.disabled = true;  // ✅ FIXED: Disabled for Submitted
-  if (submitBtn) submitBtn.disabled = true;
-  if (generatePOBtn) generatePOBtn.disabled = false;
-  if (cancelOrderBtn) cancelOrderBtn.disabled = true;  // Disabled in action menu
-}
-
-// ===============================
-// 🟤 PURCHASED STATUS
-// ===============================
-else if (statusForButtons === "purchased") {
+else if (statusForButtons === "submitted") {
   if (saveDraftBtn) saveDraftBtn.disabled = true;
   if (submitBtn) submitBtn.disabled = true;
   if (generatePOBtn) generatePOBtn.disabled = true;
@@ -2552,7 +2526,26 @@ if (mode === "edit") {
   // Disable add row button
   const addRowBtn = document.querySelector(".so-add-row-btn") || document.querySelector("button[onclick*='addRow']");
   if (addRowBtn) addRowBtn.disabled = true;
+
+  if (saveDraftBtn) saveDraftBtn.disabled = true;
+  if (submitBtn) submitBtn.disabled = true;
+  if (generatePOBtn) generatePOBtn.disabled = true;
+  if (cancelOrderBtn) cancelOrderBtn.disabled = true;
+
+  const commentInput = document.getElementById("commentInput");
+  if (commentInput) {
+    commentInput.readOnly = true;
+    commentInput.disabled = true;
+    commentInput.placeholder = "";
+  }
+  const commentAddBtn = document.getElementById("commentAddBtn");
+  if (commentAddBtn) {
+    commentAddBtn.disabled = true;
+    commentAddBtn.style.display = "none";
+  }
 }
+
+  updateGenerateDNButton();
 
 }
 
@@ -2572,12 +2565,9 @@ const emailBtn = document.getElementById("emailBtn");
 if (pdfBtn) pdfBtn.disabled = true;
 if (emailBtn) emailBtn.disabled = true;
 
-// Enable only for valid statuses: Submitted, Purchased, Delivered, Partially Delivered
+// Enable only for: Submitted, Partially Delivered, Delivered
 const allowStatusesForPdfEmail = [
   "submitted",
-  "submitted(pa)",
-  "submittedpa",
-  "purchased",
   "partiallydelivered",
   "delivered"
 ];
@@ -2709,6 +2699,11 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     if (!getSOIdSafe()) {
       syncSalesOrderPageHeading("New Sales Order", "");
+    }
+
+    if (!window.__SO_DEBUG) {
+      const generatePOBtn = document.getElementById("generatePOBtn");
+      if (generatePOBtn) generatePOBtn.disabled = true;
     }
 
 updateCancelButton();

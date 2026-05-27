@@ -150,7 +150,6 @@
             <label>Delivery Status</label>
             <select id="deliveryStatus">
               <option value="draft">Draft</option>
-              <option value="pending">Pending</option>
               <option value="in_transit">In Transit</option>
               <option value="delivered">Delivered</option>
               <option value="partially_delivered">Partially Delivered</option>
@@ -238,11 +237,11 @@
     ====================================================== -->
     <div class="dn2-footer">
       <div class="footer-icon-bar">
-        <button type="button" class="footer-item pdf" id="pdfBtn">
+        <button type="button" class="footer-item pdf" id="pdfBtn" disabled>
           <i class="fa-solid fa-file-pdf"></i>
           <span>PDF</span>
         </button>
-        <button type="button" class="footer-item email" id="emailBtn">
+        <button type="button" class="footer-item email" id="emailBtn" disabled>
           <i class="fa-regular fa-envelope"></i>
           <span>Email</span>
         </button>

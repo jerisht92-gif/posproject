@@ -202,42 +202,38 @@
   gap: 10px;
 }
 
-/* Strong visible grey buttons  */
-.btn-secondary {
-  padding: 8px 16px;
-  border-radius: 10px;
-  border: none;
-
-  background: #d1d5db;      
-  color: #374151;          
-
+/* Bulk actions — same look as + New Sales Order (.btn-primary) */
+.sales-order-page .bulk-right .btn-secondary {
+  padding: 8px 14px;
   font-size: 13px;
   font-weight: 500;
-
-  box-shadow: 0 3px 0 #9ca3af; 
+  color: #fff;
+  background: linear-gradient(#a12828, #8c1f1f);
+  border: none;
+  border-radius: 10px;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: 0.25s;
+  box-shadow: 0 5px 0 #6d1717;
 }
 
-/* Hover */
-.btn-secondary:hover:not(:disabled) {
-  background: #c4c7cc;
+.sales-order-page .bulk-right .btn-secondary:hover:not(:disabled) {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 0 #6d1717;
+  background: linear-gradient(#a12828, #8c1f1f);
 }
 
-/* Click press effect */
-.btn-secondary:active:not(:disabled) {
+.sales-order-page .bulk-right .btn-secondary:active:not(:disabled) {
   transform: translateY(2px);
-  box-shadow: 0 1px 0 #9ca3af;
+  box-shadow: 0 2px 0 #6d1717;
 }
 
-/* Disabled  */
-.btn-secondary:disabled {
-  background: #d1d5db;
-  color: #6b7280;
-  box-shadow: 0 3px 0 #bcbfc4;
-  cursor: not-allowed;
-
-  opacity: 1;  
+.sales-order-page .bulk-right .btn-secondary:disabled {
+  background: #cccccc !important;
+  color: #666 !important;
+  cursor: not-allowed !important;
+  box-shadow: 0 2px 0 #999 !important;
+  transform: none !important;
+  opacity: 1;
 }
 /* =========================================================
    SUCCESS / ERROR TOASTS (match Quotation/Sales Order form)
@@ -399,6 +395,7 @@
 .sales-order-page .empty {
   padding: 16px 12px;
   color: #8a5a5a;
+  text-align: left!important;
 }
 
 /* =========================================================

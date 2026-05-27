@@ -92,11 +92,6 @@
   color: #fff;
 }
 
-.dn2-status-pill.pending{
-  background: #C2410C;
-  color: #fff;
-}
-
 .dn2-status-pill.in_transit{
   background: #0369A1;
   color: #fff;
@@ -810,14 +805,19 @@
 }
 
 .footer-item:disabled {
-  opacity: 1;
-  cursor: default;
+  opacity: 0.55;
+  cursor: not-allowed;
+  pointer-events: none;
 }
 
 .footer-item:disabled i {
-  opacity: 0.45;
+  opacity: 0.35;
   box-shadow: none;
   transform: none;
+}
+
+.footer-item:disabled span {
+  color: #9ca3af;
 }
 
 .btn-cancel-dn,

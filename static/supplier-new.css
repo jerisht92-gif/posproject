@@ -1197,43 +1197,45 @@
   align-items: end;
 }
  
-/* DISCARD BUTTON */
+
 .btn-outline {
   background: #fff;
-  border: 1px solid #ccc;
-  padding: 8px 16px;
-  border-radius: 8px;
+  border: 1px solid #b01212;
+  color: #b01212;
+  padding: 9px 18px;
+  border-radius: 5px;
   cursor: pointer;
+  transition: all 0.2s ease;
 }
- 
-/* SUBMIT BUTTON */
+
 .btn-primary {
-  background:#a52a2a;
-  color: white;
+  background: #b01212;
+  color: #fff;
   border: none;
-  padding: 8px 18px;
-  border-radius: 8px;
+  padding: 9px 18px;
+  border-radius: 4px;
   cursor: pointer;
+  transition: all 0.2s ease;
 }
- 
- 
- 
-/* HOVER EFFECTS (like UI) */
-.btn-outline:hover {
-  background: #f5f5f5;
+
+.btn-outline:hover:not(:disabled) {
+  background: #b01212;
+  color: #fff;
+  border-color: #b01212;
 }
- 
+
 .btn-outline:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
- 
+
 .btn-outline:disabled:hover {
   background: #fff;
+  color: #b01212;
 }
- 
-.btn-primary:hover {
-  background: #a52a2a;
+
+.btn-primary:hover:not(:disabled) {
+  background: #8f0e0e;
 }
  
 .btn-danger {

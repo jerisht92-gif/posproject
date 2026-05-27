@@ -50,14 +50,12 @@ DNR ID — ensure auto id on new / edit form routes
 
 async function ensureDnrId(){
 
-  const el =
-    document.getElementById("dnrId");
+  const el = document.getElementById("dnrId");
 
   if(!el || el.value.trim())
     return;
 
-  const urlId =
-    new URLSearchParams(window.location.search)
+  const urlId = new URLSearchParams(window.location.search)
       .get("id");
 
   if(urlId){
@@ -69,8 +67,7 @@ async function ensureDnrId(){
 
   try{
 
-    const res =
-      await fetch(
+    const res = await fetch(
         "/api/delivery-note-return/next-id"
       );
 
@@ -102,20 +99,15 @@ CURRENT DATE
 LIVE DATE VALIDATION
 ========================================================= */
 
-const DNR_INVALID_DATE_MSG =
-   "Invalid date. Use format DD-MM-YYYY (e.g. 31-05-2026).";
+const DNR_INVALID_DATE_MSG = "Invalid date. Use format DD-MM-YYYY (e.g. 31-05-2026).";
 
-const DNR_EMPTY_DATE_MSG =
-  "Please select DNR date.";
+const DNR_EMPTY_DATE_MSG = "Please select DNR date.";
 
-const DNR_DATE_TODAY_MSG =
-  "DNR date must be today's date.";
+const DNR_DATE_TODAY_MSG = "DNR date must be today's date.";
 
-const dnrDate =
-  document.getElementById("dnrDate");
+const dnrDate = document.getElementById("dnrDate");
 
-const dateError =
-  document.getElementById("dateError");
+const dateError = document.getElementById("dateError");
 
 function setDnrFieldError(el, message){
 
@@ -644,11 +636,12 @@ const IR_REF_PLACEHOLDER =
 
 function isCancelledInvoiceReturn(item){
 
-  return (
+  const st =
     String(item?.status || "")
       .trim()
-      .toLowerCase() === "cancelled"
-  );
+      .toLowerCase();
+
+  return st === "cancelled" || st === "draft";
 
 }
 
@@ -851,7 +844,7 @@ async function loadInvoiceReturns(currentDnrId){
 
     window.invoiceReturns = list.filter(item => {
 
-      // hide cancelled invoice returns
+      // hide cancelled / draft invoice returns
       if(isCancelledInvoiceReturn(item))
         return false;
 

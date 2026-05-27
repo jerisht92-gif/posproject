@@ -1529,7 +1529,7 @@ document.addEventListener("DOMContentLoaded", () => {
  
   function setSubmitting(isSubmitting) {
     if (!submitButton) return;
-    const idleText = editingSupplierId ? "Update" : "Submit";
+    const idleText = "Save";
     submitButton.disabled = isSubmitting;
     submitButton.textContent = isSubmitting ? "Saving..." : idleText;
   }
