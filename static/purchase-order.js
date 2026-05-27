@@ -318,36 +318,35 @@ const comment = {
         new Date().toLocaleString()
 };
  
-    // ==================================
-    // TEMP STORE ONLY
-    // ==================================
- 
-    pendingComments.push(comment);
- 
-    // ==================================
-    // SHOW COMMENT BELOW BUTTON
-    // ==================================
- 
-    renderLiveComments();
- 
-    // ==================================
-    // SHOW IN HISTORY
-    // ==================================
- 
-    renderHistoryComments();
- 
-    // ==================================
-    // RESET
-    // ==================================
- 
-    commentText.value = "";
- 
-    addCommentBtn.disabled = true;
- 
-    showAlert(
-        "Comment Added",
-        "success"
-    );
+    const po_number =
+        document.querySelector("input[name='po_number']")?.value?.trim() || "";
+
+    if (!po_number) {
+        showAlert("PO number missing", "error");
+        return;
+    }
+
+    fetch("/api/purchase-comments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            po_number,
+            comment: text,
+            created_by: comment.created_by
+        })
+    })
+        .then(res => res.json())
+        .then(data => {
+            if (!data.success) {
+                showAlert(data.message || data.error || "Failed to add comment", "error");
+                return;
+            }
+            commentText.value = "";
+            addCommentBtn.disabled = true;
+            loadComments(po_number);
+            showAlert("Comment Added", "success");
+        })
+        .catch(() => showAlert("Comment save failed", "error"));
 });
  
 async function loadComments(po_number) {
@@ -360,45 +359,13 @@ async function loadComments(po_number) {
         const comments =
             await res.json();
  
-        historyDiv.innerHTML = "";
- 
-        if (!comments.length) {
- 
-            historyDiv.innerHTML = `
-                <p class="no-history-message">
-                    No comments yet
-                </p>
-            `;
- 
-            return;
-        }
- 
-        comments.forEach(item => {
- 
-            const div =
-                document.createElement("div");
- 
-            div.classList.add("history-item");
- 
-            const date =
-                new Date(item.created_at)
-                .toLocaleString();
- 
-            div.innerHTML = `
-                <div class="comment-top">
-                    <strong>
-                        ${item.created_by} - ${date}
-                    </strong>
-                </div>
- 
-                <div class="comment-text">
-                    ${item.comment}
-                </div>
-            `;
- 
-            historyDiv.appendChild(div);
- 
-        });
+        pendingComments = (comments || []).map(item => ({
+            comment: item.comment || "",
+            created_by: item.created_by || "Admin",
+            created_at: item.created_at || ""
+        }));
+        renderLiveComments();
+        renderHistoryComments();
  
     } catch (err) {
  
@@ -556,6 +523,7 @@ async function handleFiles(selectedFiles) {
             // ADD FILE
             // ==========================
  
+            f._uploaded = false;
             files.push(f);
  
             const formData = new FormData();
@@ -574,12 +542,15 @@ async function handleFiles(selectedFiles) {
             const result = await res.json();
  
             if (!result.success) {
+                showAlert(result.message || "Upload failed", "error");
+            } else {
+                // Keep server identity so delete can remove from DB + S3.
+                f._uploaded = true;
+                f._file_path = result.file_path || "";
+                f._file_name = result.file_name || f.name;
+                f._po_number = po_number;
                 showAlert("File attached successfully", "success");
             }
-             else {
- 
-    showAlert("File attached successfully", "success");
-}
  
         } catch (err) {
  
@@ -635,8 +606,15 @@ function updateFileUI() {
     } else {
  
         files.forEach((file, index) => {
- 
-            const fileURL = URL.createObjectURL(file);
+            const isServer = !!(file && (file._uploaded || file.id));
+            const fileName = file.name || file.file_name || file._file_name || "attachment";
+            const fileSize = typeof file.size === "number" ? `${(file.size / 1024).toFixed(1)} KB` : "";
+            const viewUrl = isServer && file.id
+                ? `/api/purchase-attachments/${encodeURIComponent(file.id)}/view`
+                : URL.createObjectURL(file);
+            const downloadUrl = isServer && file.id
+                ? `/api/purchase-attachments/${encodeURIComponent(file.id)}/download`
+                : viewUrl;
  
             const div = document.createElement("div");
  
@@ -651,10 +629,10 @@ function updateFileUI() {
                     </div>
  
                     <div class="file-details">
-                        <div class="file-name">${file.name}</div>
+                        <div class="file-name">${fileName}</div>
  
                         <div class="file-meta">
-                            ${(file.size / 1024).toFixed(1)} KB
+                            ${fileSize}
                         </div>
                     </div>
  
@@ -665,7 +643,7 @@ function updateFileUI() {
                     <!-- VIEW -->
                     <button type="button"
                             class="file-btn view-btn"
-                            onclick="viewFile('${fileURL}')">
+                            onclick="viewFile('${viewUrl}')">
  
                         <i class="fa-solid fa-eye"></i>
  
@@ -674,7 +652,7 @@ function updateFileUI() {
                     <!-- DOWNLOAD -->
                     <button type="button"
                                 class="file-btn download-btn"
-                            onclick="downloadFile('${fileURL}','${file.name}')">
+                            onclick="downloadFile('${downloadUrl}','${fileName}')">
  
                         <i class="fa-solid fa-download"></i>
  
@@ -786,9 +764,41 @@ function closeDeleteModal() {
 // ==========================
 document
 .getElementById("confirmDeleteBtn")
-.addEventListener("click", () => {
+.addEventListener("click", async () => {
  
     if (deleteIndex !== null) {
+        const target = files[deleteIndex];
+        const currentPo =
+            (
+                document.getElementById("poNumber")?.value ||
+                document.querySelector('input[name="po_number"]')?.value ||
+                ""
+            ).trim();
+
+        if (target && target._uploaded && currentPo) {
+            try {
+                const res = await fetch("/api/purchase-attachments", {
+                    method: "DELETE",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        po_number: target._po_number || currentPo,
+                        attachment_id: target.id || null,
+                        file_path: target._file_path || "",
+                        file_name: target._file_name || target.name || ""
+                    })
+                });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok || !data.success) {
+                    showAlert(data.message || data.error || "Delete failed", "error");
+                    closeDeleteModal();
+                    return;
+                }
+            } catch (err) {
+                showAlert("Delete failed", "error");
+                closeDeleteModal();
+                return;
+            }
+        }
  
         files.splice(deleteIndex, 1);
  
@@ -799,6 +809,29 @@ document
  
     closeDeleteModal();
 });
+
+async function loadAttachments(poNumber) {
+    const po_number =
+        (poNumber || document.querySelector("input[name='po_number']")?.value || "").trim();
+    if (!po_number) return;
+    try {
+        const res = await fetch(`/api/purchase-attachments/${encodeURIComponent(po_number)}`);
+        const data = await res.json();
+        const list = Array.isArray(data) ? data : (data.attachments || []);
+        files = list.map(item => ({
+            _uploaded: true,
+            id: item.id,
+            name: item.file_name || "attachment",
+            _file_name: item.file_name || "attachment",
+            _file_path: item.file_path || "",
+            _po_number: po_number,
+            uploaded_at: item.uploaded_at || "",
+        }));
+        updateFileUI();
+    } catch (err) {
+        console.error("loadAttachments error:", err);
+    }
+}
  
  
  
@@ -2857,6 +2890,7 @@ window.addEventListener("DOMContentLoaded", () => {
     if (po_number) {
  
         loadComments(po_number);
+        loadAttachments(po_number);
  
     }
  

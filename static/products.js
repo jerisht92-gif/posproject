@@ -882,15 +882,20 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   if (confirmDeleteBtn) {
+    let deleteInFlight = false;
     confirmDeleteBtn.addEventListener("click", async () => {
-      if (!deleteTargetId) return;
+      if (!deleteTargetId || deleteInFlight) return;
+      deleteInFlight = true;
+      confirmDeleteBtn.disabled = true;
 
       try {
         const res = await fetch(`/api/products/${deleteTargetId}`, { method: "DELETE" });
         const data = await res.json();
 
-        if (!res.ok) {
-          alert(data.message || "Delete failed");
+        if (!res.ok || !data.success) {
+          showErrorNotification(data.message || data.error || "Delete failed");
+          deleteTargetId = null;
+          closeModal(deleteModal);
           return;
         }
 
@@ -902,7 +907,12 @@ document.addEventListener("DOMContentLoaded", () => {
         showSuccessNotification("Product has been deleted successfully");
       } catch (err) {
         console.error("❌ delete error:", err);
-        alert("Server error while deleting product");
+        showErrorNotification("Server error while deleting product");
+        deleteTargetId = null;
+        closeModal(deleteModal);
+      } finally {
+        deleteInFlight = false;
+        confirmDeleteBtn.disabled = false;
       }
     });
   }

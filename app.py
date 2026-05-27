@@ -905,7 +905,7 @@ PRODUCT_IMAGES_FOLDER = _writable_upload_subdir("product_images")
 IMPORT_UPLOAD_FOLDER = _writable_upload_subdir("imports")
 PURCHASE_ATTACHMENTS_FOLDER = _writable_upload_subdir("purchase_attachments")
 STOCK_ATTACHMENTS_FOLDER = _writable_upload_subdir("stock_attachments")
-CREDIT_NOTE_ATTACHMENTS_FOLDER = _writable_upload_subdir("credit_note_attachments")
+CREDIT_NOTE_ATTACHMENTS_FOLDER = _writable_upload_subdir("creditnote_attachments")
 SUPPLIER_ATTACHMENTS_FOLDER = _writable_upload_subdir("supplier_attachments")
 DELIVERY_NOTE_ATTACHMENTS_FOLDER = _writable_upload_subdir("deliverynote_attachments")
 DELIVERY_NOTE_RETURN_ATTACHMENTS_FOLDER = _writable_upload_subdir("deliverynote_return_attachments")
@@ -1728,7 +1728,7 @@ def load_products():
     try:
         conn = get_db_connection()
         cur = conn.cursor()
-        cur.execute("SELECT * FROM products ORDER BY product_id")
+        cur.execute("SELECT * FROM products")
         rows = cur.fetchall()
         col_names = [desc[0] for desc in cur.description]
 
@@ -1776,6 +1776,15 @@ def load_products():
             product.setdefault("image", "")
 
             products.append(product)
+        def _product_sort_key(prod):
+            pid = str(prod.get("product_id") or "").strip()
+            m = re.search(r"(\d+)$", pid)
+            if m:
+                return (1, int(m.group(1)), pid)
+            return (0, -1, pid)
+
+        # Show most recently added product IDs first (e.g. P140 above P139).
+        products.sort(key=_product_sort_key, reverse=True)
         return products
     except Exception as e:
         print(f"Error in load_products: {e}")
@@ -1789,14 +1798,12 @@ def load_products():
 
 def save_products(products):
     """
-    Replace all products with the provided list.
-    Warning: Deletes all existing records and inserts new ones.
+    Upsert products without wiping the table.
+    This avoids FK breakage (e.g. enquiry_product -> products.product_id).
     """
     conn = get_db_connection()
     cur = conn.cursor()
     try:
-        cur.execute("DELETE FROM products")
-
         for p in products:
             tax_code = p.get("tax_code", "")
             tax_percent = p.get("tax_percent")
@@ -1834,6 +1841,41 @@ def save_products(products):
                     %s, %s, %s,
                     %s, %s
                 )
+                ON CONFLICT (product_id) DO UPDATE SET
+                    product_name = EXCLUDED.product_name,
+                    product_type = EXCLUDED.product_type,
+                    category_name = EXCLUDED.category_name,
+                    unit_price = EXCLUDED.unit_price,
+                    discount = EXCLUDED.discount,
+                    description = EXCLUDED.description,
+                    sub_category = EXCLUDED.sub_category,
+                    quantity = EXCLUDED.quantity,
+                    stock_level = EXCLUDED.stock_level,
+                    reorder_level = EXCLUDED.reorder_level,
+                    weight = EXCLUDED.weight,
+                    specifications = EXCLUDED.specifications,
+                    related_products = EXCLUDED.related_products,
+                    status = EXCLUDED.status,
+                    product_usage = EXCLUDED.product_usage,
+                    image = EXCLUDED.image,
+                    tax_code = EXCLUDED.tax_code,
+                    tax_percent = EXCLUDED.tax_percent,
+                    tax_description = EXCLUDED.tax_description,
+                    uom_name = EXCLUDED.uom_name,
+                    uom_items = EXCLUDED.uom_items,
+                    uom_description = EXCLUDED.uom_description,
+                    warehouse_name = EXCLUDED.warehouse_name,
+                    warehouse_location = EXCLUDED.warehouse_location,
+                    warehouse_manager = EXCLUDED.warehouse_manager,
+                    warehouse_contact = EXCLUDED.warehouse_contact,
+                    warehouse_notes = EXCLUDED.warehouse_notes,
+                    size = EXCLUDED.size,
+                    color = EXCLUDED.color,
+                    supplier_name = EXCLUDED.supplier_name,
+                    supplier_contact = EXCLUDED.supplier_contact,
+                    supplier_phone = EXCLUDED.supplier_phone,
+                    supplier_email = EXCLUDED.supplier_email,
+                    supplier_address = EXCLUDED.supplier_address
                 """,
                 (
                     p.get("product_id"),
@@ -4894,8 +4936,41 @@ def api_get_product(product_id):
     if resp is not None:
         return resp, status
 
-    products = load_products()
-    p = next((x for x in products if x.get("product_id") == str(product_id)), None)
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        cur.execute(
+            """
+            SELECT
+                product_id,
+                product_name,
+                product_type,
+                category_name,
+                status,
+                stock_level,
+                unit_price,
+                description,
+                sub_category,
+                tax_code,
+                supplier_name
+            FROM products
+            WHERE product_id = %s
+            LIMIT 1
+            """,
+            (str(product_id),),
+        )
+        row = cur.fetchone()
+    finally:
+        cur.close()
+        conn.close()
+
+    p = None
+    if row:
+        p = dict(row)
+        p["type"] = p.get("product_type") or ""
+        p["category"] = p.get("category_name") or ""
+        p["price"] = float(p.get("unit_price") or 0.0)
+        p["stock_level"] = int(p.get("stock_level") or 0)
     
     if not p:
         error_response = {
@@ -5003,10 +5078,47 @@ def api_create_product():
         "image": (data.get("image") or "").strip(),
     }
     
-    # Save product
-    products = load_products()
-    products.append(product)
-    save_products(products)
+    # Save product directly (faster than load+rewrite all products)
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            INSERT INTO products (
+                product_id, product_name, product_type, category_name,
+                status, stock_level, unit_price,
+                description, sub_category, tax_code, supplier_name,
+                product_usage, image
+            ) VALUES (
+                %s, %s, %s, %s,
+                %s, %s, %s,
+                %s, %s, %s, %s,
+                %s, %s
+            )
+            """,
+            (
+                product["product_id"],
+                product["product_name"],
+                product.get("type", ""),
+                product.get("category", ""),
+                product.get("status", "Active"),
+                int(product.get("stock_level", 0) or 0),
+                float(product.get("price", 0.0) or 0.0),
+                product.get("description", ""),
+                product.get("sub_category", ""),
+                product.get("tax_code", ""),
+                product.get("supplier", ""),
+                product.get("product_usage", ""),
+                product.get("image", ""),
+            ),
+        )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cur.close()
+        conn.close()
     
     response_data = {
         "success": True,
@@ -5082,52 +5194,90 @@ def api_update_product(product_id):
             ),
             400,
         )
-    products = load_products()
-    updated = False
-    product = None
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        cur.execute(
+            """
+            SELECT product_id, product_name, product_type, category_name, status, stock_level,
+                   unit_price, description, sub_category, tax_code, supplier_name
+            FROM products
+            WHERE product_id = %s
+            LIMIT 1
+            """,
+            (str(product_id),),
+        )
+        current = cur.fetchone()
+        if not current:
+            error_response = {
+                "success": False,
+                "message": "Product not found",
+                "error": f"Product with ID '{product_id}' does not exist"
+            }
+            return jsonify(error_response), 404
 
-    for p in products:
-        if str(p.get("product_id")) == str(product_id):
-            # Full update - replace all fields
-            p["product_name"] = (data.get("product_name") or p.get("product_name") or "").strip()
-            p["type"] = (data.get("type") or p.get("type") or "").strip()
-            p["category"] = (data.get("category") or p.get("category") or "").strip()
-            p["status"] = (data.get("status") or p.get("status") or "Active").strip()
+        product = dict(current)
+        product["product_name"] = (data.get("product_name") or product.get("product_name") or "").strip()
+        product["type"] = (data.get("type") or product.get("product_type") or "").strip()
+        product["category"] = (data.get("category") or product.get("category_name") or "").strip()
+        product["status"] = (data.get("status") or product.get("status") or "Active").strip()
+        product["supplier"] = (data.get("supplier") or product.get("supplier_name") or "").strip()
+        try:
+            product["stock_level"] = int(data.get("stock_level", product.get("stock_level", 0)))
+        except Exception:
+            product["stock_level"] = 0
+        try:
+            product["price"] = float(data.get("price", product.get("unit_price", 0)))
+        except Exception:
+            product["price"] = 0.0
+        if "description" in data:
+            product["description"] = (data.get("description") or "").strip()
+        if "sub_category" in data:
+            product["sub_category"] = (data.get("sub_category") or "").strip()
+        if "tax_code" in data:
+            product["tax_code"] = (data.get("tax_code") or "").strip()
+        if "supplier" in data:
+            product["supplier"] = (data.get("supplier") or "").strip()
 
-            try:
-                p["stock_level"] = int(data.get("stock_level", p.get("stock_level", 0)))
-            except:
-                p["stock_level"] = 0
+        cur.execute(
+            """
+            SELECT product_id, product_name, product_type, category_name, status, stock_level, unit_price
+            FROM products
+            WHERE product_id <> %s
+            """,
+            (str(product_id),),
+        )
+        products = []
+        for r in cur.fetchall() or []:
+            d = dict(r)
+            d["type"] = d.get("product_type") or ""
+            d["category"] = d.get("category_name") or ""
+            d["price"] = float(d.get("unit_price") or 0.0)
+            products.append(d)
 
-            try:
-                p["price"] = float(data.get("price", p.get("price", 0)))
-            except:
-                p["price"] = 0.0
+    finally:
+        cur.close()
+        conn.close()
 
-            # Update optional fields if provided
-            if "description" in data:
-                p["description"] = (data.get("description") or "").strip()
-            if "sub_category" in data:
-                p["sub_category"] = (data.get("sub_category") or "").strip()
-            if "tax_code" in data:
-                p["tax_code"] = (data.get("tax_code") or "").strip()
-            if "supplier" in data:
-                p["supplier"] = (data.get("supplier") or "").strip()
-
-            product = p
-            updated = True
-            break
-
-    if not updated:
+    if not product:
         error_response = {
             "success": False,
             "message": "Product not found",
             "error": f"Product with ID '{product_id}' does not exist"
         }
-        if wants_json():
-            return jsonify(error_response), 404
-        else:
-            return jsonify(error_response), 404
+        return jsonify(error_response), 404
+
+    def _to_int(value, default=0):
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return default
+
+    def _to_float(value, default=0.0):
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return default
 
     # -------------------- DUPLICATE VALIDATION (exclude current product) -----------------------------
     # Normalize values for comparison (case-insensitive for text, exact for numbers)
@@ -5135,8 +5285,8 @@ def api_update_product(product_id):
     updated_type = (product.get("type") or "").strip().lower()
     updated_category = (product.get("category") or "").strip().lower()
     updated_status = (product.get("status") or "").strip().lower()
-    updated_stock_level = product.get("stock_level", 0)
-    updated_price = product.get("price", 0.0)
+    updated_stock_level = _to_int(product.get("stock_level", 0), 0)
+    updated_price = _to_float(product.get("price", 0.0), 0.0)
     
     # Check 1: Duplicate product name (case-insensitive, exclude current product)
     for existing in products:
@@ -5161,8 +5311,8 @@ def api_update_product(product_id):
         existing_type = (existing.get("type") or "").strip().lower()
         existing_category = (existing.get("category") or "").strip().lower()
         existing_status = (existing.get("status") or "").strip().lower()
-        existing_stock_level = existing.get("stock_level", 0)
-        existing_price = existing.get("price", 0.0)
+        existing_stock_level = _to_int(existing.get("stock_level", 0), 0)
+        existing_price = _to_float(existing.get("price", 0.0), 0.0)
         
         # Compare all fields (case-insensitive for text, exact for numbers)
         if (existing_name == updated_product_name and
@@ -5180,7 +5330,45 @@ def api_update_product(product_id):
             else:
                 return jsonify(error_response), 409
 
-    save_products(products)
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            UPDATE products SET
+                product_name = %s,
+                product_type = %s,
+                category_name = %s,
+                status = %s,
+                stock_level = %s,
+                unit_price = %s,
+                description = %s,
+                sub_category = %s,
+                tax_code = %s,
+                supplier_name = %s
+            WHERE product_id = %s
+            """,
+            (
+                product.get("product_name", ""),
+                product.get("type", ""),
+                product.get("category", ""),
+                product.get("status", "Active"),
+                int(product.get("stock_level", 0) or 0),
+                float(product.get("price", 0.0) or 0.0),
+                product.get("description", ""),
+                product.get("sub_category", ""),
+                product.get("tax_code", ""),
+                product.get("supplier", ""),
+                str(product_id),
+            ),
+        )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cur.close()
+        conn.close()
     
     response_data = {
         "success": True,
@@ -9386,8 +9574,6 @@ def api_products():
     if resp is not None:
         return resp, status
 
-    products = load_products()
-
     q = (request.args.get("q") or "").strip().lower()
     ptype = (request.args.get("type") or "").strip()
     cat = (request.args.get("category") or "").strip()
@@ -9435,55 +9621,104 @@ def api_products():
             400,
         )
 
-    # filter
-    def match(p):
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        where_clauses = []
+        params = []
+
         if q:
-            hay = " ".join([
-                str(p.get("product_id","")),
-                str(p.get("product_name","")),
-                str(p.get("type","")),
-                str(p.get("category","")),
-                str(p.get("status","")),
-            ]).lower()
+            where_clauses.append(
+                """
+                (
+                    LOWER(COALESCE(product_id, '')) LIKE %s
+                    OR LOWER(COALESCE(product_name, '')) LIKE %s
+                    OR LOWER(COALESCE(product_type, '')) LIKE %s
+                    OR LOWER(COALESCE(category_name, '')) LIKE %s
+                    OR LOWER(COALESCE(status, '')) LIKE %s
+                )
+                """
+            )
+            like = f"%{q}%"
+            params.extend([like, like, like, like, like])
+        if ptype:
+            where_clauses.append("COALESCE(product_type, '') = %s")
+            params.append(ptype)
+        if cat:
+            where_clauses.append("COALESCE(category_name, '') = %s")
+            params.append(cat)
+        if status:
+            where_clauses.append("COALESCE(status, '') = %s")
+            params.append(status)
+        if brand:
+            where_clauses.append("COALESCE(supplier_name, '') = %s")
+            params.append(brand)
+        if stock == "out":
+            where_clauses.append("COALESCE(stock_level, 0) = 0")
+        elif stock == "low":
+            where_clauses.append("COALESCE(stock_level, 0) BETWEEN 1 AND 5")
+        elif stock == "ok":
+            where_clauses.append("COALESCE(stock_level, 0) > 5")
 
-            if q not in hay:
-                return False
-        if ptype and p.get("type") != ptype:
-            return False
-        if cat and p.get("category") != cat:
-            return False
-        if status and p.get("status") != status:
-            return False
-        if brand and p.get("brand") != brand:
-            return False
+        where_sql = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
 
-        # stock buckets
-        level = int(p.get("stock_level") or 0)
-        if stock == "out" and level != 0:
-            return False
-        if stock == "low" and not (1 <= level <= 5):
-            return False
-        if stock == "ok" and level <= 5:
-            return False
+        cur.execute(
+            f"SELECT COUNT(*)::int AS c FROM products {where_sql}",
+            tuple(params),
+        )
+        total_items = int((cur.fetchone() or {}).get("c") or 0)
+        total_pages = max(1, (total_items + page_size - 1) // page_size)
+        page = max(1, min(page, total_pages))
+        offset = (page - 1) * page_size
 
-        return True
+        cur.execute(
+            f"""
+            SELECT
+                product_id,
+                product_name,
+                product_type,
+                category_name,
+                status,
+                stock_level,
+                unit_price,
+                supplier_name
+            FROM products
+            {where_sql}
+            ORDER BY
+                CASE
+                    WHEN product_id ~ '[0-9]+$'
+                    THEN CAST(REGEXP_REPLACE(product_id, '^\\D+', '') AS INTEGER)
+                    ELSE 0
+                END DESC,
+                product_id DESC
+            LIMIT %s OFFSET %s
+            """,
+            tuple(params + [page_size, offset]),
+        )
+        rows = cur.fetchall() or []
 
-    filtered = [p for p in products if match(p)]
+        items = []
+        for r in rows:
+            d = dict(r)
+            d["type"] = d.get("product_type") or ""
+            d["category"] = d.get("category_name") or ""
+            d["status"] = str(d.get("status") or "").strip().capitalize()
+            d["stock_level"] = int(d.get("stock_level") or 0)
+            d["price"] = float(d.get("unit_price") or 0.0)
+            d["brand"] = d.get("supplier_name") or ""
+            items.append(d)
 
-    # meta for dropdown - extract unique values from database
-    types = sorted({p.get("type","") for p in products if p.get("type")})
-    categories = sorted({p.get("category","") for p in products if p.get("category")})
-    statuses = sorted({p.get("status","") for p in products if p.get("status")})
-    brands = sorted({p.get("brand","") for p in products if p.get("brand")})
-
-    # pagination
-    total_items = len(filtered)
-    total_pages = max(1, (total_items + page_size - 1) // page_size)
-    page = max(1, min(page, total_pages))
-
-    start = (page - 1) * page_size
-    end = start + page_size
-    items = filtered[start:end]
+        cur.execute("SELECT DISTINCT product_type FROM products WHERE COALESCE(product_type,'') <> '' ORDER BY product_type")
+        types = [str(r.get("product_type") or "") for r in (cur.fetchall() or []) if str(r.get("product_type") or "").strip()]
+        cur.execute("SELECT DISTINCT category_name FROM products WHERE COALESCE(category_name,'') <> '' ORDER BY category_name")
+        categories = [str(r.get("category_name") or "") for r in (cur.fetchall() or []) if str(r.get("category_name") or "").strip()]
+        cur.execute("SELECT DISTINCT status FROM products WHERE COALESCE(status,'') <> '' ORDER BY status")
+        statuses = [str(r.get("status") or "") for r in (cur.fetchall() or []) if str(r.get("status") or "").strip()]
+        cur.execute("SELECT DISTINCT supplier_name FROM products WHERE COALESCE(supplier_name,'') <> '' ORDER BY supplier_name")
+        brands = [str(r.get("supplier_name") or "") for r in (cur.fetchall() or []) if str(r.get("supplier_name") or "").strip()]
+    finally:
+        cur.close()
+        conn.close()
 
     response_data = {
         "success": True,
@@ -9524,34 +9759,55 @@ def api_delete_product(product_id):
     if resp is not None:
         return resp, status
 
-    products = load_products()
-    before = len(products)
-    deleted_product = next((p for p in products if str(p.get("product_id")) == str(product_id)), None)
-    
-    products = [p for p in products if str(p.get("product_id")) != str(product_id)]
-    save_products(products)
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    deleted_product = None
+    try:
+        cur.execute("SELECT * FROM products WHERE product_id = %s", (product_id,))
+        deleted_product = cur.fetchone()
+        if not deleted_product:
+            error_response = {
+                "success": False,
+                "message": "Product not found",
+                "error": f"Product with ID '{product_id}' does not exist"
+            }
+            return jsonify(error_response), 404
 
-    if len(products) == before:
+        cur.execute("DELETE FROM products WHERE product_id = %s", (product_id,))
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        msg = str(e)
+        if "ForeignKeyViolation" in msg or "still referenced" in msg or "violates foreign key constraint" in msg:
+            return jsonify({
+                "success": False,
+                "message": "Cannot delete product because it is used in other records.",
+                "error": msg,
+            }), 409
+        return jsonify({
+            "success": False,
+            "message": "Delete failed",
+            "error": msg,
+        }), 500
+    finally:
+        cur.close()
+        conn.close()
+
+    if not deleted_product:
         error_response = {
             "success": False,
             "message": "Product not found",
             "error": f"Product with ID '{product_id}' does not exist"
         }
-        if wants_json():
-            return jsonify(error_response), 404
-        else:
-            return jsonify(error_response), 404
+        return jsonify(error_response), 404
     
     response_data = {
         "success": True,
         "message": "Product deleted successfully",
-        "data": deleted_product
+        "data": dict(deleted_product)
     }
-    
-    if wants_json():
-        return jsonify(response_data), 200
-    else:
-        return jsonify(response_data), 200
+
+    return jsonify(response_data), 200
 # =========================
 # API: IMPORT CSV
 # CSV columns: product_id,product_name,type,category,status,stock_level,price
@@ -24625,6 +24881,45 @@ def edit_po(po_number):
 # ========================================
 # Comments
 # ========================================
+def _ensure_purchase_aux_tables(cur):
+    """Ensure purchase comments/attachments tables exist in this DB."""
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS purchase_comments (
+            id SERIAL PRIMARY KEY,
+            po_number TEXT NOT NULL,
+            comment TEXT NOT NULL,
+            created_by TEXT DEFAULT 'Admin',
+            created_at TIMESTAMP DEFAULT NOW()
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS purchase_attachments (
+            id SERIAL PRIMARY KEY,
+            po_number TEXT NOT NULL,
+            file_name TEXT NOT NULL,
+            file_path TEXT NOT NULL,
+            uploaded_at TIMESTAMP DEFAULT NOW()
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_purchase_comments_po_number
+        ON purchase_comments (po_number)
+        """
+    )
+    cur.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_purchase_attachments_po_number
+        ON purchase_attachments (po_number)
+        """
+    )
+    cur.connection.commit()
+
+
 @app.route("/api/purchase-comments", methods=["POST"])
 def add_purchase_comment():
     try:
@@ -24636,6 +24931,7 @@ def add_purchase_comment():
  
         conn = get_db_connection()
         cur = conn.cursor()
+        _ensure_purchase_aux_tables(cur)
  
         cur.execute("""
             INSERT INTO purchase_comments (po_number, comment, created_by)
@@ -24656,9 +24952,6 @@ def add_purchase_comment():
 # Attachments
 # ========================================
  
-UPLOAD_FOLDER = "uploads/purchase_attachments"
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
- 
 @app.route("/api/purchase-attachments", methods=["POST"])
 def upload_purchase_attachment():
     try:
@@ -24668,17 +24961,26 @@ def upload_purchase_attachment():
         if not file:
             return jsonify({"success": False, "message": "No file uploaded"}), 400
  
-        filename = secure_filename(file.filename)
-        save_path = os.path.join(UPLOAD_FOLDER, filename)
-        file.save(save_path)
+        filename = _upload_basename(file.filename)
+        rel_path = _upload_relative_path(po_number, filename)
+        save_path, _ = _persist_module_upload(
+            object_storage.MODULE_PURCHASE_ATTACHMENTS,
+            PURCHASE_ATTACHMENTS_FOLDER,
+            file,
+            rel_path,
+        )
  
         conn = get_db_connection()
         cur = conn.cursor()
+        _ensure_purchase_aux_tables(cur)
  
         cur.execute("""
             INSERT INTO purchase_attachments (po_number, file_name, file_path)
             VALUES (%s, %s, %s)
+            RETURNING id
         """, (po_number, filename, save_path))
+        row = cur.fetchone()
+        attachment_id = row[0] if row else None
  
         conn.commit()
         cur.close()
@@ -24686,6 +24988,7 @@ def upload_purchase_attachment():
  
         return jsonify({
             "success": True,
+            "id": attachment_id,
             "file_name": filename,
             "file_path": save_path
         })
@@ -24698,6 +25001,7 @@ def get_purchase_comments(po_number):
  
     conn = get_db_connection()
     cur = conn.cursor()
+    _ensure_purchase_aux_tables(cur)
  
     cur.execute("""
         SELECT
@@ -24730,9 +25034,10 @@ def get_purchase_comments(po_number):
 def get_purchase_attachments(po_number):
     conn = get_db_connection()
     cur = conn.cursor()
+    _ensure_purchase_aux_tables(cur)
  
     cur.execute("""
-        SELECT file_name, file_path, uploaded_at
+        SELECT id, file_name, file_path, uploaded_at
         FROM purchase_attachments
         WHERE po_number = %s
         ORDER BY uploaded_at DESC
@@ -24743,7 +25048,171 @@ def get_purchase_attachments(po_number):
     cur.close()
     conn.close()
  
-    return jsonify(rows)
+    data = []
+    for r in rows:
+        data.append({
+            "id": r[0],
+            "file_name": r[1],
+            "file_path": r[2],
+            "uploaded_at": str(r[3]) if len(r) > 3 and r[3] is not None else "",
+        })
+
+    return jsonify({"success": True, "attachments": data})
+
+
+@app.route("/api/purchase-attachments", methods=["DELETE"])
+def delete_purchase_attachment():
+    """Delete purchase attachment record and remove file from S3/local storage."""
+    conn = None
+    cur = None
+    try:
+        data = request.get_json(silent=True) or {}
+        po_number = (data.get("po_number") or "").strip()
+        attachment_id = data.get("attachment_id")
+        file_path = (data.get("file_path") or "").strip()
+        file_name = (data.get("file_name") or "").strip()
+
+        if not po_number:
+            return jsonify({"success": False, "message": "po_number is required"}), 400
+        if attachment_id is None and not file_path and not file_name:
+            return jsonify({"success": False, "message": "attachment_id or file_path/file_name is required"}), 400
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+        _ensure_purchase_aux_tables(cur)
+
+        if attachment_id is not None:
+            cur.execute(
+                """
+                SELECT file_path
+                FROM purchase_attachments
+                WHERE po_number = %s AND id = %s
+                LIMIT 1
+                """,
+                (po_number, attachment_id),
+            )
+        elif file_path:
+            cur.execute(
+                """
+                SELECT file_path
+                FROM purchase_attachments
+                WHERE po_number = %s AND file_path = %s
+                ORDER BY uploaded_at DESC
+                LIMIT 1
+                """,
+                (po_number, file_path),
+            )
+        else:
+            cur.execute(
+                """
+                SELECT file_path
+                FROM purchase_attachments
+                WHERE po_number = %s AND file_name = %s
+                ORDER BY uploaded_at DESC
+                LIMIT 1
+                """,
+                (po_number, file_name),
+            )
+
+        row = cur.fetchone()
+        if not row:
+            return jsonify({"success": False, "message": "Attachment not found"}), 404
+
+        stored_path = (row[0] or "").strip()
+        if stored_path:
+            _remove_stored_upload(stored_path, PURCHASE_ATTACHMENTS_FOLDER)
+
+        if attachment_id is not None:
+            cur.execute(
+                "DELETE FROM purchase_attachments WHERE po_number = %s AND id = %s",
+                (po_number, attachment_id),
+            )
+        elif file_path:
+            cur.execute(
+                "DELETE FROM purchase_attachments WHERE po_number = %s AND file_path = %s",
+                (po_number, file_path),
+            )
+        else:
+            cur.execute(
+                """
+                DELETE FROM purchase_attachments
+                WHERE po_number = %s AND file_name = %s
+                AND file_path = %s
+                """,
+                (po_number, file_name, stored_path),
+            )
+
+        conn.commit()
+        return jsonify({"success": True, "message": "Attachment deleted"})
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        return jsonify({"success": False, "error": str(e)}), 500
+    finally:
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
+
+
+@app.route("/api/purchase-attachments/<int:attachment_id>/view")
+def view_purchase_attachment(attachment_id):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        _ensure_purchase_aux_tables(cur)
+        cur.execute(
+            """
+            SELECT file_path, file_name
+            FROM purchase_attachments
+            WHERE id = %s
+            """,
+            (attachment_id,),
+        )
+        row = cur.fetchone()
+        if not row:
+            return jsonify({"success": False, "message": "Attachment not found"}), 404
+        file_path = row[0]
+        original_name = row[1]
+        if object_storage.is_remote_url(file_path):
+            return redirect(file_path)
+        resolved = _resolve_stored_file_path(file_path)
+        if not resolved or not os.path.isfile(resolved):
+            return jsonify({"success": False, "message": "File not found"}), 404
+        return send_file(resolved, as_attachment=False, download_name=original_name)
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.route("/api/purchase-attachments/<int:attachment_id>/download")
+def download_purchase_attachment(attachment_id):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        _ensure_purchase_aux_tables(cur)
+        cur.execute(
+            """
+            SELECT file_path, file_name
+            FROM purchase_attachments
+            WHERE id = %s
+            """,
+            (attachment_id,),
+        )
+        row = cur.fetchone()
+        if not row:
+            return jsonify({"success": False, "message": "Attachment not found"}), 404
+        file_path = row[0]
+        original_name = row[1]
+        if object_storage.is_remote_url(file_path):
+            return redirect(file_path)
+        resolved = _resolve_stored_file_path(file_path)
+        if not resolved or not os.path.isfile(resolved):
+            return jsonify({"success": False, "message": "File not found"}), 404
+        return send_file(resolved, as_attachment=True, download_name=original_name)
+    finally:
+        cur.close()
+        conn.close()
  
 
 # ========================================
@@ -27977,12 +28446,14 @@ def cn_upload_attachment():
                 }
             ), 400
 
-        file_ext = file.filename.rsplit(".", 1)[1].lower() if "." in file.filename else ""
-        unique_filename = (
-            f"{credit_note_id}_{uuid.uuid4().hex}.{file_ext}" if file_ext else f"{credit_note_id}_{uuid.uuid4().hex}"
+        original_filename = _upload_basename(file.filename)
+        rel_path = _upload_relative_path(credit_note_id, original_filename)
+        stored_path, _stored_size = _persist_module_upload(
+            object_storage.MODULE_CREDIT_NOTE_ATTACHMENTS,
+            CREDIT_NOTE_ATTACHMENTS_FOLDER,
+            file,
+            rel_path,
         )
-        abs_path = os.path.join(CREDIT_NOTE_ATTACHMENTS_FOLDER, unique_filename)
-        file.save(abs_path)
 
         row = None
         conn = get_db_connection()
@@ -28019,16 +28490,16 @@ def cn_upload_attachment():
                 }
                 # Canonical schema
                 if "file_name" in existing_cols:
-                    insert_values["file_name"] = file.filename
+                    insert_values["file_name"] = original_filename
                 if "file_path" in existing_cols:
-                    insert_values["file_path"] = unique_filename
+                    insert_values["file_path"] = stored_path
                 # Legacy schema variants
                 if "original_filename" in existing_cols:
-                    insert_values["original_filename"] = file.filename
+                    insert_values["original_filename"] = original_filename
                 if "filename" in existing_cols:
-                    insert_values["filename"] = file.filename
+                    insert_values["filename"] = original_filename
                 if "stored_filename" in existing_cols:
-                    insert_values["stored_filename"] = unique_filename
+                    insert_values["stored_filename"] = _upload_basename(stored_path)
                 if "size" in existing_cols:
                     insert_values["size"] = int(file_length)
                 if "file_size" in existing_cols:
@@ -28050,11 +28521,7 @@ def cn_upload_attachment():
                 conn.rollback()
             except Exception:
                 pass
-            if os.path.isfile(abs_path):
-                try:
-                    os.remove(abs_path)
-                except OSError:
-                    pass
+            _remove_stored_upload(stored_path, CREDIT_NOTE_ATTACHMENTS_FOLDER)
             raise
         finally:
             conn.close()
@@ -28065,8 +28532,8 @@ def cn_upload_attachment():
                 "success": True,
                 "attachment": {
                     "id": new_id,
-                    "original_filename": file.filename,
-                    "stored_filename": unique_filename,
+                    "original_filename": original_filename,
+                    "stored_filename": _upload_basename(stored_path),
                     "size": file_length,
                     "upload_date": datetime.now().isoformat(),
                 },
@@ -28122,10 +28589,10 @@ def cn_get_attachments(credit_note_id):
                 tstr = ts.strftime("%Y-%m-%d %H:%M:%S")
             else:
                 tstr = str(ts)
-        rel = os.path.basename(str(fpath or ""))
+        raw_path = str(fpath or "")
         sz = 0
-        ap = os.path.join(CREDIT_NOTE_ATTACHMENTS_FOLDER, rel)
-        if rel and os.path.isfile(ap):
+        ap = _resolve_stored_file_path(raw_path)
+        if ap and os.path.isfile(ap) and not object_storage.is_remote_url(ap):
             try:
                 sz = os.path.getsize(ap)
             except OSError:
@@ -28165,9 +28632,8 @@ def cn_view_attachment(att_id):
     raw_fp = str(row.get("file_path") or "")
     if object_storage.is_remote_url(raw_fp):
         return redirect(raw_fp)
-    rel = os.path.basename(raw_fp)
-    abs_path = os.path.join(CREDIT_NOTE_ATTACHMENTS_FOLDER, rel) if rel else ""
-    if (not abs_path) or (not os.path.isfile(abs_path)):
+    abs_path = _resolve_stored_file_path(raw_fp)
+    if (not abs_path) or object_storage.is_remote_url(abs_path) or (not os.path.isfile(abs_path)):
         return jsonify({"success": False, "message": "Attachment not found"}), 404
     return send_file(
         abs_path,
@@ -28200,9 +28666,8 @@ def cn_download_attachment(att_id):
     raw_fp = str(row.get("file_path") or "")
     if object_storage.is_remote_url(raw_fp):
         return redirect(raw_fp)
-    rel = os.path.basename(raw_fp)
-    abs_path = os.path.join(CREDIT_NOTE_ATTACHMENTS_FOLDER, rel) if rel else ""
-    if (not abs_path) or (not os.path.isfile(abs_path)):
+    abs_path = _resolve_stored_file_path(raw_fp)
+    if (not abs_path) or object_storage.is_remote_url(abs_path) or (not os.path.isfile(abs_path)):
         return jsonify({"success": False, "message": "Attachment not found"}), 404
     return send_file(
         abs_path,
@@ -28230,8 +28695,7 @@ def cn_delete_attachment(att_id):
         if not row:
             return jsonify({"success": False, "error": "Attachment not found"}), 404
         row = dict(row)
-        rel = os.path.basename(str(row.get("file_path") or ""))
-        abs_path = os.path.join(CREDIT_NOTE_ATTACHMENTS_FOLDER, rel) if rel else ""
+        raw_file_path = str(row.get("file_path") or "").strip()
 
         conn = get_db_connection()
         try:
@@ -28241,11 +28705,7 @@ def cn_delete_attachment(att_id):
         finally:
             conn.close()
 
-        if abs_path and os.path.isfile(abs_path):
-            try:
-                os.remove(abs_path)
-            except OSError:
-                pass
+        _remove_stored_upload(raw_file_path, CREDIT_NOTE_ATTACHMENTS_FOLDER)
         return jsonify({"success": True})
     except Exception as e:
         print(traceback.format_exc())
@@ -28316,14 +28776,7 @@ def delete_credit_note(credit_note_id):
             (credit_note_id,),
         )
         for pr in cur.fetchall() or []:
-            rel = os.path.basename(str(pr[0] or ""))
-            if rel:
-                ap = os.path.join(CREDIT_NOTE_ATTACHMENTS_FOLDER, rel)
-                if os.path.isfile(ap):
-                    try:
-                        os.remove(ap)
-                    except OSError:
-                        pass
+            _remove_stored_upload(str(pr[0] or ""), CREDIT_NOTE_ATTACHMENTS_FOLDER)
         cur.execute("DELETE FROM credit_note_attachments WHERE credit_note_id = %s", (credit_note_id,))
         cur.execute("DELETE FROM credit_notes WHERE credit_note_id = %s", (credit_note_id,))
         conn.commit()
