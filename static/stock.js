@@ -1,5 +1,5 @@
 const urlParams = new URLSearchParams(window.location.search);
-const stockMode = urlParams.get("mode") || "new";
+const stockMode = urlParams.get("mode") || "create";
 const stockId = urlParams.get("id") || "";
 let count = 1;
 let loadedStock = null;
@@ -35,15 +35,215 @@ function deleteRow(btn) {
 }
 
 function loadGRN() {
+
     fetch('/api/generate-grn')
-        .then(res => res.json())
-        .then(data => {
-            const grnField = document.getElementById("grnField");
-            if (grnField && !grnField.value) {
-                grnField.value = data.grn_number;
+
+        .then(res => {
+
+            if (!res.ok) {
+                throw new Error("Failed to fetch GRN");
             }
+
+            return res.json();
+
         })
-        .catch(err => console.log("GRN Error:", err));
+
+        .then(data => {
+
+            console.log("GRN API RESPONSE:", data);
+
+            const grnField = document.getElementById("grnField");
+
+            if (grnField) {
+
+                grnField.value = data.grn_number || "";
+
+            }
+
+        })
+
+        .catch(err => {
+
+            console.log("GRN Error:", err);
+
+        });
+
+}
+
+function loadSubmittedPOs() {
+
+    fetch("/api/submitted-pos")
+
+        .then(res => res.json())
+
+        .then(data => {
+
+            const poField =
+                document.getElementById("poField");
+
+            poField.innerHTML =
+                `<option value="">Select PO</option>`;
+
+            data.forEach(po => {
+
+                poField.innerHTML += `
+
+                    <option value="${po.po_number}">
+                        ${po.po_number}
+                    </option>
+
+                `;
+
+            });
+
+        })
+
+        .catch(err => {
+
+            console.log(err);
+
+        });
+}
+
+
+function loadPOData(poNumber) {
+
+    if (!poNumber) return;
+
+    fetch(`/api/purchase/${poNumber}`)
+
+        .then(res => res.json())
+
+        .then(data => {
+
+            document.getElementById("supplierName").value =
+                data.supplier_name || "";
+
+            document.getElementById("supplierEmail").value =
+                data.supplier_email || "";
+
+            const tbody =
+                document.getElementById("items-body");
+
+            tbody.innerHTML = "";
+
+            data.items.forEach((item, index) => {
+
+                const row = document.createElement("tr");
+
+                row.innerHTML = `
+
+                    <td>${index + 1}</td>
+
+                    <td>
+                        <input value="${item.product_name}" readonly>
+                    </td>
+
+                    <td>
+                        <input value="${item.product_id}" readonly>
+                    </td>
+
+                    <td>
+                        <input value="${item.uom}" readonly>
+                    </td>
+
+                    <td>
+                        <input class="qty-ordered"
+                               value="${item.qty}"
+                               readonly>
+                    </td>
+
+                    <td>
+                        <input class="unit-price"
+                               type="number"
+                               value="${item.price || 0}"
+                               readonly>
+                    </td>
+
+                    <td>
+                        <input class="tax-pct"
+                               type="number"
+                               value="${item.tax_pct || 0}"
+                               readonly>
+                    </td>
+
+                    <td>
+                        <input class="disc-pct"
+                               type="number"
+                               value="${item.disc_pct || 0}"
+                               readonly>
+                    </td>
+
+                    <td>
+                        <input class="qty-received"
+                               type="number"
+                               value="0">
+                    </td>
+
+                    <td>
+                        <input class="qty-accepted"
+                               type="number"
+                               value="0">
+                    </td>
+
+                    <td>
+                        <input class="qty-rejected"
+                               value="0"
+                               readonly>
+                    </td>
+
+                    <td>
+                        <input class="qty-remaining"
+                               value="${item.qty}"
+                               readonly>
+                    </td>
+
+                    <td>
+                        <input class="line-total"
+                               value="0"
+                               readonly>
+                    </td>
+
+                    <td>
+                        <select class="warehouse">
+                            <option value="">Select</option>
+                            <option>Main Store</option>
+                            <option>Secondary Store</option>
+                        </select>
+                    </td>
+
+                    <td>
+                        <select class="stock-dim">
+                            <option value="">Select</option>
+                            <option>Good</option>
+                            <option>Damaged</option>
+                        </select>
+                    </td>
+
+                    <td>
+                        <button class="so-delete-btn"
+                                type="button"
+                                onclick="deleteRow(this)">
+                            <i class="fa-solid fa-trash"></i>
+                        </button>
+                    </td>
+                `;
+
+                tbody.appendChild(row);
+
+                attachCalculation(row);
+
+            });
+
+        })
+
+        .catch(err => {
+
+            console.log(err);
+
+            showToast("Unable to load PO", "error");
+
+        });
 }
 
 function updateStatusDisplay(status) {
@@ -53,17 +253,45 @@ function updateStatusDisplay(status) {
     }
 }
 
-function setPageTitle(status) {
-    const title = document.getElementById("pageTitle");
-    if (!title) return;
+function updateStatusBadge(status){
 
-    if (stockMode === "view") {
-        title.innerText = status ? `View Stock Receipt (${status})` : "View Stock Receipt";
-    } else if (stockMode === "edit") {
-        title.innerText = status === "draft" ? "Edit Stock Receipt" : `Stock Receipt (${status})`;
-    } else {
-        title.innerText = "New Stock Receipt";
+    const badge =
+        document.getElementById("statusBadge");
+
+    if(!badge) return;
+
+    // HIDE IN CREATE/NEW MODE
+    if(stockMode === "new" || stockMode === "create"){
+
+        badge.style.display = "none";
+        return;
     }
+
+    // SHOW IN EDIT/VIEW
+    badge.style.display = "inline-flex";
+
+    const normalized =
+        (status || "draft").toLowerCase();
+
+    // remove old classes
+    badge.classList.remove(
+        "status-draft",
+        "status-submitted",
+        "status-pending",
+        "status-approved",
+        "status-rejected",
+        "status-cancelled"
+    );
+
+    // add new class
+    badge.classList.add(`status-${normalized}`);
+
+    // text
+    badge.innerText =
+        `Status : ${
+            normalized.charAt(0).toUpperCase() +
+            normalized.slice(1)
+        }`;
 }
 
 function setFormEditable(editable) {
@@ -131,59 +359,82 @@ function updateActionButtons(status) {
     const pdfBtn = document.getElementById("pdfBtn");
     const emailBtn = document.getElementById("emailBtn");
 
-    // RESET ALL
+    // =========================
+    // RESET ALL (UI ONLY)
+    // =========================
+
     if (saveDraftBtn) saveDraftBtn.disabled = true;
-    if (submitBtn) submitBtn.disabled = true;
+    if (submitBtn) submitBtn.disabled = true;   // ❗ ALWAYS DISABLED HERE
     if (cancelOrderBtn) cancelOrderBtn.disabled = true;
     if (stockReturnBtn) stockReturnBtn.disabled = true;
-    if (pdfBtn) pdfBtn.disabled = true;
-    if (emailBtn) emailBtn.disabled = true;
+    if (cancelOrderBtn) {
+    if (stockMode === "edit" && normalized !== "cancelled") {
+        cancelOrderBtn.disabled = false;
+    } else {
+        cancelOrderBtn.disabled = true;
+    }
+}
 
-    // ===== VIEW MODE =====
-// ===== VIEW MODE =====
+    if (pdfBtn) {
+        pdfBtn.disabled = true;
+        pdfBtn.classList.add("disabled-btn");
+    }
+
+    if (emailBtn) {
+        emailBtn.disabled = true;
+        emailBtn.classList.add("disabled-btn");
+    }
+
+    // =========================
+    // VIEW MODE
+    // =========================
     if (stockMode === "view") {
 
-        // Enable Cancel Order only if not cancelled
         if (cancelOrderBtn) {
             cancelOrderBtn.disabled = (normalized === "cancelled");
         }
 
         if (pdfBtn) {
             pdfBtn.disabled = false;
-            pdfBtn.style.display = "inline-block";
+            pdfBtn.classList.remove("disabled-btn");
         }
 
         if (emailBtn) {
             emailBtn.disabled = false;
-            emailBtn.style.display = "inline-block";
+            emailBtn.classList.remove("disabled-btn");
         }
 
         setFormEditable(false);
         return;
     }
 
-    // ===== EDIT MODE ====
-    if(normalized === "draft"){
+    // =========================
+    // DRAFT / CREATE MODE
+    // =========================
+    if (normalized === "draft") {
+
         if (saveDraftBtn) saveDraftBtn.disabled = false;
-        if (submitBtn) submitBtn.disabled = false;
-        if (cancelOrderBtn) cancelOrderBtn.disabled = false;
-        if (pdfBtn) pdfBtn.disabled = false;
-        if (emailBtn) emailBtn.disabled = false;
+        
 
         setFormEditable(true);
     }
-    else if(normalized === "submitted"){
-        if (stockReturnBtn) stockReturnBtn.disabled = false;
-        if (pdfBtn) pdfBtn.disabled = false;
-        if (emailBtn) emailBtn.disabled = false;
 
-        // Allow cancel order also in submitted if you want
-        if (cancelOrderBtn) cancelOrderBtn.disabled = false;
+    // =========================
+    // SUBMITTED MODE
+    // =========================
+    else if (normalized === "submitted") {
+
+        if (stockReturnBtn) stockReturnBtn.disabled = false;
+        
 
         setFormEditable(false);
     }
+
+    // =========================
+    // CANCELLED / RETURNED
+    // =========================
     else {
-        // cancelled / returned
+
         setFormEditable(false);
     }
 }
@@ -325,6 +576,7 @@ function createStockRow(item, index, editable) {
     </tr>
     `;
 }
+
 function loadComments(grn) {
 
     fetch(`/api/stock-comments/${grn}`)
@@ -379,7 +631,7 @@ function populateStockForm(stock) {
     document.getElementById("qcBy").value = stock.qc_done_by || "";
     document.getElementById("statusField").value = stock.status || "draft";
     updateStatusDisplay(stock.status || "draft");
-    setPageTitle(stock.status || "draft");
+    updateStatusBadge(stock.status || "draft");
     updateActionButtons(stock.status || "draft");
     document.getElementById("poField").value = stock.po_number || "";
     const isEditable = stock.status === "draft" && stockMode === "edit";
@@ -497,18 +749,52 @@ function saveStock(status) {
             received_by: document.getElementById("receivedBy").value,
             qc_done_by: document.getElementById("qcBy").value,
             items: items,
-            status: document.getElementById("statusField").value,
+            status: status,
             grand_total: calculateGrandTotal()
         })
     })
     .then(res => res.json())
-    .then(data => {
+    .then(async data => {
+
         if (data.error) {
+
             showToast(data.error, "error");
             return;
         }
-        showToast("Saved GRN: " + data.grn_number, "success");
+
+        const grn = data.grn_number;
+
+        for (const c of pendingComments) {
+
+            await fetch("/api/stock-comments", {
+
+                method: "POST",
+
+                headers: {
+                    "Content-Type": "application/json"
+                },
+
+                body: JSON.stringify({
+
+                    grn_number: grn,
+                    comment: c.comment,
+                    created_by: c.created_by
+
+                })
+
+            });
+
+        }
+
+        pendingComments = [];
+
+        showToast(
+            "Saved Successfully",
+            "success"
+        );
+
         window.location.replace('/stock-receipt');
+
     })
     .catch(err => {
         console.error(err);
@@ -710,12 +996,25 @@ function loadComments(grn) {
             });
         });
 }
+
+
 /* =========================
    INIT
 ========================= */
 window.onload = function () {
 
-    loadGRN();
+    if (stockMode === "create" || stockMode === "new") {
+        loadGRN();
+    }
+
+    loadSubmittedPOs();
+
+    document.getElementById("poField")
+    .addEventListener("change", function () {
+
+        loadPOData(this.value);
+
+    });
 
 
     if (stockMode === "view" || stockMode === "edit") {
@@ -728,7 +1027,7 @@ window.onload = function () {
         document.getElementById("statusField").value = "draft";
 
         updateStatusDisplay("draft");
-        setPageTitle("draft");
+        updateStatusBadge("draft");
         updateActionButtons("draft");
 
         document.getElementById("poField").value = stockId;
@@ -858,11 +1157,22 @@ window.onload = function () {
             })
             .catch(err => {
                 console.error(err);
-                showToast("Unable to load PO details", "error");
+                showToast("purchase load PO details", "success");
             });
 
     }
 
+    document.addEventListener("input", validateStockForm);
+
+    document.addEventListener("change", validateStockForm);
+
+    validateStockForm();
+    setupLiveValidation("receivedDate", "receivedDateError");
+    setupLiveValidation("supplierDn", "supplierDnError");
+    setupLiveValidation("supplierInvoice", "supplierInvoiceError");
+    setupLiveValidation("receivedBy", "receivedByError");
+    setupLiveValidation("qcBy", "qcByError");
+    setupReceivedDateValidation();
 };
 
 
@@ -949,6 +1259,8 @@ let files = [];
 
 const maxFiles = 5;
 
+let pendingComments = [];
+
 // ==========================
 // ENABLE / DISABLE COMMENT BUTTON
 // ==========================
@@ -960,46 +1272,71 @@ commentText.addEventListener("input", () => {
 // ==========================
 // ADD COMMENT → MOVE TO HISTORY
 // ==========================
-addCommentBtn.addEventListener("click", async (e) => {
+addCommentBtn.addEventListener("click", (e) => {
+
     e.preventDefault();
 
     const text = commentText.value.trim();
-    const grn = document.getElementById("grnField").value;
 
-    if (!text || !grn) return;
+    if (!text) return;
 
-    try {
-        const res = await fetch("/api/stock-comments", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-                grn_number: grn,
-                comment: text,
-                created_by: "Admin"
-            })
-        });
+    pendingComments.push({
 
-        const data = await res.json();
+        comment: text,
+        created_by: "Admin",
+        created_at: new Date().toLocaleString()
 
-        if (!data.success) {
-            showToast(data.error || "Failed to add comment", "error");
-            return;
-        }
+    });
 
-        commentText.value = "";
-        addCommentBtn.disabled = true;
+    commentText.value = "";
 
-        showToast("Comment added successfully", "success");
+    addCommentBtn.disabled = true;
 
-        loadComments(grn); // refresh from DB
+    renderPendingComments();
 
-    } catch (err) {
-        console.error(err);
-        showToast("Error saving comment", "error");
-    }
+    showToast(
+        "Comment Added Successfully",
+        "success"
+    );
+
 });
+
+
+function renderPendingComments() {
+
+    historyDiv.innerHTML = "";
+
+    if (pendingComments.length === 0) {
+
+        noHistoryMsg.style.display = "block";
+        return;
+    }
+
+    noHistoryMsg.style.display = "none";
+
+    pendingComments.forEach(c => {
+
+        const div = document.createElement("div");
+
+        div.classList.add("history-item");
+
+        div.innerHTML = `
+            <p>
+                <strong>
+                    ${c.created_by}
+                    -
+                    ${c.created_at}
+                </strong>
+            </p>
+
+            <p>${c.comment}</p>
+        `;
+
+        historyDiv.appendChild(div);
+
+    });
+
+}
 
 // ==========================
 // TAB SWITCHING
@@ -1045,7 +1382,31 @@ async function handleFiles(selectedFiles) {
 
     const grn = document.getElementById("grnField").value;
 
+        if (stockMode === "create" || stockMode === "new") {
+
+        showToast(
+            "Please Save Draft or Submit before adding attachments",
+            "warning"
+        );
+
+        return;
+    }
+     const allowedTypes = [
+    "application/pdf",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "image/jpeg",
+    "image/png"
+];
+
     for (let f of selectedFiles) {
+
+        if (!allowedTypes.includes(f.type)) {
+            showToast("Invalid file type", "error");
+            continue;
+        }
 
         if (files.length >= maxFiles) {
             showToast("Maximum 5 files allowed", "error");
@@ -1176,43 +1537,89 @@ function updateStatusUI(status){
     updateActionButtons(status);
 
     // optional: show toast
-    showToast("Order Cancelled ✅");
+    showToast("Order Cancelled ");
 }
 
-function showToast(message, type = "success") {
-  const old = document.getElementById("centerToast");
-  if (old) old.remove();
+function validateStockForm() {
 
-  const iconMap = {
-    success: "fa-circle-check",
-    error: "fa-circle-xmark",
-    warning: "fa-triangle-exclamation"
-  };
+    const submitBtn = document.getElementById("submitBtn");
+    if (!submitBtn) return;
 
-  const colorMap = {
-    success: "#a12828",
-    error: "#a12828",
-    warning: "#a12828"
-  };
+    // default always disabled
+    submitBtn.disabled = true;
 
-  const toast = document.createElement("div");
-  toast.id = "centerToast";
-  toast.className = `center-toast show`;
+    if (stockMode === "view") return;
 
-  toast.innerHTML = `
-    <div class="toast-inner">
-      <span class="toast-icon" style="color:${colorMap[type]}">
-        <i class="fa-solid ${iconMap[type]}"></i>
-      </span>
-      <span class="toast-msg">${message}</span>
-    </div>
-  `;
+    const requiredFields = [
+        "receivedDate",
+        "supplierName",
+        "supplierDn",
+        "supplierInvoice",
+        "receivedBy",
+        "qcBy"
+    ];
 
-  document.body.appendChild(toast);
+    for (let id of requiredFields) {
+        const el = document.getElementById(id);
+        if (!el || !el.value.trim()) return;
+    }
 
-  setTimeout(() => {
-    toast.remove();
-  }, 3000);
+    const rows = document.querySelectorAll("#items-body tr");
+    if (rows.length === 0) return;
+
+    for (let row of rows) {
+
+        const received = row.querySelector(".qty-received");
+        const accepted = row.querySelector(".qty-accepted");
+        const warehouse = row.querySelector(".warehouse");
+        const stockDim = row.querySelector(".stock-dim");
+
+        if (
+            !received?.value ||
+            !accepted?.value ||
+            !warehouse?.value ||
+            !stockDim?.value
+        ) return;
+    }
+
+    // ✅ ONLY HERE ENABLE SUBMIT
+    submitBtn.disabled = false;
+}
+
+function showToast(message, type = "warning") {
+
+    const toast = document.getElementById("toast");
+    const msg = document.getElementById("toastMessage");
+    const icon = document.querySelector(".alert-icon");
+
+    msg.textContent = message;
+
+    toast.classList.remove("success", "error", "warning", "show");
+
+    if (type === "success") {
+        toast.classList.add("success");
+        icon.textContent = "✓";
+    }
+
+    if (type === "error") {
+        toast.classList.add("error");
+        icon.textContent = "✕";
+    }
+
+    if (type === "warning") {
+        toast.classList.add("warning");
+        icon.textContent = "!";
+    }
+
+    // show
+    setTimeout(() => {
+        toast.classList.add("show");
+    }, 10);
+
+    // hide after 3 sec
+    setTimeout(() => {
+        toast.classList.remove("show");
+    }, 3000);
 }
 
 
@@ -1339,23 +1746,154 @@ function calculateLineTotal(row) {
 }
 
 function enforceIntegerInput(input) {
+
     input.addEventListener("input", function () {
+
         let value = this.value;
 
-        // If decimal detected
-        if (value.includes(".")) {
-            showToast("Decimal values are not allowed. Converted to integer.", "error");
+        // EMPTY check
+        if (value === "") return;
 
-            // Convert to integer (truncate)
-            this.value = parseInt(value) || 0;
+        // =========================
+        // 1. NEGATIVE VALUE CHECK
+        // =========================
+        if (parseFloat(value) < 0) {
+
+            showToast("Negative values are not allowed", "error");
+
+            this.value = "";
+            return;
+        }
+
+        // =========================
+        // 2. DECIMAL CHECK
+        // =========================
+        if (value.includes(".")) {
+
+            showToast("Decimal values are not allowed", "error");
+
+            // convert to integer
+            this.value = Math.floor(parseFloat(value)) || 0;
         }
     });
 
-    // Optional: block typing dot itself
+    // =========================
+    // BLOCK DOT & MINUS KEY
+    // =========================
     input.addEventListener("keydown", function (e) {
+
         if (e.key === ".") {
             e.preventDefault();
             showToast("Decimal values are not allowed", "error");
         }
+
+        if (e.key === "-") {
+            e.preventDefault();
+            showToast("Negative values are not allowed", "error");
+        }
     });
+}
+
+function setupLiveValidation(inputId, errorId) {
+
+    const input = document.getElementById(inputId);
+    const error = document.getElementById(errorId);
+
+    if (!input || !error) return;
+
+    // EDIT / VIEW MODE skip
+    if (stockMode === "edit" || stockMode === "view") {
+        error.style.display = "none";
+        return;
+    }
+
+    // Initially show if empty
+    if (input.value.trim() === "") {
+        error.style.display = "block";
+    }
+
+    // User enters value -> hide
+    input.addEventListener("input", () => {
+
+        if (input.value.trim() !== "") {
+            error.style.display = "none";
+        } else {
+            error.style.display = "block";
+        }
+
+    });
+
+    // For date/select fields
+    input.addEventListener("change", () => {
+
+        if (input.value.trim() !== "") {
+            error.style.display = "none";
+        } else {
+            error.style.display = "block";
+        }
+
+    });
+
+    // Focus -> hide immediately
+    input.addEventListener("focus", () => {
+        error.style.display = "none";
+    });
+
+    // Leave field empty -> show again
+    input.addEventListener("blur", () => {
+
+        if (input.value.trim() === "") {
+            error.style.display = "block";
+        }
+
+    });
+}
+function setupReceivedDateValidation() {
+
+    const dateField =
+        document.getElementById("receivedDate");
+
+    if (!dateField) return;
+
+    dateField.addEventListener("change", function () {
+
+        const value = this.value;
+
+        // Empty skip
+        if (!value) return;
+
+        const selectedDate =
+            new Date(value);
+
+        const today =
+            new Date();
+
+        today.setHours(0, 0, 0, 0);
+
+        // Invalid Date
+        if (isNaN(selectedDate.getTime())) {
+
+            showToast(
+                "Invalid Date is not accepted",
+                "error"
+            );
+
+            this.value = "";
+            return;
+        }
+
+        // Future Date
+        if (selectedDate > today) {
+
+            showToast(
+                "Future Date is not allowed",
+                "error"
+            );
+
+            this.value = "";
+            return;
+        }
+
+    });
+
 }

@@ -1,404 +1,86 @@
 {% extends "menu.html" %}
- 
+
 {% block extra_css %}
-  <link rel="stylesheet" href="{{ url_for('static', filename='quick-billing.css') }}?v=20260612">
-  <style>
-    /* Critical layout — ensures right payment card always shows */
-    .quick-billing-page .qb-main-workspace {
-      display: flex !important;
-      flex-direction: row !important;
-      align-items: stretch !important;
-      gap: 16px !important;
-      width: 100% !important;
-    }
-    .quick-billing-page .qb-table-panel {
-      flex: 1 1 0 !important;
-      min-width: 0 !important;
-    }
-    .quick-billing-page .qb-right-column {
-      flex: 0 0 300px !important;
-      width: 300px !important;
-      max-width: 300px !important;
-      display: flex !important;
-      align-self: stretch !important;
-    }
-    .quick-billing-page .qb-payment-card {
-      display: flex !important;
-      flex-direction: column !important;
-      flex: 1 !important;
-      height: 100% !important;
-      background: #fff !important;
-      border-radius: 18px !important;
-      padding: 22px 20px 24px !important;
-      box-shadow: 0 18px 40px rgba(70, 10, 10, 0.08) !important;
-      border: 1px solid rgba(190, 140, 140, 0.35) !important;
-      box-sizing: border-box !important;
-    }
-    .quick-billing-page .qb-table-card {
-      display: flex !important;
-      flex-direction: column !important;
-      flex: 1 !important;
-      min-height: calc(100vh - 260px) !important;
-    }
-    .quick-billing-page .qb-invoice-total-box {
-      background: #f3f1f1 !important;
-      border-radius: 14px !important;
-      padding: 18px 10px 20px !important;
-      text-align: center !important;
-      overflow: visible !important;
-    }
-    .quick-billing-page .qb-invoice-total-amt-wrap {
-      width: 100% !important;
-      display: flex !important;
-      justify-content: center !important;
-      align-items: center !important;
-      overflow: hidden !important;
-    }
-    .quick-billing-page .qb-invoice-total-amt {
-      display: inline-block !important;
-      font-size: 38px !important;
-      font-weight: 800 !important;
-      color: #a12828 !important;
-      line-height: 1.15 !important;
-      white-space: nowrap !important;
-      max-width: 100% !important;
-      text-align: center !important;
-    }
-    /* Hide table footer on screen — totals shown in right card */
-    .quick-billing-page .billing-table .qb-tfoot {
-      display: none !important;
-    }
-    @media print {
-      .quick-billing-page .billing-table .qb-tfoot {
-        display: table-footer-group !important;
-      }
-      .quick-billing-page .qb-right-column {
-        display: none !important;
-      }
-    }
-    @media (max-width: 900px) {
-      .quick-billing-page .qb-main-workspace {
-        flex-direction: column !important;
-      }
-      .quick-billing-page .qb-right-column {
-        flex: 1 1 auto !important;
-        width: 100% !important;
-        max-width: 100% !important;
-      }
-    }
-  </style>
+  <link rel="stylesheet" href="{{ url_for('static', filename='quick-removebilling.css') }}?v=20260630">
 {% endblock %}
- 
+
 {% block content %}
-<div class="quick-billing-page">
- 
-  <!-- Header: title + action buttons -->
-  <div class="quick-billing-header">
-    <h2>Quick Billing</h2>
-    <div class="qb-header-actions qb-no-print">
-      <button class="qb-btn qb-btn-soft" type="button" id="holdBillBtn" disabled>Hold</button>
-      <button class="qb-btn qb-btn-primary" type="button" id="newBillBtn" disabled>+ New Bill</button>
-      <button class="qb-btn qb-btn-primary" type="button" id="printBtn">Print</button>
+<div class="qb-del-page" data-role="{{ role|default('')|e }}">
+
+  <div class="qb-del-head">
+    <div>
+      <h2>Removed Items</h2>
+      <div class="sub">Items removed from current bill – You can restore them</div>
     </div>
+
+    <a class="qb-back" href="{{ url_for('quick_billing') }}">Back</a>
   </div>
- 
-  <!-- Filters -->
-  <div class="qb-filters qb-no-print">
-    <div class="qb-filters-row">
-      <select class="pill-select qb-product-select" id="productCodeInput">
-        <option value="" selected>Product Code</option>
-      </select>
- 
-      <select class="pill-select qb-product-select qb-product-select-wide" id="productNameInput">
-        <option value="" selected>Search Product</option>
-      </select>
- 
-      <select class="pill-select" id="categoryFilter">
-        <option value="" selected>Categories</option>
-      </select>
- 
-      <select class="pill-select qb-action-select" id="qbActionSelect">
-        <option value="" selected>Features</option>
-        <option value="add_product">Add Product</option>
-        <option value="barcode_scan">Barcode Scan</option>
-        <option value="apply_discount">Apply Discount</option>
-        <option value="change_quantity">Change Quantity</option>
-        <option value="remove_item">Remove Item</option>
-      </select>
- 
-      <select class="pill-select pill-select-soft" id="paymentMode">
-        <option value="" selected>Payment Mode</option>
-        <option value="Cash">Cash</option>
-        <option value="UPI">UPI</option>
-        <option value="Card">Card</option>
-        <option value="Multiple">Multiple</option>
-      </select>
- 
-      <button class="deleted-pill-btn" id="deletedBtn" type="button">Removed Items</button>
-      <button class="clear-filter-btn" id="clearFilterBtn" type="button">Clear Filter</button>
+
+  <div class="qb-del-filters">
+    <div class="search-wrap">
+      <input id="delSearch" type="text" placeholder="Search (Product code / name)">
     </div>
+    <button class="btn btn-soft" id="delClear" type="button">Clear Filter</button>
   </div>
- 
-  <!-- Multiple payment modal -->
-  <div class="qb-modal" id="multiPayModal" aria-hidden="true">
-    <div class="qb-modal-card mp-modal-card">
-      <div class="qb-modal-header"><h3>Multiple Payment</h3></div>
-      <div class="mp-modal-body">
-        <div class="mp-field mp-field-full">
-          <label for="mpTotal">Total</label>
-          <input type="text" id="mpTotal" class="mp-input" readonly>
-        </div>
-        <div class="mp-split-grid">
-          <div class="mp-field">
-            <label for="mpCash">Cash</label>
-            <input type="number" id="mpCash" class="mp-input" min="0" step="0.01" placeholder="0.00" inputmode="decimal">
-          </div>
-          <div class="mp-field">
-            <label for="mpUpi">UPI</label>
-            <input type="number" id="mpUpi" class="mp-input" min="0" step="0.01" placeholder="0.00" inputmode="decimal">
-          </div>
-          <div class="mp-field">
-            <label for="mpCard">Card</label>
-            <input type="number" id="mpCard" class="mp-input" min="0" step="0.01" placeholder="0.00" inputmode="decimal">
-          </div>
-        </div>
-        <div class="mp-field mp-field-full">
-          <label for="mpBalance">Balance (must be 0)</label>
-          <input type="text" id="mpBalance" class="mp-input mp-input-readonly" readonly value="0.00">
-        </div>
-      </div>
-      <div class="mp-actions">
-        <button type="button" id="mpSave" class="qb-btn qb-btn-primary">Save</button>
-        <button type="button" id="mpCancel" class="qb-btn qb-btn-secondary">Cancel</button>
+
+  <div class="qb-del-actions">
+    <label class="chk">
+      <input type="checkbox" id="delSelectAll">
+      <span>Select All</span>
+    </label>
+    <button type="button" class="btn btn-danger" id="delDeleteSelected">Delete</button>
+  </div>
+
+  <div class="qb-del-card">
+    <div class="table-scroll">
+      <table class="qb-del-table">
+        <thead>
+          <tr>
+            <th class="col-check"></th>
+            <th>S.No</th>
+            <th>Product Code</th>
+            <th>Product Name</th>
+            <th>Qty.</th>
+            <th>Unit Price</th>
+            <th>Discount %</th>
+            <th>Tax % (GST)</th>
+            <th>Removed By</th>
+            <th>Removed At</th>
+            <th class="col-action">Action</th>
+          </tr>
+        </thead>
+        <tbody id="delTbody">
+          <tr class="no-data-row"><td class="empty" colspan="11">No removed item found</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="qb-del-footer">
+      <div id="delShowing">Showing 0–0 of 0 Entities</div>
+      <div class="pager">
+        <button class="pager-btn" id="delPrev" type="button">Prev</button>
+        <span>Page <b id="delPageNow">1</b> of <b id="delPageTotal">1</b></span>
+        <button class="pager-btn" id="delNext" type="button">Next</button>
       </div>
     </div>
   </div>
- 
-  <!-- Barcode scan -->
-  <div class="scan-pill qb-no-print">
-    <input
-      type="text"
-      id="scanInput"
-      placeholder="Scan barcode"
-      autocomplete="off"
-    >
-      <button type="button" class="scan-icon" id="scanIconBtn" title="Scan barcode with camera" aria-label="Open barcode scanner">
-      <svg class="qr-icon" viewBox="0 0 24 24" aria-hidden="true">
-        <path d="M3 3h5v2H5v3H3V3zm16 0v5h-2V5h-3V3h5zM3 21v-5h2v3h3v2H3zm16-5h2v5h-5v-2h3v-3z" fill="currentColor"/>
-        <rect x="7" y="7" width="3" height="3" fill="currentColor"/>
-        <rect x="14" y="7" width="3" height="3" fill="currentColor"/>
-        <rect x="7" y="14" width="3" height="3" fill="currentColor"/>
-        <rect x="12" y="12" width="2" height="2" fill="currentColor"/>
-      </svg>
-    </button>
-  </div>
- 
-  <!-- Main workspace: table (left) + payment sidebar (right) -->
-  <div class="qb-main-workspace">
- 
-    <div class="qb-table-panel">
-      <div class="quick-billing-card qb-table-card">
-        <div class="qb-data-wrap" id="printArea">
-          <div class="table-wrap">
-            <table class="table billing-table" id="billingTable">
-              <thead>
-                <tr>
-                  <th class="col-sno-th">SNo</th>
-                  <th>Product Code</th>
-                  <th>Product Name</th>
-                  <th>Quantity</th>
-                  <th>Price</th>
-                  <th>Discount</th>
-                  <th>Taxable</th>
-                  <th>CGST</th>
-                  <th>SGST</th>
-                  <th>Total</th>
-                  <th class="actions-col qb-th-action">Action</th>
-                </tr>
-              </thead>
-              <tbody id="billingTableBody">
-                <tr class="no-data-row" id="noDataRow">
-                  <td class="empty" colspan="11">No entries found.</td>
-                </tr>
-              </tbody>
-              <tfoot class="qb-tfoot">
-                <tr>
-                  <td colspan="8"></td>
-                  <td class="sum-label">Taxable Amount :</td>
-                  <td class="sum-value" id="sumTaxableFoot">0.00</td>
-                  <td></td>
-                </tr>
-                <tr>
-                  <td colspan="8"></td>
-                  <td class="sum-label">Total Tax :</td>
-                  <td class="sum-value" id="sumTaxFoot">0.00</td>
-                  <td></td>
-                </tr>
-                <tr>
-                  <td colspan="8"></td>
-                  <td class="sum-label">Total Amount :</td>
-                  <td class="sum-value" id="sumTotalAmtFoot">0.00</td>
-                  <td></td>
-                </tr>
-                <tr>
-                  <td colspan="8"></td>
-                  <td class="sum-label">Round Off :</td>
-                  <td class="sum-value" id="sumRoundOffFoot">0.00</td>
-                  <td></td>
-                </tr>
-                <tr class="sum-divider">
-                  <td colspan="8"></td>
-                  <td colspan="2"><hr></td>
-                  <td></td>
-                </tr>
-                <tr class="sum-total qb-tfoot-invoice-row">
-                  <td colspan="8"></td>
-                  <td class="sum-label">Invoice Total :</td>
-                  <td class="sum-value" id="sumInvoiceFoot">0.00</td>
-                  <td></td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-        </div>
- 
-        <div class="table-footer qb-no-print">
-          <div class="showing" id="qbShowingText">Showing 0 Entries</div>
-          <div class="pager">
-            <button class="pager-btn" id="qbPrevBtn" type="button" disabled>Prev</button>
-            <span class="pager-text">
-              Page <b id="qbPageNow">1</b> of <b id="qbPageTotal">1</b>
-            </button>
-            <button class="pager-btn" id="qbNextBtn" type="button" disabled>Next</button>
-          </div>
-        </div>
-      </div>
-    </div>
- 
-    <div class="qb-right-column qb-no-print">
-      <aside class="qb-payment-card" id="qbPaymentPanel">
-        <div class="qb-invoice-total-box">
-          <span class="qb-invoice-total-label">Invoice Total</span>
-          <div class="qb-invoice-total-amt-wrap">
-            <div class="qb-invoice-total-amt" id="qbBillTotal" aria-live="polite" aria-label="Invoice total">₹0.00</div>
-          </div>
-        </div>
- 
-        <div class="qb-summary-lines">
-          <div class="qb-summary-line"><span>Taxable Amount</span><span id="sumTaxableCard">0.00</span></div>
-          <div class="qb-summary-line"><span>Total Tax</span><span id="sumTaxCard">0.00</span></div>
-          <div class="qb-summary-line"><span>Total Amount</span><span id="sumTotalAmtCard">0.00</span></div>
-          <div class="qb-summary-line"><span>Round Off</span><span id="sumRoundOffCard">0.00</span></div>
-        </div>
- 
-        <div class="qb-pay-fields">
-          <div class="qb-pay-row">
-            <label for="cashReceived">Cash Received</label>
-            <input
-              type="number"
-              id="cashReceived"
-              min="0"
-              step="1"
-              placeholder="0"
-              autocomplete="off"
-            >
-          </div>
-          <div class="qb-pay-row">
-            <label>Balance to Return</label>
-            <input type="text" id="changeReturn" value="₹0.00" readonly>
-          </div>
-        </div>
- 
-        <div class="qb-pay-hint" id="payHint"></div>
- 
-        <div class="qb-card-actions">
-          <button type="button" class="qb-btn qb-btn-primary qb-btn-block" id="clearPaymentBtn">
-            Clear Payment
-          </button>
-          <button type="button" class="qb-btn qb-btn-primary qb-btn-block" id="finalizeBtn" disabled>
-            Finalize Bill
-          </button>
-        </div>
-      </aside>
-    </div>
- 
-  </div>
- 
-  <div id="qbToast" class="qb-toast qb-no-print">
-    <span id="qbToastMsg">Message</span>
-  </div>
- 
+
 </div>
- 
-<!-- Apply discount modal -->
-<div id="qbDiscountModal" class="qb-modal-overlay qb-no-print">
-  <div class="qb-modal-card">
-    <div class="qb-modal-header"><h3>Apply Discount</h3></div>
-    <div class="qb-modal-body">
-      <label for="qbDiscountInput" class="qb-modal-label">Discount (%)</label>
-      <input type="number" id="qbDiscountInput" class="qb-modal-input" min="0" max="100" step="0.01" placeholder="0">
-    </div>
-    <div class="qb-modal-actions">
-      <button type="button" id="qbDiscountCancel" class="qb-btn qb-btn-soft">Cancel</button>
-      <button type="button" id="qbDiscountApply" class="qb-btn qb-btn-primary">Apply</button>
+
+<div id="delConfirmModal" class="qb-del-modal-overlay" style="display: none;" aria-hidden="true">
+  <div class="qb-del-modal-card" role="dialog" aria-labelledby="delConfirmTitle">
+    <h3 id="delConfirmTitle">Delete Selected</h3>
+    <p id="delConfirmMsg" class="qb-del-modal-text"></p>
+    <div class="qb-del-modal-actions">
+      <button type="button" class="btn btn-soft" id="delConfirmCancel">Cancel</button>
+      <button type="button" class="btn btn-danger" id="delConfirmOk">Delete</button>
     </div>
   </div>
 </div>
- 
-<!-- Finalize Bill confirm modal -->
-<div id="finalizeModal" class="qb-modal-overlay finalize-modal qb-no-print">
-  <div class="qb-modal-card">
-    <div class="qb-modal-header"><h3>Finalize Bill</h3></div>
-    <div class="qb-modal-body">Ready to print invoice?</div>
-    <div class="qb-modal-actions">
-      <button id="finalizeCancel" class="qb-btn qb-btn-soft">Cancel</button>
-      <button id="finalizeOk" class="qb-btn qb-btn-primary">Yes, Print</button>
-    </div>
-  </div>
-</div>
- 
-<!-- Camera scanner modal -->
-<div id="cameraScannerModal" class="qb-modal-overlay qb-no-print">
-  <div class="qb-modal-card camera-card">
-    <div class="qb-modal-header"><h3>Scan Product</h3></div>
-    <div class="qb-modal-body">
-      <div id="barcodeScanner" class="barcode-scanner"></div>
-    </div>
-    <div class="qb-modal-actions">
-      <button id="cameraCloseBtn" type="button" class="qb-btn qb-btn-soft">Close</button>
-    </div>
-  </div>
-</div>
- 
-<!-- Hold overwrite modal -->
-<div id="holdOverwriteModal" class="qb-modal-overlay qb-no-print" style="display: none;">
-  <div class="qb-modal-card">
-    <div class="qb-modal-header"><h3>Overwrite Hold Bill</h3></div>
-    <div class="qb-modal-body">A held bill already exists. Do you want to overwrite it?</div>
-    <div class="qb-modal-actions">
-      <button id="holdOverwriteCancel" class="qb-btn qb-btn-soft">Cancel</button>
-      <button id="holdOverwriteOk" class="qb-btn qb-btn-primary">OK</button>
-    </div>
-  </div>
-</div>
- 
-<!-- Hold delete modal -->
-<div id="holdDeleteModal" class="qb-modal-overlay qb-no-print" style="display: none;">
-  <div class="qb-modal-card">
-    <div class="qb-modal-header"><h3>Delete Hold Bill</h3></div>
-    <div class="qb-modal-body">Are you sure you want to delete the current hold bill? This action cannot be undone.</div>
-    <div class="qb-modal-actions">
-      <button id="holdDeleteCancel" class="qb-btn qb-btn-soft">Cancel</button>
-      <button id="holdDeleteOk" class="qb-btn qb-btn-primary">OK</button>
-    </div>
-  </div>
-</div>
- 
 {% endblock %}
- 
+
 {% block extra_js %}
-  <script src="{{ url_for('static', filename='quick-billing.js') }}?v=20260613"></script>
-  <script src="https://unpkg.com/@ericblade/quagga2/dist/quagga.js"></script>
+  
+  <script src="{{ url_for('static', filename='quick-removebilling.js') }}?v=20260626"></script>
 {% endblock %}
- 
- 
+

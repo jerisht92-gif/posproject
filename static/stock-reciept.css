@@ -93,6 +93,9 @@
   font-weight:700;
   cursor:pointer;
 }
+.clear-filter:hover{
+  color:#5e1111;
+}
  
 /* ============================= */
 /* FILTERS */
@@ -191,31 +194,48 @@
 /* ============================= */
 /* TABLE */
 /* ============================= */
+
+.table-scroll{
+  overflow-x:auto;
+  overflow-y:visible;
+  position:relative;
+  margin-top:0;
+  padding-top:0;
+}
 table{
-  min-width: 1200px;
   width:100%;
+  min-width: 1200px;
   border-collapse:collapse;
   font-size:14px;
-  border-spacing: 0 8px; 
+  position:relative;
 }
  
 thead th{
-  background:rgba(170,70,70,0.10);
-  color:#7a1d1d;
-  padding:10px;
-  padding: 15px 18px;
+  padding:10px 12px;
 
-  text-align: left;
-  vertical-align: middle;
+  text-align:center;
+
+  white-space:nowrap;
+
+  color:#7a1d1d;
+
+  background:rgba(170,70,70,0.10);
+
+  border-bottom:1px solid rgba(170,70,70,0.2);
+
+  font-weight:600;
 }   
 
  
 tbody td{
-  padding:10px;
-  border-bottom:1px solid rgba(170,70,70,0.12);
-  padding: 15px 18px; 
 
-  text-align: left;
+  padding:12px 10px;
+
+  white-space:nowrap;
+
+  border-bottom:1px solid rgba(170,70,70,0.12);
+
+  text-align:center;
   vertical-align: middle;
 
 }
@@ -259,39 +279,50 @@ tr:hover{
 
 
 
-/* Legacy .status support */
-.status {
-  padding:5px 10px;
-  border-radius:999px;
-  font-size:11px;
-  font-weight:700;
+.status,
+.status-badge {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+
+  min-width: 120px;  
+  height: 30px;
+
+  padding: 0 12px;
+  border-radius: 20px;
+
+  text-align: center;
+  white-space: nowrap;
 }
 
-.status-draft {
-  background: linear-gradient(135deg, #FFF4E5, #FFD8A8);
-  color: #9A3412;
-}
-.status-submitted {
-
-  background: linear-gradient(135deg, #D1FAE5, #A7F3D0);
-  color: #047857;
-}
-.status-returned {
-  background: linear-gradient(135deg, #E9D5FF, #C4B5FD);
-  color: #6D28D9;
-}
-.status-cancelled {
-  background: linear-gradient(135deg, #FEE2E2, #FCA5A5);
-  color: #991B1B;
+.status-draft{
+  background: #EAB308;
+  color: #fff;
 }
 
-.status-received {
-  background: linear-gradient(135deg, #E0ECFF, #B6CCFF);
-  color: #1D4ED8;
+.status-submitted{
+  background: #15803D;
+  color: #fff;
 }
-.status-closed {
-  background: linear-gradient(135deg, #E5E7EB, #D1D5DB);
-  color: #374151;
+
+.status-partial{
+  background: #7C3AED;
+  color: #fff;
+}
+
+.status-received{
+  background: #C2410C;
+  color: #fff;
+}
+
+.status-cancelled{
+  background: #4B5563;
+  color: #fff;
+}
+
+.status-closed{
+  background:linear-gradient(135deg,#E5E7EB,#D1D5DB);
+  color:#374151;
 }
 
 /* ============================= */

@@ -14,7 +14,7 @@
   --qb-radius-pill: 999px;
   --qb-card-radius: 18px;
 }
- 
+
 .quick-billing-page {
   padding: 20px;
   font-family: "Poppins", sans-serif;
@@ -22,14 +22,14 @@
   background: var(--qb-bg);
   min-height: 100%;
 }
- 
+
 .quick-billing-page,
 .quick-billing-card,
 .qb-data-wrap {
   max-width: 100%;
   box-sizing: border-box;
 }
- 
+
 /* Header */
 .quick-billing-header {
   display: flex;
@@ -38,7 +38,7 @@
   gap: 16px;
   margin-bottom: 14px;
 }
- 
+
 .quick-billing-header h2 {
   font-size: 28px;
   font-weight: 600;
@@ -46,14 +46,14 @@
   margin: 0;
   text-shadow: 1px 1px 2px #d8b7b7;
 }
- 
+
 .qb-header-actions {
   display: flex;
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
 }
- 
+
 /* Buttons */
 .qb-btn {
   height: 34px;
@@ -66,45 +66,45 @@
   white-space: nowrap;
   transition: background 0.15s, opacity 0.15s, transform 0.1s;
 }
- 
+
 .qb-btn-primary {
   background: linear-gradient(180deg, var(--qb-maroon) 0%, var(--qb-maroon-dark) 100%);
   color: #fff;
   box-shadow: 0 2px 6px rgba(139, 35, 35, 0.25);
 }
- 
+
 .qb-btn-primary:hover:not(:disabled) {
   filter: brightness(1.05);
 }
- 
+
 .qb-btn-soft {
   background: var(--qb-maroon-soft);
   color: #fff;
 }
- 
+
 .qb-btn-soft:hover:not(:disabled) {
   background: #b07070;
 }
- 
+
 .qb-btn-secondary {
   background: #f0ecec;
   color: #333;
   border: 1px solid var(--qb-border);
 }
- 
+
 .qb-btn-block {
   width: 100%;
   height: 40px;
   font-size: 14px;
 }
- 
+
 .qb-btn:disabled,
 .qb-btn.is-disabled {
   opacity: 0.5;
   cursor: not-allowed;
   transform: none !important;
 }
- 
+
 #finalizeBtn:disabled,
 #finalizeBtn.is-disabled {
   background: var(--qb-maroon-soft) !important;
@@ -112,19 +112,19 @@
   opacity: 0.55;
   cursor: not-allowed;
 }
- 
+
 /* Filters */
 .qb-filters {
   margin-bottom: 12px;
 }
- 
+
 .qb-filters-row {
   display: flex;
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
 }
- 
+
 /* Match delivery-note.css .dn-select */
 .pill-input,
 .pill-select {
@@ -140,26 +140,26 @@
   box-sizing: border-box;
   transition: 0.2s ease;
 }
- 
+
 .pill-input {
   width: 130px;
 }
- 
+
 .pill-input-wide {
   width: 160px;
   min-width: 140px;
 }
- 
+
 #productCodeInput.qb-product-select {
   width: 180px;
   min-width: 160px;
 }
- 
+
 .qb-product-select-wide {
   width: 200px;
   min-width: 170px;
 }
- 
+
 .pill-select {
   min-width: 120px;
   padding-right: 32px;
@@ -170,26 +170,26 @@
   background-repeat: no-repeat;
   background-position: right 12px center;
 }
- 
+
 .pill-input:hover,
 .pill-select:hover {
   background-color: #f5d4d4;
   border-color: #b9473e;
 }
- 
+
 .pill-input:focus,
 .pill-select:focus {
   background-color: #fff5f5;
   border-color: #a12828;
   box-shadow: none;
 }
- 
+
 /* Match delivery-note.css .dn-select option */
 .pill-select option {
   background-color: #d7aaaa;
   color: #000;
 }
- 
+
 .deleted-pill-btn {
   height: 34px;
   padding: 0 20px;
@@ -201,7 +201,7 @@
   font-weight: 600;
   cursor: pointer;
 }
- 
+
 .clear-filter-btn {
   font-size: 13px;
   font-weight: 700;
@@ -212,11 +212,11 @@
   padding: 0 4px;
   margin-left: auto;
 }
- 
+
 .qb-action-select {
   min-width: 150px;
 }
- 
+
 .qb-modal-label {
   display: block;
   font-size: 13px;
@@ -224,7 +224,7 @@
   color: var(--qb-maroon);
   margin-bottom: 8px;
 }
- 
+
 .qb-modal-input {
   width: 100%;
   height: 42px;
@@ -236,16 +236,16 @@
   outline: none;
   box-sizing: border-box;
 }
- 
+
 .qb-modal-input:focus {
   border-color: var(--qb-maroon);
   box-shadow: 0 0 0 2px rgba(128, 32, 32, 0.12);
 }
- 
+
 #qbDiscountModal.show {
   display: flex;
 }
- 
+
 /* Scan bar */
 .scan-pill {
   display: flex;
@@ -261,7 +261,7 @@
   margin-bottom: 16px;
   box-sizing: border-box;
 }
- 
+
 .scan-pill input {
   border: none;
   outline: none;
@@ -271,7 +271,7 @@
   font-weight: 600;
   color: #4a1f1a;
 }
- 
+
 .scan-icon {
   display: flex;
   align-items: center;
@@ -286,21 +286,21 @@
   color: var(--qb-maroon);
   padding: 0;
 }
- 
+
 .scan-icon:hover {
   background: rgba(139, 35, 35, 0.08);
 }
- 
+
 .qr-icon {
   width: 22px;
   height: 22px;
 }
- 
+
 .scan-flash {
   outline: 2px solid var(--qb-maroon);
   box-shadow: 0 0 0 4px rgba(139, 35, 35, 0.12);
 }
- 
+
 /* Two-column workspace: table left, invoice + payment right */
 .qb-main-workspace {
   display: grid;
@@ -308,14 +308,14 @@
   gap: 16px;
   align-items: stretch;
 }
- 
+
 .qb-table-panel {
   min-width: 0;
   grid-column: 1;
   display: flex;
   flex-direction: column;
 }
- 
+
 .qb-right-column {
   grid-column: 2;
   display: flex;
@@ -326,7 +326,7 @@
   min-width: 0;
   overflow: visible;
 }
- 
+
 /* Main table card — full height like sales-order card */
 .quick-billing-card.qb-table-card {
   display: flex;
@@ -340,7 +340,7 @@
   box-shadow: 0 18px 40px rgba(70, 10, 10, 0.08);
   overflow: hidden;
 }
- 
+
 .qb-data-wrap {
   flex: 1;
   display: flex;
@@ -351,7 +351,7 @@
   padding: 0;
   overflow: hidden;
 }
- 
+
 .quick-billing-page .table-wrap {
   flex: 1;
   overflow-x: auto;
@@ -359,12 +359,12 @@
   min-height: 420px;
   border-radius: 10px;
 }
- 
+
 /* Hidden rows (pagination) */
 .quick-billing-page .billing-table tbody tr.data-row.qb-page-hidden {
   display: none !important;
 }
- 
+
 /* Table footer + pager — same as sales-order */
 .quick-billing-page .table-footer {
   display: flex;
@@ -376,21 +376,21 @@
   border-top: 1px solid rgba(170, 70, 70, 0.12);
   flex-shrink: 0;
 }
- 
+
 .quick-billing-page .table-footer .showing {
   font-size: 13px;
   font-weight: 600;
   color: #7a1d1d;
   white-space: nowrap;
 }
- 
+
 .quick-billing-page .table-footer .pager {
   display: flex;
   align-items: center;
   gap: 14px;
   flex: 0 0 auto;
 }
- 
+
 .quick-billing-page .table-footer .pager-btn {
   min-width: 80px;
   padding: 6px 18px;
@@ -404,35 +404,35 @@
   box-shadow: 0 4px 0 #6d1717;
   transition: 0.25s ease;
 }
- 
+
 .quick-billing-page .table-footer .pager-btn:hover:not(:disabled) {
   transform: translateY(-2px);
 }
- 
+
 .quick-billing-page .table-footer .pager-btn:disabled {
   opacity: 0.5;
   cursor: default;
   transform: none;
 }
- 
+
 .quick-billing-page .table-footer .pager-text {
   font-size: 13px;
   color: #7a1d1d;
   white-space: nowrap;
 }
- 
+
 .quick-billing-page .table-footer #qbPageNow,
 .quick-billing-page .table-footer #qbPageTotal {
   font-weight: 700;
 }
- 
+
 /* Table — matches .table / .dn-table on other pages */
 .quick-billing-page .table.billing-table {
   width: 100%;
   border-collapse: collapse;
   font-size: 14px;
 }
- 
+
 .quick-billing-page .billing-table thead th {
   padding: 8px 12px;
   text-align: center;
@@ -445,16 +445,16 @@
   top: 0;
   z-index: 2;
 }
- 
+
 .quick-billing-page .billing-table thead th.col-sno-th {
   width: 52px;
 }
- 
+
 .quick-billing-page .billing-table thead th.qb-th-action,
 .quick-billing-page .billing-table tbody td.actions-col {
   text-align: center;
 }
- 
+
 .quick-billing-page .billing-table tbody td {
   padding: 8px 12px;
   text-align: center;
@@ -463,25 +463,25 @@
   border-bottom: 1px solid rgba(170, 70, 70, 0.12);
   color: #4a1f1a;
 }
- 
+
 .quick-billing-page .billing-table tbody tr.data-row {
   cursor: pointer;
 }
- 
+
 /* Hover + selected — same as sales-order / invoice-list / products */
 .quick-billing-page .billing-table tbody tr:hover {
   background: rgba(141, 31, 31, 0.06);
 }
- 
+
 .quick-billing-page .billing-table tbody tr:hover td {
   background: #e3bdbd;
   transition: 0.25s ease;
 }
- 
+
 .quick-billing-page .billing-table tbody tr.data-row.row-selected td {
   background: #e3bdbd;
 }
- 
+
 .quick-billing-page .billing-table tbody td.empty,
 .quick-billing-page .billing-table .no-data-row td {
   padding: 16px 12px;
@@ -489,7 +489,7 @@
   color: #8a5a5a;
   font-size: 14px;
 }
- 
+
 /* Product name & code — center align (match other columns) */
 .quick-billing-page .billing-table tbody td.col-code,
 .quick-billing-page .billing-table tbody td.col-name {
@@ -498,11 +498,11 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
- 
+
 .quick-billing-page .billing-table thead th {
   vertical-align: middle;
 }
- 
+
 /* Quantity input — form-style */
 .quick-billing-page .qty-input {
   display: block;
@@ -520,18 +520,18 @@
   outline: none;
   box-sizing: border-box;
 }
- 
+
 .quick-billing-page .qty-input:hover {
   border-color: #b9473e;
   background: #f5d4d4;
 }
- 
+
 .quick-billing-page .qty-input:focus {
   border-color: #a12828;
   background: #fff5f5;
   box-shadow: 0 0 0 2px rgba(161, 40, 40, 0.15);
 }
- 
+
 /* Remove button — primary button style */
 .quick-billing-page .row-remove-btn {
   min-width: 72px;
@@ -547,12 +547,12 @@
   box-shadow: 0 3px 0 #6d1717;
   transition: 0.2s ease;
 }
- 
+
 .quick-billing-page .row-remove-btn:hover {
   transform: translateY(-1px);
   box-shadow: 0 5px 0 #6d1717;
 }
- 
+
 .quick-billing-page .billing-table tbody td.col-price,
 .quick-billing-page .billing-table tbody td.col-discount,
 .quick-billing-page .billing-table tbody td.col-taxable,
@@ -561,7 +561,7 @@
 .quick-billing-page .billing-table tbody td.col-total {
   font-weight: 600;
 }
- 
+
 /* Table footer totals (print) */
 .quick-billing-page .billing-table tfoot td {
   padding: 6px 12px;
@@ -570,42 +570,42 @@
   font-size: 13px;
   white-space: nowrap;
 }
- 
+
 .quick-billing-page .billing-table tfoot .sum-label {
   text-align: right;
   font-weight: 600;
   color: #444;
 }
- 
+
 .quick-billing-page .billing-table tfoot .sum-value {
   text-align: center;
   font-weight: 700;
 }
- 
+
 .quick-billing-page .billing-table tfoot .sum-divider hr {
   border: none;
   border-top: 1px solid #ccc;
   margin: 4px 0;
 }
- 
+
 .quick-billing-page .billing-table tfoot .sum-total .sum-label,
 .quick-billing-page .billing-table tfoot .sum-total .sum-value {
   font-weight: 800;
   font-size: 15px;
   color: #111;
 }
- 
+
 /* Table footer hidden on screen — shown in right payment card */
 .quick-billing-page .billing-table .qb-tfoot {
   display: none;
 }
- 
+
 @media print {
   .quick-billing-page .billing-table .qb-tfoot {
     display: table-footer-group;
   }
 }
- 
+
 .qb-summary-lines {
   display: flex;
   flex-direction: column;
@@ -613,7 +613,7 @@
   padding: 4px 0 8px;
   border-bottom: 1px solid #eee;
 }
- 
+
 .qb-summary-line {
   display: flex;
   justify-content: space-between;
@@ -621,12 +621,12 @@
   font-size: 13px;
   color: #444;
 }
- 
+
 .qb-summary-line span:last-child {
   font-weight: 700;
   color: #111;
 }
- 
+
 /* Right payment card — stretches to match table card height */
 .qb-payment-card {
   flex: 1;
@@ -644,7 +644,7 @@
   box-shadow: 0 18px 40px rgba(70, 10, 10, 0.08);
   box-sizing: border-box;
 }
- 
+
 .qb-invoice-total-box {
   background: #f3f1f1;
   border-radius: 14px;
@@ -654,7 +654,7 @@
   min-width: 0;
   container-type: inline-size;
 }
- 
+
 .qb-invoice-total-label {
   display: block;
   font-size: 14px;
@@ -662,7 +662,7 @@
   color: var(--qb-maroon);
   margin-bottom: 10px;
 }
- 
+
 .qb-invoice-total-amt-wrap {
   width: 100%;
   display: flex;
@@ -670,7 +670,7 @@
   align-items: center;
   overflow: hidden;
 }
- 
+
 .qb-invoice-total-amt {
   display: inline-block;
   max-width: 100%;
@@ -681,25 +681,25 @@
   line-height: 1.15;
   white-space: nowrap;
 }
- 
+
 .qb-pay-fields {
   display: flex;
   flex-direction: column;
   gap: 14px;
 }
- 
+
 .qb-pay-row {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
- 
+
 .qb-pay-row label {
   font-size: 13px;
   font-weight: 600;
   color: var(--qb-maroon);
 }
- 
+
 .qb-pay-row input {
   height: 42px;
   padding: 0 14px;
@@ -711,16 +711,16 @@
   color: var(--qb-maroon);
   outline: none;
 }
- 
+
 .qb-pay-row input::placeholder {
   color: #aaa;
 }
- 
+
 .qb-pay-row input:focus {
   border-color: var(--qb-maroon);
   box-shadow: 0 0 0 2px rgba(128, 32, 32, 0.12);
 }
- 
+
 .qb-pay-hint {
   font-size: 12px;
   font-weight: 600;
@@ -728,7 +728,7 @@
   min-height: 0;
   margin-top: -6px;
 }
- 
+
 .qb-card-actions {
   display: flex;
   flex-direction: column;
@@ -736,14 +736,14 @@
   margin-top: auto;
   padding-top: 8px;
 }
- 
+
 .qb-payment-card .qb-btn-block {
   height: 44px;
   border-radius: 12px;
   font-size: 14px;
   font-weight: 600;
 }
- 
+
 /* Modals */
 .qb-modal {
   position: fixed;
@@ -754,11 +754,11 @@
   justify-content: center;
   z-index: 9999;
 }
- 
+
 .qb-modal.show {
   display: flex;
 }
- 
+
 .qb-modal-card {
   width: 360px;
   max-width: calc(100% - 30px);
@@ -767,49 +767,49 @@
   padding: 20px;
   box-shadow: 0 18px 40px rgba(0, 0, 0, 0.2);
 }
- 
+
 .qb-modal .qb-modal-card {
   width: 520px;
 }
- 
+
 /* Multiple payment modal */
 #multiPayModal .mp-modal-card {
   width: min(480px, calc(100vw - 32px));
   padding: 0;
   overflow: hidden;
 }
- 
+
 #multiPayModal .qb-modal-header {
   padding: 18px 20px 0;
 }
- 
+
 #multiPayModal .qb-modal-header h3 {
   margin: 0;
   font-size: 18px;
   font-weight: 600;
   color: var(--qb-maroon);
 }
- 
+
 #multiPayModal .mp-modal-body {
   padding: 16px 20px;
   display: flex;
   flex-direction: column;
   gap: 14px;
 }
- 
+
 #multiPayModal .mp-field {
   display: flex;
   flex-direction: column;
   gap: 6px;
   min-width: 0;
 }
- 
+
 #multiPayModal .mp-field label {
   font-size: 13px;
   font-weight: 600;
   color: #4a1f1a;
 }
- 
+
 #multiPayModal .mp-input {
   width: 100%;
   max-width: 100%;
@@ -825,61 +825,61 @@
   color: #111;
   outline: none;
 }
- 
+
 #multiPayModal .mp-input:focus {
   border-color: var(--qb-maroon);
   box-shadow: 0 0 0 2px rgba(161, 40, 40, 0.12);
 }
- 
+
 #multiPayModal .mp-input-readonly,
 #multiPayModal #mpTotal[readonly] {
   background: #f5f0f0;
   color: #333;
   cursor: default;
 }
- 
+
 #multiPayModal .mp-split-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
 }
- 
+
 #multiPayModal input[type="number"] {
   appearance: textfield;
   -moz-appearance: textfield;
 }
- 
+
 #multiPayModal input[type="number"]::-webkit-outer-spin-button,
 #multiPayModal input[type="number"]::-webkit-inner-spin-button {
   -webkit-appearance: none;
   margin: 0;
 }
- 
+
 #multiPayModal .mp-actions {
   display: flex;
   justify-content: space-between;
   gap: 12px;
   padding: 0 20px 20px;
 }
- 
+
 #multiPayModal .mp-actions .qb-btn {
   flex: 1;
   height: 40px;
 }
- 
+
 @media (max-width: 480px) {
   #multiPayModal .mp-split-grid {
     grid-template-columns: 1fr;
   }
 }
- 
+
 #mpSave:disabled,
 #mpSave.is-disabled {
   background: #ccc !important;
   color: #666 !important;
   cursor: not-allowed;
 }
- 
+
 .qb-modal-overlay {
   position: fixed;
   inset: 0;
@@ -889,34 +889,34 @@
   justify-content: center;
   z-index: 9999;
 }
- 
+
 .qb-modal-overlay.show {
   display: flex;
 }
- 
+
 .qb-modal-header h3 {
   margin: 0 0 12px;
   color: var(--qb-maroon);
   font-weight: 800;
 }
- 
+
 .qb-modal-body {
   font-size: 14px;
   color: #333;
   margin-bottom: 18px;
   font-weight: 600;
 }
- 
+
 .qb-modal-actions {
   display: flex;
   justify-content: flex-end;
   gap: 10px;
 }
- 
+
 .camera-card {
   width: 420px;
 }
- 
+
 #barcodeScanner {
   width: 100%;
   max-width: 360px;
@@ -925,11 +925,11 @@
   overflow: hidden;
   border-radius: 14px;
 }
- 
+
 #cameraScannerModal.show {
   display: flex;
 }
- 
+
 /* Toast */
 .qb-toast {
   position: fixed;
@@ -951,12 +951,12 @@
   pointer-events: none;
   transition: all 0.25s ease;
 }
- 
+
 .qb-toast.show {
   opacity: 1;
   transform: translate(-50%, -50%);
 }
- 
+
 /* Print */
 @media print {
   .quick-billing-header,
@@ -967,88 +967,88 @@
   .quick-billing-page .table-footer {
     display: none !important;
   }
- 
+
   .quick-billing-page .billing-table tbody tr.data-row.qb-page-hidden {
     display: table-row !important;
   }
- 
+
   .billing-table tfoot .qb-tfoot-invoice-row {
     display: table-row;
   }
- 
+
   .qb-main-workspace {
     display: block;
   }
- 
+
   .actions-col,
   th.actions-col {
     display: none !important;
   }
- 
+
   .quick-billing-page .table-wrap {
     overflow: visible !important;
     max-height: none !important;
     height: auto !important;
   }
- 
+
   .quick-billing-page {
     padding: 0;
     background: #fff;
   }
 }
- 
+
 /* Responsive */
 @media (max-width: 1100px) {
   .qb-main-workspace {
     grid-template-columns: minmax(0, 1fr) 280px;
   }
- 
+
   .qb-right-column {
     max-width: 280px;
   }
 }
- 
+
 @media (max-width: 900px) {
   .qb-main-workspace {
     grid-template-columns: 1fr;
   }
- 
+
   .qb-table-panel,
   .qb-right-column {
     grid-column: 1;
     max-width: none;
   }
- 
+
   .qb-right-column {
     position: static;
     max-width: none;
   }
- 
+
   .qb-payment-card {
     max-width: 360px;
     margin: 0 auto;
   }
- 
+
   .clear-filter-btn {
     margin-left: 0;
   }
 }
- 
+
 @media (max-width: 768px) {
   .quick-billing-page {
     padding: 12px;
   }
- 
+
   .quick-billing-header {
     flex-direction: column;
     align-items: flex-start;
   }
- 
+
   .qb-filters-row {
     display: grid;
     grid-template-columns: 1fr 1fr;
   }
- 
+
   .pill-input,
   .pill-input-wide,
   #productCodeInput,
@@ -1057,32 +1057,32 @@
     width: 100% !important;
     min-width: 0;
   }
- 
+
   .clear-filter-btn {
     grid-column: 1 / -1;
     justify-self: end;
   }
- 
+
   .quick-billing-page .qb-table-card,
   .quick-billing-page .qb-payment-card {
     min-height: auto;
   }
- 
+
   .quick-billing-page .table-wrap {
     min-height: 320px;
   }
 }
- 
+
 @media (max-width: 520px) {
   .qb-filters-row {
     grid-template-columns: 1fr;
   }
- 
+
   .qb-invoice-total-amt {
     font-size: 30px;
   }
 }
- 
+
 /* Quick Billing toast notifications */
 .success-notification,
 .error-notification {
@@ -1104,38 +1104,36 @@
   gap: 8px;
   font-family: "Poppins", "Inter", sans-serif;
 }
- 
+
 .success-notification {
   background: linear-gradient(135deg, #fff4f4, #ffe8e8);
   color: #a12828;
   border: 1.5px solid #a12828;
   box-shadow: 0 8px 24px rgba(161, 40, 40, 0.25);
 }
- 
+
 .error-notification {
   background: linear-gradient(135deg, #ffe6e6, #ffc2c2);
   color: #a12828;
   border: 1.5px solid #a12828;
   box-shadow: 0 8px 24px rgba(161, 40, 40, 0.35);
 }
- 
+
 .success-notification.show,
 .error-notification.show {
   opacity: 1;
   transform: translateX(-50%) translateY(0);
   pointer-events: auto;
 }
- 
+
 .success-notification::before {
   content: "✓";
   font-size: 18px;
   font-weight: bold;
 }
- 
+
 .error-notification::before {
   content: "✕";
   font-size: 18px;
   font-weight: bold;
 }
- 
- 

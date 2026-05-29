@@ -13628,17 +13628,17 @@ def check_emails():
     )
     return jsonify({"exists": bool(row)})
 
- 
+
 # =========================================
 # QUICK BILLING PAGE
 # =========================================
- 
+
 @app.route("/quick-billing")
 def quick_billing():
     user_email = session.get("user")
     if not user_email:
         return redirect(url_for("login", message="session_expired"))
- 
+
     users = load_users()
     user_name = "User"
     role = session.get("role", "")
@@ -13647,7 +13647,7 @@ def quick_billing():
             user_name = u.get("name") or "User"
             role = (u.get("role") or role or "").strip()
             break
- 
+
     return render_template(
         "quick-billing.html",
         page="quick_billing",
@@ -13656,17 +13656,17 @@ def quick_billing():
         user_name=user_name,
         role=role,
     )
- 
+
 # =========================================
 # PRODUCTS ENDPOINT - UPDATED FOR YOUR SCHEMA
 # =========================================
- 
-@app.route("/api/products/qb")
+
+@app.route("/api/products/qb") 
 def api_products_qb():
     """Fetch products from database using actual table schema."""
     try:
         rows = fetch_all("""
-            SELECT
+            SELECT 
                 product_id,
                 product_name,
                 unit_price,
@@ -13675,7 +13675,7 @@ def api_products_qb():
                 tax_percent,
                 category_name,
                 specifications
-            FROM products
+            FROM products 
             WHERE status = 'Active'
             ORDER BY product_id
         """)
@@ -13693,7 +13693,7 @@ def api_products_qb():
                 pid_digits = "".join(c for c in str(pid) if c.isdigit())
                 if len(pid_digits) >= 8:
                     barcode = pid_digits
- 
+
             products.append({
                 "product_id": pid,
                 "code": pid,
@@ -13709,24 +13709,24 @@ def api_products_qb():
     except Exception as e:
         print(f"❌ Error fetching products: {e}")
         return jsonify({"success": False, "message": "Could not load products"}), 500
- 
+
 # =========================================
 # DELETED ITEMS PAGE
 # =========================================
- 
+
 @app.route("/quick-billing/deleted")
 def quick_billing_deleted():
     """Legacy URL kept for compatibility."""
     return redirect(url_for("quick_removebilling"))
- 
- 
+
+
 @app.route("/quick-removebilling")
 def quick_removebilling():
     """Standalone Quick Remove Billing page (Removed Items view)."""
     user_email = session.get("user")
     if not user_email:
         return redirect(url_for("login", message="session_expired"))
- 
+
     users = load_users()
     user_name = "User"
     role = session.get("role", "")
@@ -13735,7 +13735,7 @@ def quick_removebilling():
             user_name = u.get("name") or "User"
             role = (u.get("role") or role or "").strip()
             break
- 
+
     return render_template(
         "quick-removebilling.html",
         page="quick-removebilling",
@@ -13744,7 +13744,7 @@ def quick_removebilling():
         user_email=user_email,
         user_name=user_name,
     )
- 
+
 @app.get("/removed-items")
 def removed_items_metadata():
     """Small JSON endpoint so /quick-billing/deleted page has a named Fetch/XHR entry."""
@@ -13753,7 +13753,7 @@ def removed_items_metadata():
         return jsonify(
             {"success": False, "message": "Session expired. Please login first."}
         ), 401
- 
+
     users = load_users()
     user_name = "User"
     role = session.get("role", "")
@@ -13762,7 +13762,7 @@ def removed_items_metadata():
             user_name = u.get("name") or "User"
             role = (u.get("role") or role or "").strip()
             break
- 
+
     return jsonify(
         {
             "success": True,
@@ -13770,15 +13770,15 @@ def removed_items_metadata():
             "current_user": {"email": user_email, "name": user_name, "role": role},
         }
     ), 200
- 
+
 # =========================================
 # HOLD BILL ENDPOINT (DATABASE VERSION)
 # =========================================
- 
+
 @app.route("/api/hold-bill", methods=["GET", "POST", "DELETE"])
 def handle_hold_bill():
     """Store temporary hold bill in database."""
-   
+    
     if request.method == "POST":
         data = request.get_json(silent=True) or {}
         try:
@@ -13790,7 +13790,7 @@ def handle_hold_bill():
             return jsonify({"status": "success"})
         except Exception as e:
             return jsonify({"status": "error", "message": str(e)}), 500
- 
+
     if request.method == "GET":
         try:
             row = fetch_one("SELECT data FROM hold_bill LIMIT 1")
@@ -13799,14 +13799,14 @@ def handle_hold_bill():
             return jsonify({"held": False})
         except Exception as e:
             return jsonify({"status": "error", "message": str(e)}), 500
- 
+
     # DELETE
     try:
         execute_query("DELETE FROM hold_bill")
         return jsonify({"status": "success"})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
- 
+
 # =========================================
 # SAVE QUICK BILL ENDPOINT (DATABASE VERSION)
 # =========================================
@@ -13817,12 +13817,12 @@ def save_quick_bill():
         items = data.get("items") or []
         totals = data.get("totals") or {}
         payment = data.get("payment") or {}
- 
+
         if not items:
             return jsonify({"success": False, "message": "No items to save"}), 400
- 
+
         user_email = session.get("user") or ""
- 
+
         conn = get_db_connection()
         try:
             with conn.cursor() as cur:
@@ -13832,14 +13832,14 @@ def save_quick_bill():
                     RETURNING id
                 """, (user_email, payment.get("mode"), totals.get("invoice_total")))
                 bill_id = cur.fetchone()[0]
- 
+
                 for item in items:   # note: there was a duplicate loop in your original, fix that too
                     quantity = item.get("quantity") or item.get("qty")
                     if quantity is None or quantity == "":
                         quantity = 1
                     price = item.get("price") or 0
                     total = item.get("total") or (quantity * price)
- 
+
                     cur.execute("""
                         INSERT INTO bill_items
                         (bill_id, product_code, product_name, quantity, price, total)
@@ -13848,7 +13848,7 @@ def save_quick_bill():
                 conn.commit()
         finally:
             conn.close()
- 
+
         return jsonify({"success": True, "billId": bill_id}), 201
     except Exception as e:
         print(f"❌ Unexpected error in save_quick_bill: {e}")
@@ -13856,60 +13856,60 @@ def save_quick_bill():
 # =========================================
 # QUICK BILLING REST API (DATABASE VERSION)
 # =========================================
- 
+
 def _require_login_json():
     """Helper to check login for JSON endpoints."""
     user_email = session.get("user")
     if not user_email:
         return None, jsonify({"success": False, "message": "Session expired"}), 401
     return user_email, None, None
- 
+
 @app.route("/api/quick-billing", methods=["GET"])
 def api_quick_billing_list():
     """List all quick bills with filters and pagination."""
     user_email, resp, status = _require_login_json()
     if resp is not None:
         return resp, status
- 
+
     conditions = []
     params = []
-   
+    
     q = (request.args.get("q") or "").strip()
     if q:
         conditions.append("(b.id::text ILIKE %s OR b.user_email ILIKE %s OR b.created_at::text ILIKE %s)")
         like = f"%{q}%"
         params.extend([like, like, like])
-   
+    
     user_filter = (request.args.get("user") or "").strip()
     if user_filter:
         conditions.append("b.user_email ILIKE %s")
         params.append(f"%{user_filter}%")
-   
+    
     date_from = (request.args.get("date_from") or "").strip()
     if date_from:
         conditions.append("b.created_at >= %s")
         params.append(date_from)
-   
+    
     date_to = (request.args.get("date_to") or "").strip()
     if date_to:
         conditions.append("b.created_at <= %s")
         params.append(date_to)
-   
+    
     where_clause = " AND ".join(conditions) if conditions else "1=1"
-   
+    
     count_sql = f"SELECT COUNT(*) FROM quick_bills b WHERE {where_clause}"
     total_items = fetch_one(count_sql, params)["count"]
-   
+    
     try:
         page = max(1, int(request.args.get("page") or 1))
         page_size = min(1000, max(1, int(request.args.get("page_size") or 10)))
     except (TypeError, ValueError):
         return jsonify({"success": False, "message": "Invalid page or page_size"}), 400
-   
+    
     offset = (page - 1) * page_size
     total_pages = max(1, (total_items + page_size - 1) // page_size)
     page = min(page, total_pages)
-   
+    
     sql = f"""
         SELECT
             b.id, b.created_at, b.user_email AS user,
@@ -13933,7 +13933,7 @@ def api_quick_billing_list():
     """
     params_page = params + [page_size, offset]
     rows = fetch_all(sql, params_page)
-   
+    
     items = []
     for row in rows:
         items.append({
@@ -13944,7 +13944,7 @@ def api_quick_billing_list():
             "totals": {"invoice_total": float(row["invoice_total"]) if row["invoice_total"] else 0},
             "payment": {"mode": row["payment_mode"] or ""}
         })
-   
+    
     return jsonify({
         "success": True,
         "data": {
@@ -13954,14 +13954,14 @@ def api_quick_billing_list():
             "total_items": total_items,
         }
     }), 200
- 
+
 @app.route("/api/quick-billing/<int:bill_id>", methods=["GET"])
 def api_quick_billing_get(bill_id):
     """Return a single bill by id."""
     user_email, resp, status = _require_login_json()
     if resp is not None:
         return resp, status
- 
+
     sql = """
         SELECT
             b.id, b.created_at, b.user_email AS user,
@@ -13984,7 +13984,7 @@ def api_quick_billing_get(bill_id):
     row = fetch_one(sql, (bill_id,))
     if not row:
         return jsonify({"success": False, "message": "Bill not found"}), 404
- 
+
     bill = {
         "id": row["id"],
         "created_at": row["created_at"].isoformat(timespec="seconds") if row["created_at"] else "",
@@ -13994,25 +13994,25 @@ def api_quick_billing_get(bill_id):
         "payment": {"mode": row["payment_mode"] or ""}
     }
     return jsonify({"success": True, "data": bill}), 200
- 
+
 @app.route("/api/quick-billing", methods=["POST"])
 def api_quick_billing_create():
     """Create a new quick bill."""
     user_email, resp, status = _require_login_json()
     if resp is not None:
         return resp, status
- 
+
     if not request.is_json:
         return jsonify({"success": False, "message": "Content-Type must be application/json"}), 400
- 
+
     data = request.get_json(silent=True) or {}
     items = data.get("items") or []
     totals = data.get("totals") or {}
     payment = data.get("payment") or {}
- 
+
     if not items:
         return jsonify({"success": False, "message": "At least one item is required"}), 400
- 
+
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
@@ -14022,12 +14022,12 @@ def api_quick_billing_create():
                     RETURNING id, created_at
                 """, (session.get("user") or "", payment.get("mode"), totals.get("invoice_total")))
                 bill_id, created_at = cur.fetchone()
- 
+
                 for item in items:
                     quantity = item.get("quantity") or 1
                     price = item.get("price") or 0
                     total = item.get("total") or (quantity * price)
-                   
+                    
                     cur.execute("""
                         INSERT INTO bill_items
                         (bill_id, product_code, product_name, quantity, price, total)
@@ -14041,7 +14041,7 @@ def api_quick_billing_create():
                         total
                     ))
                 conn.commit()
- 
+
         bill_entry = {
             "id": bill_id,
             "created_at": created_at.isoformat(timespec="seconds"),
@@ -14055,33 +14055,33 @@ def api_quick_billing_create():
             "message": "Bill created successfully",
             "data": bill_entry,
         }), 201
- 
+
     except Exception as e:
         print(f"❌ Error creating bill: {e}")
         return jsonify({"success": False, "message": "Could not save bill"}), 500
- 
+
 @app.route("/api/quick-billing/<int:bill_id>", methods=["PUT"])
 def api_quick_billing_update(bill_id):
     """Update an existing bill."""
     user_email, resp, status = _require_login_json()
     if resp is not None:
         return resp, status
- 
+
     if not request.is_json:
         return jsonify({"success": False, "message": "Content-Type must be application/json"}), 400
- 
+
     data = request.get_json(silent=True) or {}
     items = data.get("items")
     totals = data.get("totals")
     payment = data.get("payment")
- 
+
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute("SELECT 1 FROM quick_bills WHERE id = %s", (bill_id,))
                 if not cur.fetchone():
                     return jsonify({"success": False, "message": "Bill not found"}), 404
- 
+
                 if totals is not None or payment is not None:
                     cur.execute("""
                         UPDATE quick_bills
@@ -14093,14 +14093,14 @@ def api_quick_billing_update(bill_id):
                         totals.get("invoice_total") if totals else None,
                         bill_id
                     ))
- 
+
                 if items is not None:
                     cur.execute("DELETE FROM bill_items WHERE bill_id = %s", (bill_id,))
                     for item in items:
                         quantity = item.get("quantity") or 1
                         price = item.get("price") or 0
                         total = item.get("total") or (quantity * price)
-                       
+                        
                         cur.execute("""
                             INSERT INTO bill_items
                             (bill_id, product_code, product_name, quantity, price, total)
@@ -14114,41 +14114,39 @@ def api_quick_billing_update(bill_id):
                             total
                         ))
                 conn.commit()
- 
+
         return api_quick_billing_get(bill_id)
- 
+
     except Exception as e:
         print(f"❌ Error updating bill {bill_id}: {e}")
         return jsonify({"success": False, "message": "Could not update bill"}), 500
- 
+
 @app.route("/api/quick-billing/<int:bill_id>", methods=["DELETE"])
 def api_quick_billing_delete(bill_id):
     """Remove a bill."""
     user_email, resp, status = _require_login_json()
     if resp is not None:
         return resp, status
- 
+
     try:
         execute_query("DELETE FROM quick_bills WHERE id = %s", (bill_id,))
         return jsonify({"success": True, "message": "Bill deleted successfully"}), 200
     except Exception as e:
         print(f"❌ Error deleting bill {bill_id}: {e}")
         return jsonify({"success": False, "message": "Could not delete bill"}), 500
- 
+
 @app.route("/api/quick-billing/new-id", methods=["GET"])
 def api_quick_billing_new_id():
     """Return the next bill id for UI use."""
     user_email, resp, status = _require_login_json()
     if resp is not None:
         return resp, status
-   
+    
     row = fetch_one("SELECT nextval('quick_bills_id_seq') AS next_id")
     return jsonify({"billId": row["next_id"]}), 200
 #--------------------------------------------------------------------------------------------------------
- 
- 
- 
- 
+
+
  
 
 
@@ -25244,17 +25242,20 @@ def generate_grn():
     cur.execute("""
         SELECT grn_number
         FROM stock_receipts
-        ORDER BY id DESC
+        ORDER BY grn_number DESC
         LIMIT 1
     """)
 
     last = cur.fetchone()
 
-    if last:
+    if last and last[0]:
 
-        last_no = int(last[0].split("-")[1])
+        try:
+            last_no = int(last[0].split("-")[1])
+            new_no = last_no + 1
 
-        new_no = last_no + 1
+        except:
+            new_no = 1
 
     else:
 
@@ -25268,6 +25269,41 @@ def generate_grn():
     return jsonify({
         "grn_number": grn
     })
+
+@app.route("/api/submitted-pos")
+def submitted_pos():
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+
+        SELECT
+            po_number
+
+        FROM purchase_orders
+
+        WHERE LOWER(status) = 'submitted'
+
+        ORDER BY po_number DESC
+
+    """)
+
+    rows = cur.fetchall()
+
+    result = []
+
+    for row in rows:
+
+        result.append({
+            "po_number": row[0]
+        })
+
+    cur.close()
+    conn.close()
+
+    return jsonify(result)
+
 
 @app.route("/api/purchase/<po_number>")
 def get_purchase(po_number):
@@ -25300,15 +25336,11 @@ def get_purchase(po_number):
             product_name,
             qty,
             price,
-            tax_pct,
-            disc_pct,
+            tax,
+            discount,
             uom
         FROM purchase_items
-        WHERE po_id = (
-            SELECT id
-            FROM purchase_orders
-            WHERE po_number = %s
-        )
+        WHERE po_number = %s
     """, (po_number,))
 
     items = cur.fetchall()
@@ -25321,10 +25353,10 @@ def get_purchase(po_number):
 
             "product_id": item[0],
             "product_name": item[1],
-            "qty": float(item[2]),
-            "price": float(item[3]),
-            "tax_pct": float(item[4]),
-            "disc_pct": float(item[5]),
+            "qty": float(item[2] or 0),
+            "price": float(item[3] or 0),
+            "tax_pct": float(item[4] or 0),
+            "disc_pct": float(item[5] or 0),
             "uom": item[6]
 
         })
@@ -25335,13 +25367,15 @@ def get_purchase(po_number):
     return jsonify({
 
         "po_number": po[0],
-
         "supplier_name": po[1],
         "supplier_email": po[2],
-
         "items": item_list
 
     })
+
+# ========================================
+# SAVE STOCK RECEIPT
+# ========================================
 
 @app.route("/api/save-stock", methods=["POST"])
 def save_stock():
@@ -25381,8 +25415,6 @@ def save_stock():
 
             )
 
-            RETURNING id
-
         """, (
 
             data.get("grn_number"),
@@ -25396,11 +25428,9 @@ def save_stock():
             data.get("received_by"),
             data.get("qc_done_by"),
             data.get("grand_total", 0),
-            data.get("status", "Draft")
+            data.get("status", "draft")
 
         ))
-
-        stock_receipt_id = cur.fetchone()[0]
 
         # =========================================
         # INSERT STOCK RECEIPT ITEMS
@@ -25411,7 +25441,7 @@ def save_stock():
 
                 INSERT INTO stock_receipt_items (
 
-                    stock_receipt_id,
+                    grn_number,
                     product_id,
                     product_name,
                     uom,
@@ -25437,17 +25467,21 @@ def save_stock():
 
             """, (
 
-                stock_receipt_id,
+                data.get("grn_number"),
+
                 item.get("product_id"),
                 item.get("product_name"),
                 item.get("uom"),
+
                 item.get("qty_ordered", 0),
                 item.get("qty_received", 0),
                 item.get("accepted_qty", 0),
                 item.get("rejected_qty", 0),
                 item.get("qty_returned", 0),
+
                 item.get("stock_in"),
                 item.get("warehouse"),
+
                 item.get("unit_price", 0),
                 item.get("tax_pct", 0),
                 item.get("disc_pct", 0),
@@ -25461,8 +25495,7 @@ def save_stock():
 
             "success": True,
             "message": "Stock Receipt Saved Successfully",
-            "grn_number": data.get("grn_number"),
-            "stock_receipt_id": stock_receipt_id
+            "grn_number": data.get("grn_number")
 
         })
 
@@ -25509,7 +25542,7 @@ def stock_receipts():
 
             FROM stock_receipts
 
-            ORDER BY id DESC
+            ORDER BY grn_number DESC
 
         """)
 
@@ -25561,7 +25594,7 @@ def view_stock(grn):
 
             SELECT
 
-                id,
+    
                 grn_number,
                 po_number,
                 supplier_id,
@@ -25577,19 +25610,20 @@ def view_stock(grn):
 
             FROM stock_receipts
 
-            WHERE grn_number = %s
+            WHERE TRIM(grn_number) = TRIM(%s)
 
         """, (grn,))
 
         stock = cur.fetchone()
+
+        print("GRN PARAM:", grn)
+        print("DB STOCK:", stock)
 
         if not stock:
 
             return jsonify({
                 "error": "Stock Receipt Not Found"
             }), 404
-
-        stock_receipt_id = stock[0]
 
         # =========================================
         # GET ITEMS
@@ -25615,9 +25649,9 @@ def view_stock(grn):
 
             FROM stock_receipt_items
 
-            WHERE stock_receipt_id = %s
+            WHERE TRIM(grn_number) = TRIM(%s)
 
-        """, (stock_receipt_id,))
+        """, (grn,))
 
         items = cur.fetchall()
 
@@ -25637,7 +25671,7 @@ def view_stock(grn):
                 "qty_returned": float(item[7] or 0),
                 "stock_in": item[8],
                 "warehouse": item[9],
-                "unit_price": float(item[10] or 0),
+                "price": float(item[10] or 0),
                 "tax_pct": float(item[11] or 0),
                 "disc_pct": float(item[12] or 0),
                 "total": float(item[13] or 0)
@@ -25646,23 +25680,29 @@ def view_stock(grn):
 
         return jsonify({
 
-            "grn_number": stock[1],
-            "po_number": stock[2],
-            "supplier_id": stock[3],
-            "supplier_name": stock[4],
-            "supplier_email": stock[5],
-            "received_date": str(stock[6]) if stock[6] else "",
-            "supplier_dn_no": stock[7],
-            "supplier_invoice_no": stock[8],
-            "received_by": stock[9],
-            "qc_done_by": stock[10],
-            "grand_total": float(stock[11] or 0),
-            "status": stock[12],
+
+
+            "grn_number": stock[0],
+            "po_number": stock[1],
+            "supplier_id": stock[2],
+            "supplier_name": stock[3],
+            "supplier_email": stock[4],
+            "received_date": str(stock[5]) if stock[5] else "",
+            "supplier_dn_no": stock[6],
+            "supplier_invoice_no": stock[7],
+            "received_by": stock[8],
+            "qc_done_by": stock[9],
+            "grand_total": float(stock[10] or 0),
+            "status": stock[11],
             "items": item_list
+
+  
 
         })
 
     except Exception as e:
+
+        print("VIEW STOCK ERROR:", e)
 
         return jsonify({
             "error": str(e)
@@ -25715,7 +25755,6 @@ def stock_receipt_pdf(grn):
         # ITEMS
         # =========================================
         cur.execute("""
-
             SELECT
                 product_id,
                 product_name,
@@ -25724,17 +25763,8 @@ def stock_receipt_pdf(grn):
                 rejected_qty,
                 warehouse,
                 total
-
             FROM stock_receipt_items
-
-            WHERE stock_receipt_id = (
-
-                SELECT id
-                FROM stock_receipts
-                WHERE grn_number = %s
-
-            )
-
+            WHERE grn_number = %s
         """, (grn,))
 
         items = cur.fetchall()
@@ -26086,14 +26116,16 @@ def build_stock_receipt_pdf(grn, return_buffer=False):
         # ITEMS
         # =========================
         cur.execute("""
-            SELECT product_id, product_name,
-                   qty_received, accepted_qty,
-                   rejected_qty, warehouse, total
+            SELECT
+                product_id,
+                product_name,
+                qty_received,
+                accepted_qty,
+                rejected_qty,
+                warehouse,
+                total
             FROM stock_receipt_items
-            WHERE stock_receipt_id = (
-                SELECT id FROM stock_receipts
-                WHERE grn_number = %s
-            )
+            WHERE grn_number = %s
         """, (grn,))
 
         items = cur.fetchall()
@@ -26285,6 +26317,9 @@ def get_stock_comments(grn_number):
     return jsonify(result)
 
 
+UPLOAD_FOLDER = "uploads/stock_attachments"
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
 @app.route("/api/stock-attachments", methods=["POST"])
 def upload_stock_attachment():
 
@@ -26295,14 +26330,9 @@ def upload_stock_attachment():
         if not file:
             return jsonify({"success": False, "message": "No file uploaded"}), 400
 
-        display_name = file.filename or "attachment"
-        rel_path = _upload_relative_path(grn_number, display_name)
-        path, _ = _persist_module_upload(
-            object_storage.MODULE_STOCK_ATTACHMENTS,
-            STOCK_ATTACHMENTS_FOLDER,
-            file,
-            rel_path,
-        )
+        filename = secure_filename(file.filename)
+        path = os.path.join(UPLOAD_FOLDER, filename)
+        file.save(path)
 
         conn = get_db_connection()
         cur = conn.cursor()
@@ -26310,22 +26340,7 @@ def upload_stock_attachment():
         cur.execute("""
             INSERT INTO stock_attachments (grn_number, file_name, file_path)
             VALUES (%s, %s, %s)
-            RETURNING id
-        """, (grn_number, display_name, path))
-        row = cur.fetchone()
-        att_id = row[0] if row else None
-        _purge_prior_same_name_files(
-            cur,
-            "stock_attachments",
-            "grn_number",
-            grn_number,
-            "file_name",
-            display_name,
-            "id",
-            att_id,
-            "file_path",
-            STOCK_ATTACHMENTS_FOLDER,
-        )
+        """, (grn_number, filename, path))
 
         conn.commit()
         cur.close()
@@ -26343,7 +26358,7 @@ def get_stock_attachments(grn_number):
     cur = conn.cursor()
 
     cur.execute("""
-        SELECT id, file_name, file_path, uploaded_at
+        SELECT attachment_id, file_name, file_path, uploaded_at
         FROM stock_attachments
         WHERE grn_number = %s
         ORDER BY uploaded_at DESC
@@ -26358,7 +26373,7 @@ def get_stock_attachments(grn_number):
 
     for r in rows:
         result.append({
-            "id": r[0],
+            "attachment_id": r[0],
             "file_name": r[1],
             "file_path": r[2],
             "uploaded_at": str(r[3])

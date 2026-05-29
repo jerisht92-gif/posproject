@@ -1,5 +1,5 @@
 {% extends "menu.html" %}
- 
+
 {% block extra_css %}
   <link rel="stylesheet" href="{{ url_for('static', filename='quick-billing.css') }}?v=20260627">
   <style>
@@ -88,10 +88,10 @@
     }
   </style>
 {% endblock %}
- 
+
 {% block content %}
 <div class="quick-billing-page">
- 
+
   <!-- Header: title + action buttons -->
   <div class="quick-billing-header">
     <h2>Quick Billing</h2>
@@ -101,22 +101,22 @@
       <button class="qb-btn qb-btn-primary" type="button" id="printBtn">Print</button>
     </div>
   </div>
- 
+
   <!-- Filters -->
   <div class="qb-filters qb-no-print">
     <div class="qb-filters-row">
       <select class="pill-select qb-product-select" id="productCodeInput">
         <option value="" selected>Product Code</option>
       </select>
- 
+
       <select class="pill-select qb-product-select qb-product-select-wide" id="productNameInput">
         <option value="" selected>Search Product</option>
       </select>
- 
+
       <select class="pill-select" id="categoryFilter">
         <option value="" selected>Categories</option>
       </select>
- 
+
       <select class="pill-select qb-action-select" id="qbActionSelect">
         <option value="" selected>Features</option>
         <option value="add_product">Add Product</option>
@@ -125,7 +125,7 @@
         <option value="change_quantity">Change Quantity</option>
         <option value="remove_item">Remove Item</option>
       </select>
- 
+
       <select class="pill-select pill-select-soft" id="paymentMode">
         <option value="" selected>Payment Mode</option>
         <option value="Cash">Cash</option>
@@ -133,12 +133,12 @@
         <option value="Card">Card</option>
         <option value="Multiple">Multiple</option>
       </select>
- 
+
       <button class="deleted-pill-btn" id="deletedBtn" type="button">Removed Items</button>
       <button class="clear-filter-btn" id="clearFilterBtn" type="button">Clear Filter</button>
     </div>
   </div>
- 
+
   <!-- Multiple payment modal -->
   <div class="qb-modal" id="multiPayModal" aria-hidden="true">
     <div class="qb-modal-card mp-modal-card">
@@ -173,7 +173,7 @@
       </div>
     </div>
   </div>
- 
+
   <!-- Barcode scan -->
   <div class="scan-pill qb-no-print">
     <input
@@ -192,10 +192,10 @@
       </svg>
     </button>
   </div>
- 
+
   <!-- Main workspace: table (left) + payment sidebar (right) -->
   <div class="qb-main-workspace">
- 
+
     <div class="qb-table-panel">
       <div class="quick-billing-card qb-table-card">
         <div class="qb-data-wrap" id="printArea">
@@ -261,7 +261,7 @@
             </table>
           </div>
         </div>
- 
+
         <div class="table-footer qb-no-print">
           <div class="showing" id="qbShowingText">Showing 0 Entries</div>
           <div class="pager">
@@ -274,7 +274,7 @@
         </div>
       </div>
     </div>
- 
+
     <div class="qb-right-column qb-no-print">
       <aside class="qb-payment-card" id="qbPaymentPanel">
         <div class="qb-invoice-total-box">
@@ -283,14 +283,14 @@
             <div class="qb-invoice-total-amt" id="qbBillTotal" aria-live="polite" aria-label="Invoice total">₹0.00</div>
           </div>
         </div>
- 
+
         <div class="qb-summary-lines">
           <div class="qb-summary-line"><span>Taxable Amount</span><span id="sumTaxableCard">0.00</span></div>
           <div class="qb-summary-line"><span>Total Tax</span><span id="sumTaxCard">0.00</span></div>
           <div class="qb-summary-line"><span>Total Amount</span><span id="sumTotalAmtCard">0.00</span></div>
           <div class="qb-summary-line"><span>Round Off</span><span id="sumRoundOffCard">0.00</span></div>
         </div>
- 
+
         <div class="qb-pay-fields">
           <div class="qb-pay-row">
             <label for="cashReceived">Cash Received</label>
@@ -308,9 +308,9 @@
             <input type="text" id="changeReturn" value="₹0.00" readonly>
           </div>
         </div>
- 
+
         <div class="qb-pay-hint" id="payHint"></div>
- 
+
         <div class="qb-card-actions">
           <button type="button" class="qb-btn qb-btn-primary qb-btn-block" id="clearPaymentBtn">
             Clear Payment
@@ -321,15 +321,15 @@
         </div>
       </aside>
     </div>
- 
+
   </div>
- 
+
   <div id="qbToast" class="qb-toast qb-no-print">
     <span id="qbToastMsg">Message</span>
   </div>
- 
+
 </div>
- 
+
 <!-- Apply discount modal -->
 <div id="qbDiscountModal" class="qb-modal-overlay qb-no-print">
   <div class="qb-modal-card">
@@ -344,7 +344,7 @@
     </div>
   </div>
 </div>
- 
+
 <!-- Finalize Bill confirm modal -->
 <div id="finalizeModal" class="qb-modal-overlay finalize-modal qb-no-print">
   <div class="qb-modal-card">
@@ -356,7 +356,7 @@
     </div>
   </div>
 </div>
- 
+
 <!-- Camera scanner modal -->
 <div id="cameraScannerModal" class="qb-modal-overlay qb-no-print">
   <div class="qb-modal-card camera-card">
@@ -369,7 +369,7 @@
     </div>
   </div>
 </div>
- 
+
 <!-- Hold overwrite modal -->
 <div id="holdOverwriteModal" class="qb-modal-overlay qb-no-print" style="display: none;">
   <div class="qb-modal-card">
@@ -381,7 +381,7 @@
     </div>
   </div>
 </div>
- 
+
 <!-- Hold delete modal -->
 <div id="holdDeleteModal" class="qb-modal-overlay qb-no-print" style="display: none;">
   <div class="qb-modal-card">
@@ -393,13 +393,12 @@
     </div>
   </div>
 </div>
- 
+
 {% endblock %}
- 
+
 {% block extra_js %}
   <script>window.QB_ROLE = "{{ role|default('')|e }}";</script>
-  <script src="{{ url_for('static', filename='quick-billing.js') }}?v=20260628"></script>
-  <script src="https://unpkg.com/@ericblade/quagga2/dist/quagga.js"></script>
+  <script src="{{ url_for('static', filename='vendor/quagga.min.js') }}"></script>
+  <script src="{{ url_for('static', filename='quick-billing.js') }}?v=20260529"></script>
+
 {% endblock %}
- 
- 
