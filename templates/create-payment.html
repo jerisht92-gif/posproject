@@ -1,0 +1,91 @@
+{% extends "menu.html" %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='create-payment.css') }}?v=2">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+{% endblock %}
+
+{% block content %}
+<div class="dn2-page">
+
+<div class="dn2-top">
+      <h2 class="dn2-title">Create Payment</h2>
+  </div>
+
+<div class="dn2-card">
+
+<div class="dn2-form">
+      <!-- Row 1: Customer Name + Payment Method -->
+      <div class="dn2-row">
+        <div class="dn2-field">
+          <label>Customer Name</label>
+          <input type="text" id="customerName" placeholder="Enter customer name" disabled>
+        </div>
+
+   <!-- Payment Method -->
+    <div class="dn2-field">
+  <label>Payment Method</label>
+  <input  id="paymentMethod" placeholder='payment method' disabled>
+</div>
+ </div>
+
+      <!-- Row 2: Transaction ID + Invoice Id (now dropdown) -->
+ <div class="dn2-row">
+        <div class="dn2-field">
+          <label>Transaction ID</label>
+          <input type="text" id="transactionId" placeholder="UP0123456789">
+        </div>
+
+        <!-- Invoice ID -->
+       <div class="dn2-field">
+          <label>Invoice Id</label>
+          <div class="custom-dropdown" id="invoiceDropdown">
+          <div class="dropdown-selected" id="invoiceSelected">Select Invoice Id</div>
+          <div class="dropdown-options" id="invoiceOptions"></div>
+          </div>
+  <input type="hidden" id="invoiceId" value="">
+        </div>
+</div>
+
+      <!-- Row 3: Amount + Date -->
+<div class="dn2-row">
+        <div class="dn2-field">
+          <label>Amount (₹)</label>
+          <input type="text" id="amount" placeholder="0.00">
+        </div>
+        <div class="dn2-field">
+          <label>Date</label>
+          <input type="date" id="paymentDate">
+        </div>
+      </div>
+
+      <!-- Row 4: Notes -->
+      <div class="dn2-row">
+        <div class="dn2-field dn2-full">
+          <label>Notes (Optional)</label>
+          <textarea id="notes" placeholder="Enter Notes Here..."></textarea>
+        </div>
+      </div>
+</div>
+
+<div class="dn2-footer">
+      <div class="footer-icon-bar">
+      </div>
+      <div class="dn2-right-actions">
+        <button type="button" class="dn2-button btn-outline" id="cancelPaymentBtn">Cancel</button>
+        <button type="button" class="dn2-button btn-submit" id="savePaymentBtn" disabled>Save Payment</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Toast Notifications -->
+<div id="successToast" class="success-notification">Payment saved successfully!</div>
+<div id="errorToast" class="error-notification">Please fix validation errors</div>
+
+
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', filename='create-payment.js') }}"></script>
+{% endblock %}

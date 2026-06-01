@@ -160,18 +160,50 @@ document.addEventListener("DOMContentLoaded", () => {
   // ==============================
   // FILE VALIDATION
   // ==============================
-  function handleFile(file) {
-    const allowed = ["csv", "xlsx"];
-    const ext = file.name.split(".").pop().toLowerCase();
+  function isAllowedImportFile(file) {
+    if (!file || !file.name) return false;
+    const name = file.name.trim().toLowerCase();
+    if (!name.endsWith(".csv") && !name.endsWith(".xlsx")) return false;
+    const ext = name.split(".").pop();
+    return ext === "csv" || ext === "xlsx";
+  }
 
-    if (!allowed.includes(ext)) {
-      warningText.textContent = "❌ Invalid file format (CSV / XLSX only)";
-      uploadBox.classList.remove("file-added");
-      fileInput.value = "";
-      // Disable submit button for invalid file
-      if (submitBtn) {
-        submitBtn.disabled = true;
-      }
+  function showToast(message, type = "success") {
+    const existingSuccess = document.querySelector(".success-notification");
+    const existingError = document.querySelector(".error-notification");
+    if (existingSuccess) existingSuccess.remove();
+    if (existingError) existingError.remove();
+
+    const notification = document.createElement("div");
+    notification.className = type === "success" ? "success-notification" : "error-notification";
+    notification.textContent = message;
+    document.body.appendChild(notification);
+
+    setTimeout(() => notification.classList.add("show"), 10);
+
+    const duration = type === "success" ? 2600 : 3000;
+    setTimeout(() => {
+      notification.classList.remove("show");
+      setTimeout(() => {
+        if (notification.parentNode) {
+          notification.parentNode.removeChild(notification);
+        }
+      }, 400);
+    }, duration);
+  }
+
+  function rejectInvalidFile(message) {
+    warningText.textContent = message || "❌ Invalid file format (CSV / XLSX only)";
+    uploadBox.classList.remove("file-added");
+    fileInput.value = "";
+    lastValidationResult = null;
+    if (submitBtn) submitBtn.disabled = true;
+    showToast("Invalid file format. Please upload a CSV or XLSX file.", "error");
+  }
+
+  function handleFile(file) {
+    if (!isAllowedImportFile(file)) {
+      rejectInvalidFile("❌ Invalid file format (CSV / XLSX only)");
       return;
     }
 
@@ -280,43 +312,6 @@ document.addEventListener("DOMContentLoaded", () => {
   window.downloadTemplate = function () {
     window.location.href = "/download-template";
   };
-
-  // ==============================
-  // TOAST
-  // ==============================
-  function showToast(message, type = "success") {
-    const toastBox = document.getElementById("toastBox");
-    if (!toastBox) return;
-
-    const toast = document.createElement("div");
-    toast.className = "toast";
-
-    // For success: show both red checkmark and green tick icon
-    // For error: show X mark (same as "Errors Detected:" section)
-    if (type === "success") {
-      toast.innerHTML = `
-        <span class="toast-icon">✓</span>
-        <span>${message}</span>
-      `;
-    } else {
-      toast.innerHTML = `
-        <span class="toast-icon error-icon">❌</span>
-        <span>${message}</span>
-      `;
-    }
-
-    toastBox.appendChild(toast);
-
-    // ✅ hide after 3 sec
-    setTimeout(() => {
-      toast.classList.add("hide");
-    }, 3000);
-
-    // ✅ remove after hide animation (extra 400ms)
-    setTimeout(() => {
-      toast.remove();
-    }, 3400);
-  }
 
   // ==============================
   // SUBMIT → IMPORT VALIDATED ROWS

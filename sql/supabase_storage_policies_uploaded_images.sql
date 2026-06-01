@@ -1,3 +1,4 @@
+-- DEPRECATED: use sql/supabase_storage_policies_pos_billing_upload.sql (bucket: pos-billing-upload)
 -- Supabase Storage RLS for bucket `uploaded-images`
 -- Run in Supabase SQL Editor (or migrate) after the bucket exists.
 -- Flask uploads use the S3-compatible API with project S3 keys; these policies still apply

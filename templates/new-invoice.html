@@ -11,17 +11,16 @@
   <div
     style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; flex-wrap: wrap; gap: 15px;">
     <div style="display: flex; align-items: center; gap: 20px;">
-      <h2 class="quotation-title" style="margin-bottom: 0;">New Invoice</h2>
+      <h2 class="quotation-title" style="margin-bottom: 0;" id="pageHeading">New Invoice</h2>
       <div class="invoice-status-header">
         <h2 id="invoiceStatusBadge"></h2>
       </div>
     </div>
 
-    <!-- Invoice Return Button - ADDED ON RIGHT SIDE -->
-    <button type="button" id="invoiceReturnBtn" class="btn-save" disabled>
-      Invoice Return
-    </button>
-  </div>
+    <!-- Invoice Return Button - ADaDED ON RIGHT SIDE -->
+<button class="btn-save" id="invoiceReturnBtn" disabled>
+    Invoice Return
+</button></div>
 
   <!-- ========== FORM STARTS HERE ========== -->
   <form id="invoiceForm" method="POST" action="/save-invoice">
@@ -49,7 +48,7 @@
               Select Sales Order
             </div>
             <div class="dropdown-menu" id="saleOrderDropdown">
-              <input type="text" id="saleOrderSearch" placeholder="Search Sales Order..." onkeyup="filterSaleOrders()">
+              <!-- <input type="text" id="saleOrderSearch" placeholder="Search Sales Order..." onkeyup="filterSaleOrders()"> -->
               <div class="dropdown-list" id="saleOrderList">
                 {% if sales_orders %}
                 {% for so in sales_orders %}
@@ -58,7 +57,7 @@
                 </div>
                 {% endfor %}
                 {% else %}
-                <div class="dropdown-item">No Sales Orders Found</div>
+                <div class="dropdown-item" style="color:red">No Sales Orders Found</div>
                 {% endif %}
               </div>
             </div>
@@ -193,7 +192,6 @@
           </select>
         </div>
 
-        <!-- Currency -->
         <!-- Currency (only INR) -->
         <div class="form-group">
           <label>Currency</label>
@@ -222,7 +220,7 @@
       </div>
 
       <!-- ========== INVOICE ITEMS (table) ========== -->
-      <h3 class="section-title">Line Items</h3>
+<h3 class="section-title" id="lineItemsHeading">Line Items <span class="section-sub-title"> (auto‑filled from Sales Order)</span></h3>
       <div class="quotation-items-box">
         <table class="items-table" id="itemsTable">
           <thead>
@@ -332,7 +330,7 @@
         </div>
         <div class="modal-footer-button">
           <button class="btn-discard" id="cancelBtn" type="button">Cancel</button>
-          <button class="btn-draft" id="saveDraftBtn" type="button">Save Draft</button>
+          <button class="btn-draft" id="saveDraftBtn" type="button" >Save Draft</button>
           <button class="btn-save" id="submitInvoiceBtn" type="button">Submit</button>
           <button class="btn-discard" id="markAsPaid" type="button">Mark as paid</button>
           <button class="btn-discard" id="cancelInvoiceBtn" type="button">Cancel Invoice</button>

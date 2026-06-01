@@ -1,21 +1,16 @@
 """
-S3-compatible object storage (e.g. Supabase Storage) for uploads.
+S3 object storage for uploads (AWS S3 or Supabase Storage S3-compatible API).
 
-Configure via environment variables (see .env.example). When not configured,
-all upload paths fall back to local disk in app.py.
+Configure via environment variables in `.env`. When not configured,
+upload paths fall back to local disk in app.py.
 
-Object keys are stored under one bucket with a prefix per submodule, e.g.:
-  quotation_attachments/QA-010/invoice_INV-010 (2).pdf
-  supplier_attachments/SUP-001/contract.pdf
-  invoice_attachments/INV-010/receipt.pdf
-  deliverynote_attachments/DN-001/proof.pdf
-  deliverynote_return_attachments/DNR-001/invoice.pdf
-  (entity subfolder + original uploaded file name)
+Object keys use a prefix per submodule, e.g.:
+  purchase_attachments/PO-001/invoice.pdf
+  creditnote_attachments/CRN-001/file.pdf
 
-The public URL returned and stored in PostgreSQL is:
-  {SUPABASE_PUBLIC_OBJECTS_BASE}/{object_key}
-where SUPABASE_PUBLIC_OBJECTS_BASE ends with the same bucket id as S3_BUCKET, e.g.
-  https://<project_ref>.supabase.co/storage/v1/object/public/uploaded-images
+Public URLs stored in PostgreSQL:
+  AWS:  https://{bucket}.s3.{region}.amazonaws.com/{key}
+  Supabase: {SUPABASE_PUBLIC_OBJECTS_BASE}/{key}
 """
 
 from __future__ import annotations
@@ -25,7 +20,6 @@ import os
 import re
 from typing import Optional, Tuple
 
-# S3 / boto3 require bucket names to match (no spaces). Supabase bucket *id* must match.
 _BUCKET_NAME_RE = re.compile(r"^[a-zA-Z0-9.\-_]{1,255}$")
 _warned_invalid_bucket = False
 
@@ -36,7 +30,6 @@ except ImportError:  # pragma: no cover
     boto3 = None  # type: ignore
     Config = None  # type: ignore
 
-# Prefixes inside the bucket (logical "subfolders")
 MODULE_SUPPLIER_ATTACHMENTS = "supplier_attachments"
 MODULE_QUOTATION_ATTACHMENTS = "quotation_attachments"
 MODULE_INVOICE_ATTACHMENTS = "invoice_attachments"
@@ -58,13 +51,71 @@ def is_remote_url(value: Optional[str]) -> bool:
 
 
 def _s3_bucket_id_from_env() -> str:
-    """Read S3_BUCKET with BOM/CRLF/quotes stripped (Windows .env / shell quirks)."""
     raw = os.getenv("S3_BUCKET")
     if raw is None:
         return ""
     s = raw.strip().strip('"').strip("'")
     s = s.replace("\ufeff", "").replace("\r", "").replace("\n", "")
     return s.strip()
+
+
+def _s3_region() -> str:
+    return (os.getenv("S3_REGION") or "eu-north-1").strip()
+
+
+def _endpoint_url() -> str:
+    return (os.getenv("S3_ENDPOINT_URL") or "").strip()
+
+
+def _is_supabase_endpoint(endpoint: str) -> bool:
+    return "supabase.co" in (endpoint or "").lower()
+
+
+def _is_aws_native() -> bool:
+    """True when using standard AWS S3 (no custom Supabase endpoint)."""
+    if (os.getenv("S3_USE_AWS") or "").strip().lower() in ("1", "true", "yes", "on"):
+        return True
+    endpoint = _endpoint_url()
+    if not endpoint:
+        return True
+    if _is_supabase_endpoint(endpoint):
+        return False
+    return "amazonaws.com" in endpoint.lower()
+
+
+def _derive_aws_public_base() -> str:
+    bucket = _s3_bucket_id_from_env()
+    region = _s3_region()
+    if not bucket:
+        return ""
+    return f"https://{bucket}.s3.{region}.amazonaws.com"
+
+
+def _derive_supabase_public_base() -> str:
+    endpoint = _endpoint_url()
+    bucket = _s3_bucket_id_from_env()
+    if not endpoint or not bucket:
+        return ""
+    m = re.search(
+        r"https://([a-z0-9]+)\.storage\.supabase\.co",
+        endpoint,
+        flags=re.IGNORECASE,
+    )
+    if not m:
+        return ""
+    return f"https://{m.group(1)}.supabase.co/storage/v1/object/public/{bucket}"
+
+
+def _public_base() -> str:
+    explicit = (
+        (os.getenv("S3_PUBLIC_BASE_URL") or "").strip()
+        or (os.getenv("SUPABASE_PUBLIC_OBJECTS_BASE") or "").strip()
+    ).rstrip("/")
+    if explicit:
+        return explicit
+    if _is_aws_native():
+        return _derive_aws_public_base()
+    return _derive_supabase_public_base()
 
 
 def is_enabled() -> bool:
@@ -79,87 +130,91 @@ def is_enabled() -> bool:
             _warned_invalid_bucket = True
             print(
                 "object_storage: S3_BUCKET must match ^[a-zA-Z0-9.\\-_]{1,255}$ (no spaces). "
-                "Create a bucket in Supabase with a valid id (e.g. uploaded-images), then set "
-                "S3_BUCKET and SUPABASE_PUBLIC_OBJECTS_BASE to that id. S3 uploads disabled until fixed."
+                "Example: pos-billing-upload. S3 uploads disabled until fixed."
             )
         return False
-    return bool(
-        (os.getenv("S3_ENDPOINT_URL") or "").strip()
-        and (os.getenv("S3_ACCESS_KEY_ID") or "").strip()
-        and (os.getenv("S3_SECRET_ACCESS_KEY") or "").strip()
-        and b
-        and (os.getenv("SUPABASE_PUBLIC_OBJECTS_BASE") or "").strip()
-    )
+    access = (os.getenv("S3_ACCESS_KEY_ID") or os.getenv("AWS_ACCESS_KEY_ID") or "").strip()
+    secret = (os.getenv("S3_SECRET_ACCESS_KEY") or os.getenv("AWS_SECRET_ACCESS_KEY") or "").strip()
+    has_keys = bool(access and secret)
+    if not has_keys or not _public_base():
+        return False
+    if _is_aws_native():
+        return True
+    return bool(_endpoint_url())
 
 
 def _bucket() -> str:
-    """Bucket id for PutObject/DeleteObject — must pass S3 regex (same as Supabase bucket name)."""
     b = _s3_bucket_id_from_env()
     if not _BUCKET_NAME_RE.fullmatch(b):
         raise ValueError(
             "Invalid S3_BUCKET: use only letters, numbers, dot, hyphen, underscore (1–255 chars), "
-            "e.g. uploaded-images. Match this id in Supabase Storage and in SUPABASE_PUBLIC_OBJECTS_BASE."
+            "e.g. pos-billing-upload."
         )
     return b
-
-
-def _public_base() -> str:
-    return (os.getenv("SUPABASE_PUBLIC_OBJECTS_BASE") or "").strip().rstrip("/")
 
 
 def public_url_for_key(object_key: str) -> str:
     key = (object_key or "").lstrip("/")
     base = _public_base()
     if not base:
-        raise RuntimeError("SUPABASE_PUBLIC_OBJECTS_BASE must be set when using object storage")
+        raise RuntimeError("S3_PUBLIC_BASE_URL or SUPABASE_PUBLIC_OBJECTS_BASE must be set")
     return f"{base}/{key}"
 
 
 def object_key_from_public_url(url: str) -> Optional[str]:
-    """Return object key for delete, given a URL we created with public_url_for_key."""
     if not is_remote_url(url):
         return None
-    base = _public_base()
     u = (url or "").strip().split("?", 1)[0].rstrip("/")
-    if not base:
-        return None
-    prefix = base + "/"
-    if not u.startswith(prefix):
-        return None
-    return u[len(prefix) :].lstrip("/")
+    base = _public_base()
+    if base and u.startswith(base + "/"):
+        return u[len(base) + 1 :].lstrip("/")
+    bucket = _s3_bucket_id_from_env()
+    region = _s3_region()
+    virtual = f"https://{bucket}.s3.{region}.amazonaws.com/"
+    if u.startswith(virtual):
+        return u[len(virtual) :].lstrip("/")
+    path_style = f"https://s3.{region}.amazonaws.com/{bucket}/"
+    if u.startswith(path_style):
+        return u[len(path_style) :].lstrip("/")
+    return None
 
 
 def _get_client():
     global _s3_client
     if _s3_client is not None:
         return _s3_client
-    endpoint = (os.getenv("S3_ENDPOINT_URL") or "").strip()
-    region = (os.getenv("S3_REGION") or "us-east-1").strip()
-    _s3_client = boto3.client(
-        "s3",
-        endpoint_url=endpoint,
-        aws_access_key_id=(os.getenv("S3_ACCESS_KEY_ID") or "").strip(),
-        aws_secret_access_key=(os.getenv("S3_SECRET_ACCESS_KEY") or "").strip(),
-        region_name=region,
-        config=Config(
+    region = _s3_region()
+    access_key = (os.getenv("S3_ACCESS_KEY_ID") or os.getenv("AWS_ACCESS_KEY_ID") or "").strip()
+    secret_key = (os.getenv("S3_SECRET_ACCESS_KEY") or os.getenv("AWS_SECRET_ACCESS_KEY") or "").strip()
+    endpoint = _endpoint_url()
+
+    client_kwargs = {
+        "service_name": "s3",
+        "region_name": region,
+        "aws_access_key_id": access_key,
+        "aws_secret_access_key": secret_key,
+    }
+
+    if _is_supabase_endpoint(endpoint):
+        client_kwargs["endpoint_url"] = endpoint
+        client_kwargs["config"] = Config(
             signature_version="s3v4",
             s3={"addressing_style": "path"},
-        ),
-    )
+        )
+    elif endpoint:
+        client_kwargs["endpoint_url"] = endpoint
+        client_kwargs["config"] = Config(signature_version="s3v4")
+    else:
+        # Native AWS S3 (e.g. pos-billing-upload in eu-north-1)
+        client_kwargs["config"] = Config(signature_version="s3v4")
+
+    _s3_client = boto3.client(**client_kwargs)
     return _s3_client
 
 
 def try_upload_stream(
     module_key: str, object_name: str, file_storage
 ) -> Optional[Tuple[str, int]]:
-    """
-    Upload a Werkzeug FileStorage to S3 if configured.
-
-    object_name may be a single file name or a relative path under the module
-    (e.g. "QA-013/invoice_INV-010 (2).pdf") — path segments must not be ".." or empty.
-
-    Returns (public_url, size_bytes) or None to signal caller should save locally.
-    """
     if not is_enabled():
         return None
     rel = (object_name or "file").replace("\\", "/").strip("/")
@@ -185,7 +240,6 @@ def try_upload_stream(
 
 
 def delete_object_by_public_url(url: str) -> bool:
-    """Delete S3 object if URL matches our public base. Returns True if delete attempted."""
     if not is_enabled() or not is_remote_url(url):
         return False
     key = object_key_from_public_url(url)

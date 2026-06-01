@@ -1,7 +1,7 @@
 {% extends "menu.html" %}
 
 {% block extra_css %}
-<link rel="stylesheet" href="{{ url_for('static', filename='import-product.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='import-product.css') }}?v=2">
 {% endblock %}
 
 {% block content %}
@@ -51,7 +51,7 @@
 
     <!-- label (not div+JS .click()) opens the picker once; programmatic click was causing a double dialog on Windows/Chrome -->
     <label class="upload-box" id="uploadBox">
-      <input type="file" id="fileInput" name="file" accept=".csv,.xlsx" class="import-file-input" />
+      <input type="file" id="fileInput" name="file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" class="import-file-input" />
 
       <div class="upload-icon-wrap">
         <span class="upload-icon">📁</span>
@@ -133,8 +133,6 @@
 
 </div>
 
-<div id="toastBox"></div>
-
-<script src="{{ url_for('static', filename='import-product.js') }}"></script>
+<script src="{{ url_for('static', filename='import-product.js') }}?v=2"></script>
 
 {% endblock %}

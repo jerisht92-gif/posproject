@@ -71,6 +71,13 @@ import hashlib
 
 
 DB_POOL = None
+_DB_PARAMS_CACHE = None
+
+
+# Load env before any DB connection (was previously below ~line 395).
+_BASE_DIR_EARLY = os.path.dirname(os.path.abspath(__file__))
+load_dotenv(os.path.join(_BASE_DIR_EARLY, ".env"), override=True)
+load_dotenv(os.path.join(_BASE_DIR_EARLY, "env"), override=True)
 
 
 def _env_truthy(name, default=True):
@@ -138,7 +145,35 @@ class _PooledConnection:
             self._conn = None
 
 
+def _effective_connect_timeout(host, raw_timeout=None):
+    """Remote DB hosts need a longer connect window than local Postgres."""
+    if raw_timeout is None:
+        raw_timeout = int(os.getenv("DB_CONNECT_TIMEOUT") or 15)
+    else:
+        raw_timeout = int(raw_timeout)
+    h = (host or "").strip().lower()
+    if h not in {"localhost", "127.0.0.1", "::1"} and raw_timeout < 15:
+        return 15
+    return raw_timeout
+
+
+def _apply_db_keepalive(params):
+    """Keep pooled connections alive through NAT/firewalls (optional via env)."""
+    if not _env_truthy("DB_KEEPALIVE", True):
+        return params
+    params = dict(params)
+    params.setdefault("keepalives", 1)
+    params.setdefault("keepalives_idle", int(os.getenv("DB_KEEPALIVES_IDLE") or 30))
+    params.setdefault("keepalives_interval", int(os.getenv("DB_KEEPALIVES_INTERVAL") or 10))
+    params.setdefault("keepalives_count", int(os.getenv("DB_KEEPALIVES_COUNT") or 5))
+    return params
+
+
 def _db_conn_params():
+    global _DB_PARAMS_CACHE
+    if _DB_PARAMS_CACHE is not None:
+        return dict(_DB_PARAMS_CACHE)
+
     # Deployment-friendly DSN support (Vercel/PythonAnywhere/custom envs)
     # Prefer pooler/prisma-style URLs first; direct DB URLs can be IPv6-only on some hosts.
     dsn_env_key = None
@@ -165,7 +200,7 @@ def _db_conn_params():
     db_pass = (os.getenv("DB_PASSWORD") or os.getenv("password") or "Pos@123").strip()
     db_port = int((os.getenv("DB_PORT") or os.getenv("port") or 5432))
     db_sslmode = (os.getenv("DB_SSLMODE") or ("require" if "supabase.co" in (db_host or "") else "prefer")).strip()
-    db_connect_timeout = int(os.getenv("DB_CONNECT_TIMEOUT") or 5)
+    db_connect_timeout = _effective_connect_timeout(db_host)
     force_ipv4 = _env_truthy("DB_FORCE_IPV4", True)
     pooler_host = (os.getenv("SUPABASE_POOLER_HOST") or "").strip()
     pooler_port = int(os.getenv("SUPABASE_POOLER_PORT") or 6543)
@@ -243,7 +278,7 @@ def _db_conn_params():
             "password": password,
             "port": port,
             "sslmode": db_sslmode,
-            "connect_timeout": db_connect_timeout,
+            "connect_timeout": _effective_connect_timeout(host, db_connect_timeout),
         }
         if db_search_path:
             params["options"] = f"-c search_path={db_search_path}"
@@ -257,7 +292,8 @@ def _db_conn_params():
             if hostaddr:
                 params["hostaddr"] = hostaddr
                 print(f"Using IPv4 DB hostaddr for {host}: {hostaddr}")
-        return params
+        _DB_PARAMS_CACHE = _apply_db_keepalive(params)
+        return dict(_DB_PARAMS_CACHE)
 
     db_search_path = os.getenv("DB_SEARCH_PATH")
     if db_search_path is None:
@@ -298,7 +334,66 @@ def _db_conn_params():
             "Set DB_DSN to Supabase pooler URL (recommended), "
             "or set SUPABASE_POOLER_HOST/SUPABASE_REGION."
         )
-    return params
+    _DB_PARAMS_CACHE = _apply_db_keepalive(params)
+    return dict(_DB_PARAMS_CACHE)
+
+
+def _discard_pooled_connection(pool, conn):
+    """Return a broken connection to the pool and close it."""
+    if conn is None:
+        return
+    try:
+        pool.putconn(conn, close=True)
+    except Exception:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def _checkout_pooled_connection(pool, attempts=3):
+    """Get a live connection from the pool (validates with SELECT 1)."""
+    last_err = None
+    for _ in range(attempts):
+        conn = None
+        try:
+            conn = pool.getconn()
+            if getattr(conn, "closed", 0):
+                _discard_pooled_connection(pool, conn)
+                conn = None
+                continue
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1")
+            conn.rollback()
+            return conn
+        except (psycopg2.OperationalError, psycopg2.InterfaceError) as e:
+            last_err = e
+            _discard_pooled_connection(pool, conn)
+            conn = None
+        except Exception as e:
+            last_err = e
+            _discard_pooled_connection(pool, conn)
+            conn = None
+    if last_err is not None:
+        raise last_err
+    raise psycopg2.OperationalError("Could not obtain a healthy database connection from pool")
+
+
+def _direct_db_connect(params):
+    """Connect outside the pool, with one alternate Supabase pooler host retry."""
+    try:
+        return psycopg2.connect(**params)
+    except Exception as e2:
+        msg = str(e2)
+        host = str(params.get("host") or "")
+        alt_host = _alternate_supabase_pooler_host(host)
+        if alt_host and "Tenant or user not found" in msg:
+            alt_params = dict(params)
+            alt_params["host"] = alt_host
+            alt_params.pop("hostaddr", None)
+            print(f"Retrying DB connect with alternate pooler host: {alt_host}")
+            return psycopg2.connect(**alt_params)
+        raise
 
 
 def _init_db_pool():
@@ -325,35 +420,41 @@ atexit.register(_close_db_pool)
 
 
 def get_db_connection():
-    """Get DB connection from global pool; fallback to direct connect."""
+    """Get DB connection from global pool; fallback to direct connect with retry."""
     params = _db_conn_params()
-    try:
-        p = _init_db_pool()
-        conn = p.getconn()
-        return _PooledConnection(conn, p)
-    except Exception as e:
-        print(f"DB pool get failed, falling back to direct connect: {e}")
-        # Fallback if pool init/get fails for any reason.
+    retries = max(1, int(os.getenv("DB_CONNECT_RETRIES") or 2))
+    retry_delay = float(os.getenv("DB_CONNECT_RETRY_DELAY") or 0.5)
+    last_err = None
+
+    for attempt in range(retries):
         try:
-            return psycopg2.connect(**params)
-        except Exception as e2:
-            # Supabase pooler can return "Tenant or user not found" when aws-0/aws-1 host
-            # prefix is mismatched for a project. Try the alternate host once.
-            msg = str(e2)
-            host = str(params.get("host") or "")
-            alt_host = _alternate_supabase_pooler_host(host)
-            if alt_host and "Tenant or user not found" in msg:
-                alt_params = dict(params)
-                alt_params["host"] = alt_host
-                alt_params.pop("hostaddr", None)  # recalculate DNS/IP for alternate host
-                try:
-                    print(f"Retrying DB connect with alternate pooler host: {alt_host}")
-                    return psycopg2.connect(**alt_params)
-                except Exception:
-                    pass
-            print(f"Direct DB connect failed: {e2}")
-            print(traceback.format_exc())
-            raise
+            p = _init_db_pool()
+            conn = _checkout_pooled_connection(p)
+            return _PooledConnection(conn, p)
+        except (psycopg2.OperationalError, psycopg2.InterfaceError) as e:
+            last_err = e
+            _close_db_pool()
+            if attempt + 1 < retries:
+                time.sleep(retry_delay)
+        except Exception as e:
+            last_err = e
+            _close_db_pool()
+            break
+
+    for attempt in range(retries):
+        try:
+            return _direct_db_connect(params)
+        except (psycopg2.OperationalError, psycopg2.InterfaceError) as e:
+            last_err = e
+            if attempt + 1 < retries:
+                time.sleep(retry_delay)
+        except Exception as e:
+            last_err = e
+            break
+
+    print(f"Database connection failed: {last_err}")
+    print(traceback.format_exc())
+    raise last_err
 
 
 def fetch_all(query, params=None):
@@ -391,9 +492,6 @@ def execute_query(query, params=None, commit=True, return_id=False):
 
 # Base directory for building absolute paths
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
-load_dotenv(".env", override=True)
-load_dotenv("env", override=True)  # also load "env" if you keep DB keys there instead of .env
 
 import object_storage  # noqa: E402 — optional S3 uploads (boto3); reads env at runtime
 
@@ -6165,6 +6263,28 @@ def _product_signature_from_stored(p: dict) -> tuple:
     )
 
 
+def _product_import_filename_ok(filename):
+    if not filename or not str(filename).strip():
+        return False
+    fn = str(filename).strip().lower()
+    return fn.endswith(".csv") or fn.endswith(".xlsx")
+
+
+def _read_product_import_dataframe(file):
+    """Read uploaded product import file; only .csv and .xlsx are allowed."""
+    if not _product_import_filename_ok(file.filename):
+        return None, "Invalid file format. Only .csv and .xlsx files are allowed."
+    try:
+        file.seek(0)
+        if file.filename.lower().endswith(".csv"):
+            df = pd.read_csv(file)
+        else:
+            df = pd.read_excel(file)
+        return df, None
+    except Exception:
+        return None, "Invalid or corrupt file. Please upload a valid CSV or XLSX file."
+
+
 @app.route("/upload", methods=["POST"])
 def upload_file():
     file = request.files.get("file")
@@ -6172,22 +6292,9 @@ def upload_file():
     if not file:
         return jsonify({"error": "No file uploaded"}), 400
 
-    # BUG_003 / BUG_004: validate file extension early (expect Excel template)
-    filename_lower = file.filename.lower()
-    if not (filename_lower.endswith(".xlsx") or filename_lower.endswith(".xls")):
-        return (
-            jsonify(
-                {
-                    "error": "Invalid file format. Please upload the provided Excel template (.xlsx or .xls)."
-                }
-            ),
-            400,
-        )
-
-    try:
-        df = pd.read_excel(file)
-    except Exception:
-        return jsonify({"error": "Invalid Excel file"}), 400
+    df, read_err = _read_product_import_dataframe(file)
+    if read_err:
+        return jsonify({"error": read_err}), 400
 
     # Check if file is empty (no data rows, only headers)
     if df.empty or len(df) == 0:
@@ -6403,23 +6510,9 @@ def import_products_validated():
     if not file:
         return jsonify({"success": False, "message": "No file uploaded"}), 400
 
-    # BUG_003 / BUG_004: enforce correct Excel template here as well
-    filename_lower = file.filename.lower()
-    if not (filename_lower.endswith(".xlsx") or filename_lower.endswith(".xls")):
-        return (
-            jsonify(
-                {
-                    "success": False,
-                    "message": "Invalid file format. Please upload the product Excel template (.xlsx or .xls).",
-                }
-            ),
-            400,
-        )
-
-    try:
-        df = pd.read_excel(file)
-    except Exception:
-        return jsonify({"success": False, "message": "Invalid Excel file"}), 400
+    df, read_err = _read_product_import_dataframe(file)
+    if read_err:
+        return jsonify({"success": False, "message": read_err}), 400
 
     products = load_products()
     
@@ -7008,13 +7101,9 @@ def import_customers_validated():
     if not file or file.filename.strip() == "":
         return jsonify(success=False, message="No file uploaded"), 400
 
-    try:
-        if file.filename.lower().endswith(".csv"):
-            df = pd.read_csv(file)
-        else:
-            df = pd.read_excel(file)
-    except Exception as e:
-        return jsonify(success=False, message=f"Invalid file: {e}"), 400
+    df, read_err = _read_customer_import_dataframe(file)
+    if read_err:
+        return jsonify(success=False, message=read_err), 400
 
     required_columns = _customer_import_all_required_columns()
     for col in required_columns:
@@ -7895,6 +7984,27 @@ def get_master_customer_id():
     return jsonify({"customerId": generate_customer_id_for_master()})
 
 
+def _customer_import_filename_ok(filename):
+    if not filename or not str(filename).strip():
+        return False
+    fn = str(filename).strip().lower()
+    return fn.endswith(".csv") or fn.endswith(".xlsx")
+
+
+def _read_customer_import_dataframe(file):
+    if not _customer_import_filename_ok(file.filename):
+        return None, "Invalid file format. Only .csv and .xlsx files are allowed."
+    try:
+        file.seek(0)
+        if file.filename.lower().endswith(".csv"):
+            df = pd.read_csv(file)
+        else:
+            df = pd.read_excel(file)
+        return df, None
+    except Exception:
+        return None, "Invalid or corrupt file. Please upload a valid CSV or XLSX file."
+
+
 @app.route("/upload-customer", methods=["POST"])
 def upload_customer_file():
     file = request.files.get("file")
@@ -7902,13 +8012,9 @@ def upload_customer_file():
     if not file:
         return jsonify({"error": "No file uploaded"}), 400
 
-    try:
-        if file.filename.endswith(".csv"):
-            df = pd.read_csv(file)
-        else:
-            df = pd.read_excel(file)
-    except Exception:
-        return jsonify({"error": "Invalid Excel/CSV file"}), 400
+    df, read_err = _read_customer_import_dataframe(file)
+    if read_err:
+        return jsonify({"error": read_err}), 400
 
     # Check if file is empty (no data rows, only headers)
     if df.empty or len(df) == 0:
@@ -17969,482 +18075,7 @@ def generate_invoice_pdf_bytes(invoice, items, summary):
     pdf_bytes = buffer.getvalue()
     buffer.close()
     return pdf_bytes
-def generate_invoice_pdf_bytes(invoice, items, summary):
-    """
-    Generate PDF bytes for an invoice using the same styling as Delivery Note Return PDF.
-    invoice: dict with invoice header data
-    items: list of item dicts
-    summary: dict with summary totals
-    """
-    buffer = BytesIO()
 
-    doc = SimpleDocTemplate(
-        buffer,
-        pagesize=A4,
-        rightMargin=18,
-        leftMargin=18,
-        topMargin=16,
-        bottomMargin=18,
-    )
-
-    styles = getSampleStyleSheet()
-
-    # ---------- custom styles (matching DNR PDF) ----------
-    company_style = ParagraphStyle(
-        name="Invoice_CompanyName",
-        parent=styles["Normal"],
-        fontName="DejaVuSans-Bold",
-        fontSize=20,
-        leading=24,
-        textColor=colors.HexColor("#8c1f1f"),
-        alignment=TA_CENTER,
-        spaceAfter=4,
-    )
-
-    company_info_style = ParagraphStyle(
-        name="Invoice_CompanyInfo",
-        parent=styles["Normal"],
-        fontName="DejaVuSans",
-        fontSize=9,
-        leading=12,
-        textColor=colors.black,
-        alignment=TA_CENTER,
-        spaceAfter=1,
-    )
-
-    page_title_style = ParagraphStyle(
-        name="Invoice_PageTitle",
-        parent=styles["Heading1"],
-        fontName="DejaVuSans-Bold",
-        fontSize=16,
-        leading=20,
-        textColor=colors.green,
-        alignment=TA_CENTER,
-        spaceBefore=12,
-        spaceAfter=12,
-    )
-
-    section_style = ParagraphStyle(
-        name="Invoice_Section",
-        parent=styles["Heading3"],
-        fontName="DejaVuSans-Bold",
-        fontSize=11,
-        leading=14,
-        textColor=colors.HexColor("#8c1f1f"),
-        spaceAfter=6,
-        spaceBefore=10,
-    )
-
-    label_style = ParagraphStyle(
-        name="Invoice_Label",
-        parent=styles["Normal"],
-        fontName="DejaVuSans-Bold",
-        fontSize=8.5,
-        leading=11,
-        textColor=colors.HexColor("#6b1a1a"),
-    )
-
-    value_style = ParagraphStyle(
-        name="Invoice_Value",
-        parent=styles["Normal"],
-        fontName="DejaVuSans",
-        fontSize=8.5,
-        leading=11,
-        textColor=colors.black,
-    )
-
-    header_small_style = ParagraphStyle(
-        name="Invoice_HeaderSmall",
-        parent=styles["Normal"],
-        fontName="DejaVuSans-Bold",
-        fontSize=8,
-        leading=10,
-        textColor=colors.white,
-        alignment=TA_CENTER,
-    )
-
-    terms_style = ParagraphStyle(
-        name="Invoice_Terms",
-        parent=styles["Normal"],
-        fontName="DejaVuSans",
-        fontSize=8,
-        leading=11,
-        textColor=colors.black,
-        leftIndent=8,
-    )
-
-    # helpers (safe conversion)
-    def safe_str(val, default="-"):
-        if val is None:
-            return default
-        s = str(val).strip()
-        return s if s else default
-
-    def safe_float(val, default=0.0):
-        try:
-            if val in (None, ""):
-                return default
-            return float(val)
-        except Exception:
-            return default
-
-    elements = []
-
-    # company header (same as DNR)
-    elements.append(Paragraph("STACKLY", company_style))
-    elements.append(
-        Paragraph(
-            "MMR Complex, Chinna Thirupathi, near Chinna Muniyappan Kovil, Salem, Tamil Nadu - 636008",
-            company_info_style,
-        )
-    )
-    elements.append(Paragraph("Phone: +91 7010792745", company_info_style))
-    elements.append(Paragraph("Email: info@stackly.com", company_info_style))
-    elements.append(Spacer(1, 10))
-
-    # status & watermark
-    status_text = safe_str(invoice.get("status") or "DRAFT").upper()
-    elements.append(Paragraph(f"INVOICE - {status_text}", page_title_style))
-
-    if status_text in ['CANCELLED', 'OVERDUE']:
-        watermark_text = "CANCELLED - FOR REFERENCE ONLY" if status_text == 'CANCELLED' else "OVERDUE - PAYMENT REQUIRED"
-        watermark_color = colors.red if status_text == 'CANCELLED' else colors.HexColor("#FFA500")
-        watermark_style = ParagraphStyle(
-            "Invoice_Watermark",
-            parent=styles["Normal"],
-            fontName="DejaVuSans-Bold",
-            fontSize=14,
-            textColor=watermark_color,
-            alignment=TA_CENTER,
-            backColor=colors.HexColor("#f9f2f2") if status_text == 'CANCELLED' else colors.HexColor("#fff5e6"),
-            spaceAfter=12,
-            spaceBefore=6,
-            leading=18,
-        )
-        elements.append(Paragraph(f"⚠️ {watermark_text} ⚠️", watermark_style))
-        elements.append(Spacer(1, 6))
-
-    # ---------- 1. INVOICE INFORMATION ----------
-    elements.append(Paragraph("INVOICE INFORMATION", section_style))
-    inv_data = [
-        [
-            Paragraph("<b>Invoice Number:</b>", label_style),
-            Paragraph(safe_str(invoice.get("invoice_id")), value_style),
-            Paragraph("<b>Invoice Date:</b>", label_style),
-            Paragraph(safe_str(invoice.get("invoice_date")), value_style),
-        ],
-        [
-            Paragraph("<b>Sale Order Ref:</b>", label_style),
-            Paragraph(safe_str(invoice.get("sale_order_ref")), value_style),
-            Paragraph("<b>Due Date:</b>", label_style),
-            Paragraph(safe_str(invoice.get("due_date")), value_style),
-        ],
-        [
-            Paragraph("<b>Invoice Status:</b>", label_style),
-            Paragraph(safe_str(invoice.get("status")), value_style),
-            Paragraph("<b>Payment Terms:</b>", label_style),
-            Paragraph(safe_str(invoice.get("payment_terms")), value_style),
-        ],
-        [
-            Paragraph("<b>Customer Ref No:</b>", label_style),
-            Paragraph(safe_str(invoice.get("customer_ref_no")), value_style),
-            Paragraph("<b>Invoice Tags:</b>", label_style),
-            Paragraph(safe_str(invoice.get("invoice_tags")), value_style),
-        ],
-    ]
-    inv_table = Table(inv_data, colWidths=[110, 160, 95, 135])
-    inv_table.setStyle(
-        TableStyle(
-            [
-                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f3f3f3")),
-                ("BOX", (0, 0), (-1, -1), 0.8, colors.HexColor("#8a8a8a")),
-                ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#a5a5a5")),
-                ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ("LEFTPADDING", (0, 0), (-1, -1), 6),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-                ("TOPPADDING", (0, 0), (-1, -1), 5),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-            ]
-        )
-    )
-    elements.append(inv_table)
-    elements.append(Spacer(1, 12))
-
-    # ---------- 2. CUSTOMER INFORMATION ----------
-    elements.append(Paragraph("CUSTOMER INFORMATION", section_style))
-    currency_code = invoice.get("currency", "USD")
-    currency_map = {
-        'USD': '$', 'EUR': '€', 'GBP': '£', 'JPY': '¥', 'IND': '₹', 'INR': '₹',
-        'SGD': 'S$', 'CAD': 'C$', 'AUD': 'A$', 'CHF': 'Fr', 'CNY': '¥'
-    }
-    currency_symbol = currency_map.get(currency_code, currency_code)
-    cust_data = [
-        [
-            Paragraph("<b>Customer Name:</b>", label_style),
-            Paragraph(safe_str(invoice.get("customer_name")), value_style),
-            Paragraph("<b>Customer ID:</b>", label_style),
-            Paragraph(safe_str(invoice.get("customer_id")), value_style),
-        ],
-        [
-            Paragraph("<b>Email:</b>", label_style),
-            Paragraph(safe_str(invoice.get("email")), value_style),
-            Paragraph("<b>Phone:</b>", label_style),
-            Paragraph(safe_str(invoice.get("phone")), value_style),
-        ],
-        [
-            Paragraph("<b>Contact Person:</b>", label_style),
-            Paragraph(safe_str(invoice.get("contact_person")), value_style),
-            Paragraph("<b>Currency:</b>", label_style),
-            Paragraph(f"{currency_code} ({currency_symbol})", value_style),
-        ],
-    ]
-    cust_table = Table(cust_data, colWidths=[110, 170, 95, 145])
-    cust_table.setStyle(
-        TableStyle(
-            [
-                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f3f3f3")),
-                ("BOX", (0, 0), (-1, -1), 0.8, colors.HexColor("#8a8a8a")),
-                ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#a5a5a5")),
-                ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ("LEFTPADDING", (0, 0), (-1, -1), 6),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-                ("TOPPADDING", (0, 0), (-1, -1), 5),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-            ]
-        )
-    )
-    elements.append(cust_table)
-    elements.append(Spacer(1, 12))
-
-    # ---------- 3. ADDRESS INFORMATION ----------
-    if invoice.get("billing_address") or invoice.get("shipping_address"):
-        elements.append(Paragraph("ADDRESS INFORMATION", section_style))
-        addr_data = [
-            [
-                Paragraph("<b>Billing Address:</b>", label_style),
-                Paragraph(safe_str(invoice.get("billing_address")), value_style),
-                Paragraph("<b>Shipping Address:</b>", label_style),
-                Paragraph(safe_str(invoice.get("shipping_address")), value_style),
-            ],
-        ]
-        addr_table = Table(addr_data, colWidths=[110, 170, 95, 145])
-        addr_table.setStyle(
-            TableStyle(
-                [
-                    ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f3f3f3")),
-                    ("BOX", (0, 0), (-1, -1), 0.8, colors.HexColor("#8a8a8a")),
-                    ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#a5a5a5")),
-                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                    ("LEFTPADDING", (0, 0), (-1, -1), 6),
-                    ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-                    ("TOPPADDING", (0, 0), (-1, -1), 5),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-                ]
-            )
-        )
-        elements.append(addr_table)
-        elements.append(Spacer(1, 12))
-
-    # ---------- 4. PAYMENT INFORMATION ----------
-    elements.append(Paragraph("PAYMENT INFORMATION", section_style))
-    pay_data = [
-        [
-            Paragraph("<b>Payment Method:</b>", label_style),
-            Paragraph(safe_str(invoice.get("payment_method")), value_style),
-            Paragraph("<b>Payment Status:</b>", label_style),
-            Paragraph(safe_str(invoice.get("payment_status")), value_style),
-        ],
-        [
-            Paragraph("<b>Payment Ref No:</b>", label_style),
-            Paragraph(safe_str(invoice.get("payment_ref_no")), value_style),
-            Paragraph("<b>Transaction Date:</b>", label_style),
-            Paragraph(safe_str(invoice.get("transaction_date")), value_style),
-        ],
-        [
-            Paragraph("<b>Amount Paid:</b>", label_style),
-            Paragraph(f"{currency_symbol}{safe_float(invoice.get('amount_paid')):.2f}", value_style),
-            Paragraph("<b>Balance Due:</b>", label_style),
-            Paragraph(f"{currency_symbol}{safe_float(summary.get('balance_due')):.2f}", value_style),
-        ],
-    ]
-    pay_table = Table(pay_data, colWidths=[110, 170, 95, 145])
-    pay_table.setStyle(
-        TableStyle(
-            [
-                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f3f3f3")),
-                ("BOX", (0, 0), (-1, -1), 0.8, colors.HexColor("#8a8a8a")),
-                ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#a5a5a5")),
-                ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ("LEFTPADDING", (0, 0), (-1, -1), 6),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-                ("TOPPADDING", (0, 0), (-1, -1), 5),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-            ]
-        )
-    )
-    elements.append(pay_table)
-    elements.append(Spacer(1, 16))
-
-    # ---------- 5. INVOICE ITEMS ----------
-    if items:
-        elements.append(Paragraph("INVOICE ITEMS", section_style))
-        item_header = [
-            Paragraph("S.No", header_small_style),
-            Paragraph("Product Name", header_small_style),
-            Paragraph("Product ID", header_small_style),
-            Paragraph("Qty", header_small_style),
-            Paragraph("UOM", header_small_style),
-            Paragraph("Unit Price", header_small_style),
-            Paragraph("Tax %", header_small_style),
-            Paragraph("Disc %", header_small_style),
-            Paragraph("Total", header_small_style),
-        ]
-        item_data = [item_header]
-
-        for idx, it in enumerate(items, 1):
-            qty = safe_float(it.get("quantity"))
-            unit_price = safe_float(it.get("unit_price"))
-            tax_pct = safe_float(it.get("tax_pct"))
-            disc_pct = safe_float(it.get("disc_pct"))
-            total = safe_float(it.get("total"))
-
-            item_data.append([
-                Paragraph(str(idx), value_style),
-                Paragraph(safe_str(it.get("product_name")), value_style),
-                Paragraph(safe_str(it.get("product_id")), value_style),
-                Paragraph(f"{qty:.2f}".rstrip('0').rstrip('.'), value_style),
-                Paragraph(safe_str(it.get("uom")), value_style),
-                Paragraph(f"{currency_symbol}{unit_price:.2f}", value_style),
-                Paragraph(f"{tax_pct:.1f}%" if tax_pct > 0 else "-", value_style),
-                Paragraph(f"{disc_pct:.1f}%" if disc_pct > 0 else "-", value_style),
-                Paragraph(f"{currency_symbol}{total:.2f}", value_style),
-            ])
-
-        col_widths = [35, 118, 58, 38, 38, 60, 40, 40, 65]
-        items_table = Table(item_data, colWidths=col_widths, repeatRows=1)
-        items_table.setStyle(
-            TableStyle(
-                [
-                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#a12828")),
-                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-                    ("FONTNAME", (0, 0), (-1, 0), "DejaVuSans-Bold"),
-                    ("FONTNAME", (0, 1), (-1, -1), "DejaVuSans"),
-                    ("FONTSIZE", (0, 0), (-1, -1), 7.5),
-                    ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-                    ("ALIGN", (1, 1), (2, -1), "LEFT"),
-                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                    ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#999999")),
-                    ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f7f7f7")]),
-                    ("LEFTPADDING", (0, 0), (-1, -1), 4),
-                    ("RIGHTPADDING", (0, 0), (-1, -1), 4),
-                    ("TOPPADDING", (0, 0), (-1, -1), 5),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-                ]
-            )
-        )
-        elements.append(items_table)
-        elements.append(Spacer(1, 16))
-
-    # ---------- 6. TAX AND TOTALS SUMMARY ----------
-    elements.append(Paragraph("TAX AND TOTALS SUMMARY", section_style))
-
-    # Compute item-level discount total
-    total_discount = 0.0
-    for it in items:
-        line_sub = safe_float(it.get("quantity")) * safe_float(it.get("unit_price"))
-        disc_pct = safe_float(it.get("disc_pct"))
-        total_discount += line_sub * (disc_pct / 100)
-
-    sub_total = safe_float(summary.get("sub_total"))
-    tax_total = safe_float(summary.get("tax_total"))
-    shipping = safe_float(summary.get("shipping_charges"))
-    rounding = safe_float(summary.get("rounding_adjustment"))
-    grand_total = safe_float(summary.get("grand_total"))
-    amount_paid = safe_float(summary.get("amount_paid"))
-    balance_due = safe_float(summary.get("balance_due"))
-    global_disc_pct = safe_float(summary.get("global_discount_pct"))
-    global_disc_amt = sub_total * (global_disc_pct / 100) if global_disc_pct > 0 else 0
-
-    summary_rows = []
-    summary_rows.append([Paragraph("<b>Subtotal:</b>", label_style), Paragraph(f"{currency_symbol}{sub_total:.2f}", value_style)])
-    if total_discount > 0:
-        summary_rows.append([Paragraph("<b>Item Level Discount:</b>", label_style), Paragraph(f"-{currency_symbol}{total_discount:.2f}", value_style)])
-    if global_disc_pct > 0:
-        summary_rows.append([Paragraph(f"<b>Global Discount ({global_disc_pct:.1f}%):</b>", label_style), Paragraph(f"-{currency_symbol}{global_disc_amt:.2f}", value_style)])
-    summary_rows.append([Paragraph("<b>Total Tax:</b>", label_style), Paragraph(f"{currency_symbol}{tax_total:.2f}", value_style)])
-    summary_rows.append([Paragraph("<b>Shipping Charge:</b>", label_style), Paragraph(f"{currency_symbol}{shipping:.2f}", value_style)])
-    if rounding != 0:
-        sign = '+' if rounding > 0 else ''
-        summary_rows.append([Paragraph("<b>Rounding Adjustment:</b>", label_style), Paragraph(f"{sign}{currency_symbol}{abs(rounding):.2f}", value_style)])
-    summary_rows.append([Paragraph("<b>GRAND TOTAL:</b>", label_style), Paragraph(f"{currency_symbol}{grand_total:.2f}", value_style)])
-    summary_rows.append([Paragraph("<b>Amount Paid:</b>", label_style), Paragraph(f"{currency_symbol}{amount_paid:.2f}", value_style)])
-    summary_rows.append([Paragraph("<b>BALANCE DUE:</b>", label_style), Paragraph(f"{currency_symbol}{balance_due:.2f}", value_style)])
-
-    summary_table = Table(summary_rows, colWidths=[180, 120])
-    summary_table.setStyle(
-        TableStyle(
-            [
-                ("BACKGROUND", (0, 0), (-1, -4), colors.HexColor("#fafafa")),
-                ("BOX", (0, 0), (-1, -1), 0.8, colors.HexColor("#8a8a8a")),
-                ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#cccccc")),
-                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                ("LEFTPADDING", (0, 0), (-1, -1), 8),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 8),
-                ("TOPPADDING", (0, 0), (-1, -1), 5),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-                ("FONTNAME", (0, 0), (-1, -4), "DejaVuSans"),
-                ("FONTSIZE", (0, 0), (-1, -1), 9),
-                ("BACKGROUND", (0, -3), (-1, -3), colors.HexColor("#e6e6e6")),
-                ("FONTNAME", (0, -3), (-1, -3), "DejaVuSans-Bold"),
-                ("BACKGROUND", (0, 0), (-1, -4), colors.HexColor("#fafafa")),
-                ("TEXTCOLOR", (0, -1), (-1, -1), colors.white),
-                ("FONTNAME", (0, -1), (-1, -1), "DejaVuSans-Bold"),
-                ("ALIGN", (1, 0), (1, -1), "RIGHT"),
-                ("ALIGN", (0, 0), (0, -1), "LEFT"),
-            ]
-        )
-    )
-    elements.append(summary_table)
-    elements.append(Spacer(1, 16))
-
-    # ---------- 7. TERMS AND CONDITIONS ----------
-    elements.append(Paragraph("Terms and Conditions", section_style))
-    # terms_text = invoice.get("terms_conditions", "")
-    # if terms_text:
-        # for line in terms_text.split("\n"):
-            # if line.strip():
-                #  elements.append(Paragraph(line.strip(), terms_style))   # <-- no bullet
-
-    # else:
-    default_terms = [
-            "1. This invoice is valid until the due date mentioned above.",
-            "2. Payment terms as agreed upon.",
-            "3. Goods once sold will not be taken back.",
-            "4. All taxes and duties as applicable.",
-            "5. Please quote invoice number when making payment.",
-            "6. Late payment may incur additional charges.",
-    ]
-    for term in default_terms:
-        elements.append(Paragraph(term, terms_style))
-    elements.append(Spacer(1, 14))
-
-    # ---------- 8. FOOTER ----------
-    footer_style = ParagraphStyle(
-        name="Invoice_Footer",
-        parent=styles["Normal"],
-        fontSize=7.5,
-        textColor=colors.HexColor("#555555"),
-        alignment=TA_CENTER,
-    )
-    generated_on = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    elements.append(Paragraph(f"Generated on: {generated_on}", footer_style))
-    elements.append(Paragraph("This is a system generated invoice - valid without signature", footer_style))
-
-    # build PDF
-    doc.build(elements)
-    pdf_bytes = buffer.getvalue()
-    buffer.close()
-    return pdf_bytes
 
 # ---------------------------------------------------------------------
 # FLASK ROUTE
@@ -18767,6 +18398,180 @@ def send_invoice_email_api(invoice_id):
         if conn:
             conn.close()
 
+
+@app.route('/generate-invoice-return/<invoice_id>')
+def generate_invoice_return(invoice_id):
+    """
+    Called from invoice list when user clicks "generate invoice return".
+    - If a return already exists for this invoice, redirect to its edit page.
+    - Otherwise, create a new draft return and redirect to its edit page.
+    """
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT invoice_return_id, status
+        FROM invoice_return
+        WHERE invoice_id = %s
+        ORDER BY created_at DESC
+        LIMIT 1
+    """, (invoice_id,))
+    existing = cur.fetchone()
+    cur.close()
+    conn.close()
+
+    if existing:
+        existing_id = existing[0]
+        return redirect(f'/new-invoice-return?edit_id={existing_id}')
+    else:
+        new_id = generate_invoice_return_id()
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO invoice_return (invoice_return_id, invoice_id, status, created_at)
+            VALUES (%s, %s, 'Draft', NOW())
+        """, (new_id, invoice_id))
+        conn.commit()
+        cur.close()
+        conn.close()
+        return redirect(f'/new-invoice-return?edit_id={new_id}')
+
+
+@app.route('/api/get-invoice-for-return/<invoice_id>')
+def api_get_invoice_for_return(invoice_id):
+    """API endpoint to fetch invoice details for return form"""
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        cur.execute("""
+            SELECT
+                i.invoice_id,
+                i.customer_name,
+                i.customer_id,
+                i.email,
+                i.phone,
+                i.contact_person,
+                i.customer_ref_no,
+                i.invoice_date,
+                i.due_date,
+                i.status,
+                i.payment_status
+            FROM invoices i
+            WHERE i.invoice_id = %s
+        """, (invoice_id,))
+
+        invoice_row = cur.fetchone()
+
+        if not invoice_row:
+            cur.close()
+            conn.close()
+            return jsonify({'success': False, 'error': 'Invoice not found'}), 404
+
+        cur.execute("""
+            SELECT
+                COALESCE(grand_total, 0) as grand_total,
+                COALESCE(global_discount_pct, 0) as global_discount_pct
+            FROM invoice_summary
+            WHERE invoice_id = %s
+            ORDER BY created_at DESC
+            LIMIT 1
+        """, (invoice_id,))
+
+        summary_row = cur.fetchone()
+        grand_total = float(summary_row[0] or 0) if summary_row else 0
+        global_discount_pct = float(summary_row[1] or 0) if summary_row else 0
+
+        cur.execute("""
+            SELECT
+                id, product_id, product_name, quantity, uom,
+                unit_price, tax_pct, disc_pct
+            FROM invoice_items
+            WHERE invoice_id = %s
+            ORDER BY id
+        """, (invoice_id,))
+
+        items_rows = cur.fetchall()
+
+        items = []
+        for item_row in items_rows:
+            product_id = item_row[1]
+            quantity = float(item_row[3] or 0)
+            unit_price = float(item_row[5] or 0)
+
+            cur.execute("""
+                SELECT COALESCE(SUM(return_quantity), 0)
+                FROM invoice_return_items iri
+                INNER JOIN invoice_return ir ON ir.invoice_return_id = iri.invoice_return_id
+                WHERE ir.invoice_id = %s
+                AND iri.product_id = %s
+                AND LOWER(COALESCE(ir.status, '')) != 'cancelled'
+            """, (invoice_id, product_id))
+
+            returned_qty = float(cur.fetchone()[0] or 0)
+            returnable_qty = quantity - returned_qty
+
+            items.append({
+                'id': item_row[0],
+                'product_name': item_row[2],
+                'product_id': product_id,
+                'quantity': quantity,
+                'returnable_quantity': returnable_qty if returnable_qty > 0 else 0,
+                'unit_price': unit_price,
+                'tax_pct': float(item_row[6] or 0),
+                'disc_pct': float(item_row[7] or 0),
+                'uom': item_row[4] or 'Nos'
+            })
+
+        cur.close()
+        conn.close()
+
+        return jsonify({
+            'success': True,
+            'customer_name': invoice_row[1] or '',
+            'customer_id': invoice_row[2] or 'Auto Generate',
+            'email': invoice_row[3] or '',
+            'phone': invoice_row[4] or '',
+            'contact_person': invoice_row[5] or '',
+            'customer_ref_no': invoice_row[6] or '',
+            'summary': {
+                'original_total': grand_total,
+                'global_discount_pct': global_discount_pct
+            },
+            'items': items
+        })
+
+    except Exception as e:
+        print(f"Error fetching invoice details: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/invoice-statuses')
+def get_invoice_statuses():
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT DISTINCT status FROM invoices WHERE status IS NOT NULL AND status != '' ORDER BY status")
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    statuses = [row[0] for row in rows]
+    return jsonify(statuses)
+
+
+@app.route('/api/payment-statuses')
+def get_payment_statuses():
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT DISTINCT payment_status FROM invoices WHERE payment_status IS NOT NULL AND payment_status != '' ORDER BY payment_status")
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    statuses = [row[0] for row in rows]
+    return jsonify(statuses)
+
+
 # =========================
 # GENERATE INVOICE ID
 # =========================
@@ -18849,9 +18654,51 @@ def new_invoice():
 
 
     )
+
+
 # =========================
 # GET SALES ORDER (FROM DB)
 # =========================
+@app.get("/api/sales-orders/available-for-invoice")
+def api_sales_orders_available_for_invoice():
+    """Sales Orders available for invoice creation.
+    Excludes Draft and Cancelled orders, and those already referenced by other invoices.
+    If invoice_id is provided, keeps that invoice's SO available for edit mode.
+    """
+    invoice_id = (request.args.get("invoice_id") or "").strip() or None
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            SELECT
+                so.so_id,
+                COALESCE(c.name, so.customer_name, '') AS customer_name
+            FROM sales_orders so
+            LEFT JOIN customers c
+              ON so.customer_id = c.customer_id
+            WHERE so.status NOT IN ('Draft', 'Cancelled')
+              AND NOT EXISTS (
+                SELECT 1
+                FROM invoices i
+                WHERE i.sale_order_ref = so.so_id
+                  AND (%s IS NULL OR i.invoice_id <> %s)
+            )
+            ORDER BY so.created_at DESC
+            """,
+            (invoice_id, invoice_id),
+        )
+        rows = cur.fetchall()
+        orders = [{"so_id": r[0], "customer_name": r[1]} for r in rows]
+        return jsonify({"success": True, "orders": orders})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+    finally:
+        cur.close()
+        conn.close()
+
+
 @app.route('/get-sales-order/<so_id>')
 def get_sales_order(so_id):
     conn = get_db_connection()
@@ -19029,7 +18876,7 @@ def save_invoice():
         status = request.form.get('status', 'Draft')
         return jsonify({
             "success": True,
-            "message": f"Invoice saved in status : {status}"
+            "message": f"Invoice saved as {status} successfully"
         })
 
     except Exception as e:
@@ -28807,6 +28654,203 @@ def delete_credit_note(credit_note_id):
     except Exception as e:
         print(f"delete_credit_note error: {e}")
         return jsonify({"success": False, "message": str(e)}), 500
+
+
+# -------------------------------
+# CREATE PAYMENT PAGE
+# -------------------------------
+@app.route("/create-payment")
+def create_payment():
+    user_email = session.get("user")
+    if not user_email:
+        return redirect(url_for("login", message="session_expired"))
+
+    users = load_users()
+    user_name = "User"
+    for u in users:
+        if isinstance(u, dict) and (u.get("email") or "").lower() == user_email.lower():
+            user_name = u.get("name") or "User"
+            break
+
+    return render_template(
+        "create-payment.html",
+        title="Create Payment - Stackly",
+        page="create_payment",
+        section="finance",
+        user_email=user_email,
+        user_name=user_name,
+    )
+
+
+@app.route("/api/invoices_payments")
+def get_invoices_payments():
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT
+                i.invoice_id,
+                i.customer_name,
+                COALESCE(iss.balance_due, 0) AS balance_due,
+                i.payment_method
+            FROM invoices i
+            LEFT JOIN invoice_summary iss ON i.invoice_id = iss.invoice_id
+            WHERE i.payment_status != 'Paid'
+              AND i.status NOT IN ('Draft', 'Cancelled')
+            ORDER BY i.created_at DESC
+        """)
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+
+        invoices = []
+        for row in rows:
+            invoices.append({
+                "id": row[0],
+                "customer_name": row[1],
+                "balance_due": float(row[2]) if row[2] is not None else 0.0,
+                "payment_method": row[3] if row[3] is not None else "",
+            })
+        return jsonify(invoices)
+    except Exception as e:
+        print("Error in /api/invoices_payments:", str(e))
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/payments", methods=["POST"])
+def save_payment():
+    try:
+        data = request.get_json()
+        invoice_id = data["invoiceId"]
+        amount = Decimal(str(data["amount"]))
+        customer_name = data["customerName"]
+        payment_method = data["paymentMethod"]
+        transaction_id = data["transactionId"]
+        payment_date = data["date"]
+        notes = data["notes"]
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        cur.execute("""
+            INSERT INTO payments
+            (invoice_id, customer_name, payment_method, transaction_id, amount, payment_date, notes)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+        """, (invoice_id, customer_name, payment_method, transaction_id, amount, payment_date, notes))
+
+        cur.execute("SELECT balance_due FROM invoice_summary WHERE invoice_id = %s", (invoice_id,))
+        row = cur.fetchone()
+
+        if row:
+            current_balance = row[0]
+            new_balance = current_balance - amount
+            if new_balance < 0:
+                new_balance = Decimal("0")
+            cur.execute("""
+                UPDATE invoice_summary
+                SET balance_due = %s
+                WHERE invoice_id = %s
+            """, (new_balance, invoice_id))
+        else:
+            cur.execute("SELECT invoice_total FROM invoices WHERE invoice_id = %s", (invoice_id,))
+            inv_row = cur.fetchone()
+            if inv_row:
+                total_amount = inv_row[0] or Decimal("0")
+                new_balance = Decimal(str(total_amount)) - amount
+                if new_balance < 0:
+                    new_balance = Decimal("0")
+                cur.execute("""
+                    INSERT INTO invoice_summary (invoice_id, balance_due)
+                    VALUES (%s, %s)
+                """, (invoice_id, new_balance))
+            else:
+                conn.rollback()
+                return jsonify({"success": False, "error": "Invoice not found"}), 404
+
+        conn.commit()
+        cur.close()
+        conn.close()
+
+        return jsonify({"success": True})
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/invoice-summary/<invoice_id>/add-payment", methods=["PUT"])
+def add_payment_to_invoice_summary(invoice_id):
+    try:
+        data = request.get_json()
+        amount = float(data.get("amount", 0))
+        payment_ref_no = data.get("payment_ref_no")
+        transaction_date = data.get("transaction_date")
+
+        if amount <= 0:
+            return jsonify({"success": False, "error": "Amount must be positive"}), 400
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        cur.execute("""
+            SELECT amount_paid, grand_total
+            FROM invoice_summary
+            WHERE invoice_id = %s
+        """, (invoice_id,))
+        row = cur.fetchone()
+        if not row:
+            return jsonify({"success": False, "error": "Invoice summary not found"}), 404
+
+        current_paid = float(row[0]) if row[0] else 0.0
+        grand_total = float(row[1]) if row[1] else 0.0
+        new_paid = current_paid + amount
+        new_balance_due = grand_total - new_paid
+
+        cur.execute("""
+            UPDATE invoice_summary
+            SET amount_paid = %s, balance_due = %s
+            WHERE invoice_id = %s
+        """, (new_paid, new_balance_due, invoice_id))
+
+        if payment_ref_no and transaction_date:
+            cur.execute("""
+                UPDATE invoices
+                SET payment_ref_no = %s, transaction_date = %s
+                WHERE invoice_id = %s
+            """, (payment_ref_no, transaction_date, invoice_id))
+        elif payment_ref_no:
+            cur.execute("""
+                UPDATE invoices
+                SET payment_ref_no = %s
+                WHERE invoice_id = %s
+            """, (payment_ref_no, invoice_id))
+        elif transaction_date:
+            cur.execute("""
+                UPDATE invoices
+                SET transaction_date = %s
+                WHERE invoice_id = %s
+            """, (transaction_date, invoice_id))
+
+        if new_balance_due <= 0:
+            cur.execute("""
+                UPDATE invoices
+                SET payment_status = 'Paid'
+                WHERE invoice_id = %s
+            """, (invoice_id,))
+        elif new_paid > 0 and new_balance_due > 0:
+            cur.execute("""
+                UPDATE invoices
+                SET payment_status = 'Partial'
+                WHERE invoice_id = %s
+            """, (invoice_id,))
+
+        conn.commit()
+        cur.close()
+        conn.close()
+        return jsonify({"success": True})
+    except Exception as e:
+        print("Error:", str(e))
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
 # =========================================

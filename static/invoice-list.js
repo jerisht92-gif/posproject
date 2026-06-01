@@ -1,6 +1,3 @@
-
-
-
 // =========================================
 // SHOW TOAST FUNCTION
 // =========================================
@@ -64,6 +61,43 @@ function showToast(message, type = 'info') {
     }, 3000);
 }
 
+async function loadInvoiceStatuses() {
+    try {
+        const response = await fetch('/api/invoice-statuses');
+        const statuses = await response.json();
+        const select = document.getElementById('invoiceStatus');
+        if (!select) return;
+        // Keep the "All" option
+        select.innerHTML = '<option value="">All</option>';
+        statuses.forEach(status => {
+            const option = document.createElement('option');
+            option.value = status.toLowerCase();
+            option.textContent = status;
+            select.appendChild(option);
+        });
+    } catch (error) {
+        console.error('Failed to load invoice statuses:', error);
+    }
+}
+
+async function loadPaymentStatuses() {
+    try {
+        const response = await fetch('/api/payment-statuses');
+        const statuses = await response.json();
+        const select = document.getElementById('paymentStatus');
+        if (!select) return;
+        select.innerHTML = '<option value="">All Types</option>';
+        statuses.forEach(status => {
+            const option = document.createElement('option');
+            option.value = status.toLowerCase();
+            option.textContent = status;
+            select.appendChild(option);
+        });
+    } catch (error) {
+        console.error('Failed to load payment statuses:', error);
+    }
+}
+
 document.addEventListener("DOMContentLoaded", () => {
     const INVOICE_INVALID_DATE_MSG = "Invalid date. Use format YYYY-MM-DD (e.g. 2026-03-09).";
     const INVOICE_DATE_RANGE_ERROR = "Invoice From date cannot be later than Invoice To date";
@@ -80,7 +114,9 @@ document.addEventListener("DOMContentLoaded", () => {
     const prevBtn = document.getElementById("prev-btn");
     const nextBtn = document.getElementById("next-btn");
     const newInvoiceBtn = document.getElementById("newInvoicePage");
-
+loadInvoices();
+loadInvoiceStatuses();
+loadPaymentStatuses();
     // Check if critical elements exist
     if (!prevBtn || !nextBtn) {
         console.error("Pagination buttons not found in DOM");
@@ -209,23 +245,70 @@ document.addEventListener("DOMContentLoaded", () => {
     // =========================================
     function getDisplayStatus(invoice) {
         if (invoice.status === 'Cancelled') return 'Cancelled';
-        if (invoice.payment_status === 'Paid') return 'Paid';
+        // if (invoice.payment_status === 'Paid') return 'Paid';
         if (isOverdue(invoice)) return 'Overdue';
         return invoice.status;
     }
 
-    // --------------------------------------------------
-    // Helper: attach dropdown events for action menus
-    // --------------------------------------------------
-    function attachDropdownEvents() {
-        const menuBtns = document.querySelectorAll(".menu-btn");
-        menuBtns.forEach(btn => {
-            btn.removeEventListener("click", handleMenuClick);
-            btn.addEventListener("click", handleMenuClick);
-        });
-    }
+ // =========================================
+// HOVER DROPDOWN (stays open when mouse moves into dropdown)
+// =========================================
+let closeTimeout = null;
 
-    function handleMenuClick(e) {
+function attachDropdownEvents() {
+    const menuContainers = document.querySelectorAll(".menu-container");
+    
+    menuContainers.forEach(container => {
+        const btn = container.querySelector(".menu-btn");
+        const dropdown = container.querySelector(".dropdown");
+        if (!btn || !dropdown) return;
+        
+        // Remove old listeners to avoid duplicates
+        btn.removeEventListener("mouseenter", openDropdownHandler);
+        btn.removeEventListener("mouseleave", scheduleCloseHandler);
+        container.removeEventListener("mouseleave", scheduleCloseHandler);
+        dropdown.removeEventListener("mouseenter", cancelCloseHandler);
+        dropdown.removeEventListener("mouseleave", scheduleCloseHandler);
+        
+        // Attach hover events
+        btn.addEventListener("mouseenter", (e) => openDropdownHandler(e, dropdown));
+        btn.addEventListener("mouseleave", (e) => scheduleCloseHandler(e, dropdown));
+        container.addEventListener("mouseleave", (e) => scheduleCloseHandler(e, dropdown));
+        dropdown.addEventListener("mouseenter", cancelCloseHandler);
+        dropdown.addEventListener("mouseleave", (e) => scheduleCloseHandler(e, dropdown));
+    });
+}
+
+function openDropdownHandler(event, dropdown) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (closeTimeout) clearTimeout(closeTimeout);
+    // Close any other open dropdowns
+    document.querySelectorAll(".dropdown").forEach(d => {
+        if (d !== dropdown) d.style.display = "none";
+    });
+    dropdown.style.display = "block";
+}
+
+function scheduleCloseHandler(event, dropdown) {
+    event.preventDefault();
+    event.stopPropagation();
+    closeTimeout = setTimeout(() => {
+        if (dropdown && dropdown.style.display === "block") {
+            dropdown.style.display = "none";
+        }
+        closeTimeout = null;
+    }, 200); // 200ms delay gives time to move into dropdown
+}
+
+function cancelCloseHandler() {
+    if (closeTimeout) {
+        clearTimeout(closeTimeout);
+        closeTimeout = null;
+    }
+}
+
+ function handleMenuClick(e) {
         e.preventDefault();
         e.stopPropagation();
         const button = e.currentTarget;
@@ -272,55 +355,34 @@ document.addEventListener("DOMContentLoaded", () => {
             const row = tbody.insertRow();
             row.dataset.kind = "invoice-row";
 
-            // Column 0: Checkbox (Mark)
-            const chkCell = row.insertCell(0);
-            chkCell.classList.add("dn-td-check");
-            const chk = document.createElement("input");
-            chk.type = "checkbox";
-            chk.classList.add("invoice-checkbox");
-            chk.dataset.id = invoice.invoice_id;
-            chkCell.appendChild(chk);
-
             // Column 1: Invoice Id
-            row.insertCell(1).textContent = invoice.invoice_id;
+            row.insertCell(0).textContent = invoice.invoice_id;
 
             // Column 2: Sales Order Ref.
-            row.insertCell(2).textContent = invoice.sale_order_ref || "";
+            row.insertCell(1).textContent = invoice.sale_order_ref || "";
 
             // Column 3: Customer Name
-            row.insertCell(3).textContent = invoice.customer_name;
+            row.insertCell(2).textContent = invoice.customer_name;
 
-            // Column 4: Invoice Date (display DD-MM-YYYY; keep ISO for filter/sort)
-            const invDateCell = row.insertCell(4);
-            const invIso = String(invoice.invoice_date || "").trim();
-            invDateCell.dataset.isoDate = invIso;
-            const invIsoM = invIso.match(/^(\d{4})-(\d{2})-(\d{2})/);
-            invDateCell.textContent = invIsoM
-              ? `${invIsoM[3]}-${invIsoM[2]}-${invIsoM[1]}`
-              : invIso;
+            // Column 4: Invoice Date
+            row.insertCell(3).textContent = invoice.invoice_date;
 
-            // Column 5: Due Date (display DD-MM-YYYY; keep ISO for filter/sort)
-            const dueDateCell = row.insertCell(5);
-            const dueIso = String(invoice.due_date || "").trim();
-            dueDateCell.dataset.isoDate = dueIso;
-            const dueIsoM = dueIso.match(/^(\d{4})-(\d{2})-(\d{2})/);
-            dueDateCell.textContent = dueIsoM
-              ? `${dueIsoM[3]}-${dueIsoM[2]}-${dueIsoM[1]}`
-              : dueIso;
+            // Column 5: Due Date
+            row.insertCell(4).textContent = invoice.due_date || "";
 
             // Column 6: Payment Status
-            const payCell = row.insertCell(6);
+            const payCell = row.insertCell(5);
             payCell.textContent = invoice.payment_status;
             payCell.dataset.payment = invoice.payment_status.toLowerCase();
 
             // Status with color styling
-            const statusCell = row.insertCell(7);
+            const statusCell = row.insertCell(6);
             const statusColorClass = getStatusColorClass(displayStatus);
             statusCell.innerHTML = `<span class="status-badge ${statusColorClass}">${displayStatus}</span>`;
             statusCell.dataset.status = displayStatus.toLowerCase();
 
             // Column 8: Action
-            const actionCell = row.insertCell(8);
+            const actionCell = row.insertCell(7);
             actionCell.className = 'so-td-action';   // ← ADD THIS
             const isDraft = displayStatus.toLowerCase() === 'draft';
             const isCancelled = displayStatus.toLowerCase() === 'cancelled';
@@ -329,20 +391,25 @@ document.addEventListener("DOMContentLoaded", () => {
             const isInvoiceReturnDisabled = isDraft || isCancelled;
             const disabledClass = isInvoiceReturnDisabled ? 'dn-act-item-disabled' : '';
             const disabledAttr = isInvoiceReturnDisabled ? 'style="opacity: 0.5; pointer-events: none;"' : '';
-            
-            actionCell.innerHTML = `
-                <div class="menu-container">
-                    <button class="menu-btn dn-act-dots" type="button" aria-label="Open actions">⋮</button>
-                    <div class="dropdown dn-act-fly" style="display: none;">
-                        <div class="dn-act-item" data-href="/new-invoice?invoice_id=${invoice.invoice_id}">
-                            <a href="/new-invoice?invoice_id=${invoice.invoice_id}" style="text-decoration:none; color: #111;">${detailsText}</a>
-                        </div>
-                        <div class="dn-act-item ${disabledClass}" ${disabledAttr} data-href="/generate-invoice-return/${invoice.invoice_id}">
-                            <a href="/generate-invoice-return/${invoice.invoice_id}" style="text-decoration:none; color: #111;">generate invoice return</a>
-                        </div>
-                    </div>
-                </div>
-            `;
+// Determine the correct URL for viewing/editing the invoice
+const isDraftStatus = displayStatus.toLowerCase() === 'draft';
+const detailsUrl = isDraftStatus 
+    ? `/new-invoice?invoice_id=${invoice.invoice_id}` 
+    : `/new-invoice?view_id=${invoice.invoice_id}`;
+
+actionCell.innerHTML = `
+    <div class="menu-container">
+        <button class="menu-btn dn-act-dots" type="button" aria-label="Open actions">⋮</button>
+        <div class="dropdown dn-act-fly" style="display: none;">
+            <div class="dn-act-item" data-href="${detailsUrl}">
+                <a href="${detailsUrl}" style="text-decoration:none; color: #111;">${detailsText}</a>
+            </div>
+            <div class="dn-act-item ${disabledClass}" ${disabledAttr} data-href="/generate-invoice-return/${invoice.invoice_id}">
+                <a href="/generate-invoice-return/${invoice.invoice_id}" style="text-decoration:none; color: #111;">generate invoice return</a>
+            </div>
+        </div>
+    </div>
+`;
         });
 
         attachDropdownEvents();
@@ -435,40 +502,39 @@ document.addEventListener("DOMContentLoaded", () => {
     // Apply filters based on user selections
     // --------------------------------------------------
     function applyFilters() {
-        if (!invoiceStatusFilter || !paymentStatusFilter || !searchInput || !fromDateInput || !toDateInput) return;
-        
-        let statusVal = invoiceStatusFilter.value.toLowerCase();
-        const paymentVal = paymentStatusFilter.value.toLowerCase();
-        const searchVal = searchInput.value.toLowerCase();
-        const fromDate = fromDateInput.value;
-        const toDate = toDateInput.value;
+    if (!invoiceStatusFilter || !paymentStatusFilter || !searchInput || !fromDateInput || !toDateInput) return;
+    
+    let statusVal = invoiceStatusFilter.value.toLowerCase();
+    const paymentVal = paymentStatusFilter.value.toLowerCase();
+    const searchVal = searchInput.value.toLowerCase();
+    const fromDate = fromDateInput.value;
+    const toDate = toDateInput.value;
 
-        if (statusVal === 'send') statusVal = 'send';
+    if (statusVal === 'send') statusVal = 'send';
 
-        const allRows = document.querySelectorAll('#invoiceTableBody tr[data-kind="invoice-row"]');
-        filteredRows = [];
+    const allRows = document.querySelectorAll('#invoiceTableBody tr[data-kind="invoice-row"]');
+    filteredRows = [];
 
-        allRows.forEach(row => {
-            const invoiceId = row.children[1] ? row.children[1].textContent.toLowerCase() : '';
-            const paymentStatus = row.children[6] ? row.children[6].dataset.payment : '';
-            const status = row.children[7] ? row.children[7].dataset.status : '';
-            const invoiceDate = row.children[4]
-              ? (row.children[4].dataset.isoDate || row.children[4].textContent)
-              : "";
+    allRows.forEach(row => {
+        // ✅ NEW INDICES (checkbox removed)
+        const invoiceId = row.children[0] ? row.children[0].textContent.toLowerCase() : '';      // Invoice Id
+        const paymentStatus = row.children[5] ? row.children[5].dataset.payment : '';            // Payment Status
+        const status = row.children[6] ? row.children[6].dataset.status : '';                    // Status
+        const invoiceDate = row.children[3] ? row.children[3].textContent : '';                  // Invoice Date
 
-            let show = true;
-            if (statusVal && status !== statusVal) show = false;
-            if (paymentVal && paymentStatus !== paymentVal) show = false;
-            if (searchVal && !invoiceId.includes(searchVal)) show = false;
-            if (fromDate && invoiceDate < fromDate) show = false;
-            if (toDate && invoiceDate > toDate) show = false;
+        let show = true;
+        if (statusVal && status !== statusVal) show = false;
+        if (paymentVal && paymentStatus !== paymentVal) show = false;
+        if (searchVal && !invoiceId.includes(searchVal)) show = false;
+        if (fromDate && invoiceDate < fromDate) show = false;
+        if (toDate && invoiceDate > toDate) show = false;
 
-            if (show) filteredRows.push(row);
-        });
+        if (show) filteredRows.push(row);
+    });
 
-        currentPage = 1;
-        renderTable();
-    }
+    currentPage = 1;
+    renderTable();
+}
 
     // --------------------------------------------------
     // Render current page of the filtered rows
@@ -512,76 +578,75 @@ document.addEventListener("DOMContentLoaded", () => {
     // Sorting the table rows
     // --------------------------------------------------
     function sortTableRows(sortType) {
-        const statusOrder = {
-            'draft': 1,
-            'send': 2,
-            'paid': 3,
-            'overdue': 4,
-            'cancelled': 5
-        };
+    const statusOrder = {
+        'draft': 1,
+        'send': 2,
+        'paid': 3,
+        'overdue': 4,
+        'cancelled': 5
+    };
 
-        filteredRows.sort((a, b) => {
-            const statusA = a.children[7] ? a.children[7].dataset.status : '';
-            const statusB = b.children[7] ? b.children[7].dataset.status : '';
-            const dateA = a.children[4]
-              ? (a.children[4].dataset.isoDate || a.children[4].textContent)
-              : "";
-            const dateB = b.children[4]
-              ? (b.children[4].dataset.isoDate || b.children[4].textContent)
-              : "";
+    filteredRows.sort((a, b) => {
+        // ✅ NEW INDICES
+        const statusA = a.children[6] ? a.children[6].dataset.status : '';
+        const statusB = b.children[6] ? b.children[6].dataset.status : '';
+        const dateA = a.children[3] ? a.children[3].textContent : '';
+        const dateB = b.children[3] ? b.children[3].textContent : '';
 
-            switch (sortType) {
-                case 'newest':
-                    return dateB.localeCompare(dateA);
-                case 'oldest':
-                    return dateA.localeCompare(dateB);
-                case 'progress':
-                    return (statusOrder[statusA] || 0) - (statusOrder[statusB] || 0);
-                case 'reverse':
-                    return (statusOrder[statusB] || 0) - (statusOrder[statusA] || 0);
-                default:
-                    return 0;
-            }
-        });
-
-        const tbody = document.getElementById("invoiceTableBody");
-        if (tbody) {
-            filteredRows.forEach(row => tbody.appendChild(row));
+        switch (sortType) {
+            case 'newest': return dateB.localeCompare(dateA);
+            case 'oldest': return dateA.localeCompare(dateB);
+            case 'progress': return (statusOrder[statusA] || 0) - (statusOrder[statusB] || 0);
+            case 'reverse': return (statusOrder[statusB] || 0) - (statusOrder[statusA] || 0);
+            default: return 0;
         }
+    });
 
-        currentPage = 1;
-        renderTable();
+    const tbody = document.getElementById("invoiceTableBody");
+    if (tbody) {
+        filteredRows.forEach(row => tbody.appendChild(row));
     }
 
+    currentPage = 1;
+    renderTable();
+}
     // --------------------------------------------------
     // Status sort menu
     // --------------------------------------------------
-    const statusSortTh = document.getElementById('statusSortTh');
-    const statusSortMenu = document.getElementById('statusSortMenu');
+   const statusSortTh = document.getElementById('statusSortTh');
+const statusSortMenu = document.getElementById('statusSortMenu');
+let hoverTimeout;
 
-    if (statusSortTh && statusSortMenu) {
-        statusSortTh.addEventListener('click', (e) => {
+if (statusSortTh && statusSortMenu) {
+    statusSortTh.addEventListener('mouseenter', () => {
+        clearTimeout(hoverTimeout);
+        statusSortTh.classList.add('open');
+    });
+
+    statusSortTh.addEventListener('mouseleave', () => {
+        hoverTimeout = setTimeout(() => {
+            statusSortTh.classList.remove('open');
+        }, 200);
+    });
+
+    statusSortMenu.addEventListener('mouseenter', () => {
+        clearTimeout(hoverTimeout);
+    });
+
+    statusSortMenu.addEventListener('mouseleave', () => {
+        statusSortTh.classList.remove('open');
+    });
+
+    const sortButtons = statusSortMenu.querySelectorAll('button');
+    sortButtons.forEach(btn => {
+        btn.addEventListener('click', (e) => {
             e.stopPropagation();
-            statusSortMenu.style.display = statusSortMenu.style.display === 'block' ? 'none' : 'block';
+            const sortType = btn.getAttribute('data-sort');
+            if (sortType) sortTableRows(sortType);
+            statusSortTh.classList.remove('open');
         });
-
-        document.addEventListener('click', (e) => {
-            if (!statusSortTh.contains(e.target)) {
-                statusSortMenu.style.display = 'none';
-            }
-        });
-
-        const sortButtons = statusSortMenu.querySelectorAll('button');
-        sortButtons.forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                const sortType = btn.getAttribute('data-sort');
-                if (sortType) sortTableRows(sortType);
-                statusSortMenu.style.display = 'none';
-            });
-        });
-    }
-
+    });
+}
     // --------------------------------------------------
     // Pagination buttons with safety checks
     // --------------------------------------------------

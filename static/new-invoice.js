@@ -119,9 +119,6 @@ function toggleSaleOrderDropdown() {
     const dropdown = document.getElementById('saleOrderDropdown');
     const isVisible = dropdown.style.display === 'block';
     dropdown.style.display = isVisible ? 'none' : 'block';
-    if (!isVisible) {
-        document.getElementById('saleOrderSearch').focus();
-    }
 }
 
 function filterSaleOrders() {
@@ -132,7 +129,6 @@ function filterSaleOrders() {
         item.style.display = text.includes(searchTerm) ? 'block' : 'none';
     });
 }
-
 function selectSaleOrder(element) {
     if (!window.isEditable || isInvoiceEditDetailsMode()) return;
     const selectedValue = element.getAttribute('data-value');
@@ -143,13 +139,37 @@ function selectSaleOrder(element) {
     document.getElementById('saleOrderSelected').textContent = selectedText;
     document.getElementById('saleOrderDropdown').style.display = 'none';
     hiddenInput.dispatchEvent(new Event('change', { bubbles: true }));
+
+    // ✅ Disable the sales order field after selection
+    const saleOrderContainer = document.getElementById('saleOrderSelected');
+    if (saleOrderContainer) {
+        saleOrderContainer.disabled = true;
+        saleOrderContainer.style.backgroundColor = '#f0f0f0';
+        saleOrderContainer.style.cursor = 'not-allowed';
+    }
+    // Also disable the dropdown trigger (if any)
+    const saleOrderRefInput = document.getElementById('saleOrderRef');
+    if (saleOrderRefInput) saleOrderRefInput.disabled = true;
 }
 
+window.salesOrderSelected = false;   // true when a Sales Order is chosen
+function updateButtonsBasedOnSalesOrder() {
+    const saveDraftBtn = document.getElementById('saveDraftBtn');
+    const submitBtn = document.getElementById('submitInvoiceBtn');
+    if (!saveDraftBtn || !submitBtn) return;
+
+    if (window.salesOrderSelected) {
+        // Sales Order selected → only Save Draft enabled
+        saveDraftBtn.disabled = false;
+        submitBtn.disabled = true;
+    } else {
+        // No Sales Order → revert to normal validation (checkAllFields)
+        if (window.checkAllFields) window.checkAllFields();
+    }
+}
 // =========================================
 // Payment Terms custom dropdown
 // =========================================
-
-// Fetch payment terms by customer ID (more reliable than by name)
 function fetchCustomerPaymentTermsById(customerId) {
     if (!customerId) return;
     fetch(`/api/customer/${customerId}/payment-term`)
@@ -157,7 +177,6 @@ function fetchCustomerPaymentTermsById(customerId) {
         .then(data => {
             if (data.success && data.payment_term) {
                 const term = data.payment_term;
-                // Update both the visible input and the hidden field
                 document.getElementById('paymentTermsInput').value = term;
                 document.getElementById('paymentTerms').value = term;
                 recalculateDueDate();
@@ -826,7 +845,6 @@ if (!window.__invoiceDeleteFileModalBound) {
 // AUTO-FILL INVOICE FROM SALES ORDER
 // ===================================================
 
-
 function initializeSalesOrderAutoFill() {
     const salesOrderSelect = document.getElementById('saleOrderRef');
     const paymentMethodSelect = document.getElementById('paymentMethod');
@@ -841,16 +859,19 @@ function initializeSalesOrderAutoFill() {
     salesOrderSelect.addEventListener('change', function() {
         const soId = this.value;
         if (!soId) {
+            // Clear payment details and show placeholder
             clearPaymentDetails();
             if (paymentMethodSelect) paymentMethodSelect.disabled = true;
             if (currencySelect) currencySelect.disabled = true;
             const amountPaidInput = document.getElementById('amountPaid');
             if (amountPaidInput) {
-                amountPaidInput.disabled = true;
+                // amountPaidInput.disabled = true;
                 amountPaidInput.value = '0';
                 const hiddenAmtPaid = document.getElementById('amtPaid');
                 if (hiddenAmtPaid) hiddenAmtPaid.value = '0';
             }
+            // ✅ Show placeholder when sales order is cleared
+            fillInvoiceItems({ items: [] }, false);
             return;
         }
         console.log(`📦 Loading sales order: ${soId}`);
@@ -865,7 +886,8 @@ function initializeSalesOrderAutoFill() {
                     fillCustomerInfo(data);
                     fillCustomerRef(data);
                     fillPaymentDetails(data);
-                    fillInvoiceItems(data);
+                    // ✅ Display the loaded items (not clear them!)
+                    fillInvoiceItems(data, true);
                     fillOrderSummary(data);
                     refreshPaymentStatusWithOverdue();
                     fillDates(data);
@@ -878,7 +900,6 @@ function initializeSalesOrderAutoFill() {
                     }
                     if (paymentMethodSelect) paymentMethodSelect.disabled = false;
                     if (currencySelect) currencySelect.disabled = false;
-                    // calculateTotals();
                     if (window.checkAllFields) window.checkAllFields();
                     showToast('Sales order loaded successfully', 'success');
                 } else {
@@ -891,7 +912,6 @@ function initializeSalesOrderAutoFill() {
             });
     });
 }
-
 function fillCustomerInfo(data) {
         console.log("🔍 fillCustomerInfo data:", data);   // ← see what’s inside
 
@@ -975,36 +995,108 @@ function fillPaymentDetails(data) {
     if (paymentStatus) paymentStatus.value = 'Pending';
 }
 
-function fillInvoiceItems(data) {
-    if (!data.items || data.items.length === 0) {
-        console.log("📦 No items to display");
+function fillInvoiceItems(data, soIdSelected = true) {
+    const itemsTableBody = document.getElementById('itemsTableBody');
+    const lineItemsHeading = document.getElementById('lineItemsHeading');
+    
+    if (!itemsTableBody) return;
+
+    // Clear the table
+    itemsTableBody.innerHTML = '';
+
+    // If no sales order is selected or no items
+    if (!soIdSelected || !data.items || data.items.length === 0) {
+        // Heading stays as set in HTML (we do not change it)
+        // Show a styled placeholder row
+        const row = itemsTableBody.insertRow();
+        row.className = 'placeholder-row';   // ← CSS class for styling
+        const cell = row.insertCell(0);
+        cell.colSpan = 9;   // adjust to match number of columns
+        cell.textContent = 'Select a Sales Order Reference to load items';
         document.getElementById('itemsData').value = '';
         return;
     }
-    console.log(`📦 Loading ${data.items.length} items`);
-    const itemsTableBody = document.getElementById('itemsTableBody');
-    if (!itemsTableBody) return;
-    itemsTableBody.innerHTML = '';
+
+    // Sales order selected with items – heading remains unchanged
+    // Render the actual items
     const itemsForJSON = [];
     data.items.forEach((item, index) => {
-        const row = document.createElement('tr');
-        const productName = item.product_name || '';
-        const productId = item.product_id || '';
-        const quantity = item.qty || item.quantity || 0;
-        const uom = item.uom || item.unit_of_measure || '';
+        const row = itemsTableBody.insertRow();
+        
+        // S.No
+        const cellSn = row.insertCell(0);
+        cellSn.textContent = index + 1;
+        cellSn.className = 'item-sn';
+        
+        // Product Name
+        const cellName = row.insertCell(1);
+        cellName.textContent = item.product_name || '';
+        cellName.className = 'product-name';
+        
+        // Product ID
+        const cellId = row.insertCell(2);
+        cellId.textContent = item.product_id || '';
+        cellId.className = 'product-id';
+        
+        // Quantity
+        const qty = item.qty || item.quantity || 0;
+        const cellQty = row.insertCell(3);
+        cellQty.textContent = qty;
+        cellQty.className = 'quantity';
+        
+        // UOM
+        const cellUom = row.insertCell(4);
+        cellUom.textContent = item.uom || '';
+        cellUom.className = 'uom';
+        
+        // Unit Price
         const unitPrice = item.price || item.unit_price || 0;
-        const taxPct = item.tax_pct || item.tax_percentage || 0;
-        const discPct = item.disc_pct || item.discount || 0;
-        const subtotal = quantity * unitPrice;
-        const taxAmount = subtotal * (taxPct / 100);
+        const cellPrice = row.insertCell(5);
+        cellPrice.textContent = formatCurrency(unitPrice);
+        cellPrice.className = 'unit-price';
+        
+        // Tax %
+        const taxPct = item.tax_pct || 0;
+        const cellTax = row.insertCell(6);
+        cellTax.textContent = taxPct;
+        cellTax.className = 'tax-pct';
+        
+        // Disc %
+        const discPct = item.disc_pct || 0;
+        const cellDisc = row.insertCell(7);
+        cellDisc.textContent = discPct;
+        cellDisc.className = 'disc-pct';
+        
+        // Total
+        const subtotal = qty * unitPrice;
         const discountAmount = subtotal * (discPct / 100);
-        const total = subtotal + taxAmount - discountAmount;
-        row.innerHTML = `<td class="item-sn">${index + 1}</td><td class="product-name">${escapeHtml(productName)}</td><td class="product-id">${escapeHtml(productId)}</td><td class="quantity">${quantity}</td><td class="uom">${escapeHtml(uom)}</td><td class="unit-price">${formatCurrency(unitPrice)}</td><td class="tax-pct">${taxPct}</td><td class="disc-pct">${discPct}</td><td class="total">${formatCurrency(total)}<\/td>`;
-        itemsTableBody.appendChild(row);
-        itemsForJSON.push({ product_name: productName, product_id: productId, quantity: quantity, uom: uom, unit_price: unitPrice, tax_pct: taxPct, disc_pct: discPct });
+        const taxAmount = (subtotal - discountAmount) * (taxPct / 100);
+        const total = subtotal - discountAmount + taxAmount;
+        const cellTotal = row.insertCell(8);
+        cellTotal.textContent = formatCurrency(total);
+        cellTotal.className = 'total';
+        
+        itemsForJSON.push({
+            product_name: item.product_name,
+            product_id: item.product_id,
+            quantity: qty,
+            uom: item.uom,
+            unit_price: unitPrice,
+            tax_pct: taxPct,
+            disc_pct: discPct
+        });
     });
-    document.getElementById('itemsData').value = JSON.stringify(itemsForJSON);
-    console.log(`✅ Added ${data.items.length} items to invoice`);
+    
+    // Update hidden field for form submission
+    const itemsDataInput = document.getElementById('itemsData');
+    if (itemsDataInput) {
+        itemsDataInput.value = JSON.stringify(itemsForJSON);
+    }
+    
+    // Recalculate totals if needed
+    if (typeof calculateTotals === 'function') {
+        calculateTotals();
+    }
 }
 function fillOrderSummary(data) {
     const summaryFields = {
@@ -1052,9 +1144,8 @@ function fillOrderSummary(data) {
 function fillDates(data) {
     const invoiceDate = document.getElementById('invoiceDate');
     if (invoiceDate) {
-        const urlDnDate = (new URLSearchParams(window.location.search).get('delivery_date') || '').trim();
-        const relatedDate = urlDnDate || (data && (data.delivery_date || data.invoice_date)) || '';
-        invoiceDate.value = relatedDate || new Date().toISOString().split('T')[0];
+        const today = new Date().toISOString().split('T')[0];
+        invoiceDate.value = today;
     }
     const dueDate = document.getElementById('dueDate');
     if (dueDate && data.due_date) dueDate.value = data.due_date;
@@ -1070,11 +1161,6 @@ function updatePaymentStatusWithOverdue(grandTotal, paid, dueDate) {
     if (!paymentStatusField) return;
     let status = 'Unpaid';
     if (paid > 0 && grandTotal > 0 && paid >= grandTotal) {
-        status = 'Paid';
-        if (statusField && statusField.value !== 'Paid') {
-            statusField.value = 'Paid';
-            updateStatusBadge({ status: 'Paid', due_date: dueDate, payment_status: 'Paid' });
-        }
     } else if (paid > 0 && paid < grandTotal) {
         status = 'Partial';
     } else if (paid === 0 && dueDate && dueDate < new Date().toISOString().split('T')[0]) {
@@ -1235,17 +1321,9 @@ function updatePaymentRefEnabledState() {
     const amountPaid = parseFloat(amountPaidInput.value) || 0;
     const method = paymentMethodSelect ? paymentMethodSelect.value : '';
     const isEditable = window.isEditable === true;
-
-    // Enable only if:
-    // - invoice is editable (Draft/Send/Overdue)
-    // - amountPaid > 0
-    // - payment method is NOT 'Cash' and NOT empty
     const shouldEnable = isEditable && amountPaid > 0 && method !== 'Cash' && method !== '';
+     paymentRefInput.disabled = !shouldEnable;
 
-    paymentRefInput.disabled = !shouldEnable;
-
-    // NOTE: Do NOT clear the value here — it may be a loaded reference number.
-    // Clearing is handled separately when amount paid becomes 0 (see initializePaymentTracking).
 }
 
 function initializePaymentRefLogic() {
@@ -1266,12 +1344,10 @@ function initializePaymentRefLogic() {
     paymentRefInput.addEventListener('blur', function() { this.value = this.value.trim(); });
 
     function togglePaymentRef() {
-        // For non-draft invoices (Send, Overdue, Paid, Cancelled), always disable the field
         if (!window.isEditable) {
             paymentRefInput.disabled = true;
             paymentRefInput.required = false;
         } else {
-            // For draft invoices: enable only if amountPaid > 0 and method not Cash/empty
             updatePaymentRefEnabledState();
         }
         if (window.checkAllFields) window.checkAllFields();
@@ -1344,13 +1420,14 @@ function setButtonStateByStatus(status) {
     switch(statusLower) {
         case 'draft':
             if (saveDraftBtn) saveDraftBtn.disabled = false;
+            if (cancelInvoiceBtn) cancelInvoiceBtn.disabled = false;
+
             if (addCommentBtn) {
                 const commentInput = document.getElementById('commentText');
                 addCommentBtn.disabled = !commentInput || commentInput.value.trim() === '';
             }
             break;
         case 'send':
-            if (cancelInvoiceBtn) cancelInvoiceBtn.disabled = false;
             if (markAsPaidBtn) markAsPaidBtn.disabled = false;
             if (pdfAction) pdfAction.classList.remove('disabled');
             if (emailAction) emailAction.classList.remove('disabled');
@@ -1370,7 +1447,6 @@ function setButtonStateByStatus(status) {
             }
             break;
         case 'paid':
-            if (cancelInvoiceBtn) cancelInvoiceBtn.disabled = false;
             if (pdfAction) pdfAction.classList.remove('disabled');
             if (emailAction) emailAction.classList.remove('disabled');
             break;
@@ -1384,11 +1460,9 @@ function setButtonStateByStatus(status) {
 
     updateAmountPaidEditable(status);
 
-     // Enable Invoice Return button for allowed statuses
     if (invoiceReturnBtn) {
         const allowedStatuses = ['send', 'paid', 'overdue'];   // adjust as needed
         invoiceReturnBtn.disabled = !allowedStatuses.includes(status.toLowerCase());
-        // window.location.href="/new-invoice-return";
     }
 }
 
@@ -1452,42 +1526,47 @@ function clearPaymentDetails() {
     }
     if (window.togglePaymentRef) window.togglePaymentRef();
 }
-
 function loadSaleOrders() {
     const list = document.getElementById('saleOrderList');
     if (!list) return;
 
     const params = new URLSearchParams(window.location.search);
     const invoiceId = (params.get('invoice_id') || '').trim();
-    let url = '/api/sales-orders/available';
-    if (invoiceId) {
-        url += `?invoice_id=${encodeURIComponent(invoiceId)}`;
-    }
+    let url = '/api/sales-orders/available-for-invoice';
+    if (invoiceId) url += `?invoice_id=${encodeURIComponent(invoiceId)}`;
 
     fetch(url)
         .then(res => res.json())
         .then(data => {
-            if (!data.success) return;
             list.innerHTML = '';
-            data.orders.forEach(order => {
-                const item = document.createElement('div');
-                item.className = 'dropdown-item';
-                item.setAttribute('data-value', order.so_id);
-                item.textContent = `${order.so_id} - ${order.customer_name}`;
-                item.onclick = function () { selectSaleOrder(this); };
-                list.appendChild(item);
-            });
+            if (data.orders && data.orders.length > 0) {
+                data.orders.forEach(order => {
+                    const item = document.createElement('div');
+                    item.className = 'dropdown-item';
+                    item.setAttribute('data-value', order.so_id);
+                    item.textContent = `${order.so_id} - ${order.customer_name}`;
+                    item.onclick = function () { selectSaleOrder(this); };
+                    list.appendChild(item);
+                });
+            } else {
+                // Show "No Sales Orders Found" when API returns empty
+                const emptyMsg = document.createElement('div');
+                emptyMsg.className = 'dropdown-item';
+                // emptyMsg.style.color = 'red';
+                emptyMsg.textContent = 'No Sales Orders Found';
+                list.appendChild(emptyMsg);
+            }
         })
-        .catch(err => { console.error("Error loading sales orders:", err); });
+        .catch(err => {
+            console.error("Error loading sales orders:", err);
+            list.innerHTML = '<div class="dropdown-item" style="color:red">Failed to load sales orders</div>';
+        });
 }
 function updateAmountPaidEditable(status) {
     const amountPaidInput = document.getElementById('amountPaid');
-    if (!amountPaidInput) return;
-    const statusLower = (status || '').toLowerCase();
-    // Enable for draft, send, overdue; disable for paid, cancelled
-    const editable = statusLower === 'draft' || statusLower === 'send' || statusLower === 'overdue';
-    amountPaidInput.disabled = !editable;
+    if (amountPaidInput) amountPaidInput.disabled = true;   // always disabled
 }
+
 // ===================================================
 // INVOICE SUMMARY CALCULATIONS
 // ===================================================
@@ -1678,13 +1757,10 @@ function submitFormViaFetch(status, clickedButton) {
         url = form.action;
         method = 'POST';
     }
-
-    // Disable only the clicked button
     if (clickedButton) clickedButton.disabled = true;
 
     fetch(url, { method: method, body: formData })
         .then(response => {
-            // If the server sends a redirect (302), override it and go to invoice list ourselves
             if (response.redirected) {
                 showToast("Saved! Redirecting to invoice list...", "success");
                 setTimeout(() => { window.location.href = '/invoice-list'; }, 1500);
@@ -1721,12 +1797,9 @@ function submitFormViaFetch(status, clickedButton) {
 // ===================================================
 // LOAD EXISTING INVOICE
 // ===================================================
-const urlParams = new URLSearchParams(window.location.search);
-const invoiceIdParam = urlParams.get('invoice_id');
+
 let isEditing = false;
 let currentStatus = null;
-// Inside loadInvoiceData, after setting currentStatus
-// window.isEditable = currentStatus === 'draft';
 async function loadInvoiceData(invoiceId) {
     console.log("🔍 loadInvoiceData called with ID:", invoiceId);
     try {
@@ -1758,7 +1831,6 @@ async function loadInvoiceData(invoiceId) {
         setElemValue('contactPerson', inv.contact_person);
         setElemValue('customerId', inv.customer_id) ;
         setElemValue('paymentRefNo', inv.payment_ref_no)
-// Enable contact person if the invoice already has a sales order reference
 if (inv.sale_order_ref && inv.sale_order_ref !== '') {
     const cp = document.getElementById('contactPerson');
     if (cp && window.isEditable) {
@@ -1885,14 +1957,10 @@ if (inv.sale_order_ref && inv.sale_order_ref !== '') {
         const amountPaidInput = document.getElementById('amountPaid');
         if (amountPaidInput) amountPaidInput.value = summary.amount_paid || 0;
 
-// Enable the Amount Paid field for draft invoices (or always enable if you prefer)
 if (window.isEditable) {
     if (amountPaidInput) {
-        amountPaidInput.disabled = false;
     }
 }
-
-        // 🔥 FIX: Trigger payment method change to apply correct enabled/disabled state for paymentRefNo
         const pmSelect = document.getElementById('paymentMethod');
         if (pmSelect) {
             pmSelect.dispatchEvent(new Event('change', { bubbles: true }));
@@ -1931,9 +1999,6 @@ if (window.isEditable) {
             }
         }
 
-        // Title & buttons
-        const titleEl = document.querySelector('.quotation-title');
-        if (titleEl) titleEl.textContent = `Invoice`;
         document.title = `Invoice ${inv.invoice_id} - ${displayStatus}`;
         setButtonStateByStatus(displayStatus);
 
@@ -2008,6 +2073,8 @@ async function sendInvoiceEmailAutomatically() {
                 message: ''   // or a default message like "Please find attached invoice"
             })
         });
+
+        
         const data = await response.json();
         if (data.success) {
             showToast(`Invoice sent successfully to ${customerEmail}`, 'success');
@@ -2030,11 +2097,31 @@ function validateEmail(email) {
     const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     return re.test(email);
 }
+const urlParams = new URLSearchParams(window.location.search);
+const invoiceIdParam = urlParams.get('invoice_id');   // editable mode
+const viewInvoiceId = urlParams.get('view_id');       // read‑only mode
+const headingEl = document.querySelector('.quotation-title');
 
+if (viewInvoiceId) {
+    // View‑only mode
+    if (headingEl) headingEl.textContent = 'View Invoice';
+    document.title = `Invoice ${viewInvoiceId} - View`;
+    loadInvoiceData(viewInvoiceId, true); // pass a flag for read‑only
+} else if (invoiceIdParam) {
+    // Edit mode
+    if (headingEl) headingEl.textContent = 'Edit Invoice';
+    document.title = `Invoice ${invoiceIdParam} - Edit`;
+    loadInvoiceData(invoiceIdParam, false);
+} else {
+    // New invoice
+    if (headingEl) headingEl.textContent = 'New Invoice';
+    document.title = 'Create New Invoice';
+}
 // ===================================================
 // MAIN INITIALIZATION
 // ===================================================
 document.addEventListener('DOMContentLoaded', function() {
+    
     const amountPaidInput = document.getElementById('amountPaid');
     if (amountPaidInput) amountPaidInput.disabled = true;
     const paymentMethodSelect = document.getElementById('paymentMethod');
@@ -2048,22 +2135,16 @@ document.addEventListener('DOMContentLoaded', function() {
             window.location.href = '/invoice-list';
         });
     } else {
+
         console.warn('Cancel button (id="cancelBtn") not found');
     }
-
-
-    const invoiceReturnBtn = document.getElementById('invoiceReturnBtn');
-if (invoiceReturnBtn) {
-    invoiceReturnBtn.addEventListener('click', function() {
-        const invoiceId = document.getElementById('invoiceId').value;
-        if (invoiceId && invoiceId !== 'Auto Generate') {
-            // Open the invoice return page with the invoice ID as a query parameter
-            window.location.href = `/new-invoice-return?invoice_id=${invoiceId}`;
-        } else {
-            showToast('Please save the invoice first.', 'warning');
-        }
-    });
-}
+    document.getElementById('invoiceReturnBtn').addEventListener('click', function(e) {
+    e.preventDefault();
+    const invoiceId = document.getElementById('invoiceId').value;
+    
+        window.location.href = `/generate-invoice-return/${invoiceId}`;
+    
+});
     const customerRefNo = document.getElementById('customerRefNo');
     if (customerRefNo) {
         customerRefNo.maxLength = 10;
@@ -2088,9 +2169,6 @@ if (invoiceReturnBtn) {
     });
 
  
-//contact person
-
-
 // Contact Person: only letters and spaces, max 20 chars
 const contactPerson = document.getElementById('contactPerson');
 if (contactPerson) {
@@ -2208,10 +2286,7 @@ function initInvoiceTagsCheckboxDropdown() {
   }
 }
 
-initInvoiceTagsCheckboxDropdown();
-
-
-
+     initInvoiceTagsCheckboxDropdown();
     initializeTabs();
     initializeComments();
     initializeAttachments();
@@ -2219,7 +2294,6 @@ initInvoiceTagsCheckboxDropdown();
     initializePaymentTracking();
     refreshPaymentStatus();
     initializePaymentRefLogic();
-    // loadPaymentTerms();
     loadSaleOrders();
     const invoiceDateInput = document.getElementById('invoiceDate');
     const paymentTermsHidden = document.getElementById('paymentTerms');
@@ -2277,7 +2351,18 @@ initInvoiceTagsCheckboxDropdown();
     window.checkAllFields();
     const saveDraftBtn = document.getElementById('saveDraftBtn');
     const submitBtn = document.getElementById('submitInvoiceBtn');
-    if (saveDraftBtn) saveDraftBtn.addEventListener('click', function(e) { e.preventDefault(); submitFormViaFetch('Draft', this); });
+    // if (saveDraftBtn) saveDraftBtn.addEventListener('click', function(e) { e.preventDefault(); submitFormViaFetch('Draft', this); });
+     if (saveDraftBtn) {
+    saveDraftBtn.addEventListener('click', function(e) {
+        e.preventDefault();
+        // Only enforce Sales Order selection for NEW invoices (not editing an existing one)
+        if (!invoiceIdParam && !window.salesOrderSelected) {
+            showToast('Please select a Sales Order Reference before saving draft.', 'warning');
+            return;
+        }
+        submitFormViaFetch('Draft', this);
+    });
+}
     if (submitBtn) submitBtn.addEventListener('click', function(e) { e.preventDefault(); if (!submitBtn.disabled) submitFormViaFetch('Send', this); });
   
 if (invoiceIdParam) {
@@ -2286,11 +2371,11 @@ if (invoiceIdParam) {
 
    if (markAsPaidBtn) {
     markAsPaidBtn.addEventListener('click', () => {
-        const balanceDueSpan = document.querySelector('.grand-total:last-child span:last-child');
-        let balanceDue = 0;
-        if (balanceDueSpan) {
-            balanceDue = parseFloat(balanceDueSpan.textContent) || 0;
-        }
+        alert('Button clicked!');
+        console.log('🔴 Mark as Paid clicked – direct handler');
+const balanceDueHidden = document.getElementById('balanceDueInput');
+let balanceDue = parseFloat(balanceDueHidden?.value) || 0;
+console.log('Balance due from hidden:', balanceDue);
 
         const paymentMethod = document.getElementById('paymentMethod');
         const paymentRefInput = document.getElementById('paymentRefNo');
@@ -2355,6 +2440,15 @@ if (invoiceIdParam) {
 else {
     // New invoice – make dropdowns editable
     window.isEditable = true;
+
+    // Set invoice date to today
+    const invoiceDateInput = document.getElementById('invoiceDate');
+    if (invoiceDateInput && !invoiceDateInput.value) {
+        const today = new Date().toISOString().split('T')[0];
+        invoiceDateInput.value = today;
+    }
+        fillInvoiceItems({ items: [] }, false);
+
 }
     
     calculateTotals();
@@ -2362,25 +2456,18 @@ else {
         loadInvoiceData(invoiceIdParam);
     } else {
         setButtonStateByStatus('Draft');
+        // Disable Cancel Invoice button on new invoice (unsaved)
+    const cancelInvoiceBtn = document.getElementById('cancelInvoiceBtn');
+    if (cancelInvoiceBtn) {
+        cancelInvoiceBtn.disabled = true;
+        cancelInvoiceBtn.title = 'Invoice must be saved before cancelling';
+    }
+
     }
     addOverdueStyles();
     startOverdueMonitor();
     
     if (!invoiceIdParam) {
-        const dnDeliveryDate = (urlParams.get('delivery_date') || '').trim();
-        const dnSoId = (urlParams.get('so_id') || '').trim();
-        if (dnDeliveryDate) fillDates({ delivery_date: dnDeliveryDate });
-        if (dnSoId) {
-            const hiddenInput = document.getElementById('saleOrderRef');
-            const soSelected = document.getElementById('saleOrderSelected');
-            if (hiddenInput) {
-                hiddenInput.value = dnSoId;
-                if (soSelected) soSelected.textContent = dnSoId;
-                setTimeout(() => {
-                    hiddenInput.dispatchEvent(new Event('change', { bubbles: true }));
-                }, 100);
-            }
-        }
         const dueDateField = document.getElementById('dueDate');
         const paymentStatusField = document.getElementById('paymentStatus');
         if (dueDateField) dueDateField.addEventListener('change', checkOverdueStatus);
@@ -2409,7 +2496,6 @@ else {
     function hideEmailModal() { if (emailModal) emailModal.style.display = 'none'; }
     if (emailAction && emailModal) {
         emailAction.removeEventListener('click', showEmailModal);
-        // emailAction.addEventListener('click', showEmailModal);
         emailAction.removeEventListener('click', showEmailModal);
 emailAction.addEventListener('click', function(e) {
     e.preventDefault();
@@ -2456,4 +2542,58 @@ emailAction.addEventListener('click', function(e) {
             }
         });
     }
+
+// Event delegation for Mark as Paid button (always works)
+document.body.addEventListener('click', function(e) {
+    const btn = e.target.closest('#markAsPaid');
+    if (!btn) return;
+
+    console.log('🔴 Mark as Paid clicked (delegated)');
+
+    const balanceDueHidden = document.getElementById('balanceDueInput');
+    let balanceDue = parseFloat(balanceDueHidden?.value) || 0;
+    console.log('Balance due from hidden:', balanceDue);
+
+    const paymentMethod = document.getElementById('paymentMethod');
+    const paymentRefInput = document.getElementById('paymentRefNo');
+    const isCash = paymentMethod && (paymentMethod.value === 'Cash' || paymentMethod.value === '');
+
+    function checkAndSetPaymentRef() {
+        if (!isCash && paymentRefInput) {
+            const refValue = (paymentRefInput.value || '').trim();
+            if (refValue === '') {
+                const userRef = prompt('Payment Reference Number is required for this payment method.\nPlease enter the reference number:');
+                if (userRef === null) return false;
+                if (userRef.trim() === '') {
+                    showToast('Payment Reference Number cannot be empty.', 'warning');
+                    return false;
+                }
+                paymentRefInput.value = userRef.trim();
+                paymentRefInput.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+        }
+        return true;
+    }
+
+    if (balanceDue > 0) {
+showToast(`Balance due is ${balanceDue.toFixed(2)}. Please complete payment first.`, 'error');        return;
+    }
+
+    if (!checkAndSetPaymentRef()) return;
+
+    // Temporarily enable all fields
+    const allInputs = document.querySelectorAll('#invoiceForm input, #invoiceForm select, #invoiceForm textarea');
+    const wasDisabled = [];
+    allInputs.forEach((el, i) => {
+        wasDisabled[i] = el.disabled;
+        el.disabled = false;
+    });
+
+    submitFormViaFetch('Paid');
+
+    setTimeout(() => {
+        allInputs.forEach((el, i) => { el.disabled = wasDisabled[i]; });
+    }, 100);
+});
+    
 });

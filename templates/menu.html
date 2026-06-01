@@ -195,7 +195,7 @@
         <div class="menu-group finance-group">
           <button
             type="button"
-            class="menu-toggle"
+            class="menu-toggle{% if page in ['credit_note','debit_note','create_payment'] %} open{% endif %}"
             data-target="finance-submenu"
           >
             <span class="menu-icon">💰</span>
@@ -204,7 +204,7 @@
           </button>
 
           <div id="finance-submenu"
-              class="submenu{% if page in ['credit_note','debit_note'] %} open{% endif %}">
+              class="submenu{% if page in ['credit_note','debit_note','create_payment'] %} open{% endif %}">
 
             <a id="creditNoteLink" href="{{ url_for('credit_note') }}"
               class="submenu-item{% if page == 'credit_note' %} active{% endif %}">
@@ -216,6 +216,12 @@
               class="submenu-item{% if page == 'debit_note' %} active{% endif %}">
               <span class="submenu-icon">💳</span>
               <span>Debit Note</span>
+            </a>
+
+            <a href="{{ url_for('create_payment') }}"
+               class="submenu-item{% if page == 'create_payment' %} active{% endif %}">
+              <span class="submenu-icon">💳</span>
+              <span>Payment</span>
             </a>
 
           </div>
