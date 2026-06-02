@@ -1,4 +1,0 @@
-{
-  "message": "session_expired",
-  "success": false
-}

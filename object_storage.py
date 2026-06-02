@@ -1,5 +1,5 @@
 """
-S3 object storage for uploads (AWS S3 or Supabase Storage S3-compatible API).
+S3 object storage for uploads (AWS S3 or S3-compatible endpoints).
 
 Configure via environment variables in `.env`. When not configured,
 upload paths fall back to local disk in app.py.
@@ -9,8 +9,8 @@ Object keys use a prefix per submodule, e.g.:
   creditnote_attachments/CRN-001/file.pdf
 
 Public URLs stored in PostgreSQL:
-  AWS:  https://{bucket}.s3.{region}.amazonaws.com/{key}
-  Supabase: {SUPABASE_PUBLIC_OBJECTS_BASE}/{key}
+  AWS/native: https://{bucket}.s3.{region}.amazonaws.com/{key}
+  Custom endpoint: derive from SUPABASE_PUBLIC_OBJECTS_BASE when available
 """
 
 from __future__ import annotations
@@ -72,9 +72,7 @@ def _is_supabase_endpoint(endpoint: str) -> bool:
 
 
 def _is_aws_native() -> bool:
-    """True when using standard AWS S3 (no custom Supabase endpoint)."""
-    if (os.getenv("S3_USE_AWS") or "").strip().lower() in ("1", "true", "yes", "on"):
-        return True
+    """True when using standard AWS S3 (no custom endpoint)."""
     endpoint = _endpoint_url()
     if not endpoint:
         return True
@@ -107,11 +105,8 @@ def _derive_supabase_public_base() -> str:
 
 
 def _public_base() -> str:
-    explicit = (
-        (os.getenv("S3_PUBLIC_BASE_URL") or "").strip()
-        or (os.getenv("SUPABASE_PUBLIC_OBJECTS_BASE") or "").strip()
-    ).rstrip("/")
-    if explicit:
+    explicit = ((os.getenv("SUPABASE_PUBLIC_OBJECTS_BASE") or "").strip()).rstrip("/")
+    if explicit and not _is_aws_native():
         return explicit
     if _is_aws_native():
         return _derive_aws_public_base()
@@ -133,10 +128,8 @@ def is_enabled() -> bool:
                 "Example: pos-billing-upload. S3 uploads disabled until fixed."
             )
         return False
-    access = (os.getenv("S3_ACCESS_KEY_ID") or os.getenv("AWS_ACCESS_KEY_ID") or "").strip()
-    secret = (os.getenv("S3_SECRET_ACCESS_KEY") or os.getenv("AWS_SECRET_ACCESS_KEY") or "").strip()
-    has_keys = bool(access and secret)
-    if not has_keys or not _public_base():
+    # Do not require env keys here: boto3 can use IAM role credentials (EC2 metadata).
+    if not _public_base():
         return False
     if _is_aws_native():
         return True
@@ -157,7 +150,7 @@ def public_url_for_key(object_key: str) -> str:
     key = (object_key or "").lstrip("/")
     base = _public_base()
     if not base:
-        raise RuntimeError("S3_PUBLIC_BASE_URL or SUPABASE_PUBLIC_OBJECTS_BASE must be set")
+        raise RuntimeError("Could not derive S3 public base URL from S3_BUCKET/S3_REGION")
     return f"{base}/{key}"
 
 
@@ -191,9 +184,12 @@ def _get_client():
     client_kwargs = {
         "service_name": "s3",
         "region_name": region,
-        "aws_access_key_id": access_key,
-        "aws_secret_access_key": secret_key,
     }
+    # Use explicit credentials only when provided; otherwise let boto3 resolve
+    # credentials from IAM role / instance profile / default provider chain.
+    if access_key and secret_key:
+        client_kwargs["aws_access_key_id"] = access_key
+        client_kwargs["aws_secret_access_key"] = secret_key
 
     if _is_supabase_endpoint(endpoint):
         client_kwargs["endpoint_url"] = endpoint
