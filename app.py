@@ -28958,7 +28958,7 @@ def get_invoices_payments():
 
 
 def _ensure_payments_table(cur):
-    """Ensure public.payments exists (search_path pos,public otherwise creates pos.payments)."""
+    """Create payments table if missing (Vercel/prod DB may not have run migrations)."""
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS public.payments (
@@ -28980,67 +28980,7 @@ def _ensure_payments_table(cur):
         ON public.payments (invoice_id)
         """
     )
-
-
-def _migrate_pos_payments_to_public(cur):
-    """Copy rows from pos.payments into public.payments when both schemas exist."""
-    try:
-        cur.execute(
-            """
-            SELECT EXISTS (
-                SELECT 1 FROM information_schema.tables
-                WHERE table_schema = 'pos' AND table_name = 'payments'
-            )
-            """
-        )
-        if not cur.fetchone()[0]:
-            return
-        cur.execute(
-            """
-            INSERT INTO public.payments (
-                invoice_id, customer_name, payment_method, transaction_id,
-                amount, payment_date, notes, created_at
-            )
-            SELECT p.invoice_id, p.customer_name, p.payment_method, p.transaction_id,
-                   p.amount, p.payment_date, p.notes, p.created_at
-            FROM pos.payments p
-            WHERE NOT EXISTS (
-                SELECT 1 FROM public.payments x
-                WHERE x.invoice_id = p.invoice_id
-                  AND x.transaction_id IS NOT DISTINCT FROM p.transaction_id
-                  AND x.amount = p.amount
-                  AND COALESCE(x.payment_date, DATE '1970-01-01')
-                      = COALESCE(p.payment_date, DATE '1970-01-01')
-                  AND x.created_at = p.created_at
-            )
-            """
-        )
-    except Exception as e:
-        print(f"_migrate_pos_payments_to_public skipped: {e}")
-
-
-def _payment_persisted(payment_id):
-    """Verify row exists using a fresh connection (serverless commit visibility)."""
-    if payment_id is None:
-        return False
-    verify_conn = None
-    try:
-        verify_conn = get_db_connection()
-        with verify_conn.cursor() as vcur:
-            vcur.execute(
-                "SELECT 1 FROM public.payments WHERE payment_id = %s",
-                (payment_id,),
-            )
-            return vcur.fetchone() is not None
-    except Exception as e:
-        print(f"_payment_persisted verify failed: {e}")
-        return False
-    finally:
-        if verify_conn is not None:
-            try:
-                verify_conn.close()
-            except Exception:
-                pass
+    cur.connection.commit()
 
 
 @app.route("/api/payments", methods=["POST"])
@@ -29079,10 +29019,10 @@ def save_payment():
                     "error": "Invalid date. Use YYYY-MM-DD.",
                 }), 400
 
-        conn = get_db_connection()
+        # Use a direct connection to ensure commits persist on serverless (Vercel).
+        conn = _direct_db_connect(_db_conn_params())
         cur = conn.cursor()
         _ensure_payments_table(cur)
-        _migrate_pos_payments_to_public(cur)
 
         cur.execute(
             "SELECT 1 FROM invoices WHERE invoice_id = %s",
@@ -29194,11 +29134,17 @@ def save_payment():
 
         conn.commit()
 
-        if payment_id is None or not _payment_persisted(payment_id):
-            return jsonify({
-                "success": False,
-                "error": "Payment could not be verified after save",
-            }), 500
+        if payment_id is not None:
+            cur.execute(
+                "SELECT 1 FROM public.payments WHERE payment_id = %s",
+                (payment_id,),
+            )
+            if not cur.fetchone():
+                conn.rollback()
+                return jsonify({
+                    "success": False,
+                    "error": "Payment could not be verified after save",
+                }), 500
 
         return jsonify({
             "success": True,
