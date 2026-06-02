@@ -28962,7 +28962,7 @@ def _ensure_payments_table(cur):
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS public.payments (
-            payment_id SERIAL PRIMARY KEY,
+            id SERIAL PRIMARY KEY,
             invoice_id VARCHAR(50) NOT NULL,
             customer_name TEXT,
             payment_method TEXT,
@@ -29037,7 +29037,7 @@ def save_payment():
             INSERT INTO public.payments
             (invoice_id, customer_name, payment_method, transaction_id, amount, payment_date, notes)
             VALUES (%s, %s, %s, %s, %s, %s, %s)
-            RETURNING payment_id
+            RETURNING id
             """,
             (
                 invoice_id,
@@ -29050,7 +29050,7 @@ def save_payment():
             ),
         )
         payment_row = cur.fetchone()
-        payment_id = payment_row[0] if payment_row else None
+        saved_id = payment_row[0] if payment_row else None
 
         cur.execute(
             "SELECT balance_due, amount_paid, grand_total FROM invoice_summary WHERE invoice_id = %s",
@@ -29134,10 +29134,10 @@ def save_payment():
 
         conn.commit()
 
-        if payment_id is not None:
+        if saved_id is not None:
             cur.execute(
-                "SELECT 1 FROM public.payments WHERE payment_id = %s",
-                (payment_id,),
+                "SELECT 1 FROM public.payments WHERE id = %s",
+                (saved_id,),
             )
             if not cur.fetchone():
                 conn.rollback()
@@ -29148,7 +29148,7 @@ def save_payment():
 
         return jsonify({
             "success": True,
-            "payment_id": payment_id,
+            "id": saved_id,
             "message": "Payment saved successfully",
         })
     except Exception as e:
