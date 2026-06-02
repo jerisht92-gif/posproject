@@ -378,13 +378,13 @@
  
         <div class="form-group supplier-doc-upload" data-upload-slot="insurance">
           <label for="insuranceUpload">Insurance Documents/Info</label>
-          <input type="file" id="insuranceUpload" name="insurance_upload" class="supplier-file-input" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" title="PDF, JPG, PNG (max 10MB)">
+          <input type="file" id="insuranceUpload" name="insurance_upload" class="supplier-file-input" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" title="PDF, JPEG, PNG only (max 10MB)">
           <div class="supplier-doc-upload__list" id="insuranceUploadList"></div>
         </div>
  
         <div class="form-group supplier-doc-upload" data-upload-slot="mitigation">
           <label for="mitigationUpload">Mitigation Plans</label>
-          <input type="file" id="mitigationUpload" name="mitigation_upload" class="supplier-file-input" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" title="PDF, JPG, PNG (max 10MB)">
+          <input type="file" id="mitigationUpload" name="mitigation_upload" class="supplier-file-input" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" title="PDF, JPEG, PNG only (max 10MB)">
           <div class="supplier-doc-upload__list" id="mitigationUploadList"></div>
         </div>
  
@@ -452,19 +452,19 @@
  
         <div class="form-group supplier-doc-upload" data-upload-slot="dispute">
           <label for="disputeResolutionUpload">Dispute Resolutions</label>
-          <input type="file" id="disputeResolutionUpload" name="dispute_resolution_upload" class="supplier-file-input" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" title="PDF, JPG, PNG (max 10MB)">
+          <input type="file" id="disputeResolutionUpload" name="dispute_resolution_upload" class="supplier-file-input" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" title="PDF, JPEG, PNG only (max 10MB)">
           <div class="supplier-doc-upload__list" id="disputeResolutionUploadList"></div>
         </div>
  
         <div class="form-group supplier-doc-upload" data-upload-slot="interaction">
           <label for="interactionLogsUpload">Interaction Logs (Link to CRM logs)</label>
-          <input type="file" id="interactionLogsUpload" name="interaction_logs_upload" class="supplier-file-input" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" title="PDF, JPG, PNG (max 10MB)">
+          <input type="file" id="interactionLogsUpload" name="interaction_logs_upload" class="supplier-file-input" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" title="PDF, JPEG, PNG only (max 10MB)">
           <div class="supplier-doc-upload__list" id="interactionLogsUploadList"></div>
         </div>
  
         <div class="form-group supplier-doc-upload" data-upload-slot="feedback">
           <label for="feedbackSurveysUpload">Feedback/Surveys</label>
-          <input type="file" id="feedbackSurveysUpload" name="feedback_surveys_upload" class="supplier-file-input" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" title="PDF, JPG, PNG (max 10MB)">
+          <input type="file" id="feedbackSurveysUpload" name="feedback_surveys_upload" class="supplier-file-input" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" title="PDF, JPEG, PNG only (max 10MB)">
           <div class="supplier-doc-upload__list" id="feedbackSurveysUploadList"></div>
         </div>
  
@@ -509,12 +509,12 @@
  
         <div class="tab-content" id="attachments" style="display:none;">
           <div class="upload-section">
-            <input type="file" id="fileInput" class="supplier-file-input-hidden" hidden multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png">
+            <input type="file" id="fileInput" class="supplier-file-input-hidden" hidden multiple accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png">
             <div class="supplier-upload-card" id="uploadCard" role="button" tabindex="0" aria-label="Upload attachment">
               <i class="fa-solid fa-cloud-upload-alt" aria-hidden="true"></i>
               <span class="supplier-upload-card__title">Upload Attachment</span>
               <span class="supplier-upload-card__hint">Click to select or drag &amp; drop</span>
-              <small>PDF, DOC, XLS, JPG, PNG (Max 10MB)</small>
+              <small>PDF, JPEG, PNG only (max 10MB)</small>
             </div>
             <button type="button" class="btn-upload" id="uploadBtn"><i class="fa-solid fa-upload" aria-hidden="true"></i> Choose File</button>
           </div>

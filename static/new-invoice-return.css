@@ -937,10 +937,13 @@ body.view-mode #irSubmitBtn {
   opacity: 0;
   transition: all 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
   pointer-events: none;
-  white-space: nowrap;
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
+  max-width: min(700px, calc(100vw - 32px));
+  box-sizing: border-box;
+  text-align: center;
 }
 
 .success-notification {
@@ -964,16 +967,15 @@ body.view-mode #irSubmitBtn {
   pointer-events: auto;
 }
 
-.success-notification::before {
-  content: "✓";
+.ir-toast-icon {
   font-size: 18px;
   font-weight: bold;
+  line-height: 1;
+  flex-shrink: 0;
 }
 
-.error-notification::before {
-  content: "✕";
-  font-size: 18px;
-  font-weight: bold;
+.ir-toast-text {
+  line-height: 1.35;
 }
 
 

@@ -1,21 +1,41 @@
 // =====================================
-// SHOW TOAST (simple version)
+// SHOW TOAST (same pattern as delivery note return)
 // =====================================
-function showToast(message, type = 'info') {
-    console.log(`Toast (${type}): ${message}`);
-    let className = '';
-    if (type === 'success') className = 'success-notification';
-    else if (type === 'error' || type === 'warning') className = 'error-notification';
-    else return;
+function showToast(message, type = "success") {
+    const existing = document.querySelectorAll(
+        ".success-notification, .error-notification"
+    );
+    existing.forEach((el) => el.remove());
 
-    const toast = document.createElement('div');
+    let className = "success-notification";
+    if (type === "error" || type === "warning") {
+        className = "error-notification";
+    } else if (type !== "success") {
+        return;
+    }
+
+    const toast = document.createElement("div");
     toast.className = className;
-    toast.textContent = message;
 
+    const icon = document.createElement("span");
+    icon.className = "ir-toast-icon";
+    icon.setAttribute("aria-hidden", "true");
+    icon.textContent = type === "error" || type === "warning" ? "✕" : "✓";
+
+    const text = document.createElement("span");
+    text.className = "ir-toast-text";
+    text.textContent = message;
+
+    toast.appendChild(icon);
+    toast.appendChild(text);
     document.body.appendChild(toast);
-    setTimeout(() => toast.classList.add('show'), 10);
+
+    requestAnimationFrame(() => {
+        toast.classList.add("show");
+    });
+
     setTimeout(() => {
-        toast.classList.remove('show');
+        toast.classList.remove("show");
         setTimeout(() => toast.remove(), 400);
     }, 3000);
 }
@@ -1199,10 +1219,7 @@ function initializeAttachments() {
 
     async function uploadFiles(fileList) {
         for (const file of fileList) {
-            if (file.size > MAX_FILE_SIZE_BYTES) {
-                showToast(`File ${file.name} exceeds ${MAX_FILE_SIZE_MB} MB limit`, 'error');
-                continue;
-            }
+            if (!validateFile(file)) continue;
             await uploadFile(file);
         }
         const returnIdElem = document.getElementById('invoiceReturnId');
@@ -1213,7 +1230,6 @@ function initializeAttachments() {
     }
 
     async function uploadFile(file) {
-        if (!validateFile(file)) return;
         const returnIdElem = document.getElementById('invoiceReturnId');
         const returnId = returnIdElem ? returnIdElem.value : null;
         if (!returnId || returnId.startsWith('TEMP_')) {
@@ -1231,27 +1247,76 @@ function initializeAttachments() {
             const data = await response.json();
             if (data.success) {
                 console.log(`✅ Uploaded: ${file.name}`);
-                showToast(`${file.name} uploaded successfully!`, 'success');
+                showToast(`${file.name} added successfully`, "success");
             } else {
-                showToast(`Upload failed: ${data.error || 'Unknown error'}`, 'error');
+                const serverMsg = (data.message || data.error || "").trim();
+                const lower = serverMsg.toLowerCase();
+                if (
+                    lower.includes("invalid file") ||
+                    lower.includes("not allowed") ||
+                    lower.includes("file type")
+                ) {
+                    showToast(
+                        "Invalid file format. " + IR_UPLOAD_FORMAT_MSG,
+                        "error"
+                    );
+                } else if (lower.includes("size") || lower.includes("10mb") || lower.includes("10 mb")) {
+                    showToast("File size must be less than 10MB", "error");
+                } else {
+                    showToast(serverMsg || "Upload failed", "error");
+                }
             }
         } catch (error) {
             console.error("❌ Upload error:", error);
-            showToast('Upload failed. Please try again.', 'error');
+            showToast("Upload failed. Please try again.", "error");
         } finally {
             removeUploading();
         }
     }
 
+    const IR_UPLOAD_EXTENSIONS = new Set(['pdf', 'jpg', 'jpeg', 'png']);
+    const IR_UPLOAD_FORMAT_MSG =
+        'Only PDF, JPEG, and PNG files are allowed (max 10MB).';
+
+    if (fileInput) {
+        fileInput.setAttribute(
+            'accept',
+            '.pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png'
+        );
+        fileInput.setAttribute('title', IR_UPLOAD_FORMAT_MSG);
+    }
+
     function validateFile(file) {
-        if (file.size > MAX_FILE_SIZE_BYTES) {
-            showToast(`${file.name} exceeds ${MAX_FILE_SIZE_MB}MB limit`, 'error');
+        const ext = (file.name.split(".").pop() || "").toLowerCase();
+        if (!IR_UPLOAD_EXTENSIONS.has(ext)) {
+            showToast(
+                "Invalid file format. " + IR_UPLOAD_FORMAT_MSG,
+                "error"
+            );
             return false;
         }
-        const allowedExtensions = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'jpg', 'jpeg', 'png'];
-        const ext = file.name.split('.').pop().toLowerCase();
-        if (!allowedExtensions.includes(ext)) {
-            showToast(`${file.name} type not allowed. Allowed: PDF, DOC, XLS, JPG, PNG`, 'error');
+        const mime = String(file.type || "").toLowerCase();
+        if (
+            mime &&
+            (
+                mime.includes("zip") ||
+                mime.includes("rar") ||
+                mime.includes("msword") ||
+                mime.includes("excel") ||
+                mime.includes("spreadsheet")
+            )
+        ) {
+            showToast(
+                "Invalid file format. " + IR_UPLOAD_FORMAT_MSG,
+                "error"
+            );
+            return false;
+        }
+        if (file.size > MAX_FILE_SIZE_BYTES) {
+            showToast(
+                (file.name || "File") + " exceeds 10 MB",
+                "error"
+            );
             return false;
         }
         return true;

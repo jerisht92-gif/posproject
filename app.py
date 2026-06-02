@@ -948,6 +948,9 @@ def _migrate_legacy_upload_dirs():
     legacy_attach = os.path.join(app.root_path, "attachments")
     _merge_legacy_upload_tree(legacy_static, UPLOAD_FOLDER)
     _merge_legacy_upload_tree(legacy_attach, QUOTATION_ATTACHMENTS_FOLDER)
+    legacy_ir = os.path.join(UPLOAD_FOLDER, "invoice_return")
+    if legacy_ir != INVOICE_RETURN_ATTACHMENTS_FOLDER:
+        _merge_legacy_upload_tree(legacy_ir, INVOICE_RETURN_ATTACHMENTS_FOLDER)
 
 
 def _resolve_stored_file_path(file_path):
@@ -962,6 +965,7 @@ def _resolve_stored_file_path(file_path):
     rel = p.replace("\\", "/").lstrip("/")
     search_dirs = [
         UPLOAD_FOLDER,
+        INVOICE_RETURN_ATTACHMENTS_FOLDER,
         INVOICE_RETURN_UPLOAD_FOLDER,
         INVOICE_ATTACHMENTS_FOLDER,
         QUOTATION_ATTACHMENTS_FOLDER,
@@ -996,7 +1000,8 @@ ROLE_FILE = os.path.join(app.root_path, "roles.json")
 DEPARTMENT_FILE = os.path.join(app.root_path, "departments.json")
 UPLOAD_FOLDER = _init_upload_paths()
 
-INVOICE_RETURN_UPLOAD_FOLDER = _writable_upload_subdir("invoice_return")
+INVOICE_RETURN_ATTACHMENTS_FOLDER = _writable_upload_subdir("invoice_return_attachments")
+INVOICE_RETURN_UPLOAD_FOLDER = INVOICE_RETURN_ATTACHMENTS_FOLDER
 QUOTATION_ATTACHMENTS_FOLDER = _writable_upload_subdir("quotation_attachments")
 INVOICE_ATTACHMENTS_FOLDER = _writable_upload_subdir("invoice_attachments")
 PRODUCT_IMAGES_FOLDER = _writable_upload_subdir("product_images")
@@ -1051,6 +1056,29 @@ def _local_upload_dest(local_root, relative_path):
     if parent:
         os.makedirs(parent, exist_ok=True)
     return dest
+
+
+def _upload_file_size_bytes(file_storage):
+    """Return uploaded file size in bytes; reset read position for subsequent save/upload."""
+    if not file_storage:
+        return 0
+    stream = getattr(file_storage, "stream", None) or file_storage
+    try:
+        pos = stream.tell()
+        stream.seek(0, os.SEEK_END)
+        size = int(stream.tell() or 0)
+        stream.seek(pos)
+        return size
+    except Exception:
+        try:
+            data = file_storage.read()
+            try:
+                file_storage.seek(0)
+            except Exception:
+                pass
+            return len(data) if data else 0
+        except Exception:
+            return 0
 
 
 def _persist_module_upload(module_key, local_root, file_storage, relative_path):
@@ -8945,6 +8973,39 @@ def _ensure_supplier_attachment_table(cur=None):
             own_conn.close()
  
  
+DOC_UPLOAD_ALLOWED_EXTENSIONS = frozenset({"pdf", "jpg", "jpeg", "png"})
+DOC_UPLOAD_MAX_BYTES = 10 * 1024 * 1024
+
+SUPPLIER_UPLOAD_ALLOWED_EXTENSIONS = DOC_UPLOAD_ALLOWED_EXTENSIONS
+SUPPLIER_UPLOAD_MAX_BYTES = DOC_UPLOAD_MAX_BYTES
+
+
+_DOC_UPLOAD_BLOCKED_MIMES = frozenset({
+    "application/zip",
+    "application/x-zip-compressed",
+    "application/x-rar-compressed",
+    "application/vnd.ms-excel",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument",
+})
+
+
+def _doc_upload_filename_allowed(filename, mimetype=None):
+    if not filename or "." not in filename:
+        return False
+    ext = filename.rsplit(".", 1)[-1].lower()
+    if ext not in DOC_UPLOAD_ALLOWED_EXTENSIONS:
+        return False
+    mime = (mimetype or "").strip().lower().split(";", 1)[0]
+    if mime and any(mime.startswith(blocked) for blocked in _DOC_UPLOAD_BLOCKED_MIMES):
+        return False
+    return True
+
+
+def _supplier_upload_filename_allowed(filename):
+    return _doc_upload_filename_allowed(filename)
+
+
 @app.route("/api/supplier-attachments", methods=["POST"])
 def upload_supplier_attachment():
     """Save supplier file to S3 supplier_attachments/ or local uploads/supplier_attachments/."""
@@ -8956,6 +9017,19 @@ def upload_supplier_attachment():
             return jsonify({"success": False, "message": "supplier_id is required"}), 400
         if not file or not file.filename:
             return jsonify({"success": False, "message": "No file uploaded"}), 400
+        if not _doc_upload_filename_allowed(
+            file.filename, file.mimetype or "application/octet-stream"
+        ):
+            return jsonify({
+                "success": False,
+                "message": "Invalid file format. Only PDF, JPEG, and PNG files are allowed.",
+            }), 400
+        file_size = _upload_file_size_bytes(file)
+        if file_size > SUPPLIER_UPLOAD_MAX_BYTES:
+            return jsonify({
+                "success": False,
+                "message": "File too large. Maximum size is 10MB.",
+            }), 400
 
         conn = get_db_connection()
         cur = conn.cursor()
@@ -19931,6 +20005,50 @@ def _ensure_invoice_return_comments_created_by_column(conn, cur):
         print("⚠️ invoice_return_comments.created_by ensure:", ex)
 
 
+def _ensure_invoice_return_attachments_table(cur=None):
+    """invoice_return_attachments + uploads/invoice_return_attachments/ (S3: invoice_return_attachments/)."""
+    try:
+        os.makedirs(INVOICE_RETURN_ATTACHMENTS_FOLDER, exist_ok=True)
+    except OSError:
+        pass
+    own_conn = None
+    own_cur = None
+    if cur is None:
+        own_conn = get_db_connection()
+        own_cur = own_conn.cursor()
+        cur = own_cur
+    try:
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS invoice_return_attachments (
+                id SERIAL PRIMARY KEY,
+                invoice_return_id VARCHAR(50) NOT NULL,
+                file_name TEXT NOT NULL,
+                file_path TEXT NOT NULL,
+                file_size BIGINT DEFAULT 0,
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+            """
+        )
+        cur.execute(
+            """
+            ALTER TABLE invoice_return_attachments
+            ADD COLUMN IF NOT EXISTS file_size BIGINT DEFAULT 0
+            """
+        )
+        cur.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_invoice_return_attachments_ir_id
+            ON invoice_return_attachments (invoice_return_id)
+            """
+        )
+        cur.connection.commit()
+    finally:
+        if own_conn:
+            own_cur.close()
+            own_conn.close()
+
+
 @app.route('/api/invoice-return/<invoice_return_id>/comments', methods=['GET'])
 def get_comments_invoice_return(invoice_return_id):
     conn = get_db_connection()
@@ -19997,17 +20115,21 @@ def add_comment_invoice_return(invoice_return_id):
 
 @app.route('/api/invoice-return/<invoice_return_id>/attachments', methods=['GET'])
 def get_attachments_invoice_return(invoice_return_id):
+    invoice_return_id = (invoice_return_id or "").strip()
     conn = get_db_connection()
     cur = conn.cursor()
-    cur.execute("""
-        SELECT id, file_name, file_path, file_size, created_at
-        FROM invoice_return_attachments
-        WHERE invoice_return_id=%s
-        ORDER BY created_at DESC
-    """, (invoice_return_id,))
-    rows = cur.fetchall()
-    cur.close()
-    conn.close()
+    try:
+        _ensure_invoice_return_attachments_table(cur)
+        cur.execute("""
+            SELECT id, file_name, file_path, file_size, created_at
+            FROM invoice_return_attachments
+            WHERE invoice_return_id=%s
+            ORDER BY created_at DESC
+        """, (invoice_return_id,))
+        rows = cur.fetchall()
+    finally:
+        cur.close()
+        conn.close()
 
     data = []
     for r in rows:
@@ -20015,47 +20137,85 @@ def get_attachments_invoice_return(invoice_return_id):
             "id": r[0],
             "filename": r[1],
             "file_path": r[2],
-            "size": r[3] if r[3] is not None else 0,   # ← include size
-            "uploaded_at": r[4].strftime("%Y-%m-%d %H:%M")
+            "size": r[3] if r[3] is not None else 0,
+            "uploaded_at": r[4].strftime("%Y-%m-%d %H:%M") if r[4] else "",
         })
     return jsonify({"success": True, "attachments": data})
 
 
 @app.route('/api/invoice-return/<invoice_return_id>/attachments', methods=['POST'])
 def upload_attachment_invoice_return(invoice_return_id):
+    conn = None
+    cur = None
     try:
+        invoice_return_id = (invoice_return_id or "").strip()
+        if not invoice_return_id:
+            return jsonify({"success": False, "message": "invoice_return_id is required"}), 400
+
         if 'file' not in request.files:
             return jsonify({"success": False, "message": "No file uploaded"}), 400
 
         file = request.files['file']
-        if file.filename == "":
+        if not file or file.filename == "":
             return jsonify({"success": False, "message": "Empty filename"}), 400
 
-        original_name = file.filename
+        original_name = _upload_basename(file.filename)
+        file_type = file.mimetype or "application/octet-stream"
+        file_size = _upload_file_size_bytes(file)
+
+        if file_size <= 0:
+            return jsonify({"success": False, "message": "Empty file cannot be uploaded"}), 400
+
+        if file_size > DOC_UPLOAD_MAX_BYTES:
+            return jsonify({
+                "success": False,
+                "message": f"File size exceeds {MAX_FILE_SIZE_MB} MB",
+            }), 400
+
+        if not _doc_upload_filename_allowed(original_name, file_type):
+            return jsonify({
+                "success": False,
+                "message": "Invalid file format. Only PDF, JPEG, and PNG files are allowed.",
+            }), 400
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+        _ensure_invoice_return_attachments_table(cur)
+
+        cur.execute(
+            "SELECT 1 FROM invoice_return WHERE invoice_return_id = %s",
+            (invoice_return_id,),
+        )
+        if not cur.fetchone():
+            conn.rollback()
+            return jsonify({
+                "success": False,
+                "message": "Save the invoice return first, then attach files.",
+            }), 400
+
         rel_path = _upload_relative_path(invoice_return_id, original_name)
-        file_path, _ = _persist_module_upload(
+        file_path, stored_size = _persist_module_upload(
             object_storage.MODULE_INVOICE_RETURN_ATTACHMENTS,
-            INVOICE_RETURN_UPLOAD_FOLDER,
+            INVOICE_RETURN_ATTACHMENTS_FOLDER,
             file,
             rel_path,
         )
 
-        conn = get_db_connection()
-        cur = conn.cursor()
-
         cur.execute("""
             INSERT INTO invoice_return_attachments (
-                invoice_return_id, file_name, file_path, created_at
-            ) VALUES (%s, %s, %s, %s)
-            RETURNING id
+                invoice_return_id, file_name, file_path, file_size, created_at
+            ) VALUES (%s, %s, %s, %s, %s)
+            RETURNING id, created_at
         """, (
             invoice_return_id,
             original_name,
             file_path,
-            datetime.now()
+            stored_size or file_size,
+            datetime.now(),
         ))
         row = cur.fetchone()
         att_id = row[0] if row else None
+        uploaded_at = row[1].strftime("%Y-%m-%d %H:%M") if row and row[1] else ""
         _purge_prior_same_name_files(
             cur,
             "invoice_return_attachments",
@@ -20066,18 +20226,33 @@ def upload_attachment_invoice_return(invoice_return_id):
             "id",
             att_id,
             "file_path",
-            INVOICE_RETURN_UPLOAD_FOLDER,
+            INVOICE_RETURN_ATTACHMENTS_FOLDER,
         )
 
         conn.commit()
-        cur.close()
-        conn.close()
 
-        return jsonify({"success": True, "message": "File uploaded successfully"})
+        return jsonify({
+            "success": True,
+            "message": "File uploaded successfully",
+            "attachment": {
+                "id": att_id,
+                "filename": original_name,
+                "file_path": file_path,
+                "size": stored_size or file_size,
+                "uploaded_at": uploaded_at,
+            },
+        })
 
     except Exception as e:
-        print("❌ Upload Error:", e)
+        if conn:
+            conn.rollback()
+        print("❌ upload_attachment_invoice_return:", e)
         return jsonify({"success": False, "error": str(e)}), 500
+    finally:
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
 
 
 @app.route('/api/invoice-return/<invoice_return_id>/attachments/<attachment_id>', methods=['DELETE'])
@@ -20085,8 +20260,8 @@ def delete_attachment_invoice_return(invoice_return_id, attachment_id):
     try:
         conn = get_db_connection()
         cur = conn.cursor()
+        _ensure_invoice_return_attachments_table(cur)
 
-        # Get file path
         cur.execute("""
             SELECT file_path 
             FROM invoice_return_attachments
@@ -20100,7 +20275,7 @@ def delete_attachment_invoice_return(invoice_return_id, attachment_id):
 
         file_path = row[0]
 
-        _remove_stored_upload(file_path, INVOICE_RETURN_UPLOAD_FOLDER)
+        _remove_stored_upload(file_path, INVOICE_RETURN_ATTACHMENTS_FOLDER)
 
         cur.execute("""
             DELETE FROM invoice_return_attachments
@@ -20128,6 +20303,7 @@ def download_invoice_return_attachment(invoice_return_id, attachment_id):
     conn = get_db_connection()
     cur = conn.cursor()
     try:
+        _ensure_invoice_return_attachments_table(cur)
         cur.execute("""
             SELECT file_path, file_name
             FROM invoice_return_attachments
@@ -20140,6 +20316,8 @@ def download_invoice_return_attachment(invoice_return_id, attachment_id):
         file_path = row[0]
         original_name = row[1]
 
+        if object_storage.is_remote_url(str(file_path or "")):
+            return redirect(file_path)
         resolved = _resolve_stored_file_path(file_path)
         if object_storage.is_remote_url(str(resolved or "")):
             return redirect(resolved)
@@ -20165,6 +20343,7 @@ def view_invoice_return_attachment(invoice_return_id, attachment_id):
     conn = get_db_connection()
     cur = conn.cursor()
     try:
+        _ensure_invoice_return_attachments_table(cur)
         cur.execute("""
             SELECT file_path, file_name
             FROM invoice_return_attachments
@@ -20177,6 +20356,8 @@ def view_invoice_return_attachment(invoice_return_id, attachment_id):
         file_path = row[0]
         original_name = row[1]
 
+        if object_storage.is_remote_url(str(file_path or "")):
+            return redirect(file_path)
         resolved = _resolve_stored_file_path(file_path)
         if object_storage.is_remote_url(str(resolved or "")):
             return redirect(resolved)
@@ -21665,12 +21846,7 @@ def dnr_upload_attachment():
         filename = _upload_basename(file.filename)
         file_type = file.mimetype or "application/octet-stream"
 
-        try:
-            file.stream.seek(0, os.SEEK_END)
-            file_size = file.stream.tell()
-            file.stream.seek(0)
-        except Exception:
-            file_size = 0
+        file_size = _upload_file_size_bytes(file)
 
         if file_size <= 0:
             return jsonify({
@@ -21678,16 +21854,16 @@ def dnr_upload_attachment():
                 "error": "Empty file cannot be uploaded"
             }), 400
 
-        if file_size > MAX_FILE_SIZE_BYTES:
+        if file_size > DOC_UPLOAD_MAX_BYTES:
             return jsonify({
                 "success": False,
                 "error": f"File size exceeds {MAX_FILE_SIZE_MB} MB"
             }), 400
 
-        if not allowed_file(filename):
+        if not _doc_upload_filename_allowed(filename, file_type):
             return jsonify({
                 "success": False,
-                "error": f'File type not allowed. Allowed: {", ".join(sorted(ALLOWED_EXTENSIONS))}'
+                "error": "Invalid file format. Only PDF, JPEG, and PNG files are allowed.",
             }), 400
 
         conn = get_db_connection()
@@ -23500,53 +23676,6 @@ def get_sales_order_purchase(so_id):
  
  
  
-# ========================================
-# SUPPLIER API
-# ========================================
- 
-@app.route("/api/suppliers")
-def get_suppliers_purchase():
- 
-    conn = get_db_connection()
-    cur = conn.cursor()
- 
-    try:
- 
-        cur.execute("""
-            SELECT
-                supplier_id,
-                supplier_name,
-                email
-            FROM suppliers
-            ORDER BY supplier_id ASC
-        """)
- 
-        rows = cur.fetchall()
- 
-        suppliers = []
- 
-        for row in rows:
- 
-            suppliers.append({
-                "id": row[0],
-                "name": row[1],
-                "email": row[2]
-            })
- 
-        return jsonify(suppliers)
- 
-    except Exception as e:
- 
-        print("SUPPLIER ERROR:", e)
- 
-        return jsonify([]), 500
- 
-    finally:
- 
-        cur.close()
-        conn.close()
- 
-       
 @app.route("/api/products-new")
 def get_products_new():
  
@@ -26164,69 +26293,154 @@ def get_stock_comments(grn_number):
     return jsonify(result)
 
 
-UPLOAD_FOLDER = "uploads/stock_attachments"
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+def _ensure_stock_attachments_table(cur=None):
+    """stock_attachments + uploads/stock_attachments/ (S3 prefix: stock_attachments/)."""
+    try:
+        os.makedirs(STOCK_ATTACHMENTS_FOLDER, exist_ok=True)
+    except OSError:
+        pass
+    own_conn = None
+    own_cur = None
+    if cur is None:
+        own_conn = get_db_connection()
+        own_cur = own_conn.cursor()
+        cur = own_cur
+    try:
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS stock_attachments (
+                attachment_id SERIAL PRIMARY KEY,
+                grn_number TEXT NOT NULL,
+                file_name TEXT NOT NULL,
+                file_path TEXT NOT NULL,
+                uploaded_at TIMESTAMP DEFAULT NOW()
+            )
+            """
+        )
+        cur.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_stock_attachments_grn
+            ON stock_attachments (grn_number)
+            """
+        )
+        cur.connection.commit()
+    finally:
+        if own_conn:
+            own_cur.close()
+            own_conn.close()
+
 
 @app.route("/api/stock-attachments", methods=["POST"])
 def upload_stock_attachment():
-
+    conn = None
+    cur = None
     try:
-        grn_number = request.form.get("grn_number")
+        grn_number = (request.form.get("grn_number") or "").strip()
         file = request.files.get("file")
 
-        if not file:
+        if not grn_number:
+            return jsonify({"success": False, "message": "grn_number is required"}), 400
+        if not file or not file.filename:
             return jsonify({"success": False, "message": "No file uploaded"}), 400
 
-        filename = secure_filename(file.filename)
-        path = os.path.join(UPLOAD_FOLDER, filename)
-        file.save(path)
+        filename = _upload_basename(file.filename)
+        file_type = file.mimetype or "application/octet-stream"
+        file_size = _upload_file_size_bytes(file)
+
+        if file_size <= 0:
+            return jsonify({"success": False, "message": "Empty file cannot be uploaded"}), 400
+        if file_size > DOC_UPLOAD_MAX_BYTES:
+            return jsonify({
+                "success": False,
+                "message": f"File size exceeds {MAX_FILE_SIZE_MB} MB",
+            }), 400
+        ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+        if ext not in {
+            "pdf", "doc", "docx", "xls", "xlsx", "jpg", "jpeg", "png",
+        }:
+            return jsonify({
+                "success": False,
+                "message": "This file is not allowed",
+            }), 400
+
+        rel_path = _upload_relative_path(grn_number, filename)
+        save_path, stored_size = _persist_module_upload(
+            object_storage.MODULE_STOCK_ATTACHMENTS,
+            STOCK_ATTACHMENTS_FOLDER,
+            file,
+            rel_path,
+        )
 
         conn = get_db_connection()
         cur = conn.cursor()
+        _ensure_stock_attachments_table(cur)
 
-        cur.execute("""
+        cur.execute(
+            """
             INSERT INTO stock_attachments (grn_number, file_name, file_path)
             VALUES (%s, %s, %s)
-        """, (grn_number, filename, path))
+            RETURNING attachment_id, uploaded_at
+            """,
+            (grn_number, filename, save_path),
+        )
+        row = cur.fetchone()
+        attachment_id = row[0] if row else None
+        uploaded_at = row[1].strftime("%Y-%m-%d %H:%M:%S") if row and row[1] else ""
 
         conn.commit()
-        cur.close()
-        conn.close()
 
-        return jsonify({"success": True})
+        return jsonify({
+            "success": True,
+            "attachment_id": attachment_id,
+            "file_name": filename,
+            "file_path": save_path,
+            "size": stored_size or file_size,
+            "uploaded_at": uploaded_at,
+        })
 
     except Exception as e:
+        if conn:
+            conn.rollback()
+        print("❌ upload_stock_attachment:", e)
         return jsonify({"success": False, "error": str(e)}), 500
+    finally:
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
+
 
 @app.route("/api/stock-attachments/<grn_number>")
 def get_stock_attachments(grn_number):
-
+    grn_number = (grn_number or "").strip()
     conn = get_db_connection()
     cur = conn.cursor()
-
-    cur.execute("""
-        SELECT attachment_id, file_name, file_path, uploaded_at
-        FROM stock_attachments
-        WHERE grn_number = %s
-        ORDER BY uploaded_at DESC
-    """, (grn_number,))
-
-    rows = cur.fetchall()
-
-    cur.close()
-    conn.close()
+    try:
+        _ensure_stock_attachments_table(cur)
+        cur.execute(
+            """
+            SELECT attachment_id, file_name, file_path, uploaded_at
+            FROM stock_attachments
+            WHERE grn_number = %s
+            ORDER BY uploaded_at DESC
+            """,
+            (grn_number,),
+        )
+        rows = cur.fetchall()
+    finally:
+        cur.close()
+        conn.close()
 
     result = []
-
     for r in rows:
         result.append({
             "attachment_id": r[0],
             "file_name": r[1],
             "file_path": r[2],
-            "uploaded_at": str(r[3])
+            "uploaded_at": str(r[3]) if r[3] is not None else "",
         })
 
-    return jsonify(result)
+    return jsonify({"success": True, "attachments": result})
 
 
 
@@ -28857,8 +29071,21 @@ def add_payment_to_invoice_summary(invoice_id):
 # ✅ RUN APP
 # =========================================
 if __name__ == "__main__":
+    import sys
+
     print("Application is running successfully")
-    app.run(debug=True)
+    if object_storage.is_enabled():
+        print(f"S3 uploads enabled (bucket: {object_storage._s3_bucket_id_from_env()})")
+    else:
+        print(
+            "S3 uploads disabled — files save under uploads/ locally. "
+            "Set S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY in .env for AWS S3."
+        )
+    # On Windows, debug auto-reload can log "Exception in thread Thread-1 (serve_forever)".
+    # Set FLASK_USE_RELOADER=1 in .env to turn reload back on.
+    use_reloader = os.environ.get("FLASK_USE_RELOADER", "1" if sys.platform != "win32" else "0")
+    use_reloader = str(use_reloader).strip().lower() in ("1", "true", "yes", "on")
+    app.run(debug=True, use_reloader=use_reloader)
     
 
 

@@ -168,12 +168,12 @@
         <!-- Attachments tab -->
         <div class="tab-content" id="attachments" style="display:none;">
           <div class="upload-section">
-            <input type="file" id="fileInput" hidden>
+            <input type="file" id="fileInput" hidden multiple accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" title="PDF, JPEG, PNG only (max 10MB)">
             <div class="upload-card" id="uploadCard">
               <i class="fa-solid fa-cloud-upload-alt"></i>
               <h4>Upload Attachment</h4>
               <p>Click to select or drag & drop</p>
-              <small>PDF, DOC, XLS, JPG, PNG (Max 10MB)</small>
+              <small>PDF, JPEG, PNG only (max 10MB)</small>
             </div>
             <button class="btn-upload" id="uploadBtn" type="button"><i class="fa-solid fa-upload"></i> Choose File</button>
           </div>
@@ -244,5 +244,5 @@
 {% endblock %}  
 
 {% block extra_js %}
-<script src="{{ url_for('static', filename='new-invoice-return.js') }}"></script>
+<script src="{{ url_for('static', filename='new-invoice-return.js') }}?v=3"></script>
 {% endblock %}

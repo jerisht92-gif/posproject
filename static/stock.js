@@ -637,6 +637,7 @@ function populateStockForm(stock) {
     const isEditable = stock.status === "draft" && stockMode === "edit";
     populateStockRows(stock.items || [], isEditable);
     loadComments(stock.grn_number);
+    loadAttachments(stock.grn_number);
 }
 function calculateGrandTotal() {
     let total = 0;
@@ -787,6 +788,17 @@ function saveStock(status) {
         }
 
         pendingComments = [];
+
+        if (pendingAttachments.length > 0) {
+            for (const f of pendingAttachments) {
+                try {
+                    await uploadStockFile(grn, f);
+                } catch (uploadErr) {
+                    console.error("Stock attachment upload after save:", uploadErr);
+                }
+            }
+            pendingAttachments = [];
+        }
 
         showToast(
             "Saved Successfully",
@@ -1260,6 +1272,53 @@ let files = [];
 const maxFiles = 5;
 
 let pendingComments = [];
+let pendingAttachments = [];
+let serverAttachmentCount = 0;
+
+const STOCK_UPLOAD_EXTENSIONS = new Set([
+    "pdf", "doc", "docx", "xls", "xlsx", "jpg", "jpeg", "png",
+]);
+
+function validateStockFile(file) {
+    const ext = (file.name.split(".").pop() || "").toLowerCase();
+    if (!STOCK_UPLOAD_EXTENSIONS.has(ext)) {
+        showToast("This file is not allowed", "error");
+        return false;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+        showToast("File size must be less than 10MB", "error");
+        return false;
+    }
+    return true;
+}
+
+function stockAttachmentsUsePendingQueue() {
+    return stockMode === "create" || stockMode === "new";
+}
+
+function totalAttachmentCount() {
+    return pendingAttachments.length + serverAttachmentCount;
+}
+
+async function uploadStockFile(grn, file) {
+    const formData = new FormData();
+    formData.append("grn_number", grn);
+    formData.append("file", file);
+
+    const res = await fetch("/api/stock-attachments", {
+        method: "POST",
+        body: formData,
+    });
+
+    const data = await res.json().catch(() => ({}));
+
+    if (!res.ok || !data.success) {
+        const msg = data.message || data.error || "Upload failed";
+        throw new Error(msg);
+    }
+
+    return data;
+}
 
 // ==========================
 // ENABLE / DISABLE COMMENT BUTTON
@@ -1359,86 +1418,89 @@ document.querySelectorAll(".tab").forEach(tab => {
 // FILE UPLOAD / ATTACHMENTS
 // ==========================
 function updateFileUI() {
+    if (!filesList) return;
+
     filesList.innerHTML = "";
-    if (files.length === 0) {
+
+    if (pendingAttachments.length === 0 && serverAttachmentCount === 0) {
         filesList.innerHTML = `
             <div class="no-files">
                 <i class="fa-regular fa-folder-open"></i>
                 <p>No files attached yet</p>
             </div>`;
-    } else {
-        files.forEach((file, index) => {
-            const div = document.createElement("div");
-            div.classList.add("file-item");
-            div.innerHTML = `<span>${file.name}</span>
-                             <button class="delete-file" data-index="${index}">❌</button>`;
-            filesList.appendChild(div);
-        });
+        fileCount.textContent = `0 / ${maxFiles} files`;
+        return;
     }
-    fileCount.textContent = `${files.length} / ${maxFiles} files`;
+
+    pendingAttachments.forEach((file, index) => {
+        const div = document.createElement("div");
+        div.classList.add("file-item", "file-item--pending");
+        div.innerHTML = `<span>${file.name} <em>(pending save)</em></span>
+                         <button type="button" class="delete-file" data-pending-index="${index}">❌</button>`;
+        filesList.appendChild(div);
+    });
+
+    files.forEach((file, index) => {
+        const div = document.createElement("div");
+        div.classList.add("file-item");
+        div.innerHTML = `<span>${file.name}</span>
+                         <button type="button" class="delete-file" data-index="${index}">❌</button>`;
+        filesList.appendChild(div);
+    });
+
+    fileCount.textContent = `${totalAttachmentCount()} / ${maxFiles} files`;
 }
 
 async function handleFiles(selectedFiles) {
+    const grn = (document.getElementById("grnField")?.value || "").trim();
 
-    const grn = document.getElementById("grnField").value;
-
-        if (stockMode === "create" || stockMode === "new") {
-
-        showToast(
-            "Please Save Draft or Submit before adding attachments",
-            "warning"
-        );
-
+    if (!grn) {
+        showToast("GRN not ready yet. Please wait a moment.", "warning");
         return;
     }
-     const allowedTypes = [
-    "application/pdf",
-    "application/msword",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "application/vnd.ms-excel",
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    "image/jpeg",
-    "image/png"
-];
 
-    for (let f of selectedFiles) {
+    const usePending = stockAttachmentsUsePendingQueue();
+    let added = 0;
 
-        if (!allowedTypes.includes(f.type)) {
-            showToast("Invalid file type", "error");
-            continue;
-        }
+    for (const f of selectedFiles) {
+        if (!validateStockFile(f)) continue;
 
-        if (files.length >= maxFiles) {
+        if (totalAttachmentCount() >= maxFiles) {
             showToast("Maximum 5 files allowed", "error");
             break;
         }
 
-        const formData = new FormData();
-        formData.append("grn_number", grn);
-        formData.append("file", f);
+        if (usePending) {
+            pendingAttachments.push(f);
+            added++;
+            continue;
+        }
 
         try {
-            const res = await fetch("/api/stock-attachments", {
-                method: "POST",
-                body: formData
-            });
-
-            const data = await res.json();
-
-            if (!data.success) {
-                showToast(data.error || "Upload failed", "error");
-                continue;
-            }
-
-            files.push(f);
-
+            await uploadStockFile(grn, f);
+            added++;
         } catch (err) {
             console.error(err);
-            showToast("Upload error", "error");
+            showToast(err.message || "Upload error", "error");
         }
     }
 
-    updateFileUI();
+    if (usePending) {
+        updateFileUI();
+        if (added === 1) {
+            showToast(`${selectedFiles[0].name} added successfully`, "success");
+        } else if (added > 1) {
+            showToast(`${added} files added successfully`, "success");
+        }
+        return;
+    }
+
+    if (added > 0) {
+        showToast(
+            added === 1 ? "File attached successfully" : `${added} files attached successfully`,
+            "success"
+        );
+    }
     loadAttachments(grn);
 }
 
@@ -1468,43 +1530,76 @@ uploadBox?.addEventListener("drop", (e) => {
 
 // Delete file
 filesList?.addEventListener("click", (e) => {
-    if (e.target.classList.contains("delete-file")) {
-        const index = e.target.dataset.index;
-        files.splice(index, 1);
+    const btn = e.target.closest(".delete-file");
+    if (!btn) return;
+
+    const pendingIndex = btn.dataset.pendingIndex;
+    if (pendingIndex !== undefined) {
+        pendingAttachments.splice(Number(pendingIndex), 1);
+        updateFileUI();
+        return;
+    }
+
+    const index = btn.dataset.index;
+    if (index !== undefined) {
+        files.splice(Number(index), 1);
         updateFileUI();
     }
 });
 
 function loadAttachments(grn) {
+    if (!grn || stockAttachmentsUsePendingQueue()) {
+        updateFileUI();
+        return;
+    }
 
-    fetch(`/api/stock-attachments/${grn}`)
+    fetch(`/api/stock-attachments/${encodeURIComponent(grn)}`)
         .then(res => res.json())
         .then(data => {
+            const list = Array.isArray(data) ? data : (data.attachments || []);
+            serverAttachmentCount = list.length;
+            files = list.map((file) => ({
+                name: file.file_name || file.filename || "attachment",
+                file_path: file.file_path,
+                attachment_id: file.attachment_id || file.id,
+            }));
 
             filesList.innerHTML = "";
 
-            if (!data.length) {
+            if (list.length === 0 && pendingAttachments.length === 0) {
                 filesList.innerHTML = `
                     <div class="no-files">
+                        <i class="fa-regular fa-folder-open"></i>
                         <p>No files attached yet</p>
                     </div>`;
+                fileCount.textContent = `0 / ${maxFiles} files`;
                 return;
             }
 
-            data.forEach(file => {
-
+            pendingAttachments.forEach((file, index) => {
                 const div = document.createElement("div");
-                div.classList.add("file-item");
-
-                div.innerHTML = `
-                    <span>${file.file_name}</span>
-                    <a href="${file.file_path}" target="_blank">View</a>
-                `;
-
+                div.classList.add("file-item", "file-item--pending");
+                div.innerHTML = `<span>${file.name} <em>(pending save)</em></span>
+                    <button type="button" class="delete-file" data-pending-index="${index}">❌</button>`;
                 filesList.appendChild(div);
             });
 
-            fileCount.textContent = `${data.length} files`;
+            list.forEach((file) => {
+                const div = document.createElement("div");
+                div.classList.add("file-item");
+                const viewHref = file.file_path || "#";
+                div.innerHTML = `
+                    <span>${file.file_name}</span>
+                    <a href="${viewHref}" target="_blank" rel="noopener">View</a>
+                `;
+                filesList.appendChild(div);
+            });
+
+            fileCount.textContent = `${totalAttachmentCount()} / ${maxFiles} files`;
+        })
+        .catch((err) => {
+            console.error("loadAttachments:", err);
+            updateFileUI();
         });
 }
 

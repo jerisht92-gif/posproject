@@ -2453,12 +2453,43 @@ DNR ATTACHMENTS (new ids: dnrAtt*)
 
   const MAX = 10;
   const MAX_BYTES = 10 * 1024 * 1024;
+  const DNR_UPLOAD_EXTENSIONS = new Set(["pdf", "jpg", "jpeg", "png"]);
+  const DNR_UPLOAD_ACCEPT =
+    ".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png";
+  const DNR_UPLOAD_FORMAT_MSG =
+    "Only PDF, JPEG, and PNG files are allowed.";
+
+  inp.setAttribute("accept", DNR_UPLOAD_ACCEPT);
+  inp.setAttribute("title", DNR_UPLOAD_FORMAT_MSG);
 
   let files = [];
   let pendingDeleteFileIndex = null;
 
   function isServerAttachment(item){
     return !!(item && item.server && item.id);
+  }
+
+  function isDnrUploadFileAllowed(file){
+    const ext =
+      String(file?.name || "")
+        .split(".")
+        .pop()
+        .toLowerCase();
+    if(!DNR_UPLOAD_EXTENSIONS.has(ext))
+      return false;
+    const mime = String(file?.type || "").toLowerCase();
+    if(
+      mime &&
+      (
+        mime.includes("zip") ||
+        mime.includes("rar") ||
+        mime.includes("msword") ||
+        mime.includes("excel") ||
+        mime.includes("spreadsheet")
+      )
+    )
+      return false;
+    return true;
   }
 
   function getCurrentDnrIdForAtt(){
@@ -2846,8 +2877,17 @@ DNR ATTACHMENTS (new ids: dnrAtt*)
       arr.slice(0, room);
 
     let successCount = 0;
+    const addedNames = [];
 
     for(const file of slice){
+
+      if(!isDnrUploadFileAllowed(file)){
+        showToast(
+          "Invalid file format. " + DNR_UPLOAD_FORMAT_MSG,
+          "error"
+        );
+        continue;
+      }
 
       if(file.size > MAX_BYTES){
         showToast(
@@ -2869,6 +2909,7 @@ DNR ATTACHMENTS (new ids: dnrAtt*)
 
           files.push(saved);
           successCount++;
+          addedNames.push(saved.name || file.name);
 
         }
         catch(err){
@@ -2886,6 +2927,7 @@ DNR ATTACHMENTS (new ids: dnrAtt*)
 
         files.push(file);
         successCount++;
+        addedNames.push(file.name || "File");
 
       }
 
@@ -2895,7 +2937,7 @@ DNR ATTACHMENTS (new ids: dnrAtt*)
 
     if(successCount === 1){
       showToast(
-        slice[0].name + " added successfully",
+        addedNames[0] + " added successfully",
         "success"
       );
     }
@@ -2933,7 +2975,24 @@ DNR ATTACHMENTS (new ids: dnrAtt*)
 
       for(const file of pending){
 
-        await uploadFileToServer(dnrId, file);
+        if(!isDnrUploadFileAllowed(file)){
+          showToast(
+            "Invalid file format. " + DNR_UPLOAD_FORMAT_MSG,
+            "error"
+          );
+          continue;
+        }
+
+        try{
+          await uploadFileToServer(dnrId, file);
+        }
+        catch(err){
+          console.error("DNR attachment upload:", err);
+          showToast(
+            err.message || "Upload failed",
+            "error"
+          );
+        }
 
       }
 

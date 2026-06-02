@@ -83,7 +83,11 @@ document.addEventListener("DOMContentLoaded", () => {
   const serverAttachments = [];
   const MAX_ATTACHMENTS = 10;
   const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
-  const ALLOWED_FILE_EXTENSIONS = new Set(["pdf", "doc", "docx", "xls", "xlsx", "jpg", "jpeg", "png"]);
+  const SUPPLIER_UPLOAD_EXTENSIONS = new Set(["pdf", "jpg", "jpeg", "png"]);
+  const SUPPLIER_UPLOAD_ACCEPT =
+    ".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png";
+  const SUPPLIER_UPLOAD_FORMAT_MSG =
+    "Only PDF, JPEG, and PNG files are allowed.";
  
   const SUPPLIER_EMAIL_RE = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
   const SUPPLIER_PHONE_RE = /^[0-9]{10}$/;
@@ -109,10 +113,6 @@ document.addEventListener("DOMContentLoaded", () => {
   };
   const RISK_RATING_MIN = 1;
   const RISK_RATING_MAX = 5;
-  const SUPPLIER_DOC_UPLOAD_EXT = new Set(["pdf", "jpg", "jpeg", "png"]);
-  const SUPPLIER_DOC_ACCEPT =
-    ".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png";
-  const SUPPLIER_DOC_FILE_RULE_MSG = "must be PDF, JPG, or PNG only (max 10MB)";
   const SUPPLIER_ID_RE = /^SUP-\d{3,}$/i;
  
   const slotUploadFiles = {
@@ -778,7 +778,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!file) return "";
     const name = (file.name || "").trim();
     const ext = name.includes(".") ? name.split(".").pop().toLowerCase() : "";
-    if (!SUPPLIER_DOC_UPLOAD_EXT.has(ext)) {
+    if (!SUPPLIER_UPLOAD_EXTENSIONS.has(ext)) {
       return "type";
     }
     if (file.size > MAX_FILE_SIZE_BYTES) {
@@ -905,7 +905,8 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     const issue = validateSupplierDocFile(file);
     if (issue === "type") {
-      if (inputEl) setFieldError(inputEl, `${label} ${SUPPLIER_DOC_FILE_RULE_MSG}.`);
+      if (inputEl) setFieldError(inputEl, `${label}: ${SUPPLIER_UPLOAD_FORMAT_MSG}`);
+      showToast(`Invalid file format. ${SUPPLIER_UPLOAD_FORMAT_MSG}`, "error");
       slotUploadFiles[slotKey] = null;
       if (inputEl) inputEl.value = "";
       renderSlotUploadList(slotKey);
@@ -913,6 +914,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     if (issue === "size") {
       if (inputEl) setFieldError(inputEl, `${label} must be 10MB or smaller.`);
+      showToast(`${label} must be 10MB or smaller.`, "error");
       slotUploadFiles[slotKey] = null;
       if (inputEl) inputEl.value = "";
       renderSlotUploadList(slotKey);
@@ -938,8 +940,8 @@ document.addEventListener("DOMContentLoaded", () => {
     SUPPLIER_SLOT_CONFIG.forEach(({ key, input, label }) => {
       const inputEl = input();
       if (!inputEl) return;
-      inputEl.setAttribute("accept", SUPPLIER_DOC_ACCEPT);
-      inputEl.setAttribute("title", SUPPLIER_DOC_FILE_RULE_MSG);
+      inputEl.setAttribute("accept", SUPPLIER_UPLOAD_ACCEPT);
+      inputEl.setAttribute("title", SUPPLIER_UPLOAD_FORMAT_MSG);
       inputEl.addEventListener("change", () => {
         processSlotUploadFile(key, label, inputEl, inputEl.files?.[0] || null);
       });
@@ -1503,7 +1505,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (!file) continue;
       const issue = validateSupplierDocFile(file);
       if (issue === "type") {
-        return `${label} ${SUPPLIER_DOC_FILE_RULE_MSG}.`;
+        return `${label}: ${SUPPLIER_UPLOAD_FORMAT_MSG}`;
       }
       if (issue === "size") {
         return `${label} must be 10MB or smaller.`;
@@ -1907,8 +1909,8 @@ document.addEventListener("DOMContentLoaded", () => {
  
     candidateFiles.forEach((file) => {
       const extension = (file.name.split(".").pop() || "").toLowerCase();
-      if (!ALLOWED_FILE_EXTENSIONS.has(extension)) {
-        showToast(`Unsupported file type: ${file.name}`, "error");
+      if (!SUPPLIER_UPLOAD_EXTENSIONS.has(extension)) {
+        showToast(`Invalid file format. ${SUPPLIER_UPLOAD_FORMAT_MSG}`, "error");
         return;
       }
       if (file.size > MAX_FILE_SIZE_BYTES) {
@@ -2081,6 +2083,10 @@ document.addEventListener("DOMContentLoaded", () => {
   setupAddressFieldValidations();
   setupComplianceFieldValidations();
   setupSupplierDocumentUploads();
+  if (fileInput) {
+    fileInput.setAttribute("accept", SUPPLIER_UPLOAD_ACCEPT);
+    fileInput.setAttribute("title", SUPPLIER_UPLOAD_FORMAT_MSG);
+  }
   setupPerformanceFieldValidations();
   keepLettersOnly(contactFirstNameInput, { validateFn: validateContactFirstNameLive });
   keepLettersOnly(contactLastNameInput, { validateFn: validateContactLastNameLive });
