@@ -1,5 +1,5 @@
 """
-S3 object storage for uploads (AWS S3 or S3-compatible endpoints).
+S3 object storage for uploads (AWS S3 or generic S3-compatible endpoints).
 
 Configure via environment variables in `.env`. When not configured,
 upload paths fall back to local disk in app.py.
@@ -10,7 +10,7 @@ Object keys use a prefix per submodule, e.g.:
 
 Public URLs stored in PostgreSQL:
   AWS/native: https://{bucket}.s3.{region}.amazonaws.com/{key}
-  Custom endpoint: derive from SUPABASE_PUBLIC_OBJECTS_BASE when available
+  Custom endpoint: set S3_PUBLIC_BASE_URL explicitly
 """
 
 from __future__ import annotations
@@ -67,17 +67,11 @@ def _endpoint_url() -> str:
     return (os.getenv("S3_ENDPOINT_URL") or "").strip()
 
 
-def _is_supabase_endpoint(endpoint: str) -> bool:
-    return "supabase.co" in (endpoint or "").lower()
-
-
 def _is_aws_native() -> bool:
     """True when using standard AWS S3 (no custom endpoint)."""
     endpoint = _endpoint_url()
     if not endpoint:
         return True
-    if _is_supabase_endpoint(endpoint):
-        return False
     return "amazonaws.com" in endpoint.lower()
 
 
@@ -89,28 +83,13 @@ def _derive_aws_public_base() -> str:
     return f"https://{bucket}.s3.{region}.amazonaws.com"
 
 
-def _derive_supabase_public_base() -> str:
-    endpoint = _endpoint_url()
-    bucket = _s3_bucket_id_from_env()
-    if not endpoint or not bucket:
-        return ""
-    m = re.search(
-        r"https://([a-z0-9]+)\.storage\.supabase\.co",
-        endpoint,
-        flags=re.IGNORECASE,
-    )
-    if not m:
-        return ""
-    return f"https://{m.group(1)}.supabase.co/storage/v1/object/public/{bucket}"
-
-
 def _public_base() -> str:
-    explicit = ((os.getenv("SUPABASE_PUBLIC_OBJECTS_BASE") or "").strip()).rstrip("/")
-    if explicit and not _is_aws_native():
+    explicit = ((os.getenv("S3_PUBLIC_BASE_URL") or "").strip()).rstrip("/")
+    if explicit:
         return explicit
     if _is_aws_native():
         return _derive_aws_public_base()
-    return _derive_supabase_public_base()
+    return ""
 
 
 def is_enabled() -> bool:
@@ -133,7 +112,8 @@ def is_enabled() -> bool:
         return False
     if _is_aws_native():
         return True
-    return bool(_endpoint_url())
+    # For custom endpoints, require explicit S3_PUBLIC_BASE_URL.
+    return bool(_endpoint_url() and _public_base())
 
 
 def _bucket() -> str:
@@ -191,15 +171,12 @@ def _get_client():
         client_kwargs["aws_access_key_id"] = access_key
         client_kwargs["aws_secret_access_key"] = secret_key
 
-    if _is_supabase_endpoint(endpoint):
+    if endpoint:
         client_kwargs["endpoint_url"] = endpoint
         client_kwargs["config"] = Config(
             signature_version="s3v4",
             s3={"addressing_style": "path"},
         )
-    elif endpoint:
-        client_kwargs["endpoint_url"] = endpoint
-        client_kwargs["config"] = Config(signature_version="s3v4")
     else:
         # Native AWS S3 (e.g. pos-billing-upload in eu-north-1)
         client_kwargs["config"] = Config(signature_version="s3v4")
