@@ -59,6 +59,7 @@ import string
 from collections import defaultdict
 
 import psycopg2
+from psycopg2 import extensions as psycopg2_extensions
 from psycopg2 import pool as psycopg2_pool
 from psycopg2.extras import RealDictCursor
 import atexit
@@ -134,8 +135,8 @@ class _PooledConnection:
         if self._conn is None:
             return
         try:
-            # Keep pooled connections clean if caller forgot to commit/rollback.
-            if getattr(self._conn, "status", None) != psycopg2.extensions.STATUS_READY:
+            # Only roll back open transactions; never undo a committed transaction.
+            if self._conn.get_transaction_status() == psycopg2_extensions.STATUS_INTRANS:
                 self._conn.rollback()
         except Exception:
             pass
@@ -419,12 +420,37 @@ def _close_db_pool():
 atexit.register(_close_db_pool)
 
 
+def _is_serverless_runtime():
+    """Vercel/Lambda: avoid threaded pools (commits may not persist across invocations)."""
+    return bool(
+        os.getenv("VERCEL")
+        or os.getenv("VERCEL_ENV")
+        or os.getenv("AWS_LAMBDA_FUNCTION_NAME")
+        or os.getenv("AWS_EXECUTION_ENV")
+    )
+
+
 def get_db_connection():
     """Get DB connection from global pool; fallback to direct connect with retry."""
     params = _db_conn_params()
     retries = max(1, int(os.getenv("DB_CONNECT_RETRIES") or 2))
     retry_delay = float(os.getenv("DB_CONNECT_RETRY_DELAY") or 0.5)
     last_err = None
+
+    if _is_serverless_runtime() or _env_truthy("DISABLE_DB_POOL", False):
+        for attempt in range(retries):
+            try:
+                return _direct_db_connect(params)
+            except (psycopg2.OperationalError, psycopg2.InterfaceError) as e:
+                last_err = e
+                if attempt + 1 < retries:
+                    time.sleep(retry_delay)
+            except Exception as e:
+                last_err = e
+                break
+        print(f"Database connection failed (serverless): {last_err}")
+        print(traceback.format_exc())
+        raise last_err
 
     for attempt in range(retries):
         try:
@@ -28931,65 +28957,218 @@ def get_invoices_payments():
         return jsonify({"error": str(e)}), 500
 
 
+def _ensure_payments_table(cur):
+    """Create payments table if missing (Vercel/prod DB may not have run migrations)."""
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS payments (
+            payment_id SERIAL PRIMARY KEY,
+            invoice_id VARCHAR(50) NOT NULL,
+            customer_name TEXT,
+            payment_method TEXT,
+            transaction_id TEXT,
+            amount NUMERIC(12, 2) NOT NULL DEFAULT 0,
+            payment_date DATE,
+            notes TEXT,
+            created_at TIMESTAMP DEFAULT NOW()
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_payments_invoice_id
+        ON payments (invoice_id)
+        """
+    )
+    cur.connection.commit()
+
+
 @app.route("/api/payments", methods=["POST"])
 def save_payment():
+    conn = None
+    cur = None
     try:
-        data = request.get_json()
-        invoice_id = data["invoiceId"]
-        amount = Decimal(str(data["amount"]))
-        customer_name = data["customerName"]
-        payment_method = data["paymentMethod"]
-        transaction_id = data["transactionId"]
-        payment_date = data["date"]
-        notes = data["notes"]
+        data = request.get_json(silent=True) or {}
+        if not isinstance(data, dict):
+            return jsonify({"success": False, "error": "Invalid request body"}), 400
+
+        invoice_id = (data.get("invoiceId") or "").strip()
+        if not invoice_id:
+            return jsonify({"success": False, "error": "Invoice is required"}), 400
+
+        try:
+            amount = Decimal(str(data.get("amount", 0)))
+        except Exception:
+            return jsonify({"success": False, "error": "Invalid amount"}), 400
+        if amount <= 0:
+            return jsonify({"success": False, "error": "Amount must be positive"}), 400
+
+        customer_name = (data.get("customerName") or "").strip()
+        payment_method = (data.get("paymentMethod") or "").strip()
+        transaction_id = (data.get("transactionId") or "").strip()
+        payment_date_raw = (data.get("date") or "").strip()
+        notes = (data.get("notes") or "").strip()
+
+        payment_date = None
+        if payment_date_raw:
+            try:
+                payment_date = datetime.strptime(payment_date_raw, "%Y-%m-%d").date()
+            except ValueError:
+                return jsonify({
+                    "success": False,
+                    "error": "Invalid date. Use YYYY-MM-DD.",
+                }), 400
 
         conn = get_db_connection()
         cur = conn.cursor()
+        _ensure_payments_table(cur)
 
-        cur.execute("""
+        cur.execute(
+            "SELECT 1 FROM invoices WHERE invoice_id = %s",
+            (invoice_id,),
+        )
+        if not cur.fetchone():
+            conn.rollback()
+            return jsonify({"success": False, "error": "Invoice not found"}), 404
+
+        cur.execute(
+            """
             INSERT INTO payments
             (invoice_id, customer_name, payment_method, transaction_id, amount, payment_date, notes)
             VALUES (%s, %s, %s, %s, %s, %s, %s)
-        """, (invoice_id, customer_name, payment_method, transaction_id, amount, payment_date, notes))
+            RETURNING payment_id
+            """,
+            (
+                invoice_id,
+                customer_name,
+                payment_method,
+                transaction_id,
+                amount,
+                payment_date,
+                notes,
+            ),
+        )
+        payment_row = cur.fetchone()
+        payment_id = payment_row[0] if payment_row else None
 
-        cur.execute("SELECT balance_due FROM invoice_summary WHERE invoice_id = %s", (invoice_id,))
+        cur.execute(
+            "SELECT balance_due, amount_paid, grand_total FROM invoice_summary WHERE invoice_id = %s",
+            (invoice_id,),
+        )
         row = cur.fetchone()
 
         if row:
-            current_balance = row[0]
+            current_balance = Decimal(str(row[0] or 0))
+            current_paid = Decimal(str(row[1] or 0))
+            grand_total = Decimal(str(row[2] or 0))
             new_balance = current_balance - amount
             if new_balance < 0:
                 new_balance = Decimal("0")
-            cur.execute("""
+            new_paid = current_paid + amount
+            cur.execute(
+                """
                 UPDATE invoice_summary
-                SET balance_due = %s
+                SET balance_due = %s, amount_paid = %s
                 WHERE invoice_id = %s
-            """, (new_balance, invoice_id))
+                """,
+                (new_balance, new_paid, invoice_id),
+            )
         else:
-            cur.execute("SELECT invoice_total FROM invoices WHERE invoice_id = %s", (invoice_id,))
+            cur.execute(
+                "SELECT invoice_total FROM invoices WHERE invoice_id = %s",
+                (invoice_id,),
+            )
             inv_row = cur.fetchone()
-            if inv_row:
-                total_amount = inv_row[0] or Decimal("0")
-                new_balance = Decimal(str(total_amount)) - amount
-                if new_balance < 0:
-                    new_balance = Decimal("0")
-                cur.execute("""
-                    INSERT INTO invoice_summary (invoice_id, balance_due)
-                    VALUES (%s, %s)
-                """, (invoice_id, new_balance))
-            else:
+            if not inv_row:
                 conn.rollback()
                 return jsonify({"success": False, "error": "Invoice not found"}), 404
+            total_amount = Decimal(str(inv_row[0] or 0))
+            new_balance = total_amount - amount
+            if new_balance < 0:
+                new_balance = Decimal("0")
+            cur.execute(
+                """
+                INSERT INTO invoice_summary (invoice_id, balance_due, amount_paid, grand_total)
+                VALUES (%s, %s, %s, %s)
+                """,
+                (invoice_id, new_balance, amount, total_amount),
+            )
+
+        if transaction_id or payment_date:
+            cur.execute(
+                """
+                UPDATE invoices
+                SET payment_ref_no = COALESCE(NULLIF(%s, ''), payment_ref_no),
+                    transaction_date = COALESCE(%s, transaction_date)
+                WHERE invoice_id = %s
+                """,
+                (transaction_id, payment_date, invoice_id),
+            )
+
+        cur.execute(
+            "SELECT balance_due FROM invoice_summary WHERE invoice_id = %s",
+            (invoice_id,),
+        )
+        bal_row = cur.fetchone()
+        new_balance_due = float(bal_row[0]) if bal_row and bal_row[0] is not None else 0.0
+        if new_balance_due <= 0:
+            cur.execute(
+                """
+                UPDATE invoices
+                SET payment_status = 'Paid'
+                WHERE invoice_id = %s
+                """,
+                (invoice_id,),
+            )
+        else:
+            cur.execute(
+                """
+                UPDATE invoices
+                SET payment_status = 'Partial'
+                WHERE invoice_id = %s
+                  AND payment_status NOT IN ('Paid', 'Cancelled')
+                """,
+                (invoice_id,),
+            )
 
         conn.commit()
-        cur.close()
-        conn.close()
 
-        return jsonify({"success": True})
+        if payment_id is not None:
+            cur.execute(
+                "SELECT 1 FROM payments WHERE payment_id = %s",
+                (payment_id,),
+            )
+            if not cur.fetchone():
+                conn.rollback()
+                return jsonify({
+                    "success": False,
+                    "error": "Payment could not be verified after save",
+                }), 500
+
+        return jsonify({
+            "success": True,
+            "payment_id": payment_id,
+            "message": "Payment saved successfully",
+        })
     except Exception as e:
-        import traceback
+        if conn is not None:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
         traceback.print_exc()
         return jsonify({"success": False, "error": str(e)}), 500
+    finally:
+        if cur is not None:
+            try:
+                cur.close()
+            except Exception:
+                pass
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
 
 @app.route("/api/invoice-summary/<invoice_id>/add-payment", methods=["PUT"])

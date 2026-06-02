@@ -29,6 +29,29 @@
         setTimeout(() => toastElement.classList.remove('show'), duration);
     }
 
+    function showPaymentErrorToast(message) {
+        const msg = (message || 'Payment could not be saved').toString();
+        if (errorToast) {
+            const textEl = errorToast.querySelector('.toast-text, p, span');
+            if (textEl) {
+                textEl.textContent = msg;
+            } else {
+                errorToast.textContent = msg;
+            }
+            showToast(errorToast, 3200);
+            return;
+        }
+        const tempToast = document.createElement('div');
+        tempToast.className = 'error-notification';
+        tempToast.textContent = msg;
+        document.body.appendChild(tempToast);
+        requestAnimationFrame(() => tempToast.classList.add('show'));
+        setTimeout(() => {
+            tempToast.classList.remove('show');
+            setTimeout(() => tempToast.remove(), 400);
+        }, 3200);
+    }
+
     // Custom popup for amount exceeding balance
     function showAmountExceedsPopup(balanceDue) {
         const msg = `Amount cannot exceed balance due: ₹${balanceDue.toFixed(2)}. Amount has been adjusted.`;
@@ -448,32 +471,29 @@
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(paymentData)
         })
-        .then(response => response.json().catch(() => { throw new Error('Invalid JSON response'); }))
-        .then(async (data) => {
-            if (data.success) {
-                const updated = await updateInvoiceAmountPaid(
-                    paymentData.invoiceId,
-                    paymentData.amount,
-                    paymentData.transactionId,
-                    paymentData.date
-                );
-                if (!updated) {
-                    console.warn('Payment recorded but invoice summary not updated.');
-                }
-                showToast(successToast, 2600);
-                setTimeout(async () => {
-                    resetForm();
-                    await loadInvoices();
-                    if (customerNameInput) customerNameInput.focus();
-                }, 800);
-            } else {
-                console.error('Server error:', data.error || 'Unknown error');
-                showToast(errorToast, 2800);
+        .then(async (response) => {
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok || !data.success) {
+                const msg = data.error || data.message || 'Payment could not be saved';
+                console.error('Save payment failed:', msg, response.status);
+                showPaymentErrorToast(msg);
+                return;
             }
+
+            if (!data.payment_id) {
+                console.warn('Payment saved without payment_id in response');
+            }
+
+            showToast(successToast, 2600);
+            setTimeout(async () => {
+                resetForm();
+                await loadInvoices();
+                if (customerNameInput) customerNameInput.focus();
+            }, 800);
         })
         .catch(error => {
             console.error('Network or parsing error:', error);
-            showToast(errorToast, 2800);
+            showPaymentErrorToast('Network error. Payment was not saved.');
         });
     }
 
