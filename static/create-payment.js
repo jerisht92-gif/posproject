@@ -466,22 +466,25 @@
             notes: notesTextarea.value.trim()
         };
 
+        const prevSaveLabel = saveButton ? saveButton.textContent : '';
+        if (saveButton) {
+            saveButton.disabled = true;
+            saveButton.textContent = 'Saving...';
+        }
+
         fetch('/api/payments', {
             method: 'POST',
+            credentials: 'same-origin',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(paymentData)
         })
         .then(async (response) => {
             const data = await response.json().catch(() => ({}));
-            if (!response.ok || !data.success) {
+            if (!response.ok || !data.success || data.payment_id == null) {
                 const msg = data.error || data.message || 'Payment could not be saved';
                 console.error('Save payment failed:', msg, response.status);
                 showPaymentErrorToast(msg);
                 return;
-            }
-
-            if (!data.payment_id) {
-                console.warn('Payment saved without payment_id in response');
             }
 
             showToast(successToast, 2600);
@@ -494,6 +497,10 @@
         .catch(error => {
             console.error('Network or parsing error:', error);
             showPaymentErrorToast('Network error. Payment was not saved.');
+        })
+        .finally(() => {
+            updateSaveButtonState();
+            if (saveButton && prevSaveLabel) saveButton.textContent = prevSaveLabel;
         });
     }
 
