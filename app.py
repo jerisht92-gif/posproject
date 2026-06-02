@@ -214,10 +214,42 @@ def _db_conn_params():
         or os.getenv("RENDER")
         or os.getenv("VERCEL")
     )
+    explicit_host_config = bool(
+        (os.getenv("DB_HOST") or "").strip()
+        and (os.getenv("DB_NAME") or "").strip()
+        and (os.getenv("DB_USER") or "").strip()
+        and (os.getenv("DB_PASSWORD") or "").strip()
+    )
+    implicit_provider_dsn_keys = {
+        "POSTGRES_PRISMA_URL",
+        "SUPABASE_TRANSACTION_POOLER_URL",
+        "SUPABASE_SESSION_POOLER_URL",
+        "SUPABASE_POOLER_URL",
+        "DATABASE_URL",
+        "NEON_DATABASE_URL",
+        "POSTGRES_URL",
+        "SUPABASE_DB_URL",
+    }
     # Runtime-aware DSN selection so localhost and deployed can coexist.
     if is_deployed_runtime and os.getenv("DEPLOY_DB_DSN"):
         dsn_env_key = "DEPLOY_DB_DSN"
         dsn = (os.getenv("DEPLOY_DB_DSN") or "").strip()
+    elif (
+        is_deployed_runtime
+        and explicit_host_config
+        and _env_truthy("DEPLOY_PREFER_HOST_CONFIG", True)
+        and dsn_env_key in implicit_provider_dsn_keys
+        and not os.getenv("DB_DSN")
+    ):
+        # On Vercel/Render, platform-injected DATABASE_URL/POSTGRES_URL can point to
+        # a different DB than the app-configured host credentials. Prefer explicit DB_*
+        # unless user intentionally sets DB_DSN/DEPLOY_DB_DSN or disables this behavior.
+        print(
+            f"DB DSN source {dsn_env_key} ignored in deployed runtime; "
+            "using explicit DB_HOST/DB_NAME/DB_USER/DB_PASSWORD."
+        )
+        dsn_env_key = None
+        dsn = ""
     elif (not is_deployed_runtime) and os.getenv("LOCAL_DB_DSN"):
         dsn_env_key = "LOCAL_DB_DSN"
         dsn = (os.getenv("LOCAL_DB_DSN") or "").strip()
