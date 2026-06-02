@@ -28957,46 +28957,8 @@ def get_invoices_payments():
         return jsonify({"error": str(e)}), 500
 
 
-def _payments_column_names(cur):
-    cur.execute(
-        """
-        SELECT column_name
-        FROM information_schema.columns
-        WHERE table_schema = ANY (current_schemas(false))
-          AND table_name = 'payments'
-        """
-    )
-    return {str(r[0]) for r in cur.fetchall() or []}
-
-
-def _payments_pk_column(cur, columns):
-    """Return the payments table primary-key column (id vs payment_id on legacy DBs)."""
-    cur.execute(
-        """
-        SELECT kcu.column_name
-        FROM information_schema.table_constraints tc
-        JOIN information_schema.key_column_usage kcu
-          ON tc.constraint_schema = kcu.constraint_schema
-         AND tc.constraint_name = kcu.constraint_name
-        WHERE tc.table_schema = ANY (current_schemas(false))
-          AND tc.table_name = 'payments'
-          AND tc.constraint_type = 'PRIMARY KEY'
-        ORDER BY kcu.ordinal_position
-        LIMIT 1
-        """
-    )
-    row = cur.fetchone()
-    if row and row[0] in columns:
-        return str(row[0])
-    if "payment_id" in columns:
-        return "payment_id"
-    if "id" in columns:
-        return "id"
-    return "payment_id"
-
-
 def _ensure_payments_table(cur):
-    """Create payments table if missing; add missing columns on legacy prod schemas."""
+    """Create payments table if missing (Vercel/prod DB may not have run migrations)."""
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS payments (
@@ -29012,19 +28974,6 @@ def _ensure_payments_table(cur):
         )
         """
     )
-    for col, ddl in (
-        ("invoice_id", "VARCHAR(50)"),
-        ("customer_name", "TEXT"),
-        ("payment_method", "TEXT"),
-        ("transaction_id", "TEXT"),
-        ("amount", "NUMERIC(12, 2) DEFAULT 0"),
-        ("payment_date", "DATE"),
-        ("notes", "TEXT"),
-        ("created_at", "TIMESTAMP DEFAULT NOW()"),
-    ):
-        cur.execute(
-            f"ALTER TABLE payments ADD COLUMN IF NOT EXISTS {col} {ddl}"
-        )
     cur.execute(
         """
         CREATE INDEX IF NOT EXISTS idx_payments_invoice_id
@@ -29032,41 +28981,6 @@ def _ensure_payments_table(cur):
         """
     )
     cur.connection.commit()
-
-
-def _insert_payment_row(cur, columns, pk_col, payload):
-    """Insert one payment row using only columns that exist on this DB."""
-    field_map = (
-        ("invoice_id", payload["invoice_id"]),
-        ("customer_name", payload["customer_name"]),
-        ("payment_method", payload["payment_method"]),
-        ("transaction_id", payload["transaction_id"]),
-        ("amount", payload["amount"]),
-        ("payment_date", payload["payment_date"]),
-        ("notes", payload["notes"]),
-    )
-    insert_cols = []
-    insert_vals = []
-    for col, val in field_map:
-        if col in columns:
-            insert_cols.append(col)
-            insert_vals.append(val)
-    if "invoice_id" not in insert_cols:
-        raise ValueError("payments table is missing invoice_id column")
-    if "amount" not in insert_cols:
-        raise ValueError("payments table is missing amount column")
-
-    placeholders = ", ".join(["%s"] * len(insert_cols))
-    col_list = ", ".join(insert_cols)
-    returning = pk_col if pk_col in columns else None
-    sql = f"INSERT INTO payments ({col_list}) VALUES ({placeholders})"
-    if returning:
-        sql += f" RETURNING {returning}"
-    cur.execute(sql, tuple(insert_vals))
-    if returning:
-        row = cur.fetchone()
-        return row[0] if row else None
-    return None
 
 
 @app.route("/api/payments", methods=["POST"])
@@ -29108,8 +29022,6 @@ def save_payment():
         conn = get_db_connection()
         cur = conn.cursor()
         _ensure_payments_table(cur)
-        pay_columns = _payments_column_names(cur)
-        pk_col = _payments_pk_column(cur, pay_columns)
 
         cur.execute(
             "SELECT 1 FROM invoices WHERE invoice_id = %s",
@@ -29119,20 +29031,25 @@ def save_payment():
             conn.rollback()
             return jsonify({"success": False, "error": "Invoice not found"}), 404
 
-        payment_id = _insert_payment_row(
-            cur,
-            pay_columns,
-            pk_col,
-            {
-                "invoice_id": invoice_id,
-                "customer_name": customer_name,
-                "payment_method": payment_method,
-                "transaction_id": transaction_id,
-                "amount": amount,
-                "payment_date": payment_date,
-                "notes": notes,
-            },
+        cur.execute(
+            """
+            INSERT INTO payments
+            (invoice_id, customer_name, payment_method, transaction_id, amount, payment_date, notes)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            RETURNING payment_id
+            """,
+            (
+                invoice_id,
+                customer_name,
+                payment_method,
+                transaction_id,
+                amount,
+                payment_date,
+                notes,
+            ),
         )
+        payment_row = cur.fetchone()
+        payment_id = payment_row[0] if payment_row else None
 
         cur.execute(
             "SELECT balance_due, amount_paid, grand_total FROM invoice_summary WHERE invoice_id = %s",
@@ -29216,9 +29133,9 @@ def save_payment():
 
         conn.commit()
 
-        if payment_id is not None and pk_col in pay_columns:
+        if payment_id is not None:
             cur.execute(
-                f"SELECT 1 FROM payments WHERE {pk_col} = %s",
+                "SELECT 1 FROM payments WHERE payment_id = %s",
                 (payment_id,),
             )
             if not cur.fetchone():
