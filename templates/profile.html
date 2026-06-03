@@ -20,6 +20,7 @@
 
       <h2 class="profile-name">{{ user_name }}</h2>
       <p class="profile-email">{{ user_email }}</p>
+      <p class="profile-role">Role: <strong>{{ user_role or 'User' }}</strong></p>
     </div>
 
     {% if status %}
@@ -32,19 +33,31 @@
 
         <div class="form-row">
 
-         <div class="form-group">
+          <div class="form-group">
             <label for="email">Email ID</label>
             <input
-                id="email"
-                type="email"
-                name="email"
-                value="{{ user_email }}"
-                readonly
+              id="email"
+              type="email"
+              name="email"
+              value="{{ user_email }}"
+              readonly
             >
-            </div>
+          </div>
 
+          <div class="form-group">
+            <label for="role">Role</label>
+            <input
+              id="role"
+              type="text"
+              name="role"
+              value="{{ user_role or 'User' }}"
+              readonly
+            >
+          </div>
 
-          <!-- RIGHT: Mobile -->
+        </div>
+
+        <div class="form-row">
           <div class="form-group">
             <label for="mobile">Mobile Number</label>
             <input
@@ -52,9 +65,10 @@
               type="text"
               name="mobile"
               value="{{ mobile or '' }}"
-              placeholder="Enter mobile number">
+              placeholder="Enter mobile number"
+              readonly
+            >
           </div>
-
         </div>
 
         <!-- Buttons in center -->

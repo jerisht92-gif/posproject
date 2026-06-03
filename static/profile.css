@@ -47,6 +47,12 @@ body.profile-page {
   color: #4b5563;
 }
 
+.profile-role {
+  font-size: 16px;
+  color: #7b1e2b;
+  margin-top: 8px;
+}
+
 /* =========================
    STATUS MESSAGE
 ========================= */
@@ -101,6 +107,12 @@ body.profile-page {
 .form-group input:focus {
   border-color: #2563eb;
   box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2);
+}
+
+.form-group input[readonly] {
+  background: #f9fafb;
+  color: #111827;
+  cursor: default;
 }
 
 /* =========================

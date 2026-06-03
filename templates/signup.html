@@ -35,7 +35,7 @@
       <path d="M0,150 C150,300 450,100 600,300 L0,300 Z"></path>
     </svg>
   </div>
-
+ 
   <div class="signup-container">
     <div class="right-section">
       <div class="signup-box">
@@ -46,18 +46,29 @@
       <p class="signup-subtitle">Turn ideas into action - stay organized, stay ahead.</p>
       <!-- ERROR MESSAGE BELOW LOGO -->
       <p id="statusMsg" class="error-box"></p>
-
+ 
        <form id="signupForm"  novalidate>
           <div class="input-group">
             <label>First Name</label>
             <input type="text" name="firstName" placeholder="Enter your first name" maxlength="20" required />
           </div>
-
+ 
           <div class="input-group">
             <label>Last Name</label>
             <input type="text" name="lastName" placeholder="Enter your last name" maxlength="30" required />
           </div>
-
+ 
+          <div class="input-group">
+            <label>Company Name</label>
+            <input type="text" name="companyName" placeholder="Enter your company name" maxlength="50" required />
+          </div>
+ 
+          <div class="input-group">
+            <label>Company Code</label>
+            <input type="text" name="companyCode" placeholder="New company: PENDING · Existing: code from admin" maxlength="20" required />
+            <small class="field-hint">New company → enter <strong>PENDING</strong> · Join team → enter code from Company Information</small>
+          </div>
+ 
           <!-- ✅ Phone number with country code -->
            <div class="input-group">
             <label>Phone number</label>
@@ -79,7 +90,7 @@
                required />
             </div>
           </div>
-
+ 
           <div class="input-group otp-section">
             <label>Email Address</label>
             <div class="email-otp-container">
@@ -93,25 +104,25 @@
               />
               <button type="button" id="sendOtpBtn" class="otp-btn" disabled>Send OTP</button>
             </div>
-            
+           
           </div>
-
-
+ 
+ 
           <div class="input-group">
             <label>Enter OTP</label>
-            <input 
-              type="text" 
-              id="otp" 
+            <input
+              type="text"
+              id="otp"
               placeholder="Enter Your OTP"
               maxlength="6"
               inputmode="numeric"
               pattern="[0-9]*"
-              required 
+              required
               disabled
             />
             <button type="button" id="verifyOtpBtn" class="otp-btn1" disabled>Verify OTP</button>
-          </div> 
-          
+          </div>
+         
           <div class="input-group password-group">
             <label>Password</label>
             <div class="password-container">
@@ -129,9 +140,9 @@
               <small id="capsWarningSignup" class="caps-warning" aria-live="polite" style="display:none;">
                 Caps Lock is ON
               </small>
-          </div> 
-
-
+          </div>
+ 
+ 
         <!-- Confirm Password (below Password) -->
         <div class="input-group confirm-password-group">
           <label>Confirm Password</label>
@@ -156,13 +167,13 @@
             </button>
           </div>
         </div>
-
+ 
                 <!-- FOOTER LOGIN LINK -->
         <div class="footer-text">
           Already have an account?
           <a href="{{ url_for('login') }}">Log In</a>
         </div>
-
+ 
         <!-- SIGN UP BUTTON -->
         <button type="submit" id="signupBtn" class="signup-btn">Sign Up</button>
         </form>
@@ -171,3 +182,4 @@
   </div>
 </body>
 </html>
+ 

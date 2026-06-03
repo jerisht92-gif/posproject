@@ -74,8 +74,46 @@ async function loadPurchaseOrders() {
         tbody.innerHTML = "";
  
         orders.forEach((order) => {
+
  
             const row = document.createElement("tr");
+            const status = order.status;
+
+            let dropdownHTML = `
+            <div class="dropdown">
+                <button class="btn-more">⋮</button>
+                <div class="dropdown-menu">
+            `;
+
+            if (status !== "Draft") {
+                dropdownHTML += `
+                    <button class="dropdown-item view" data-id="${order.po_number}">
+                        View
+                    </button>
+                `;
+            }
+
+            if (status === "Draft") {
+                dropdownHTML += `
+                    <button class="dropdown-item edit" data-id="${order.po_number}">
+                        Edit
+                    </button>
+
+                    <button class="dropdown-item delete" data-id="${order.po_number}">
+                        Delete
+                    </button>
+                `;
+            }
+
+            if (!["Draft", "Cancelled", "Closed"].includes(status)) {
+                dropdownHTML += `
+                    <button class="dropdown-item stock-receipt" data-id="${order.po_number}">
+                        Generate Stock Receipt
+                    </button>
+                `;
+            }
+
+            dropdownHTML += `</div></div>`;
  
             row.innerHTML = `
                 <td>${order.po_number || "-"}</td>
@@ -100,54 +138,7 @@ async function loadPurchaseOrders() {
                         : "0.00"}
                 </td>
  
-                <td class="action-buttons">
- 
-                    <div class="dropdown">
- 
-                        <button class="btn-more">⋮</button>
- 
-                        <div class="dropdown-menu">
- 
-                            ${order.status !== 'Draft' ? `
-                                <button
-                                    class="dropdown-item view"
-                                    data-id="${order.po_number}"
-                                >
-                                    View
-                                </button>
-                            ` : ''}
- 
-                            <button
-                                class="dropdown-item edit"
-                                data-id="${order.po_number}"
-                                ${order.status !== 'Draft' ? 'disabled' : ''}
-                            >
-                                Edit
-                            </button>
- 
-                            <button
-                                class="dropdown-item delete"
-                                data-id="${order.po_number}"
-                                ${order.status !== 'Draft' ? 'disabled' : ''}
-                            >
-                                Delete
-                            </button>
- 
-                            <button
-                                class="dropdown-item stock-receipt"
-                                data-id="${order.po_number}"
-                                ${['Draft','Cancelled','Closed'].includes(order.status)
-                                    ? 'disabled'
-                                    : ''}
-                            >
-                                Generate Stock Receipt
-                            </button>
- 
-                        </div>
- 
-                    </div>
- 
-                </td>
+               <td class="action-buttons">${dropdownHTML}</td>
             `;
  
             tbody.appendChild(row);
@@ -494,6 +485,3 @@ document.addEventListener("click", function(e){
     loadPurchaseOrders();
  
 });
- 
- 
- 

@@ -33,6 +33,13 @@
           <span class="menu-text">Dashboard</span>
         </a>
 
+        <!--Company Information -->
+        <a href="{{ url_for('company_info') }}"
+           class="menu-item{% if page == 'company_info' %} active{% endif %}">
+          <span class="menu-icon">🏢</span>
+          <span class="menu-text">Company Information</span>
+        </a>
+
         <!-- Masters -->
         <div class="menu-group">
           <button
@@ -271,6 +278,7 @@
             <div class="profile-dropdown" id="profileDropdown">
               <p class="dropdown-name">{{ profile_user_name }}</p>
               <p class="dropdown-email">{{ profile_user_email }}</p>
+              <p class="dropdown-role">Role: {{ profile_user_role or 'User' }}</p>
 
               <a href="{{ url_for('profile') }}" class="profile-link">
                 Profile

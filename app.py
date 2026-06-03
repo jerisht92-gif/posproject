@@ -1070,6 +1070,7 @@ CREDIT_NOTE_ATTACHMENTS_FOLDER = _writable_upload_subdir("creditnote_attachments
 SUPPLIER_ATTACHMENTS_FOLDER = _writable_upload_subdir("supplier_attachments")
 DELIVERY_NOTE_ATTACHMENTS_FOLDER = _writable_upload_subdir("deliverynote_attachments")
 DELIVERY_NOTE_RETURN_ATTACHMENTS_FOLDER = _writable_upload_subdir("deliverynote_return_attachments")
+COMPANY_LOGO_FOLDER = _writable_upload_subdir("company_logo")
 
 _DN_POD_EXTENSIONS = {"pdf", "jpg", "jpeg", "png"}
 
@@ -1262,6 +1263,8 @@ EMAIL_REGEX = re.compile(
 MAX_EMAIL_LENGTH = 40
 PHONE_REGEX = re.compile(r"^[0-9]{10}$")
 NAME_REGEX = re.compile(r"^[A-Za-z\s]{3,20}$")
+COMPANY_NAME_REGEX = re.compile(r"^[A-Za-z0-9 &.,'()\/-]{3,50}$")
+COMPANY_CODE_REGEX = re.compile(r"^[A-Za-z0-9-]{3,20}$")
 
 
 # =========================================
@@ -1367,7 +1370,7 @@ def auto_session_timeout():
 # =========================================
 def ensure_role():
     if "user" in session and "role" not in session:
-        session["role"] = "user"
+        session["role"] = "User"
 
 
 # =========================================
@@ -1779,9 +1782,15 @@ def verify_otp_in_db(email, otp, expiry_seconds=300):
         expiry_naive = expiry.replace(tzinfo=None) if getattr(expiry, "tzinfo", None) else expiry
         if datetime.now() > expiry_naive:
             return False
+        # Give the user time to finish the signup form after a successful verify.
+        signup_window = datetime.now() + timedelta(minutes=30)
         cur.execute(
-            "UPDATE email_otp_store SET verified = TRUE WHERE LOWER(email)=LOWER(%s)",
-            (email,),
+            """
+            UPDATE email_otp_store
+            SET verified = TRUE, otp_expiry = %s
+            WHERE LOWER(email) = LOWER(%s)
+            """,
+            (signup_window, email),
         )
         conn.commit()
         return True
@@ -1825,6 +1834,8 @@ def is_email_otp_verified(email: str) -> bool:
             return False
         if not bool(verified):
             return False
+        if not expiry:
+            return True
         expiry_naive = expiry.replace(tzinfo=None) if getattr(expiry, "tzinfo", None) else expiry
         return datetime.now() <= expiry_naive
     finally:
@@ -2445,6 +2456,15 @@ def dashboard():
     if not user_email:
         return redirect(url_for("login", message="session_expired"))
 
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        if _user_needs_company_setup(cur, user_email):
+            return redirect(url_for("company_info"))
+    finally:
+        cur.close()
+        conn.close()
+
     users = load_users()
 
     user_name = "User"
@@ -2500,6 +2520,525 @@ def check_your_mail_page():
     """Legacy URL — password reset is handled on /forgot-password."""
     return redirect(url_for("forgot_password"))
 
+
+
+
+# =========================================
+# COMPANY INFORMATIONS
+# =========================================
+
+def _normalize_role(role: str) -> str:
+    return (role or "").strip().lower().replace(" ", "").replace("_", "")
+
+
+def _is_super_admin_role(role: str) -> bool:
+    return _normalize_role(role) == "superadmin"
+
+
+def _fetch_company_info_codes(cur):
+    cur.execute(
+        """
+        SELECT UPPER(TRIM(company_code)), LOWER(TRIM(company_name))
+        FROM company_information
+        ORDER BY company_id
+        LIMIT 1
+        """
+    )
+    row = cur.fetchone()
+    if not row:
+        return "", ""
+    return ((row[0] or "").strip(), (row[1] or "").strip())
+
+
+def _fetch_company_info_for_user(cur, user_company_name: str):
+    """Prefer company_information row matching the user's company name."""
+    cn = (user_company_name or "").strip().lower()
+    if cn:
+        cur.execute(
+            """
+            SELECT UPPER(TRIM(company_code)), LOWER(TRIM(company_name))
+            FROM company_information
+            WHERE LOWER(TRIM(company_name)) = %s
+            ORDER BY company_id
+            LIMIT 1
+            """,
+            (cn,),
+        )
+        row = cur.fetchone()
+        if row:
+            return ((row[0] or "").strip(), (row[1] or "").strip())
+    return _fetch_company_info_codes(cur)
+
+
+def _company_has_super_admin(cur, company_name_lower: str) -> bool:
+    if not company_name_lower:
+        return False
+    cur.execute(
+        """
+        SELECT 1
+        FROM users
+        WHERE LOWER(TRIM(company_name)) = %s
+          AND LOWER(REPLACE(REPLACE(COALESCE(role, ''), ' ', ''), '_', '')) = 'superadmin'
+        LIMIT 1
+        """,
+        (company_name_lower,),
+    )
+    return cur.fetchone() is not None
+
+
+def _sync_logged_in_role_from_db(email: str) -> str:
+    """Keep session role in sync with users.role; promote PENDING founder to Super Admin in DB."""
+    from signup_tenant import FOUNDER_DUMMY_COMPANY_CODE, FOUNDER_ROLE
+
+    email = (email or "").strip().lower()
+    if not email:
+        return (session.get("role") or "User").strip()
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            SELECT user_id, role, UPPER(TRIM(company_code)), LOWER(TRIM(company_name))
+            FROM users
+            WHERE LOWER(email) = LOWER(%s)
+            LIMIT 1
+            """,
+            (email,),
+        )
+        row = cur.fetchone()
+        if not row:
+            return (session.get("role") or "User").strip()
+
+        user_id, db_role, company_code, company_name = row
+        role = (db_role or "").strip() or "User"
+        role_norm = role.lower().replace(" ", "").replace("_", "")
+
+        if company_code == FOUNDER_DUMMY_COMPANY_CODE and role_norm != "superadmin":
+            if not _company_has_super_admin(cur, company_name or ""):
+                cur.execute(
+                    "UPDATE users SET role = %s WHERE user_id = %s",
+                    (FOUNDER_ROLE, user_id),
+                )
+                conn.commit()
+                role = FOUNDER_ROLE
+
+        session["role"] = role
+        return role
+    finally:
+        cur.close()
+        conn.close()
+
+
+def _user_needs_company_setup(cur, user_email: str) -> bool:
+    """True when founder must complete Company Information (PENDING or no saved profile)."""
+    from signup_tenant import FOUNDER_DUMMY_COMPANY_CODE
+
+    user_code, user_name, _ = _fetch_user_company_context(cur, user_email)
+    if user_code == FOUNDER_DUMMY_COMPANY_CODE:
+        return True
+    if not user_name:
+        return False
+    cur.execute(
+        """
+        SELECT 1
+        FROM company_information
+        WHERE LOWER(TRIM(company_name)) = %s
+        LIMIT 1
+        """,
+        (user_name,),
+    )
+    return cur.fetchone() is None
+
+
+def _get_company_setup_prefill(cur, user_email: str) -> dict:
+    """Defaults for the new-company setup form from the users row."""
+    cur.execute(
+        """
+        SELECT company_name, name, email, phone, contact_number
+        FROM users
+        WHERE LOWER(email) = LOWER(%s)
+        LIMIT 1
+        """,
+        (user_email,),
+    )
+    row = cur.fetchone()
+    if not row:
+        return {}
+    company_name, display_name, email, phone, contact_number = row
+    phone_digits = re.sub(r"\D", "", (contact_number or phone or ""))
+    if len(phone_digits) > 10:
+        phone_digits = phone_digits[-10:]
+    return {
+        "company_name": (company_name or "").strip(),
+        "owner_name": (display_name or "").strip(),
+        "email": (email or "").strip(),
+        "phone": phone_digits,
+        "country": "India",
+    }
+
+
+def _get_company_permissions(user_email: str):
+    """Return (can_access, can_edit). Edit requires Super Admin role in users table."""
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        user_company_code, user_company_name, user_role = _fetch_user_company_context(cur, user_email)
+        info_company_code, info_company_name = _fetch_company_info_for_user(cur, user_company_name)
+        role_norm = (user_role or "").strip().lower().replace(" ", "").replace("_", "")
+        is_super_admin = role_norm == "superadmin"
+        can_access = _user_can_access_company_info(
+            user_company_code,
+            user_company_name,
+            info_company_code,
+            info_company_name,
+            is_super_admin=is_super_admin,
+        )
+        can_edit = is_super_admin and can_access
+        return can_access, can_edit
+    finally:
+        cur.close()
+        conn.close()
+
+
+def _fetch_user_company_context(cur, user_email: str):
+    cur.execute(
+        """
+        SELECT UPPER(TRIM(company_code)), LOWER(TRIM(company_name)), role
+        FROM users
+        WHERE LOWER(email) = LOWER(%s)
+        LIMIT 1
+        """,
+        (user_email,),
+    )
+    row = cur.fetchone()
+    if not row:
+        return "", "", "User"
+    return (
+        (row[0] or "").strip(),
+        (row[1] or "").strip(),
+        (row[2] or "User").strip(),
+    )
+
+
+def _user_can_access_company_info(
+    user_company_code: str,
+    user_company_name: str,
+    info_company_code: str,
+    info_company_name: str,
+    *,
+    is_super_admin: bool,
+) -> bool:
+    """Same-tenant users may open the page; only Super Admin may edit (enforced on POST)."""
+    from signup_tenant import FOUNDER_DUMMY_COMPANY_CODE
+
+    if is_super_admin:
+        return True
+    # New company founder still on setup code — always allow Company Information.
+    if user_company_code == FOUNDER_DUMMY_COMPANY_CODE:
+        return True
+    if not info_company_code and not info_company_name:
+        return True
+    if user_company_code and info_company_code and user_company_code == info_company_code:
+        return True
+    if user_company_name and info_company_name and user_company_name == info_company_name:
+        return True
+    if user_company_code == FOUNDER_DUMMY_COMPANY_CODE and user_company_name and info_company_name:
+        return user_company_name == info_company_name
+    return False
+
+
+@app.route("/company_info")
+def company_info():
+    user_email = (session.get("user") or "").strip().lower()
+    if not user_email:
+        return redirect(url_for("login", message="session_expired"))
+
+    can_access, can_edit = _get_company_permissions(user_email)
+    if not can_access:
+        if wants_json():
+            return jsonify({"success": False, "message": "Access denied for company information."}), 403
+        return redirect(url_for("dashboard"))
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        is_new_company = _user_needs_company_setup(cur, user_email)
+    finally:
+        cur.close()
+        conn.close()
+
+    return render_template(
+        "company-information.html",
+        page="company_info",
+        can_edit_company=can_edit,
+        is_new_company=is_new_company,
+        user_role=session.get("role") or "User",
+    )
+
+
+@app.route("/api/company-information/logo", methods=["GET", "POST"])
+def company_logo():
+    """POST = upload logo (JPG/PNG, max 2MB). GET = show saved logo file from disk."""
+    try:
+        user_email = (session.get("user") or "").strip().lower()
+        if request.method == "POST":
+            _access, can_edit = _get_company_permissions(user_email)
+            if not can_edit:
+                return jsonify({"success": False, "message": "Only Super Admin can update company information."}), 403
+
+        if request.method == "POST":
+            file = request.files.get("file")
+            if not file or not file.filename:
+                return jsonify({"success": False, "message": "No file selected"}), 400
+            ext = os.path.splitext(file.filename)[1].lower()
+            if ext not in (".jpg", ".jpeg", ".png"):
+                return jsonify({"success": False, "message": "Only JPG or PNG allowed"}), 400
+            file.seek(0, os.SEEK_END)
+            if file.tell() > 2 * 1024 * 1024:
+                return jsonify({"success": False, "message": "Max size 2MB"}), 400
+            file.seek(0)
+            try:
+                from PIL import Image as PILImage
+                img = PILImage.open(file)
+                if img.format not in ("JPEG", "PNG"):
+                    return jsonify({"success": False, "message": "Only JPG or PNG allowed"}), 400
+                file.seek(0)
+            except Exception:
+                return jsonify({"success": False, "message": "Invalid image file. Use JPG or PNG only."}), 400
+            save_name = "logo.png" if ext == ".png" else "logo.jpg"
+            file.save(os.path.join(COMPANY_LOGO_FOLDER, save_name))
+            return jsonify({"success": True, "url": url_for("company_logo")})
+
+        for name in ("logo.png", "logo.jpg"):
+            if os.path.isfile(os.path.join(COMPANY_LOGO_FOLDER, name)):
+                return send_from_directory(COMPANY_LOGO_FOLDER, name)
+        return "", 404
+    except Exception as e:
+        if request.method == "POST":
+            return jsonify({"success": False, "message": str(e)}), 500
+        return "", 500
+
+
+@app.route("/api/company-information", methods=["GET", "POST"])
+def save_company_information():
+    user_email = (session.get("user") or "").strip().lower()
+    if not user_email:
+        return jsonify({"success": False, "message": "session_expired"}), 401
+
+    can_access, can_edit = _get_company_permissions(user_email)
+    if not can_access:
+        return jsonify({"success": False, "message": "Access denied for company information."}), 403
+
+    if request.method == "POST":
+        if not can_edit:
+            return jsonify({"success": False, "message": "Only Super Admin can update company information."}), 403
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        _, user_company_name, _ = _fetch_user_company_context(cur, user_email)
+        is_new_company = _user_needs_company_setup(cur, user_email)
+        setup_prefill = _get_company_setup_prefill(cur, user_email) if is_new_company else {}
+    finally:
+        cur.close()
+        conn.close()
+
+    if request.method == "GET":
+        row = None
+        if user_company_name:
+            row = fetch_one(
+                """
+                SELECT company_id, company_name, company_code, company_type, owner_name,
+                       gstin, registration_no, email, phone_number, website,
+                       address, city, state, country, pincode
+                FROM company_information
+                WHERE LOWER(TRIM(company_name)) = LOWER(TRIM(%s))
+                ORDER BY company_id
+                LIMIT 1
+                """,
+                (user_company_name,),
+            )
+        elif not is_new_company:
+            row = fetch_one(
+                """
+                SELECT company_id, company_name, company_code, company_type, owner_name,
+                       gstin, registration_no, email, phone_number, website,
+                       address, city, state, country, pincode
+                FROM company_information
+                ORDER BY company_id
+                LIMIT 1
+                """
+            )
+        if not row:
+            return jsonify({
+                "success": True,
+                "company": None,
+                "branches": [],
+                "can_edit": can_edit,
+                "is_new_company": is_new_company,
+                "prefill": setup_prefill,
+            })
+
+        branches = fetch_all(
+            """
+            SELECT branch_name, branch_code, phone_number AS phone,
+                   address, city, state
+            FROM company_branches
+            WHERE company_id = %s
+            ORDER BY branch_id
+            """,
+            (row["company_id"],),
+        )
+        return jsonify({
+            "success": True,
+            "can_edit": can_edit,
+            "is_new_company": False,
+            "company": {
+                "company_name": row.get("company_name") or "",
+                "company_code": row.get("company_code") or "",
+                "company_type": row.get("company_type") or "",
+                "owner_name": row.get("owner_name") or "",
+                "gstin": row.get("gstin") or "",
+                "registration_no": row.get("registration_no") or "",
+                "email": row.get("email") or "",
+                "phone": row.get("phone_number") or "",
+                "website": row.get("website") or "",
+                "address": row.get("address") or "",
+                "city": row.get("city") or "",
+                "state": row.get("state") or "",
+                "country": row.get("country") or "",
+                "pincode": row.get("pincode") or "",
+            },
+            "branches": branches or [],
+        })
+
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"success": False, "message": "No data received"}), 400
+
+    company_name = (data.get("company_name") or "").strip()
+    company_code = (data.get("company_code") or "").strip()
+    if not company_name or not company_code:
+        return jsonify({"success": False, "message": "Company name and code are required"}), 400
+
+    branches = data.get("branches") or []
+    if not branches:
+        return jsonify({"success": False, "message": "At least one branch is required"}), 400
+
+    logo_path = ""
+    for fname in ("logo.png", "logo.jpg"):
+        if os.path.isfile(os.path.join(COMPANY_LOGO_FOLDER, fname)):
+            logo_path = url_for("company_logo")
+            break
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    try:
+        vals = (
+            company_name,
+            company_code,
+            (data.get("company_type") or "").strip(),
+            (data.get("owner_name") or "").strip(),
+            logo_path,
+            (data.get("gstin") or "").strip(),
+            (data.get("registration_no") or "").strip(),
+            (data.get("email") or "").strip(),
+            (data.get("phone") or "").strip(),
+            (data.get("website") or "").strip(),
+            (data.get("address") or "").strip(),
+            (data.get("city") or "").strip(),
+            (data.get("state") or "").strip(),
+            (data.get("country") or "").strip(),
+            (data.get("pincode") or "").strip(),
+        )
+
+        cur.execute(
+            """
+            INSERT INTO company_information (
+                company_name, company_code, company_type, owner_name, logo_path,
+                gstin, registration_no, email, phone_number, website,
+                address, city, state, country, pincode, created_at, updated_at
+            ) VALUES (
+                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                %s, %s, %s, %s, %s,
+                CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            )
+            RETURNING company_id
+            """,
+            vals,
+        )
+
+        company_id = cur.fetchone()[0]
+
+        for b in branches:
+            cur.execute(
+                """
+                INSERT INTO company_branches (
+                    company_id, branch_name, branch_code,
+                    phone_number, address, city, state, created_at
+                ) VALUES (
+                    %s, %s, %s, %s, %s, %s, %s,
+                    CURRENT_TIMESTAMP
+                )
+                """,
+                (
+                    company_id,
+                    (b.get("branch_name") or "").strip(),
+                    (b.get("branch_code") or "").strip(),
+                    (b.get("phone") or "").strip(),
+                    (b.get("address") or "").strip(),
+                    (b.get("city") or "").strip(),
+                    (b.get("state") or "").strip(),
+                ),
+            )
+
+        from signup_tenant import FOUNDER_DUMMY_COMPANY_CODE
+
+        cur.execute(
+            """
+            SELECT LOWER(TRIM(company_name))
+            FROM users
+            WHERE LOWER(email) = LOWER(%s)
+            LIMIT 1
+            """,
+            (user_email,),
+        )
+        founder_row = cur.fetchone()
+        founder_company_name = (founder_row[0] or "").strip() if founder_row else ""
+        registered_code = company_code.strip().upper()
+
+        if founder_company_name and registered_code != FOUNDER_DUMMY_COMPANY_CODE:
+            cur.execute(
+                """
+                UPDATE users
+                SET company_code = %s
+                WHERE LOWER(TRIM(company_name)) = %s
+                  AND UPPER(TRIM(company_code)) = %s
+                """,
+                (registered_code, founder_company_name, FOUNDER_DUMMY_COMPANY_CODE),
+            )
+
+        conn.commit()
+        session["company_code"] = registered_code
+
+        return jsonify({
+            "success": True,
+            "message": "Company information saved successfully",
+            "company_code": registered_code,
+        })
+
+    except Exception as e:
+        conn.rollback()
+        return jsonify({
+            "success": False,
+            "message": str(e)
+        }), 500
+
+    finally:
+        cur.close()
+        conn.close()
 
 # =========================================
 # 3. MASTERS — Manage Users
@@ -2669,7 +3208,8 @@ def get_current_user_profile():
     email = session.get("user")
     if not email:
         return None
-    role = session.get("role")
+
+    role = _sync_logged_in_role_from_db(email)
     name = "User"
     department = session.get("department")
     branch = session.get("branch")
@@ -2677,13 +3217,12 @@ def get_current_user_profile():
     dbu = _db_get_user_by_email(email)
     if dbu:
         name = dbu.get("name") or "User"
-        role = dbu.get("role") or "User"
+        role = (dbu.get("role") or role or "User").strip()
+        session["role"] = role
         if department is None:
             department = dbu.get("department")
         if branch is None:
             branch = dbu.get("branch")
-    else:
-        role = "User" 
     return {
         "email": email,
         "name": name,
@@ -2743,24 +3282,42 @@ def inject_rbac():
     return {"rbac": {}}
 
 
+@app.before_request
+def _refresh_logged_in_role():
+    email = session.get("user")
+    if email:
+        try:
+            _sync_logged_in_role_from_db(email)
+        except Exception:
+            pass
+
+
 @app.context_processor
 def inject_profile_display_name():
     """
-    Inject consistent profile name/email for the top-right dropdown.
+    Inject consistent profile name/email/role for the top-right dropdown and pages.
 
     Name resolution matches routes: PostgreSQL users row.
     """
     email = session.get("user")
     if not email:
-        return {"profile_user_name": "User", "profile_user_email": ""}
+        return {"profile_user_name": "User", "profile_user_email": "", "profile_user_role": ""}
 
     try:
+        role = (session.get("role") or "").strip()
+        if not role:
+            role = _sync_logged_in_role_from_db(email)
         return {
             "profile_user_name": _get_logged_in_user_name(),
             "profile_user_email": email,
+            "profile_user_role": role or "User",
         }
     except Exception:
-        return {"profile_user_name": "User", "profile_user_email": email or ""}
+        return {
+            "profile_user_name": "User",
+            "profile_user_email": email or "",
+            "profile_user_role": (session.get("role") or "User").strip(),
+        }
 
 
 def _db_sync_users_id_sequence(cur):
@@ -2803,22 +3360,9 @@ def manage_users():
 
     users = _db_fetch_users_ordered(include_id=False)
 
-    user_name = "User"
-    user_role = "User"
-
-    current_email = (user_email or "").strip().lower()
-
-    for u in users:
-        if not isinstance(u, dict):
-            continue
-
-        u_email = (u.get("email") or "").strip().lower()
-        if u_email == current_email:
-            user_name = u.get("name") or "User"
-            user_role = (u.get("role") or "User").strip()
-            break
-
-    print("DEBUG manage_users: email =", user_email, "role =", user_role)
+    prof = get_current_user_profile() or {}
+    user_name = (prof.get("name") or "User").strip()
+    user_role = (prof.get("role") or "User").strip()
 
     if wants_json():
         q = (request.args.get("q") or "").strip().lower()
@@ -4114,21 +4658,18 @@ def profile():
     if not user_email:
         return redirect(url_for("login", message="session_expired"))
 
-    users = load_users()
-
-    user_name = "User"
-    mobile = ""
-
-    for u in users:
-        if isinstance(u, dict) and (u.get("email") or "").strip().lower() == user_email.lower():
-            user_name = u.get("name", "User")
-            mobile = u.get("phone", "")
-            break
+    user_role = _sync_logged_in_role_from_db(user_email)
+    dbu = _db_get_user_by_email(user_email) or {}
+    user_name = (dbu.get("name") or "User").strip()
+    mobile = (dbu.get("phone") or "").strip()
+    user_role = (dbu.get("role") or user_role or "User").strip()
+    session["role"] = user_role
 
     return render_template(
         "profile.html",
         user_email=user_email,
         user_name=user_name,
+        user_role=user_role,
         mobile=mobile,
         page="profile",
     )
@@ -9382,9 +9923,175 @@ def verify_otp():
     return jsonify({"success": False, "message": "Invalid or expired OTP"}), 400
 
 
+
+ 
 # =========================================
 # 1. ROOT & AUTH — Signup API
 # =========================================
+def _get_signup_tenant_db_state(cur, company_name: str, company_code: str) -> dict:
+    """Load tenant isolation facts from users + company_information for signup."""
+    from signup_tenant import FOUNDER_DUMMY_COMPANY_CODE
+
+    cn = (company_name or "").strip()
+    cc = (company_code or "").strip().upper()
+
+    cur.execute(
+        """
+        SELECT DISTINCT UPPER(TRIM(company_code))
+        FROM users
+        WHERE LOWER(TRIM(company_name)) = LOWER(TRIM(%s))
+          AND company_name IS NOT NULL
+          AND TRIM(company_name) <> ''
+        """,
+        (cn,),
+    )
+    codes_for_name = [r[0] for r in cur.fetchall() if r and r[0]]
+    company_name_exists = len(codes_for_name) > 0
+
+    cur.execute(
+        """
+        SELECT 1 FROM users
+        WHERE LOWER(TRIM(company_name)) = LOWER(TRIM(%s))
+          AND UPPER(TRIM(company_code)) = %s
+        LIMIT 1
+        """,
+        (cn, cc),
+    )
+    name_and_code_match = cur.fetchone() is not None
+
+    registered_code_used_by_other_company = False
+    if cc and cc != FOUNDER_DUMMY_COMPANY_CODE:
+        cur.execute(
+            """
+            SELECT 1 FROM users
+            WHERE UPPER(TRIM(company_code)) = %s
+              AND LOWER(TRIM(company_name)) <> LOWER(TRIM(%s))
+            LIMIT 1
+            """,
+            (cc, cn),
+        )
+        registered_code_used_by_other_company = cur.fetchone() is not None
+
+    company_registered_in_info = False
+    info_company_code = ""
+    code_registered_in_info = False
+    code_info_company_name = ""
+    try:
+        cur.execute(
+            """
+            SELECT UPPER(TRIM(company_code))
+            FROM company_information
+            WHERE LOWER(TRIM(company_name)) = LOWER(TRIM(%s))
+            ORDER BY company_id
+            LIMIT 1
+            """,
+            (cn,),
+        )
+        info_row = cur.fetchone()
+        if info_row and info_row[0]:
+            company_registered_in_info = True
+            info_company_code = (info_row[0] or "").strip()
+
+        if cc and cc != FOUNDER_DUMMY_COMPANY_CODE:
+            cur.execute(
+                """
+                SELECT LOWER(TRIM(company_name))
+                FROM company_information
+                WHERE UPPER(TRIM(company_code)) = %s
+                ORDER BY company_id
+                LIMIT 1
+                """,
+                (cc,),
+            )
+            code_row = cur.fetchone()
+            if code_row and code_row[0]:
+                code_registered_in_info = True
+                code_info_company_name = (code_row[0] or "").strip().lower()
+    except Exception:
+        pass
+
+    return {
+        "company_name_exists": company_name_exists,
+        "codes_for_name": codes_for_name,
+        "name_and_code_match": name_and_code_match,
+        "registered_code_used_by_other_company": registered_code_used_by_other_company,
+        "company_registered_in_info": company_registered_in_info,
+        "info_company_code": info_company_code,
+        "code_registered_in_info": code_registered_in_info,
+        "code_info_company_name": code_info_company_name,
+    }
+ 
+ 
+# =========================================
+# 1. ROOT & AUTH — Signup company code check (live)
+# =========================================
+@app.route("/api/signup/validate-company", methods=["POST"])
+def validate_signup_company():
+    """Check company name + code before signup submit."""
+    data = request.get_json(silent=True) or {}
+    company_name = (data.get("company_name") or data.get("companyName") or "").strip()
+    company_code = (data.get("company_code") or data.get("companyCode") or "").strip().upper()
+
+    if not company_name:
+        return jsonify({"success": False, "message": "Company name is required."}), 400
+    if not company_code:
+        return jsonify({"success": False, "message": "Company code is required."}), 400
+    if not COMPANY_CODE_REGEX.match(company_code):
+        return jsonify({
+            "success": False,
+            "message": "Company code must be 3–20 letters, numbers, or hyphens.",
+        }), 400
+
+    from signup_tenant import FOUNDER_DUMMY_COMPANY_CODE, is_dummy_company_code, resolve_signup_tenant
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        tenant_state = _get_signup_tenant_db_state(cur, company_name, company_code)
+        if is_dummy_company_code(company_code):
+            if tenant_state["company_name_exists"] or tenant_state["company_registered_in_info"]:
+                return jsonify({
+                    "success": False,
+                    "valid": False,
+                    "message": (
+                        "This company is already registered. "
+                        "Enter your company's registered code to join."
+                    ),
+                })
+            return jsonify({
+                "success": True,
+                "valid": True,
+                "flow": "new_company",
+                "message": "New company registration — you will be Super Admin after signup.",
+            })
+
+        tenant = resolve_signup_tenant(
+            company_name,
+            company_code,
+            company_name_exists=tenant_state["company_name_exists"],
+            codes_for_name=tenant_state["codes_for_name"],
+            name_and_code_match=tenant_state["name_and_code_match"],
+            registered_code_used_by_other_company=tenant_state[
+                "registered_code_used_by_other_company"
+            ],
+            company_registered_in_info=tenant_state["company_registered_in_info"],
+            info_company_code=tenant_state["info_company_code"],
+            code_registered_in_info=tenant_state["code_registered_in_info"],
+            code_info_company_name=tenant_state["code_info_company_name"],
+        )
+        if not tenant.ok:
+            return jsonify({"success": False, "valid": False, "message": tenant.message})
+        return jsonify({
+            "success": True,
+            "valid": True,
+            "flow": "join_company",
+            "message": "Company name and code verified. You can continue signup.",
+        })
+    finally:
+        cur.close()
+        conn.close()
+
+
 # =========================================
 # 1. ROOT & AUTH — Signup API
 # =========================================
@@ -9401,7 +10108,14 @@ def signup():
         phone = (data.get("phone") or "").strip()
         email = (data.get("email") or "").strip().lower()
         password = (data.get("password") or "").strip()
-        country_code, contact_number = _infer_country_and_contact_from_phone(phone)
+        company_name = (data.get("company_name") or data.get("companyName") or "").strip()
+        company_code = (data.get("company_code") or data.get("companyCode") or "").strip().upper()
+        country_code = (data.get("country_code") or data.get("countryCode") or "").strip()
+        contact_number = re.sub(
+            r"\D", "", (data.get("contact_number") or data.get("contactNumber") or "").strip()
+        )
+        if not country_code or not contact_number:
+            country_code, contact_number = _infer_country_and_contact_from_phone(phone)
  
         # ========= VALIDATION =========
         missing = []
@@ -9409,6 +10123,10 @@ def signup():
             missing.append("First Name")
         if not last_name:
             missing.append("Last Name")
+        if not company_name:
+            missing.append("Company Name")
+        if not company_code:
+            missing.append("Company Code")
         if not phone:
             missing.append("Phone number")
         if not email:
@@ -9425,9 +10143,21 @@ def signup():
  
         if not NAME_REGEX.match(first_name):
             return jsonify({"success": False, "message": "⚠️ First name must be 3–20 letters only"}), 400
-
+ 
         if not re.match(r"^[A-Za-z\s]{1,30}$", last_name):
             return jsonify({"success": False, "message": "⚠️ Last name must be 1–30 letters only"}), 400
+ 
+        if not COMPANY_NAME_REGEX.match(company_name):
+            return jsonify({
+                "success": False,
+                "message": "⚠️ Company name must be 3–50 characters (letters, numbers, &.,'()-/ only)",
+            }), 400
+ 
+        if not COMPANY_CODE_REGEX.match(company_code):
+            return jsonify({
+                "success": False,
+                "message": "⚠️ Company code must be 3–20 letters, numbers, or hyphens",
+            }), 400
  
         if not re.match(r"^\+\d{8,15}$", phone):
             return jsonify({"success": False, "message": "Enter valid phone like +91XXXXXXXXXX"}), 400
@@ -9444,6 +10174,7 @@ def signup():
                 "message": "⚠️ Please verify OTP before signup"
             }), 400
  
+ 
         # ========= DB CONNECTION =========
         conn = get_db_connection()
         cur = conn.cursor()
@@ -9455,46 +10186,103 @@ def signup():
             conn.close()
             return jsonify({"success": False, "message": "⚠️ User already exists"}), 409
  
-        # ========= INSERT USER =========
+        # ========= TENANT + ROLE (PENDING founder => Super Admin) =========
+        from signup_tenant import (
+            FOUNDER_DUMMY_COMPANY_CODE,
+            FOUNDER_ROLE,
+            is_dummy_company_code,
+            resolve_signup_tenant,
+        )
+
+        tenant_state = _get_signup_tenant_db_state(cur, company_name, company_code)
+
+        if is_dummy_company_code(company_code):
+            if tenant_state["company_name_exists"]:
+                cur.close()
+                conn.close()
+                return jsonify({
+                    "success": False,
+                    "message": (
+                        "This company is already registered. "
+                        "Use your company's registered code to join."
+                    ),
+                }), 400
+            signup_role = FOUNDER_ROLE
+            stored_company_code = FOUNDER_DUMMY_COMPANY_CODE
+        else:
+            tenant = resolve_signup_tenant(
+                company_name,
+                company_code,
+                company_name_exists=tenant_state["company_name_exists"],
+                codes_for_name=tenant_state["codes_for_name"],
+                name_and_code_match=tenant_state["name_and_code_match"],
+                registered_code_used_by_other_company=tenant_state[
+                    "registered_code_used_by_other_company"
+                ],
+                company_registered_in_info=tenant_state["company_registered_in_info"],
+                info_company_code=tenant_state["info_company_code"],
+                code_registered_in_info=tenant_state["code_registered_in_info"],
+                code_info_company_name=tenant_state["code_info_company_name"],
+            )
+            if not tenant.ok:
+                cur.close()
+                conn.close()
+                return jsonify({"success": False, "message": tenant.message}), 400
+            signup_role = tenant.role or FOUNDER_ROLE
+            stored_company_code = tenant.stored_company_code or company_code
+
         import hashlib
         hashed_password = hashlib.sha256(password.encode()).hexdigest()
         cur.execute("""
-            INSERT INTO users (name, phone, email, password, role, first_name, last_name, country_code, contact_number)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO users (name, phone, email, password, role, first_name, last_name, country_code, contact_number, company_name, company_code)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """, (
             name,
             phone,
             email,
             hashed_password,
-            "User",
+            signup_role,
             first_name,
             last_name,
             country_code,
             contact_number,
+            company_name,
+            stored_company_code,
         ))
+
+        # Ensure founder role persisted (guards against DB defaults / legacy sync).
+        if is_dummy_company_code(stored_company_code):
+            cur.execute(
+                "UPDATE users SET role = %s WHERE LOWER(email) = LOWER(%s)",
+                (FOUNDER_ROLE, email),
+            )
+            signup_role = FOUNDER_ROLE
  
-        # If signup OTP exists in cache, persist it in DB columns too.
-        otps = load_otps()
-        otp_entry = otps.get(email) if isinstance(otps, dict) else None
-        if isinstance(otp_entry, dict):
-            cached_otp = (otp_entry.get("otp") or "").strip()
-            cached_ts = otp_entry.get("timestamp")
-            otp_expiry_dt = None
-            if cached_ts:
-                try:
-                    otp_expiry_dt = datetime.fromtimestamp(float(cached_ts) + 300)
-                except Exception:
-                    otp_expiry_dt = None
-            if cached_otp:
-                cur.execute(
-                    """
-                    UPDATE users
-                    SET email_otp = %s,
-                        otp_expiry = %s
-                    WHERE LOWER(email) = LOWER(%s)
-                    """,
-                    (cached_otp, otp_expiry_dt, email),
-                )
+        # Optional mirror of OTP fields on users (must not block signup if columns are missing).
+        try:
+            otps = load_otps()
+            otp_entry = otps.get(email) if isinstance(otps, dict) else None
+            if isinstance(otp_entry, dict):
+                cached_otp = (otp_entry.get("otp") or "").strip()
+                cached_ts = otp_entry.get("timestamp")
+                otp_expiry_dt = None
+                if cached_ts:
+                    try:
+                        otp_expiry_dt = datetime.fromtimestamp(float(cached_ts) + 300)
+                    except Exception:
+                        otp_expiry_dt = None
+                if cached_otp:
+                    cur.execute(
+                        """
+                        UPDATE users
+                        SET email_otp = %s,
+                            otp_expiry = %s
+                        WHERE LOWER(email) = LOWER(%s)
+                        """,
+                        (cached_otp, otp_expiry_dt, email),
+                    )
+        except Exception as otp_mirror_err:
+            print("Signup OTP mirror warning:", otp_mirror_err)
 
         conn.commit()
         cur.close()
@@ -9506,10 +10294,31 @@ def signup():
         except Exception as mail_err:
             print("Welcome email failed:", mail_err)
  
-        return jsonify({"success": True, "message": "Signup successful!"}), 200
+        return jsonify({
+            "success": True,
+            "message": "Signup successful!",
+            "role": signup_role,
+            "needs_company_setup": is_dummy_company_code(stored_company_code),
+            "redirect": url_for("login", setup="company"),
+        }), 200
  
     except Exception as e:
         print("Signup error:", e)
+        try:
+            if "conn" in locals() and conn is not None:
+                conn.rollback()
+        except Exception:
+            pass
+        try:
+            if "cur" in locals() and cur is not None:
+                cur.close()
+        except Exception:
+            pass
+        try:
+            if "conn" in locals() and conn is not None:
+                conn.close()
+        except Exception:
+            pass
         return jsonify({"success": False, "message": "Server error"}), 500
 # =========================================
 # 1. ROOT & AUTH — Login API
@@ -9536,7 +10345,7 @@ def login_post():
  
         # ✅ Get user
         cur.execute("""
-            SELECT user_id, name, role, password, branch, department
+            SELECT user_id, name, role, password, branch, department, company_code
             FROM users
             WHERE LOWER(email) = LOWER(%s)
             LIMIT 1
@@ -9554,7 +10363,8 @@ def login_post():
             db_role,
             db_password,
             db_branch,
-            db_department
+            db_department,
+            db_company_code,
         ) = user
  
         # ❌ Wrong password
@@ -9565,6 +10375,44 @@ def login_post():
             cur.close()
             conn.close()
             return jsonify({"success": False, "message": "Wrong password"}), 401
+
+        # PENDING founder without a Super Admin for this company → promote on login.
+        from signup_tenant import FOUNDER_DUMMY_COMPANY_CODE, FOUNDER_ROLE
+
+        cur.execute(
+            "SELECT LOWER(TRIM(company_name)) FROM users WHERE user_id = %s LIMIT 1",
+            (user_id,),
+        )
+        login_company_row = cur.fetchone()
+        login_company_name = (login_company_row[0] or "").strip() if login_company_row else ""
+
+        pending_founder = (db_company_code or "").strip().upper() == FOUNDER_DUMMY_COMPANY_CODE
+        if pending_founder and not _is_super_admin_role(db_role):
+            if not _company_has_super_admin(cur, login_company_name):
+                cur.execute(
+                    "UPDATE users SET role = %s WHERE user_id = %s",
+                    (FOUNDER_ROLE, user_id),
+                )
+                db_role = FOUNDER_ROLE
+        elif not _is_super_admin_role(db_role) and login_company_name:
+            if not _company_has_super_admin(cur, login_company_name):
+                cur.execute(
+                    """
+                    SELECT user_id FROM users
+                    WHERE LOWER(TRIM(company_name)) = %s
+                    ORDER BY user_id ASC
+                    LIMIT 1
+                    """,
+                    (login_company_name,),
+                )
+                first_row = cur.fetchone()
+                if first_row and int(first_row[0]) == int(user_id):
+                    cur.execute(
+                        "UPDATE users SET role = %s, company_code = %s WHERE user_id = %s",
+                        (FOUNDER_ROLE, FOUNDER_DUMMY_COMPANY_CODE, user_id),
+                    )
+                    db_role = FOUNDER_ROLE
+                    db_company_code = FOUNDER_DUMMY_COMPANY_CODE
  
         # ✅ Password correct — set session directly
         session.permanent = True
@@ -9572,6 +10420,7 @@ def login_post():
         session["role"] = db_role
         session["branch"] = db_branch or "Main Branch"
         session["department"] = db_department or ""
+        session["company_code"] = (db_company_code or "").strip().upper()
         session["last_active"] = time.time()
         session["remember_me"] = remember_me
 
@@ -9585,11 +10434,26 @@ def login_post():
             (user_id,),
         )
  
+        needs_company_setup = _user_needs_company_setup(cur, email)
+
+        cur.execute("SELECT role FROM users WHERE user_id = %s LIMIT 1", (user_id,))
+        role_row = cur.fetchone()
+        if role_row and role_row[0]:
+            db_role = (role_row[0] or "").strip() or db_role
+            session["role"] = db_role
+
         conn.commit()
         cur.close()
         conn.close()
- 
-        return jsonify({"success": True, "message": "Login successful"}), 200
+
+        redirect_url = url_for("company_info") if needs_company_setup else url_for("dashboard")
+        return jsonify({
+            "success": True,
+            "message": "Login successful",
+            "needs_company_setup": needs_company_setup,
+            "redirect": redirect_url,
+            "role": session.get("role") or db_role,
+        }), 200
  
     except Exception as e:
         import traceback
@@ -10252,19 +11116,9 @@ def api_get_users():
 
     users = _db_fetch_users_ordered(include_id=False)
 
-    user_name = "User"
-    user_role = "User"
-
-    current_email = (user_email or "").strip().lower()
-
-    for u in users:
-        if not isinstance(u, dict):
-            continue
-        u_email = (u.get("email") or "").strip().lower()
-        if u_email == current_email:
-            user_name = u.get("name") or "User"
-            user_role = (u.get("role") or "User").strip()
-            break
+    prof = get_current_user_profile() or {}
+    user_name = (prof.get("name") or "User").strip()
+    user_role = (prof.get("role") or "User").strip()
 
     return jsonify({
         "success": True,
@@ -23454,7 +24308,6 @@ def generate_delivery_note_return_pdf_bytes(dnr):
 
     return pdf_bytes
 
-
 # ========================================
 # Purchase order page
 # ========================================
@@ -23571,7 +24424,7 @@ def purchase_page():
             "purchase.html",
             orders=orders,
             suppliers=suppliers,
-            page="purchase"
+            page="purchase_page"
         )
  
     except Exception as e:
@@ -23628,13 +24481,20 @@ def purchase_order():
  
     cur.close()
     conn.close()
- 
+    profile = get_current_user_profile()
+
+    if profile:
+        user_name = profile.get("name", "User")
+    else:
+        user_name = "User"
     return render_template(
         "purchase-order.html",
         po_number=po_number,
         today=today,
         sales_orders=sales_orders,
-        suppliers=suppliers
+        suppliers=suppliers,
+        page="purchase_page",
+        user_name=user_name
     )
  
 # ========================================
@@ -23734,6 +24594,53 @@ def get_sales_order_purchase(so_id):
  
  
  
+# ========================================
+# SUPPLIER API
+# ========================================
+ 
+@app.route("/api/suppliers")
+def get_suppliers_purchase():
+ 
+    conn = get_db_connection()
+    cur = conn.cursor()
+ 
+    try:
+ 
+        cur.execute("""
+            SELECT
+                supplier_id,
+                supplier_name,
+                email
+            FROM suppliers
+            ORDER BY supplier_id ASC
+        """)
+ 
+        rows = cur.fetchall()
+ 
+        suppliers = []
+ 
+        for row in rows:
+ 
+            suppliers.append({
+                "id": row[0],
+                "name": row[1],
+                "email": row[2]
+            })
+ 
+        return jsonify(suppliers)
+ 
+    except Exception as e:
+ 
+        print("SUPPLIER ERROR:", e)
+ 
+        return jsonify([]), 500
+ 
+    finally:
+ 
+        cur.close()
+        conn.close()
+ 
+       
 @app.route("/api/products-new")
 def get_products_new():
  
@@ -23841,6 +24748,9 @@ def save_po_purchase():
         status = data.get("status", "Draft")
  
         items = data.get("items", [])
+        comments = data.get("comments", [])
+
+        attachments = data.get("attachments", [])
  
         # =================================
         # CALCULATE TOTAL
@@ -23950,13 +24860,12 @@ def save_po_purchase():
         # =================================
         # INSERT ITEMS
         # =================================
- 
+
         for item in items:
- 
+
             cur.execute("""
                 INSERT INTO purchase_items
                 (
-                   
                     po_number,
                     product_id,
                     product_name,
@@ -23971,8 +24880,6 @@ def save_po_purchase():
                     %s,%s,%s,%s,%s,%s,%s,%s
                 )
             """, (
- 
-           
                 po_number,
                 item.get("product_id"),
                 item.get("product_name"),
@@ -23981,18 +24888,76 @@ def save_po_purchase():
                 float(item.get("tax", 0)),
                 float(item.get("discount", 0)),
                 item.get("uom")
- 
             ))
- 
+
+        # =================================
+        # SAVE COMMENTS
+        # =================================
+
+        _ensure_purchase_aux_tables(cur)
+
+        for c in comments:
+
+            if not c.get("comment"):
+                continue
+
+            cur.execute("""
+                INSERT INTO purchase_comments
+                (
+                    po_number,
+                    comment,
+                    created_by
+                )
+                VALUES
+                (
+                    %s,
+                    %s,
+                    %s
+                )
+            """, (
+                po_number,
+                c.get("comment"),
+                c.get("created_by", "Admin")
+            ))
+
+            # =================================
+            # SAVE ATTACHMENTS
+            # =================================
+
+            for a in attachments:
+
+                if not a.get("file_name"):
+                    continue
+
+                cur.execute("""
+                    INSERT INTO purchase_attachments
+                    (
+                        po_number,
+                        file_name,
+                        file_path
+                    )
+                    VALUES
+                    (
+                        %s,
+                        %s,
+                        %s
+                    )
+                """, (
+                    po_number,
+                    a.get("file_name"),
+                    a.get("file_path")
+                ))
+
         conn.commit()
- 
+        
+
         return jsonify({
- 
+
             "success": True,
             "message": "Purchase Order Saved Successfully",
             "po_number": po_number,
             "status": status
- 
+
         })
  
     except Exception as e:
@@ -24017,7 +24982,7 @@ def save_po_purchase():
         if conn:
             conn.close()
  
-# ========================================
+ # ========================================
 # DELETE PURCHASE ORDER
 # ========================================
  
@@ -24922,6 +25887,7 @@ def _ensure_purchase_aux_tables(cur):
             po_number TEXT NOT NULL,
             comment TEXT NOT NULL,
             created_by TEXT DEFAULT 'Admin',
+            status TEXT DEFAULT 'Submitted', 
             created_at TIMESTAMP DEFAULT NOW()
         )
         """
@@ -24956,28 +25922,40 @@ def _ensure_purchase_aux_tables(cur):
 def add_purchase_comment():
     try:
         data = request.json
- 
+
         po_number = data.get("po_number")
         comment = data.get("comment")
-        created_by = data.get("created_by", "Admin")
- 
+
+        profile = get_current_user_profile()
+
+        created_by = (
+            data.get("created_by")
+            or profile.get("name")
+            or "User"
+        )
+
         conn = get_db_connection()
         cur = conn.cursor()
-        _ensure_purchase_aux_tables(cur)
- 
+        status = data.get("status", "Submitted") 
+
         cur.execute("""
-            INSERT INTO purchase_comments (po_number, comment, created_by)
+            INSERT INTO purchase_comments
+            (po_number, comment, created_by)
             VALUES (%s, %s, %s)
         """, (po_number, comment, created_by))
- 
+
         conn.commit()
-        cur.close()
-        conn.close()
- 
-        return jsonify({"success": True, "message": "Comment added"})
- 
+
+        return jsonify({
+            "success": True,
+            "message": "Comment added"
+        })
+
     except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
  
  
 # ========================================

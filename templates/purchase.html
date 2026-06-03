@@ -25,6 +25,7 @@
         <!-- SEARCH -->
         <div class="search-box">
             <input type="text" id="searchInput" placeholder="Search by ID number">
+            
         </div>
  
         <!-- FILTER -->
@@ -135,51 +136,8 @@
                     <td>{{ order.payment_terms or "-" }}</td>
                     <td>{{ order.value if order.value else '-' }}</td>
  
-                    <!-- ACTION -->
-                    <!-- ACTION -->
-                <td>
-                    <div class="dropdown">
- 
-                        <button class="btn-more">⋮</button>
- 
-                        <div class="dropdown-menu">
- 
-                            <button
-                                class="dropdown-item delete"
-                                data-id="{{ order.po_number }}"
-                                {% if order.status != 'Draft' %}disabled{% endif %}
-                            >
-                                Delete
-                            </button>
- 
-                            <button
-                                class="dropdown-item edit"
-                                data-id="{{ order.po_number }}"
-                                {% if order.status != 'Draft' %}disabled{% endif %}
-                            >
-                                Edit
-                            </button>
- 
-                            <button
-                                class="dropdown-item view"
-                                data-id="{{ order.po_number }}"
-                                {% if order.status == 'Draft' %}disabled{% endif %}
-                            >
-                                View
-                            </button>
- 
-                            <button
-                                class="dropdown-item stock-receipt"
-                                data-id="{{ order.po_number }}"
-                                {% if order.status in ['Draft','Cancelled','Closed'] %}disabled{% endif %}
-                            >
-                                Generate Stock Receipt
-                            </button>
- 
-                        </div>
- 
-                    </div>
-                </td>
+                 <td class="action-buttons"></td>
+              
                 </tr>
                 {% endfor %}
  
@@ -210,4 +168,3 @@
 {% block extra_js %}
 <script src="{{ url_for('static', filename='purchase.js') }}"></script>
 {% endblock %}
- 

@@ -10,6 +10,8 @@ const emailInput = document.getElementById("email");
 const passwordInput = document.querySelector('input[name="password"]');
 const firstNameInput = document.querySelector('input[name="firstName"]');
 const lastNameInput = document.querySelector('input[name="lastName"]');
+const companyNameInput = document.querySelector('input[name="companyName"]');
+const companyCodeInput = document.querySelector('input[name="companyCode"]');
 const phoneInput = document.querySelector('input[name="phone"]');
 const countryCodeSelect = document.getElementById("countryCode");
 const statusMsg = document.getElementById("statusMsg");
@@ -20,9 +22,9 @@ const toggleConfirmPassword = document.getElementById("toggleConfirmPassword");
 const capsWarningSignup = document.getElementById("capsWarningSignup");
 const eyeConfirmIcon = document.getElementById("eyeConfirmIcon");
 const API_BASE = "https://anithag.pythonanywhere.com";
-
+ 
 let welcomeSent = false;
-
+ 
 // =============================
 // 🌟 Regex Validation Rules
 // =============================
@@ -30,10 +32,13 @@ const nameRegex = /^[A-Za-z\s]{3,20}$/;
 const phoneRegex = /^[0-9]{10}$/;
 const emailRegex =
   /^[A-Za-z0-9._%+-]{3,40}@(gmail\.com|yahoo\.com|yahoo\.co\.in|outlook\.com|hotmail\.com|thestackly\.com|stackly\.in)$/i;
-
+ 
 const passwordRegex = /^(?=.*[A-Z])(?=(?:.*\d){3,})(?=.*[!@#$%^&*]).{8,15}$/;
 const lastNameRegex = /^[A-Za-z\s]{1,30}$/;
-
+const companyNameRegex = /^[A-Za-z0-9 &.,'()\/-]{3,50}$/;
+const companyCodeRegex = /^[A-Za-z0-9-]{3,20}$/;
+const FOUNDER_DUMMY_COMPANY_CODE = "PENDING";
+ 
 const COUNTRY_RULES = {
   "91":  { min: 10, max: 10 }, // IN
   "971": { min: 9,  max: 9  }, // AE
@@ -47,52 +52,54 @@ const COUNTRY_RULES = {
   "61":  { min: 9,  max: 9  }, // AU
   "81":  { min: 10, max: 10 }, // JP (you added in dropdown)
 };
-
+ 
 // =============================
 // 🌟 Helper Functions
 // =============================
-
-
+ 
+ 
 function showError(input, message) {
   clearError(input);
   const parent = input.closest(".input-group");
+  if (!parent) return false;
+  parent.classList.add("input-error");
   let err = parent.querySelector(".error-msg");
-
+ 
   if (!err) {
     err = document.createElement("small");
     err.classList.add("error-msg");
-    err.style.color = "#a62148";
     parent.appendChild(err);
   }
-
+ 
   err.textContent = message;
-  input.style.borderColor = "white";
+  return false;
 }
-
+ 
 function showSuccess(input) {
   clearError(input);
-  input.style.borderColor = "lightgreen";
+  return true;
 }
-
+ 
 function clearError(input) {
   const parent = input.closest(".input-group");
+  if (parent) parent.classList.remove("input-error");
   const err = parent?.querySelector(".error-msg");
   if (err) err.remove();
-  input.style.borderColor = "";
+  if (input) input.style.borderColor = "";
 }
-
+ 
 function showErrorToast(message, durationMs = 3000) {
   document
     .querySelectorAll(".success-notification, .error-notification")
     .forEach((n) => n.remove());
-
+ 
   const notification = document.createElement("div");
   notification.className = "error-notification";
   notification.textContent = message;
   document.body.appendChild(notification);
-
+ 
   setTimeout(() => notification.classList.add("show"), 10);
-
+ 
   setTimeout(() => {
     notification.classList.remove("show");
     setTimeout(() => {
@@ -102,14 +109,14 @@ function showErrorToast(message, durationMs = 3000) {
     }, 400);
   }, durationMs);
 }
-
+ 
 // Caps Lock warning handler
 function handleCapsWarning(e) {
   if (!capsWarningSignup) return;
   const isOn = e.getModifierState && e.getModifierState("CapsLock");
   capsWarningSignup.style.display = isOn ? "block" : "none";
 }
-
+ 
 // =============================
 // 🌟 Field Validations
 // =============================
@@ -117,12 +124,21 @@ firstNameInput.addEventListener("input", (e) => {
   e.target.value = e.target.value.replace(/[^A-Za-z\s]/g, "");
   validateFirstName();
 });
-
+ 
 lastNameInput.addEventListener("input", (e) => {
   e.target.value = e.target.value.replace(/[^A-Za-z\s]/g, "");
   validateLastName();
 });
-
+ 
+companyNameInput.addEventListener("input", () => {
+  validateCompanyName();
+});
+ 
+companyCodeInput.addEventListener("input", (e) => {
+  e.target.value = e.target.value.replace(/[^A-Za-z0-9-]/gi, "").toUpperCase();
+  validateCompanyCode();
+});
+ 
 function validateFirstName() {
   const val = firstNameInput.value.trim();
   if (!val) return showError(firstNameInput, "First name is required"), false;
@@ -133,7 +149,7 @@ function validateFirstName() {
   showSuccess(firstNameInput);
   return true;
 }
-
+ 
 function validateLastName() {
   const val = lastNameInput.value.trim();
   if (!val) return showError(lastNameInput, "Last name is required"), false;
@@ -144,109 +160,183 @@ function validateLastName() {
   showSuccess(lastNameInput);
   return true;
 }
+ 
+function validateCompanyName() {
+  const val = companyNameInput.value.trim();
+  if (!val) return showError(companyNameInput, "Company name is required"), false;
+  if (val.length < 3)
+    return showError(companyNameInput, "Minimum 3 characters required"), false;
+  if (!companyNameRegex.test(val))
+    return showError(companyNameInput, "Use 3-50 letters, numbers, or &.,'()-/ only"), false;
+  showSuccess(companyNameInput);
+  return true;
+}
+ 
+let companyCheckTimer = null;
+let lastCompanyCheckKey = "";
 
+async function checkCompanyRegistration() {
+  const name = (companyNameInput?.value || "").trim();
+  const code = (companyCodeInput?.value || "").trim().toUpperCase();
+  if (companyCodeInput) companyCodeInput.value = code;
+
+  if (!name || name.length < 3 || !code) return true;
+  if (!companyCodeRegex.test(code)) return true;
+
+  const key = `${name}|${code}`;
+  if (key === lastCompanyCheckKey) return true;
+  lastCompanyCheckKey = key;
+
+  try {
+    const res = await fetch("/api/signup/validate-company", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ company_name: name, company_code: code }),
+    });
+    const data = await res.json();
+    if (data.valid) {
+      clearError(companyCodeInput);
+      clearError(companyNameInput);
+      if (statusMsg) {
+        statusMsg.textContent = data.message || "";
+        statusMsg.style.color = "#1f7a4a";
+      }
+      return true;
+    }
+    const msg = data.message || "Invalid company name or code.";
+    showError(companyCodeInput, msg);
+    if (statusMsg) {
+      statusMsg.textContent = msg;
+      statusMsg.style.color = "#8f1e43";
+    }
+    return false;
+  } catch (e) {
+    return true;
+  }
+}
+
+function scheduleCompanyCheck() {
+  clearTimeout(companyCheckTimer);
+  companyCheckTimer = setTimeout(() => {
+    checkCompanyRegistration();
+  }, 450);
+}
+
+function validateCompanyCode() {
+  const val = companyCodeInput.value.trim().toUpperCase();
+  companyCodeInput.value = val;
+  if (!val) return showError(companyCodeInput, "Company code is required"), false;
+  if (!companyCodeRegex.test(val))
+    return showError(companyCodeInput, "Use 3-20 letters, numbers, or hyphens only"), false;
+  if (val !== FOUNDER_DUMMY_COMPANY_CODE && val.length < 3) {
+    return showError(companyCodeInput, "Registered company codes must be at least 3 characters"), false;
+  }
+  scheduleCompanyCheck();
+  return true;
+}
+ 
 function getSelectedCodeDigits() {
   // "+91" -> "91"
   return (countryCodeSelect?.value || "+91").replace("+", "");
 }
-
+ 
 function getPhoneRule() {
   const code = getSelectedCodeDigits();
   return COUNTRY_RULES[code] || { min: 8, max: 15 };
 }
-
+ 
 function buildFullPhone() {
   const code = countryCodeSelect.value;          // "+91"
   const num  = phoneInput.value.trim();          // "9876543210"
   return `${code}${num}`;                        // "+919876543210"
 }
-
+ 
 function updatePhoneMaxLength() {
   const rule = getPhoneRule();
   phoneInput.value = phoneInput.value.replace(/\D/g, "").slice(0, rule.max);
 }
-
+ 
 // when user types phone
 phoneInput.addEventListener("input", () => {
   updatePhoneMaxLength();
   validatePhone();
 });
-
+ 
 // when user changes country
 countryCodeSelect.addEventListener("change", () => {
   updatePhoneMaxLength();
   validatePhone();
 });
-
+ 
 function validatePhone() {
   const digits = phoneInput.value.trim();
   const rule   = getPhoneRule();
   const code   = countryCodeSelect.value;
-
+ 
   if (!digits) return showError(phoneInput, "Phone is required"), false;
-
+ 
   if (digits.length < rule.min || digits.length > rule.max) {
     return showError(
       phoneInput,
       `For ${code}, phone must be ${rule.min} digits`
     ), false;
   }
-
+ 
   showSuccess(phoneInput);
   return true;
 }
-
+ 
 emailInput.addEventListener("input", () => {
   validateEmail();   // this will also enable/disable the button
 });
-
+ 
 function validateEmail() {
   const val = emailInput.value.trim();
-
+ 
   // reset status text if you want
   // statusMsg.textContent = "";
-
+ 
   // Empty
   if (!val) {
     showError(emailInput, "Email is required");
     sendOtpBtn.disabled = true;
     return false;
   }
-
+ 
   // Length check (HTML maxlength is 30)
   if (val.length > 30) {
     showError(emailInput, "Email must be at most 30 characters");
     sendOtpBtn.disabled = true;
     return false;
   }
-
+ 
   // Regex format check
   if (!emailRegex.test(val)) {
     showError(emailInput, "Enter a valid email address (example@company.com)");
     sendOtpBtn.disabled = true;
     return false;
   }
-
+ 
   // ✅ Email format is OK
   showSuccess(emailInput);
   sendOtpBtn.disabled = false;   // 🔓 allow clicking Send OTP
   return true;
 }
-
-
+ 
+ 
 // Caps Lock events for password + confirm password
 ["keydown", "keyup"].forEach((evt) => {
   passwordInput.addEventListener(evt, handleCapsWarning);
   confirmPasswordInput.addEventListener(evt, handleCapsWarning);
 });
-
+ 
 passwordInput.addEventListener("blur", () => {
   capsWarningSignup.style.display = "none";
 });
 confirmPasswordInput.addEventListener("blur", () => {
   capsWarningSignup.style.display = "none";
 });
-
+ 
 function validatePassword() {
   const val = passwordInput.value.trim();
   if (passwordInput.disabled) return true;
@@ -260,14 +350,14 @@ function validatePassword() {
   showSuccess(passwordInput);
   return true;
 }
-
+ 
 let confirmTouched = false;
-
+ 
 confirmPasswordInput.addEventListener("input", () => {
   confirmTouched = true;
   validateConfirmPassword();
 });
-
+ 
 function validateConfirmPassword() {
   if (!confirmTouched) return true;
   const pass = passwordInput.value.trim();
@@ -279,12 +369,12 @@ function validateConfirmPassword() {
   showSuccess(confirmPasswordInput);
   return true;
 }
-
+ 
 passwordInput.addEventListener("input", () => {
   validatePassword();
   validateConfirmPassword();
 });
-
+ 
 // =============================
 // 🌟 OTP Attempt Limit + Cooldown + Verification Tracking
 // =============================
@@ -294,7 +384,7 @@ const otpCooldownTime = 30000; // 30 seconds cooldown
 let otpVerified = false;
 let otpCooldownActive = false;
 let cooldownTimer = null;
-
+ 
 // =============================
 // 📩 Send OTP
 // =============================
@@ -305,23 +395,23 @@ sendOtpBtn.onclick = function () {
     statusMsg.style.color = "#8f1e43";
     return;
   }
-
+ 
   const email = emailInput.value.trim();
-
+ 
   // Prevent resend if OTP already verified
   if (otpVerified) {
     statusMsg.textContent = "✅ OTP already verified. No need to resend.";
     statusMsg.style.color = "#1f7a4a";
     return;
   }
-
+ 
   // Prevent resend during cooldown
   if (otpCooldownActive) {
     statusMsg.textContent = "⏳ Please wait before requesting another OTP.";
     statusMsg.style.color = "#8f1e43";
     return;
   }
-
+ 
   // Limit attempts
   if (otpAttempts >= maxOtpAttempts) {
     statusMsg.textContent = "❌ Too many OTP requests. Try again later.";
@@ -329,23 +419,23 @@ sendOtpBtn.onclick = function () {
     sendOtpBtn.disabled = true;
     return;
   }
-
+ 
   if (!email) {
     statusMsg.textContent = "⚠️ Please enter your email first!";
     statusMsg.style.color = "#8f1e43";
     return;
   }
-
+ 
   otpAttempts++;
   statusMsg.textContent = "Sending OTP...";
   statusMsg.style.color = "#6e102c";
   sendOtpBtn.disabled = true;
-
+ 
   // Start cooldown
   otpCooldownActive = true;
   let timeLeft = otpCooldownTime / 1000;
   sendOtpBtn.textContent = `Resend OTP (${timeLeft}s)`;
-
+ 
   cooldownTimer = setInterval(() => {
     if (otpVerified) {
       clearInterval(cooldownTimer);
@@ -354,10 +444,10 @@ sendOtpBtn.onclick = function () {
       sendOtpBtn.textContent = "OTP Verified";
       return;
     }
-
+ 
     timeLeft--;
     sendOtpBtn.textContent = `Resend OTP (${timeLeft}s)`;
-
+ 
     if (timeLeft <= 0) {
       clearInterval(cooldownTimer);
       otpCooldownActive = false;
@@ -365,17 +455,20 @@ sendOtpBtn.onclick = function () {
       sendOtpBtn.textContent = "ReSend OTP";
     }
   }, 1000);
-
+ 
   // Send OTP request
   fetch("/send_otp", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email }),
   })
-    .then((res) => res.json())
-    .then((data) => {
-      statusMsg.textContent = data.message;
-      if (data.success) {
+    .then(async (res) => {
+      const data = await res.json().catch(() => ({}));
+      return { res, data };
+    })
+    .then(({ res, data }) => {
+      statusMsg.textContent = data.message || "Could not send OTP.";
+      if (res.ok && data.success) {
         otpInput.disabled = false;
         verifyOtpBtn.disabled = false;
         confirmPasswordInput.disabled = false;
@@ -386,6 +479,7 @@ sendOtpBtn.onclick = function () {
         }, 100);
       } else {
         statusMsg.style.color = "#6e102c";
+        if (otpAttempts > 0) otpAttempts--;
       }
     })
      
@@ -394,29 +488,29 @@ sendOtpBtn.onclick = function () {
       statusMsg.style.color = "#6e102c";
     });
 };
-
+ 
 // OTP must be ONLY digits and max 6
 otpInput.addEventListener("input", () => {
   otpInput.value = otpInput.value.replace(/\D/g, "").slice(0, 6);
 });
-
-
+ 
+ 
 // =============================
 // ✅ Verify OTP
 // =============================
 verifyOtpBtn.onclick = function () {
   const email = emailInput.value.trim();
   const otp = otpInput.value.trim();
-
+ 
   if (!otp) {
     statusMsg.textContent = "⚠️ Enter OTP to verify!";
     statusMsg.style.color = "#8f1e43";
     return;
   }
-
+ 
   statusMsg.textContent = "Verifying OTP...";
   statusMsg.style.color = "#6e102c";
-
+ 
   fetch("/verify_otp", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -433,12 +527,12 @@ verifyOtpBtn.onclick = function () {
         sendOtpBtn.disabled = true;
         sendOtpBtn.textContent = "OTP Verified";
         statusMsg.style.color = "#1f7a4a";
-
+ 
         if (cooldownTimer) {
           clearInterval(cooldownTimer);
           otpCooldownActive = false;
         }
-        
+       
         // Update signup button state after OTP verification
         updateSignupButtonState();
       } else {
@@ -450,7 +544,7 @@ verifyOtpBtn.onclick = function () {
       statusMsg.style.color = "#6e102c";
     });
 };
-
+ 
 // Disable copy, cut, paste on password fields
 ["copy", "cut", "paste"].forEach((evt) => {
   passwordInput.addEventListener(evt, function (e) {
@@ -460,7 +554,7 @@ verifyOtpBtn.onclick = function () {
     );
   });
 });
-
+ 
 ["copy", "cut", "paste"].forEach((evt) => {
   confirmPasswordInput.addEventListener(evt, function (e) {
     e.preventDefault();
@@ -469,72 +563,107 @@ verifyOtpBtn.onclick = function () {
     );
   });
 });
-
+ 
 // =============================
 // ✅ Enable/Disable Signup Button
 // =============================
 function updateSignupButtonState() {
   if (!signupBtn) return;
-  
+ 
   const validFirstName = validateFirstName();
   const validLastName = validateLastName();
+  const validCompanyName = validateCompanyName();
+  const validCompanyCode = validateCompanyCode();
   const validPhone = validatePhone();
   const validEmail = validateEmail();
   const validPass = validatePassword();
   const validConfirm = validateConfirmPassword();
-  
+ 
   // Also check if OTP is verified
   const isOtpVerified = otpVerified;
-  
+ 
   // Enable button only if all fields are valid AND OTP is verified
-  signupBtn.disabled = !(validFirstName && validLastName && validPhone && validEmail && validPass && validConfirm && isOtpVerified);
+  signupBtn.disabled = !(
+    validFirstName &&
+    validLastName &&
+    validCompanyName &&
+    validCompanyCode &&
+    validPhone &&
+    validEmail &&
+    validPass &&
+    validConfirm &&
+    isOtpVerified
+  );
 }
-
+ 
 // Call updateSignupButtonState whenever fields change
 firstNameInput.addEventListener("input", () => {
   validateFirstName();
   updateSignupButtonState();
 });
-
+ 
 lastNameInput.addEventListener("input", () => {
   validateLastName();
   updateSignupButtonState();
 });
+ 
+companyNameInput.addEventListener("input", () => {
+  lastCompanyCheckKey = "";
+  validateCompanyName();
+  scheduleCompanyCheck();
+  updateSignupButtonState();
+});
 
+companyNameInput.addEventListener("blur", () => {
+  validateCompanyName();
+  checkCompanyRegistration();
+});
+ 
+companyCodeInput.addEventListener("input", () => {
+  lastCompanyCheckKey = "";
+  validateCompanyCode();
+  updateSignupButtonState();
+});
+
+companyCodeInput.addEventListener("blur", () => {
+  validateCompanyCode();
+  checkCompanyRegistration();
+});
+ 
 phoneInput.addEventListener("input", () => {
   validatePhone();
   updateSignupButtonState();
 });
-
+ 
 emailInput.addEventListener("input", () => {
   validateEmail();
   updateSignupButtonState();
 });
-
+ 
 passwordInput.addEventListener("input", () => {
   validatePassword();
   validateConfirmPassword();
   updateSignupButtonState();
 });
-
+ 
 confirmPasswordInput.addEventListener("input", () => {
   validateConfirmPassword();
   updateSignupButtonState();
 });
-
+ 
 // Note: verifyOtpBtn.onclick is already defined below, and it calls updateSignupButtonState() after successful verification
-
+ 
 // Initialize button as disabled
 if (signupBtn) {
   signupBtn.disabled = true;
 }
-
+ 
 // =============================
 // 💾 Signup Submit
 // =============================
 signupForm.addEventListener("submit", async (e) => {
   e.preventDefault();
-
+ 
   // Disable button and show loading state
   if (signupBtn) {
     signupBtn.disabled = true;
@@ -542,18 +671,32 @@ signupForm.addEventListener("submit", async (e) => {
     signupBtn.textContent = "Signing Up...";
     signupBtn.dataset.originalText = originalText;
   }
-
+ 
   const validFirstName = validateFirstName();
   const validLastName = validateLastName();
+  const validCompanyName = validateCompanyName();
+  const validCompanyCode = validateCompanyCode();
   const validPhone = validatePhone();
   const validEmail = validateEmail();
   const validPass = validatePassword();
   const validConfirm = validateConfirmPassword();
 
-  if (!validFirstName || !validLastName || !validPhone || !validEmail || !validPass || !validConfirm) {
+  const validCompanyPair = await checkCompanyRegistration();
+
+  if (
+    !validFirstName ||
+    !validLastName ||
+    !validCompanyName ||
+    !validCompanyCode ||
+    !validCompanyPair ||
+    !validPhone ||
+    !validEmail ||
+    !validPass ||
+    !validConfirm
+  ) {
     statusMsg.textContent = "❌ Please Fill all the fields .";
     statusMsg.style.color = "#6e102c";
-    
+   
     // Re-enable button on validation error
     if (signupBtn) {
       signupBtn.disabled = false;
@@ -561,7 +704,7 @@ signupForm.addEventListener("submit", async (e) => {
     }
     return;
   }
-
+ 
   const fullName = `${firstNameInput.value.trim()} ${lastNameInput.value.trim()}`.trim();
   const userData = {
     name: fullName,
@@ -572,31 +715,33 @@ signupForm.addEventListener("submit", async (e) => {
     contact_number: phoneInput.value.trim(),
     email: emailInput.value.trim(),
     password: passwordInput.value.trim(),
+    company_name: companyNameInput.value.trim(),
+    company_code: companyCodeInput.value.trim().toUpperCase(),
   };
-
+ 
   try {
     const res = await fetch("/signup", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(userData),
     });
-
+ 
     const data = await res.json();
-
+ 
     if (res.status === 409) {
       // User exists / validation failed
       statusMsg.textContent = data.message;
       statusMsg.style.color = "#8f1e43";
-
+ 
       signupForm.reset();
       sendOtpBtn.textContent = "Send OTP";
       otpVerified = false;
-
+ 
       otpInput.disabled = true;
       verifyOtpBtn.disabled = true;
       passwordInput.disabled = true;
       confirmPasswordInput.disabled = true;
-      
+     
       // Re-enable button on error
       if (signupBtn) {
         signupBtn.disabled = true; // Keep disabled since form is reset
@@ -604,11 +749,11 @@ signupForm.addEventListener("submit", async (e) => {
       }
       return;
     }
-
+ 
     if (!res.ok) {
       statusMsg.textContent = data.message || "❌ Signup failed!";
       statusMsg.style.color = "#6e102c";
-      
+     
       // Re-enable button on error
       if (signupBtn) {
         signupBtn.disabled = false;
@@ -617,7 +762,7 @@ signupForm.addEventListener("submit", async (e) => {
       }
       return;
     }
-
+ 
     // Signup success
     statusMsg.textContent = data.message;
     statusMsg.style.color = "#1f7a4a";
@@ -626,14 +771,16 @@ signupForm.addEventListener("submit", async (e) => {
     verifyOtpBtn.disabled = true;
     passwordInput.disabled = true;
     confirmPasswordInput.disabled = true;
-
+ 
+    const loginUrl =
+      data.redirect || (data.needs_company_setup ? "/login?setup=company" : "/login");
     setTimeout(() => {
-      window.location.href = "/login";
+      window.location.href = loginUrl;
     }, 1000);
   } catch (err) {
     statusMsg.textContent = "❌ Server error. Try again later.";
     statusMsg.style.color = "#6e102c";
-    
+   
     // Re-enable button on error
     if (signupBtn) {
       signupBtn.disabled = false;
@@ -642,39 +789,39 @@ signupForm.addEventListener("submit", async (e) => {
     }
   }
 });
-
+ 
 // =============================
 // Optional: external verifyOtp using API_BASE
 // =============================
 async function verifyOtp() {
   const email = emailInput.value.trim();
   const otp = otpInput.value.trim();
-
+ 
   if (!otp) {
     statusMsg.textContent = "⚠️ Enter OTP to verify!";
     statusMsg.style.color = "#8f1e43";
     return;
   }
-
+ 
   statusMsg.textContent = "Verifying OTP...";
   statusMsg.style.color = "#6e102c";
-
+ 
   try {
     const res = await fetch(`${API_BASE}/verify_otp`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, otp }),
     });
-
+ 
     const data = await res.json();
     statusMsg.textContent = data.message;
-
+ 
     if (data.success) {
       verifyOtpBtn.disabled = true;
       otpInput.disabled = true;
       passwordInput.disabled = false;
       statusMsg.style.color = "#1f7a4a";
-
+ 
       // Send welcome email once
       if (!welcomeSent) {
         try {
@@ -701,7 +848,7 @@ async function verifyOtp() {
     console.error(err);
   }
 }
-
+ 
 // =============================
 // 👁️ Password Toggle
 // =============================
@@ -710,7 +857,7 @@ togglePassword.addEventListener("click", (e) => {
   const type =
     passwordInput.getAttribute("type") === "password" ? "text" : "password";
   passwordInput.setAttribute("type", type);
-
+ 
   if (type === "text") {
     eyeIcon.innerHTML =
       '<path d="M17.94 17.94A10.94 10.94 0 0 1 12 20C5 20 1 12 1 12a21.79 21.79 0 0 1 5.29-6.71M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 11 8 11 8a21.82 21.82 0 0 1-2.23 3.4M12 12a3 3 0 0 0 3 3M3 3l18 18"/>';
@@ -719,7 +866,7 @@ togglePassword.addEventListener("click", (e) => {
       '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle>';
   }
 });
-
+ 
 // =============================
 // 👁️ Confirm Password Toggle
 // =============================
@@ -730,7 +877,7 @@ toggleConfirmPassword.addEventListener("click", (e) => {
       ? "text"
       : "password";
   confirmPasswordInput.setAttribute("type", type);
-
+ 
   if (type === "text") {
     eyeConfirmIcon.innerHTML =
       '<path d="M17.94 17.94A10.94 10.94 0 0 1 12 20C5 20 1 12 1 12a21.79 21.79 0 0 1 5.29-6.71M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 11 8 11 8a21.82 21.82 0 0 1-2.23 3.4M12 12a3 3 0 0 0 3 3M3 3l18 18"/>';
@@ -739,3 +886,5 @@ toggleConfirmPassword.addEventListener("click", (e) => {
       '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle>';
   }
 });
+ 
+ 

@@ -267,7 +267,7 @@ const filesList = document.getElementById("filesList");
 const fileCount = document.getElementById("fileCount");
  
 let files = [];
-const MAX_FILES = 5;
+const MAX_FILES = 10;
  
  
 // ==========================
@@ -277,20 +277,49 @@ commentText.addEventListener("input", () => {
     addCommentBtn.disabled = commentText.value.trim().length === 0;
     addCommentBtn.classList.toggle("enabled", commentText.value.trim().length > 0);
 });
+
+// ==========================
+// COMMENT AUTHOR NAME
+// ==========================
+function getPurchaseCommentAuthorName() {
+
+    const n = window.LOGGED_IN_USER_NAME;
+
+    if (typeof n === "string" && n.trim()) {
+        return n.trim();
+    }
+
+    return "User";
+}
  
 // ==========================
 // ENABLE / DISABLE SUBMIT BUTTON BASED ON REQUIRED FIELDS
 // ==========================
 function checkRequiredFields() {
+
     const ddate = document.getElementById("ddate").value.trim();
     const supplier = document.getElementById("supplier").value.trim();
     const submitBtn = document.querySelector(".btn-save");
- 
-    const isValid = ddate && supplier && allItemsValid();
-    if (submitBtn) {
-        submitBtn.disabled = !isValid;
-        submitBtn.style.opacity = isValid ? "1" : "0.5";
+
+    const status =
+        document.getElementById("status_dropdown")?.value;
+
+    // Draft record opened in Edit
+    if (status === "Draft") {
+
+        submitBtn.disabled = false;
+        submitBtn.style.opacity = "1";
+
+        return;
     }
+
+    const isValid =
+        ddate &&
+        supplier &&
+        allItemsValid();
+
+    submitBtn.disabled = !isValid;
+    submitBtn.style.opacity = isValid ? "1" : "0.5";
 }
  
 // ==========================
@@ -298,55 +327,37 @@ function checkRequiredFields() {
 // ==========================
  
 addCommentBtn.addEventListener("click", (e) => {
- 
+
     e.preventDefault();
- 
-    const text =
-        commentText.value.trim();
- 
+
+    const text = commentText.value.trim();
+
     if (!text) return;
- 
-const comment = {
- 
-    comment: text,
- 
-    created_by:
-        localStorage.getItem("loggedInUser")
-        || "Admin",
- 
-    created_at:
-        new Date().toLocaleString()
-};
- 
-    const po_number =
-        document.querySelector("input[name='po_number']")?.value?.trim() || "";
 
-    if (!po_number) {
-        showAlert("PO number missing", "error");
-        return;
-    }
+    const comment = {
 
-    fetch("/api/purchase-comments", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-            po_number,
-            comment: text,
-            created_by: comment.created_by
-        })
-    })
-        .then(res => res.json())
-        .then(data => {
-            if (!data.success) {
-                showAlert(data.message || data.error || "Failed to add comment", "error");
-                return;
-            }
-            commentText.value = "";
-            addCommentBtn.disabled = true;
-            loadComments(po_number);
-            showAlert("Comment Added", "success");
-        })
-        .catch(() => showAlert("Comment save failed", "error"));
+        comment: text,
+
+        created_by:
+            getPurchaseCommentAuthorName(),
+
+        created_at:
+            new Date().toLocaleString(),
+            
+        status: document.getElementById("status_dropdown")?.value || "Submitted"
+    };
+
+    pendingComments.push(comment);
+
+    renderLiveComments();
+
+    renderHistoryComments();
+
+    commentText.value = "";
+
+    addCommentBtn.disabled = true;
+
+    showAlert("Comment Added", "success");
 });
  
 async function loadComments(po_number) {
@@ -362,7 +373,8 @@ async function loadComments(po_number) {
         pendingComments = (comments || []).map(item => ({
             comment: item.comment || "",
             created_by: item.created_by || "Admin",
-            created_at: item.created_at || ""
+            created_at: item.created_at || "",
+            status: item.status || "Submitted"
         }));
         renderLiveComments();
         renderHistoryComments();
@@ -380,6 +392,16 @@ function renderLiveComments() {
         document.getElementById("liveComments");
  
     container.innerHTML = "";
+        if (!pendingComments.length) {
+
+        container.innerHTML = `
+            <p class="no-history-message">
+                No comments yet
+            </p>
+        `;
+
+        return;
+    }
  
     pendingComments.forEach(item => {
  
@@ -389,9 +411,13 @@ function renderLiveComments() {
  
             <div class="comment-top">
  
-                <strong>
-                    ${item.created_by} - ${item.created_at}
-                </strong>
+                <span class="comment-user">
+                    ${item.created_by}
+                </span>
+
+                <span class="comment-date">
+                    ${item.created_at}
+                </span>
  
             </div>
  
@@ -431,14 +457,18 @@ function renderHistoryComments() {
  
             <div class="comment-top">
  
-                <strong>
-                    ${item.created_by} - ${item.created_at}
-                </strong>
+                <span class="comment-user">
+                    ${item.created_by}
+                </span>
+
+                <span class="comment-date">
+                    ${item.created_at}
+                </span>
  
             </div>
  
             <div class="comment-text">
-                ${item.comment}
+                ${item.status === "Draft" ? item.comment : item.status + ": " + item.comment}
             </div>
  
         `;
@@ -451,122 +481,84 @@ function renderHistoryComments() {
 // Attachment
 // ==========================
 async function handleFiles(selectedFiles) {
- 
+
     const po_number =
         document.querySelector("input[name='po_number']").value;
- 
+
     if (!po_number) {
         showAlert("PO number missing", "error");
         return;
     }
- 
-        const newFiles = Array.from(selectedFiles);
- 
-    // 🔴 TOTAL LIMIT CHECK BEFORE LOOP
+
+    const newFiles = Array.from(selectedFiles);
+
+    // TOTAL LIMIT CHECK
     if (files.length + newFiles.length > MAX_FILES) {
+
         showAlert(
             `Cannot be uploaded because your maximum limit (${MAX_FILES} files) is reached.`,
             "error"
         );
+
         return;
     }
- 
-        for (let f of selectedFiles) {
- 
-            // ==========================
-            // FILE VALIDATION
-            // ==========================
- 
-            const allowedExtensions = [
-                "pdf",
-                "doc",
-                "docx",
-                "xls",
-                "xlsx",
-                "jpg",
-                "jpeg",
-                "png"
-            ];
- 
-            const maxSize =
-                10 * 1024 * 1024; // 10MB
- 
-            const extension =
-                f.name
-                    .split(".")
-                    .pop()
-                    .toLowerCase();
- 
-            // INVALID FILE TYPE
-            if (!allowedExtensions.includes(extension)) {
- 
-                showAlert(
-                    "This file is not allowed",
-                    "error"
-                );
- 
-                continue;
-            }
- 
-            // FILE SIZE CHECK
-            if (f.size > maxSize) {
- 
-                showAlert(
-                    "File size must be less than 10MB",
-                    "error"
-                );
- 
-                continue;
-            }
- 
-            // ==========================
-            // ADD FILE
-            // ==========================
- 
-            f._uploaded = false;
-            files.push(f);
- 
-            const formData = new FormData();
- 
-            formData.append("po_number", po_number);
- 
-            formData.append("file", f);
- 
-        try {
- 
-            const res = await fetch("/api/purchase-attachments", {
-                method: "POST",
-                body: formData
-            });
- 
-            const result = await res.json();
- 
-            if (!result.success) {
-                showAlert(result.message || "Upload failed", "error");
-            } else {
-                // Keep server identity so delete can remove from DB + S3.
-                f._uploaded = true;
-                f._file_path = result.file_path || "";
-                f._file_name = result.file_name || f.name;
-                f._po_number = po_number;
-                showAlert("File attached successfully", "success");
-            }
- 
-        } catch (err) {
- 
-            console.error(err);
- 
-            showAlert("Upload error", "error");
+
+    for (let f of selectedFiles) {
+
+        const allowedExtensions = [
+            "pdf",
+            "doc",
+            "docx",
+            "xls",
+            "xlsx",
+            "jpg",
+            "jpeg",
+            "png"
+        ];
+
+        const maxSize = 10 * 1024 * 1024;
+
+        const extension =
+            f.name
+                .split(".")
+                .pop()
+                .toLowerCase();
+
+        // INVALID FILE TYPE
+        if (!allowedExtensions.includes(extension)) {
+
+            showAlert(
+                "Invalid file format. Only PDF,JPEG and PNG files are allowed.",
+                "error"
+            );
+
+            continue;
         }
+
+        // FILE SIZE CHECK
+        if (f.size > maxSize) {
+
+            showAlert(
+                "File size must be less than 10MB",
+                "error"
+            );
+
+            continue;
+        }
+
+        // ADD FILE ONLY TO MEMORY
+        f._uploaded = false;
+
+        files.push(f);
+
+        showAlert(
+            `${f.name} attached successfully`,
+            "success"
+        );
     }
- 
-   
+
     updateFileUI();
- 
-   
-    await loadAttachments();
- 
-    // reset
+
     fileInput.value = "";
 }
  
@@ -586,6 +578,18 @@ document.querySelectorAll(".tab").forEach(tab => {
         document.getElementById(target).style.display = "block";
     });
 });
+
+// ==========================
+// ATTACHMENT TAB COUNT
+// ==========================
+function updateAttachmentTabCount() {
+    const attachmentTabCount =
+        document.getElementById("attachmentTabCount");
+
+    if (attachmentTabCount) {
+        attachmentTabCount.textContent = files.length;
+    }
+}
  
 // ==========================
 // FILE UPLOAD / ATTACHMENTS
@@ -632,7 +636,8 @@ function updateFileUI() {
                         <div class="file-name">${fileName}</div>
  
                         <div class="file-meta">
-                            ${fileSize}
+                            <span>${fileSize}</span>
+                            <span>${new Date().toLocaleString()}</span>
                         </div>
                     </div>
  
@@ -675,7 +680,8 @@ function updateFileUI() {
         });
     }
  
-    fileCount.textContent = `${files.length} / 5 files`;
+    fileCount.textContent = `${files.length} / ${MAX_FILES} files`;
+    updateAttachmentTabCount();
 }
  
 // ==========================
@@ -804,7 +810,7 @@ document
  
         updateFileUI();
  
-        showAlert("Attachment deleted", "success");
+        showAlert("File deleted successfully", "success");
     }
  
     closeDeleteModal();
@@ -890,7 +896,21 @@ uploadCard?.addEventListener(
         await handleFiles(droppedFiles);
     }
 );
- 
+
+function fileToBase64(file) {
+
+    return new Promise((resolve, reject) => {
+
+        const reader = new FileReader();
+
+        reader.readAsDataURL(file);
+
+        reader.onload = () => resolve(reader.result);
+
+        reader.onerror = error => reject(error);
+
+    });
+}
 // ==========================
 // OTP MODAL
 // ==========================
@@ -967,8 +987,6 @@ document.querySelector(".footer-item.approve")?.addEventListener("click", () => 
 document.querySelector(".footer-item.sync")?.addEventListener("click", () => {
    showAlert("Sync Started", "info");
 });
- 
- 
 // ==========================
 // GLOBAL CLOSE MODALS (CLICK OUTSIDE)
 // ==========================
@@ -1563,6 +1581,18 @@ async function handleAction(action) {
     updateStatusBadge(action);
  
     try {
+
+        const attachments = [];
+
+        for (const file of files) {
+
+            const base64 = await fileToBase64(file);
+
+            attachments.push({
+                file_name: file.name,
+                file_data: base64
+            });
+        }
         const res = await fetch("/api/save-po-purchase", {
             method: "POST",
             headers: {
@@ -1593,7 +1623,13 @@ async function handleAction(action) {
                  .replace(/[₹,\s]/g, "")
                  ),
  
-                items: items
+                items: items,
+                comments: pendingComments,
+
+                attachments: files.map(f => ({
+                    file_name: f.name || f.file_name,
+                    file_path: f._file_path || ""
+                }))
             })
         });
   const result = await res.json().catch(() => ({}));
@@ -1869,49 +1905,123 @@ if (po_data && po_data.po_number) {
     }
 }
  
-    if (mode === "view") {
- 
-    document.querySelectorAll("#poForm input:not([type='hidden']), #poForm select, #poForm textarea, #poForm button")
+// =========================
+// VIEW MODE (FIXED VERSION)
+// =========================
+if (mode === "view") {
+
+    // =====================================
+    // 1. DISABLE ONLY FORM INPUT FIELDS
+    // =====================================
+    document.querySelectorAll("#poForm input, #poForm select, #poForm textarea")
         .forEach(el => {
- 
-            if (!el.classList.contains('btn-discard')) {
-                el.disabled = true;
-            }
+            el.disabled = true;
+            el.style.pointerEvents = "none";
+            el.style.opacity = "0.8";
         });
- 
-    // CANCEL BUTTON ENABLE
-    document.querySelector(".cancel-order-btn")?.removeAttribute("disabled");
- 
-    document.querySelector(".cancel-order-btn").style.opacity = "1";
-    document.querySelector(".cancel-order-btn").style.pointerEvents = "auto";
- 
-    // EMAIL BUTTON ENABLE
-    document.getElementById("purchaseEmailBtn")?.removeAttribute("disabled");
- 
-    document.getElementById("purchaseEmailBtn").style.opacity = "1";
- 
-    document.getElementById("purchaseEmailBtn").style.pointerEvents = "auto";
- 
-    document.getElementById("purchaseEmailBtn").style.cursor = "pointer";
- 
-    // COMMENTS DISABLE
-    document.getElementById('commentText')?.setAttribute('disabled', 'disabled');
-    document.getElementById('addCommentBtn')?.setAttribute('disabled', 'disabled');
-    document.getElementById('fileInput')?.setAttribute('disabled', 'disabled');
-    document.getElementById('uploadBtn')?.setAttribute('disabled', 'disabled');
- 
-    // KEEP CANCEL BUTTONS
-    document.querySelectorAll("button.btn-discard").forEach(btn => {
-        btn.disabled = false;
-        btn.style.display = "inline-block";
+
+    // =====================================
+    // 2. KEEP TABS ACTIVE (IMPORTANT FIX)
+    // =====================================
+    document.querySelectorAll(".tab, .tab-btn, .nav-item")
+        .forEach(el => {
+            el.disabled = false;
+            el.style.pointerEvents = "auto";
+            el.style.opacity = "1";
+            el.style.cursor = "pointer";
+        });
+
+    // =====================================
+    // 3. DISABLE UPLOAD SECTION IN VIEW MODE
+    // =====================================
+    document.getElementById("fileInput")?.setAttribute("disabled", true);
+    document.getElementById("uploadBtn")?.setAttribute("disabled", true);
+
+    document.getElementById("uploadBtn")?.style.setProperty("pointer-events", "none");
+    document.getElementById("uploadBtn")?.style.setProperty("opacity", "0.5");
+
+    document.getElementById("uploadBox")?.style.setProperty("pointer-events", "none");
+    document.getElementById("uploadBox")?.style.setProperty("opacity", "0.5");
+
+    // =====================================
+    // 4. COMMENTS SECTION DISABLE (IF REQUIRED)
+    // =====================================
+    document.getElementById("commentText")?.setAttribute("disabled", true);
+    document.getElementById("addCommentBtn")?.setAttribute("disabled", true);
+
+    // =====================================
+    // 5. KEEP IMPORTANT ACTION BUTTONS ENABLED
+    // =====================================
+    const cancelBtn = document.querySelector(".cancel-order-btn");
+    if (cancelBtn) {
+        cancelBtn.removeAttribute("disabled");
+        cancelBtn.style.opacity = "1";
+        cancelBtn.style.pointerEvents = "auto";
+        cancelBtn.style.cursor = "pointer";
+    }
+
+    const emailBtn = document.getElementById("purchaseEmailBtn");
+    if (emailBtn) {
+        emailBtn.removeAttribute("disabled");
+        emailBtn.style.opacity = "1";
+        emailBtn.style.pointerEvents = "auto";
+        emailBtn.style.cursor = "pointer";
+    }
+
+    const pdfBtn = document.getElementById("pdfBtn");
+    if (pdfBtn) {
+        pdfBtn.removeAttribute("disabled");
+        pdfBtn.style.opacity = "1";
+        pdfBtn.style.pointerEvents = "auto";
+        pdfBtn.style.cursor = "pointer";
+    }
+    document.querySelectorAll(
+        ".view-btn, .download-btn, .delete-btn"
+    ).forEach(btn => {
+
+        btn.disabled = true;
+        btn.style.pointerEvents = "none";
+        btn.style.opacity = "0.4";
+        btn.style.cursor = "not-allowed";
+
     });
- 
-    // HIDE OTHER BUTTONS
+    // =====================================
+    // 6. HIDE EDIT ACTION BUTTONS
+    // =====================================
     document.querySelectorAll("button.btn-draft, button.btn-save")
-        .forEach(btn => btn.style.display = "none");
- 
+        .forEach(btn => {
+            btn.style.display = "none";
+        });
+
+    // =====================================
+    // 7. KEEP DISCARD / CANCEL BUTTONS VISIBLE
+    // =====================================
+    document.querySelectorAll("button.btn-discard")
+        .forEach(btn => {
+            btn.disabled = false;
+            btn.style.display = "inline-block";
+            btn.style.pointerEvents = "auto";
+        });
+
+    // =====================================
+    // 8. FOOTER CONTROL (ONLY NON PDF/EMAIL HIDE)
+    // =====================================
     document.querySelectorAll(".footer-item:not(.pdf):not(.email)")
-        .forEach(btn => btn.style.display = "none");
+        .forEach(el => {
+            el.style.display = "none";
+        });
+
+            // =========================
+        // DISABLE TABLE DELETE BUTTONS
+        // =========================
+        document.querySelectorAll(".so-delete-btn")
+            .forEach(btn => {
+                btn.disabled = true;
+                btn.style.pointerEvents = "none";
+                btn.style.opacity = "0.4";
+                btn.style.cursor = "not-allowed";
+            });
+
 }
  
     // =========================
@@ -2054,7 +2164,6 @@ if (po_data && po_data.po_number) {
  
  
 });
- 
 // Add new item function
 function resolveProductId(item = {}) {
     const idCandidates = [item.product_id, item.product_code, item.code, item.sku].filter(Boolean);
@@ -2339,7 +2448,7 @@ function showAlert(message, type = "warning") {
  
         alertBox.classList.add("warning");
  
-        icon.textContent = "!";
+        icon.textContent = "✕";
     }
  
     // show alert
@@ -2426,6 +2535,9 @@ function updateFooterButtons(mode) {
  
         pdfBtn.style.opacity = "0.4";
         emailBtn.style.opacity = "0.4";
+        stockReceiptBtn.classList.add("btn-stock-disabled");
+
+        
     }
  
     // =========================
@@ -2438,7 +2550,11 @@ function updateFooterButtons(mode) {
  
         pdfBtn.style.opacity = "0.4";
         emailBtn.style.opacity = "0.4";
+
+        stockReceiptBtn.classList.add("btn-stock-disabled");
     }
+
+    
 }
  
  
@@ -2731,154 +2847,107 @@ function validateRowStrict(row) {
 // ==========================
 // LIVE FIELD VALIDATION
 // ==========================
+let currentStep = 1;
  
 const isEditMode =
     window.location.pathname.includes("/edit");
  
 const isViewMode =
     window.location.pathname.includes("/view");
- 
+
+
 function setupLiveValidation() {
- 
-    if (isEditMode || isViewMode) {
-        return;
-    }
-    const ddate =
-        document.getElementById("ddate");
- 
-    const supplier =
-        document.getElementById("supplier_id");
- 
-    const so =
-        document.getElementById("so_id");
- 
-    const ddateError =
-        document.getElementById("ddateError");
- 
-    const supplierError =
-        document.getElementById("supplierError");
- 
-    const soError =
-        document.getElementById("soError");
- 
+
+    if (isEditMode || isViewMode) return;
+
+    const ddate = document.getElementById("ddate");
+    const so = document.getElementById("so_id");
+    const supplier = document.getElementById("supplier_id");
+
+    const ddateError = document.getElementById("ddateError");
+    const soError = document.getElementById("soError");
+    const supplierError = document.getElementById("supplierError");
+
     // =========================
-    // DELIVERY DATE
+    // STEP 1 : DELIVERY DATE
     // =========================
     ddate?.addEventListener("change", () => {
- 
-        if (!ddate.value.trim()) {
- 
-            ddateError.style.display = "block";
- 
-            ddateError.innerText =
-                "Delivery Date is required";
- 
-        } else {
- 
-            ddateError.innerText = "";
- 
+
+        if (ddate.value.trim()) {
+
             ddateError.style.display = "none";
+
+            currentStep = 2;
+
+            // Show SO validation
+            if (!so.value.trim()) {
+                soError.style.display = "block";
+                soError.innerText = "Sales Order Reference is required";
+            }
+
+            so.focus();
         }
- 
     });
- 
+
     // =========================
-    // SUPPLIER
-    // =========================
-    supplier?.addEventListener("change", () => {
- 
-        if (!supplier.value.trim()) {
- 
-            supplierError.style.display = "block";
- 
-            supplierError.innerText =
-                "Supplier is required";
- 
-        } else {
- 
-            supplierError.innerText = "";
- 
-            supplierError.style.display = "none";
-        }
- 
-    });
- 
-    // =========================
-    // SALES ORDER
+    // STEP 2 : SALES ORDER
     // =========================
     so?.addEventListener("change", () => {
- 
-        if (!so.value.trim()) {
- 
-            soError.style.display = "block";
- 
-            soError.innerText =
-                "Sales Order Reference is required";
- 
-        } else {
- 
-            soError.innerText = "";
- 
+
+        if (currentStep !== 2) return;
+
+        if (so.value.trim()) {
+
             soError.style.display = "none";
+
+            currentStep = 3;
+
+            // Show Supplier validation
+            if (!supplier.value.trim()) {
+                supplierError.style.display = "block";
+                supplierError.innerText = "Supplier is required";
+            }
+
+            supplier.focus();
         }
- 
     });
- 
+
+    // =========================
+    // STEP 3 : SUPPLIER
+    // =========================
+    supplier?.addEventListener("change", () => {
+
+        if (currentStep !== 3) return;
+
+        if (supplier.value.trim()) {
+
+            supplierError.style.display = "none";
+
+            currentStep = 4;
+        }
+    });
 }
- 
+
 function validateInitialFields() {
-   
- 
-    if (isEditMode || isViewMode) {
-        return;
-    }
- 
-    const ddateError =
-        document.getElementById("ddateError");
- 
-    const supplierError =
-        document.getElementById("supplierError");
- 
-    const soError =
-        document.getElementById("soError");
- 
-    // DELIVERY DATE
-    if (!document.getElementById("ddate").value) {
- 
+
+    if (isEditMode || isViewMode) return;
+
+    const ddateError = document.getElementById("ddateError");
+    const soError = document.getElementById("soError");
+    const supplierError = document.getElementById("supplierError");
+
+    // Hide all errors first
+    ddateError.style.display = "none";
+    soError.style.display = "none";
+    supplierError.style.display = "none";
+
+    // Show only Delivery Date error initially
+    if (!document.getElementById("ddate").value.trim()) {
+
         ddateError.style.display = "block";
- 
-        ddateError.innerText =
-            "Delivery Date is required";
- 
-    } else {
- 
-        ddateError.style.display = "none";
-    }
- 
-    // SUPPLIER
-    if (!document.getElementById("supplier_id").value) {
- 
-        supplierError.style.display = "block";
- 
-        supplierError.innerText =
-            "Supplier is required";
- 
-    } else {
- 
-        supplierError.style.display = "none";
-    }
- 
-    // SALES ORDER
-    if (!document.getElementById("so_id").value) {
- 
-        soError.style.display = "block";
- 
-        soError.innerText =
-            "Sales Order Reference is required";
- 
-    } else {
- 
-        soError.style.display = "none";
+        ddateError.innerText = "Delivery Date is required";
+
+        currentStep = 1;
     }
 }
  
@@ -2895,6 +2964,3 @@ window.addEventListener("DOMContentLoaded", () => {
     }
  
 });
- 
- 
- 

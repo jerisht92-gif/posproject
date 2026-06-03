@@ -95,6 +95,12 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // =====================================================
+  if (urlParams.get("setup") === "company") {
+    loginErrorMsg.textContent =
+      "✅ Account created! Log in to set up your company profile.";
+    loginErrorMsg.style.color = "#1f7a4a";
+  }
+
   // Show signup success message if redirected
   // =====================================================
   if (localStorage.getItem("signupSuccess") === "true") {
@@ -338,7 +344,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
       showMessage("✅ Login successful!", "success");
       setTimeout(() => {
-        window.location.href = "/dashboard";
+        const target =
+          data.redirect ||
+          (data.needs_company_setup ? "/company_info" : "/dashboard");
+        window.location.href = target;
       }, 1500);
     } catch (err) {
       console.error("Error:", err);

@@ -1,0 +1,215 @@
+{% extends "menu.html" %}
+{% block extra_css %}
+<link rel="stylesheet"
+      href="{{ url_for('static', filename='company-information.css') }}">
+
+<link rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+{% endblock %}
+{% block content %}
+<div class="company-page"
+     data-can-edit="{{ 1 if can_edit_company else 0 }}"
+     data-view-only="{{ 0 if can_edit_company else 1 }}"
+     data-is-new-company="{{ 1 if is_new_company else 0 }}">
+    <div class="company-top">
+        <h2 class="company-title">{% if is_new_company %}Set Up Your Company{% else %}Company Information{% endif %}</h2>
+        {% if is_new_company %}
+        <p class="company-setup-banner">
+            Welcome! Complete your company profile below and choose your permanent company code
+            (not PENDING). This is required before using the rest of the app.
+        </p>
+        {% elif not can_edit_company %}
+        <p class="company-view-only-note">View only — contact your company Super Admin to make changes.</p>
+        {% endif %}
+    </div>
+    <div class="company-card">
+        <!-- BASIC DETAILS -->
+        <h3 class="section-title">Basic Details</h3>
+        <div class="company-basic-grid">
+            <!-- LOGO -->
+            <div class="logo-section">
+                <label class="field-label">Logo</label>
+                <input type="file" id="logoFile" accept="image/jpeg,image/png,.jpg,.jpeg,.png" hidden>
+                <label for="logoFile" class="upload-box" id="logoUploadBox">
+                    <div class="upload-inner" id="logoUploadInner">
+                        <i class="fa-regular fa-image"></i>
+                        <p>Upload Logo</p>
+                    </div>
+                    <img id="logoPreview" class="logo-preview" alt="Company logo">
+                </label>
+                <div class="upload-note">
+                    Allowed formats: JPG, PNG <br>
+                    Max Size: 2MB
+                </div>
+            </div>
+            <!-- RIGHT SIDE -->
+            <div class="company-fields">
+                <div class="field">
+                    <label>Company Name</label>
+                    <input type="text" id="companyName" maxlength="100" placeholder="Enter company name">
+                    <small class="field-error-msg" id="companyNameErr"></small>
+                </div>
+                <div class="field">
+                    <label>Company Code</label>
+                    <input type="text" id="companyCode" maxlength="20" placeholder="Enter company code">
+                    <small class="field-error-msg" id="companyCodeErr"></small>
+                </div>
+                <div class="field">
+                    <label>Company Type</label>
+                    <select id="companyType">
+                        <option value="">Select Company Type</option>
+                        <option value="Private Limited">Private Limited</option>
+                        <option value="Partnership">Partnership</option>
+                        <option value="Sole Proprietorship">Sole Proprietorship</option>
+                        <option value="LLP">LLP</option>
+                    </select>
+                    <small class="field-error-msg" id="companyTypeErr"></small>
+                </div>
+                <div class="field">
+                    <label>CEO / Owner Name</label>
+                    <input type="text" id="ownerName" maxlength="80" placeholder="Enter owner name">
+                    <small class="field-error-msg" id="ownerNameErr"></small>
+                </div>
+            </div>
+        </div>
+        <!-- GST + REGISTRATION -->
+        <div class="company-bottom-row">
+            <div class="field">
+                <label>GSTIN</label>
+                <input type="text" id="gstin" maxlength="15" placeholder="Enter GSTIN">
+                <small class="field-error-msg" id="gstinErr"></small>
+            </div>
+            <div class="field">
+                <label>Company Registration No</label>
+                <input type="text" id="registrationNo" maxlength="25" placeholder="Enter registration number">
+                <small class="field-error-msg" id="registrationErr"></small>
+            </div>
+        </div>
+        <!-- CONTACT & ADDRESS -->
+        <h3 class="section-title">
+            Contact & Address Details
+        </h3>
+        <div class="contact-grid">
+            <div class="field">
+                <label>Email Address</label>
+                <input type="email" id="email" maxlength="80" placeholder="Enter email address">
+                <small class="field-error-msg" id="emailErr"></small>
+            </div>
+            <div class="field">
+                <label>Address</label>
+                <input type="text" id="address" maxlength="250" placeholder="Enter address">
+                <small class="field-error-msg" id="addressErr"></small>
+            </div>
+            <div class="field">
+                <label>Phone Number</label>
+                <input type="text" id="phone" maxlength="10" placeholder="Enter phone number">
+                <small class="field-error-msg" id="phoneErr"></small>
+            </div>
+            <div class="field">
+                <label>City</label>
+                <input type="text" id="city" maxlength="50" placeholder="Enter city">
+                <small class="field-error-msg" id="cityErr"></small>
+            </div>
+            <div class="field">
+                <label>Website</label>
+                <input type="text" id="website" maxlength="100" placeholder="Enter website">
+                <small class="field-error-msg" id="websiteErr"></small>
+            </div>
+            <div class="field">
+                <label>State</label>
+                <select id="state">
+                    <option value="">Select State</option>
+                    <option value="Tamil Nadu">Tamil Nadu</option>
+                    <option value="Andaman and Nicobar Islands">Andaman and Nicobar Islands</option>
+                    <option value="Andhra Pradesh">Andhra Pradesh</option>
+                    <option value="Arunachal Pradesh">Arunachal Pradesh</option>
+                    <option value="Assam">Assam</option>
+                    <option value="Bihar">Bihar</option>
+                    <option value="Chandigarh">Chandigarh</option>
+                    <option value="Chhattisgarh">Chhattisgarh</option>
+                    <option value="Dadra and Nagar Haveli and Daman and Diu">Dadra and Nagar Haveli and Daman and Diu</option>
+                    <option value="Delhi">Delhi</option>
+                    <option value="Goa">Goa</option>
+                    <option value="Gujarat">Gujarat</option>
+                    <option value="Haryana">Haryana</option>
+                    <option value="Himachal Pradesh">Himachal Pradesh</option>
+                    <option value="Jammu and Kashmir">Jammu and Kashmir</option>
+                    <option value="Jharkhand">Jharkhand</option>
+                    <option value="Karnataka">Karnataka</option>
+                    <option value="Kerala">Kerala</option>
+                    <option value="Ladakh">Ladakh</option>
+                    <option value="Lakshadweep">Lakshadweep</option>
+                    <option value="Madhya Pradesh">Madhya Pradesh</option>
+                    <option value="Maharashtra">Maharashtra</option>
+                    <option value="Manipur">Manipur</option>
+                    <option value="Meghalaya">Meghalaya</option>
+                    <option value="Mizoram">Mizoram</option>
+                    <option value="Nagaland">Nagaland</option>
+                    <option value="Odisha">Odisha</option>
+                    <option value="Puducherry">Puducherry</option>
+                    <option value="Punjab">Punjab</option>
+                    <option value="Rajasthan">Rajasthan</option>
+                    <option value="Sikkim">Sikkim</option>
+                    <option value="Telangana">Telangana</option>
+                    <option value="Tripura">Tripura</option>
+                    <option value="Uttar Pradesh">Uttar Pradesh</option>
+                    <option value="Uttarakhand">Uttarakhand</option>
+                    <option value="West Bengal">West Bengal</option>
+                </select>
+                <small class="field-error-msg" id="stateErr"></small>
+            </div>
+            <div class="field">
+                <label>Pincode</label>
+                <input type="text" id="pincode" maxlength="6" placeholder="Enter pincode">
+                <small class="field-error-msg" id="pincodeErr"></small>
+            </div>
+            <div class="field">
+                <label>Country</label>
+                <select id="country">
+                    <option value="India">India</option>
+                </select>
+                <small class="field-error-msg" id="countryErr"></small>
+            </div>
+        </div>
+        <!-- BRANCH DETAILS -->
+        <h3 class="section-title">
+            Branch Information
+        </h3>
+        <div class="field branch-count">
+            <label>Number of Branches</label>
+            <input type="number" id="branchCount" min="1" max="99" placeholder="Enter number">
+            <small class="field-error-msg" id="branchCountErr"></small>
+        </div>
+        <table class="branch-table">
+            <thead>
+                <tr>
+                    <th>S.No.</th>
+                    <th>Branch Name</th>
+                    <th>Branch Code</th>
+                    <th>Phone No.</th>
+                    <th>Address</th>
+                    <th>City</th>
+                    <th>State</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody id="branchTableBody"></tbody>
+        </table>
+        <small class="field-error-msg branch-table-err" id="branchTableErr"></small>
+        <button type="button" class="add-branch-btn" id="addBranchBtn">
+            + Add Branch
+        </button>
+        <!-- BUTTONS -->
+        <div class="actions">
+            <button type="button" class="btn cancel" id="cancelBtn">
+                Clear
+            </button>
+            <button type="button" class="btn primary" id="saveCompanyBtn" disabled>
+                Save
+            </button>
+        </div>
+    </div>
+</div>
+<script src="{{ url_for('static', filename='company-information.js') }}"></script>
+{% endblock %}
