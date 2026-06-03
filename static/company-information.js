@@ -683,6 +683,13 @@ document.addEventListener("DOMContentLoaded", () => {
         stateSelect.value = c.state || "";
         countrySelect.value = c.country || "India";
         pincodeInput.value = c.pincode || "";
+        const logoPreviewLoad = document.getElementById("logoPreview");
+        const logoInnerLoad = document.getElementById("logoUploadInner");
+        if (c.logo_url && logoPreviewLoad) {
+          logoPreviewLoad.src = c.logo_url;
+          logoPreviewLoad.style.display = "block";
+          if (logoInnerLoad) logoInnerLoad.style.display = "none";
+        }
         branchTableBody.innerHTML = "";
         const rows = restore.branches || [];
         if (rows.length) {
@@ -966,6 +973,8 @@ document.addEventListener("DOMContentLoaded", () => {
         try {
           const fd = new FormData();
           fd.append("file", file);
+          const code = (companyCodeInput?.value || "").trim();
+          if (code) fd.append("company_code", code);
           const res = await fetch("/api/company-information/logo", { method: "POST", body: fd });
           const data = await res.json();
           if (!res.ok || !data.success) {
@@ -974,7 +983,7 @@ document.addEventListener("DOMContentLoaded", () => {
             return;
           }
           if (logoPreview) {
-            logoPreview.src = URL.createObjectURL(file);
+            logoPreview.src = data.url || URL.createObjectURL(file);
             logoPreview.style.display = "block";
           }
           if (logoInner) logoInner.style.display = "none";

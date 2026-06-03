@@ -7,6 +7,7 @@ upload paths fall back to local disk in app.py.
 Object keys use a prefix per submodule, e.g.:
   purchase_attachments/PO-001/invoice.pdf
   creditnote_attachments/CRN-001/file.pdf
+  company_information_attachments/RR001/logo.png
 
 Public URLs stored in PostgreSQL:
   AWS/native: https://{bucket}.s3.{region}.amazonaws.com/{key}
@@ -41,6 +42,7 @@ MODULE_DELIVERY_NOTE_ATTACHMENTS = "deliverynote_attachments"
 MODULE_DELIVERY_NOTE_RETURN_ATTACHMENTS = "deliverynote_return_attachments"
 MODULE_PRODUCT_IMAGES = "product_images"
 MODULE_IMPORTS = "imports"
+MODULE_COMPANY_INFORMATION_ATTACHMENTS = "company_information_attachments"
 
 _s3_client = None
 
@@ -210,6 +212,37 @@ def try_upload_stream(
         ContentType=content_type,
     )
     return public_url_for_key(key), size
+
+
+def try_copy_object(module_key: str, src_object_name: str, dest_object_name: str) -> Optional[str]:
+    """Copy within the bucket under module_key/; returns public URL for destination or None."""
+    if not is_enabled():
+        return None
+    mod = (module_key or "").strip().strip("/")
+    src_parts = [p for p in (src_object_name or "").replace("\\", "/").split("/") if p and p not in (".", "..")]
+    dest_parts = [p for p in (dest_object_name or "").replace("\\", "/").split("/") if p and p not in (".", "..")]
+    if not src_parts or not dest_parts:
+        return None
+    src_key = f"{mod}/{'/'.join(src_parts)}" if mod else "/".join(src_parts)
+    dest_key = f"{mod}/{'/'.join(dest_parts)}" if mod else "/".join(dest_parts)
+    if src_key == dest_key:
+        return public_url_for_key(dest_key)
+    bucket = _bucket()
+    client = _get_client()
+    try:
+        client.copy_object(
+            CopySource={"Bucket": bucket, "Key": src_key},
+            Bucket=bucket,
+            Key=dest_key,
+        )
+        try:
+            client.delete_object(Bucket=bucket, Key=src_key)
+        except Exception:
+            pass
+        return public_url_for_key(dest_key)
+    except Exception as ex:  # pragma: no cover
+        print(f"object_storage try_copy_object: {ex}")
+        return None
 
 
 def delete_object_by_public_url(url: str) -> bool:

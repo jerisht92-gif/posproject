@@ -22,6 +22,7 @@ from collections import defaultdict
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.application import MIMEApplication
+from werkzeug.datastructures import FileStorage
 from werkzeug.utils import secure_filename
 import requests  # type: ignore[import]
 import pandas as pd
@@ -1033,6 +1034,8 @@ def _resolve_stored_file_path(file_path):
         SUPPLIER_ATTACHMENTS_FOLDER,
         DELIVERY_NOTE_ATTACHMENTS_FOLDER,
         DELIVERY_NOTE_RETURN_ATTACHMENTS_FOLDER,
+        COMPANY_INFORMATION_ATTACHMENTS_FOLDER,
+        COMPANY_LOGO_FOLDER,
         PRODUCT_IMAGES_FOLDER,
         IMPORT_UPLOAD_FOLDER,
         os.path.join(app.root_path, "static", "uploads"),
@@ -1071,6 +1074,7 @@ SUPPLIER_ATTACHMENTS_FOLDER = _writable_upload_subdir("supplier_attachments")
 DELIVERY_NOTE_ATTACHMENTS_FOLDER = _writable_upload_subdir("deliverynote_attachments")
 DELIVERY_NOTE_RETURN_ATTACHMENTS_FOLDER = _writable_upload_subdir("deliverynote_return_attachments")
 COMPANY_LOGO_FOLDER = _writable_upload_subdir("company_logo")
+COMPANY_INFORMATION_ATTACHMENTS_FOLDER = _writable_upload_subdir("company_information_attachments")
 
 _DN_POD_EXTENSIONS = {"pdf", "jpg", "jpeg", "png"}
 
@@ -2777,9 +2781,148 @@ def company_info():
     )
 
 
+def _company_logo_entity_id(company_code=None):
+    """Folder key under company_information_attachments/ (per company or pending setup)."""
+    code = (company_code or session.get("company_code") or "").strip().upper()
+    if code and code not in ("PENDING",):
+        return code
+    user = (session.get("user") or "").strip().lower()
+    if user:
+        import hashlib
+        return "pending_" + hashlib.sha256(user.encode("utf-8")).hexdigest()[:16]
+    return "pending"
+
+
+def _company_logo_relative_path(company_code=None, ext=".png"):
+    ext = (ext or ".png").lower()
+    if ext == ".jpeg":
+        ext = ".jpg"
+    save_name = "logo.png" if ext == ".png" else "logo.jpg"
+    eid = _company_logo_entity_id(company_code)
+    return f"{eid}/{save_name}"
+
+
+def _company_logo_display_url(stored_path):
+    """URL suitable for <img src> from DB/session path or legacy API route."""
+    p = (stored_path or "").strip()
+    if not p:
+        return ""
+    if object_storage.is_remote_url(p):
+        return p
+    if p.startswith("/"):
+        return p
+    return url_for("company_logo")
+
+
+def _legacy_company_logo_file():
+    for name in ("logo.png", "logo.jpg"):
+        path = os.path.join(COMPANY_LOGO_FOLDER, name)
+        if os.path.isfile(path):
+            return path, name
+    return None, None
+
+
+def _fetch_company_logo_path_from_db(user_email):
+    user_email = (user_email or "").strip().lower()
+    if not user_email:
+        return ""
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        _, user_company_name, _ = _fetch_user_company_context(cur, user_email)
+        if not user_company_name:
+            return ""
+        cur.execute(
+            """
+            SELECT logo_path
+            FROM company_information
+            WHERE LOWER(TRIM(company_name)) = LOWER(TRIM(%s))
+            ORDER BY company_id
+            LIMIT 1
+            """,
+            (user_company_name,),
+        )
+        row = cur.fetchone()
+        return (row[0] or "").strip() if row else ""
+    finally:
+        cur.close()
+        conn.close()
+
+
+def _finalize_company_logo_path(company_code, stored_path):
+    """Move pending setup logo to the permanent company_code folder (S3 or local)."""
+    stored = (stored_path or "").strip()
+    code = (company_code or "").strip().upper()
+    if not stored or not code:
+        return stored
+    pending_id = _company_logo_entity_id()
+    if pending_id == code or not str(pending_id).startswith("pending_"):
+        return stored
+    ext = ".png" if "png" in stored.lower() else ".jpg"
+    src_rel = _company_logo_relative_path(None, ext)
+    dest_rel = _company_logo_relative_path(code, ext)
+    if src_rel == dest_rel:
+        return stored
+    if object_storage.is_remote_url(stored):
+        copied = object_storage.try_copy_object(
+            object_storage.MODULE_COMPANY_INFORMATION_ATTACHMENTS,
+            src_rel,
+            dest_rel,
+        )
+        if copied:
+            object_storage.delete_object_by_public_url(stored)
+            return copied
+        return stored
+    src_file = _local_upload_dest(COMPANY_INFORMATION_ATTACHMENTS_FOLDER, src_rel)
+    if os.path.isfile(src_file):
+        dest_file = _local_upload_dest(COMPANY_INFORMATION_ATTACHMENTS_FOLDER, dest_rel)
+        try:
+            shutil.copy2(src_file, dest_file)
+            os.remove(src_file)
+        except OSError:
+            pass
+        with open(dest_file, "rb") as fh:
+            fs = FileStorage(stream=fh, filename=os.path.basename(dest_rel))
+            stored_new, _ = _persist_module_upload(
+                object_storage.MODULE_COMPANY_INFORMATION_ATTACHMENTS,
+                COMPANY_INFORMATION_ATTACHMENTS_FOLDER,
+                fs,
+                dest_rel,
+            )
+        return stored_new
+    return stored
+
+
+def _resolve_company_logo_for_serve(user_email=None):
+    """Return stored path/URL to serve, or empty if none."""
+    pending = (session.get("company_logo_path") or "").strip()
+    if pending:
+        return pending
+    db_path = _fetch_company_logo_path_from_db(user_email)
+    if db_path and not db_path.startswith("/api/"):
+        if object_storage.is_remote_url(db_path):
+            return db_path
+        resolved = _resolve_stored_file_path(db_path)
+        if resolved and (object_storage.is_remote_url(resolved) or os.path.isfile(resolved)):
+            return resolved if object_storage.is_remote_url(resolved) else db_path
+    legacy_path, _ = _legacy_company_logo_file()
+    if legacy_path:
+        return legacy_path
+    eid = _company_logo_entity_id()
+    for save_name in ("logo.png", "logo.jpg"):
+        rel = f"{eid}/{save_name}"
+        resolved = _resolve_stored_file_path(rel)
+        if resolved and (object_storage.is_remote_url(resolved) or os.path.isfile(resolved)):
+            return rel if not object_storage.is_remote_url(resolved) else resolved
+        candidate = os.path.join(COMPANY_INFORMATION_ATTACHMENTS_FOLDER, eid, save_name)
+        if os.path.isfile(candidate):
+            return rel
+    return ""
+
+
 @app.route("/api/company-information/logo", methods=["GET", "POST"])
 def company_logo():
-    """POST = upload logo (JPG/PNG, max 2MB). GET = show saved logo file from disk."""
+    """POST = upload logo (JPG/PNG, max 2MB). GET = serve logo from S3, local module folder, or legacy disk."""
     try:
         user_email = (session.get("user") or "").strip().lower()
         if request.method == "POST":
@@ -2806,13 +2949,33 @@ def company_logo():
                 file.seek(0)
             except Exception:
                 return jsonify({"success": False, "message": "Invalid image file. Use JPG or PNG only."}), 400
-            save_name = "logo.png" if ext == ".png" else "logo.jpg"
-            file.save(os.path.join(COMPANY_LOGO_FOLDER, save_name))
-            return jsonify({"success": True, "url": url_for("company_logo")})
+            company_code = (request.form.get("company_code") or "").strip().upper()
+            rel_path = _company_logo_relative_path(company_code, ext)
+            stored_path, _ = _persist_module_upload(
+                object_storage.MODULE_COMPANY_INFORMATION_ATTACHMENTS,
+                COMPANY_INFORMATION_ATTACHMENTS_FOLDER,
+                file,
+                rel_path,
+            )
+            session["company_logo_path"] = stored_path
+            return jsonify({
+                "success": True,
+                "url": _company_logo_display_url(stored_path),
+            })
 
-        for name in ("logo.png", "logo.jpg"):
-            if os.path.isfile(os.path.join(COMPANY_LOGO_FOLDER, name)):
-                return send_from_directory(COMPANY_LOGO_FOLDER, name)
+        stored = _resolve_company_logo_for_serve(user_email)
+        if not stored:
+            return "", 404
+        if object_storage.is_remote_url(stored):
+            return redirect(stored)
+        resolved = _resolve_stored_file_path(stored)
+        if resolved and object_storage.is_remote_url(resolved):
+            return redirect(resolved)
+        if resolved and os.path.isfile(resolved):
+            return send_file(resolved, as_attachment=False)
+        legacy_path, legacy_name = _legacy_company_logo_file()
+        if legacy_path:
+            return send_from_directory(COMPANY_LOGO_FOLDER, legacy_name)
         return "", 404
     except Exception as e:
         if request.method == "POST":
@@ -2850,7 +3013,7 @@ def save_company_information():
             row = fetch_one(
                 """
                 SELECT company_id, company_name, company_code, company_type, owner_name,
-                       gstin, registration_no, email, phone_number, website,
+                       logo_path, gstin, registration_no, email, phone_number, website,
                        address, city, state, country, pincode
                 FROM company_information
                 WHERE LOWER(TRIM(company_name)) = LOWER(TRIM(%s))
@@ -2863,7 +3026,7 @@ def save_company_information():
             row = fetch_one(
                 """
                 SELECT company_id, company_name, company_code, company_type, owner_name,
-                       gstin, registration_no, email, phone_number, website,
+                       logo_path, gstin, registration_no, email, phone_number, website,
                        address, city, state, country, pincode
                 FROM company_information
                 ORDER BY company_id
@@ -2899,6 +3062,7 @@ def save_company_information():
                 "company_code": row.get("company_code") or "",
                 "company_type": row.get("company_type") or "",
                 "owner_name": row.get("owner_name") or "",
+                "logo_url": _company_logo_display_url(row.get("logo_path") or ""),
                 "gstin": row.get("gstin") or "",
                 "registration_no": row.get("registration_no") or "",
                 "email": row.get("email") or "",
@@ -2926,11 +3090,24 @@ def save_company_information():
     if not branches:
         return jsonify({"success": False, "message": "At least one branch is required"}), 400
 
-    logo_path = ""
-    for fname in ("logo.png", "logo.jpg"):
-        if os.path.isfile(os.path.join(COMPANY_LOGO_FOLDER, fname)):
+    logo_path = (session.pop("company_logo_path", None) or "").strip()
+    if logo_path:
+        logo_path = _finalize_company_logo_path(company_code, logo_path)
+    if not logo_path:
+        for ext in (".png", ".jpg"):
+            rel = _company_logo_relative_path(company_code, ext)
+            resolved = _resolve_stored_file_path(rel)
+            if resolved and (object_storage.is_remote_url(resolved) or os.path.isfile(resolved)):
+                logo_path = resolved if object_storage.is_remote_url(resolved) else rel
+                break
+            candidate = os.path.join(COMPANY_INFORMATION_ATTACHMENTS_FOLDER, rel.replace("/", os.sep))
+            if os.path.isfile(candidate):
+                logo_path = rel
+                break
+    if not logo_path:
+        _, legacy_name = _legacy_company_logo_file()
+        if legacy_name:
             logo_path = url_for("company_logo")
-            break
 
     conn = get_db_connection()
     cur = conn.cursor()
