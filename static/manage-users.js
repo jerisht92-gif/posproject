@@ -1,50 +1,64 @@
 // static/manage-users.js
 document.addEventListener("DOMContentLoaded", () => {
-  console.log("manage-users.js loaded ✅");
+  function normalizeRole(r) {
+    return (r || "").toLowerCase().replace(/\s+/g, "").replace(/_/g, "");
+  }
 
-  // ============================
-  // ✅ SUCCESS NOTIFICATION FUNCTION
-  // ============================
+  function isAdminRole(r) {
+    const n = normalizeRole(r);
+    return n === "admin" || n === "superadmin";
+  }
+
   function showSuccessNotification(message) {
-    // Remove existing notification if any
-    const existing = document.querySelector(".success-notification");
-    if (existing) existing.remove();
-
-    // Create notification element
-    const notification = document.createElement("div");
-    notification.className = "success-notification";
-    notification.textContent = message;
-    document.body.appendChild(notification);
-
-    // Trigger animation
+    document.querySelectorAll(".success-notification, .error-notification").forEach((n) => n.remove());
+    const el = document.createElement("div");
+    el.className = "success-notification";
+    el.textContent = message;
+    document.body.appendChild(el);
+    requestAnimationFrame(() => el.classList.add("show"));
     setTimeout(() => {
-      notification.classList.add("show");
-    }, 10);
-
-    // Hide and remove after 2 seconds
-    setTimeout(() => {
-      notification.classList.remove("show");
-      setTimeout(() => {
-        if (notification.parentNode) {
-          notification.parentNode.removeChild(notification);
-        }
-      }, 400); // Wait for fade-out animation
+      el.classList.remove("show");
+      setTimeout(() => el.remove(), 400);
     }, 2000);
   }
 
   function showErrorNotification(message) {
-    document
-      .querySelectorAll(".success-notification, .error-notification")
-      .forEach((n) => n.remove());
-    const notification = document.createElement("div");
-    notification.className = "error-notification";
-    notification.textContent = message;
-    document.body.appendChild(notification);
-    setTimeout(() => notification.classList.add("show"), 10);
+    document.querySelectorAll(".success-notification, .error-notification").forEach((n) => n.remove());
+    const el = document.createElement("div");
+    el.className = "error-notification";
+    el.textContent = message;
+    document.body.appendChild(el);
+    requestAnimationFrame(() => el.classList.add("show"));
     setTimeout(() => {
-      notification.classList.remove("show");
-      setTimeout(() => notification.remove(), 400);
+      el.classList.remove("show");
+      setTimeout(() => el.remove(), 400);
     }, 3000);
+  }
+
+  async function fetchUsersJson(url, options) {
+    const res = await fetch(url, {
+      credentials: "same-origin",
+      cache: "no-store",
+      headers: { Accept: "application/json", ...(options && options.headers) },
+      ...options,
+    });
+    let data = null;
+    try {
+      data = await res.json();
+    } catch (e) {
+      data = null;
+    }
+    if (res.status === 401) {
+      showErrorNotification((data && (data.message || data.error)) || "Session expired. Please log in again.");
+      setTimeout(() => { window.location.href = "/login?message=session_expired"; }, 1200);
+      throw new Error("session_expired");
+    }
+    if (res.status === 403 && data && data.message && /company setup/i.test(data.message)) {
+      showErrorNotification(data.message);
+      setTimeout(() => { window.location.href = "/company_info"; }, 1200);
+      throw new Error("company_setup_required");
+    }
+    return { res, data };
   }
 
   // Show success toast when redirected from create-user (user_created=1)
@@ -68,14 +82,24 @@ document.addEventListener("DOMContentLoaded", () => {
   const pageNow  = document.getElementById("pageNow");
   const pageTotal = document.getElementById("pageTotal");
 
+  function updatePaginationFooter(total, page, pageSize, totalPages) {
+    const start = total === 0 ? 0 : (page - 1) * pageSize + 1;
+    const end = Math.min(page * pageSize, total);
+    if (showingCount) showingCount.textContent = total > 0 ? `${start}-${end} of ${total}` : "0";
+    if (pageNow) pageNow.textContent = String(page);
+    if (pageTotal) pageTotal.textContent = String(totalPages);
+    if (prevBtn) prevBtn.disabled = page <= 1 || total === 0;
+    if (nextBtn) nextBtn.disabled = page >= totalPages || total === 0;
+  }
+
   // ============================
   // RBAC for header "+ Create New" button
   // Disable for plain "user" role (same as Edit)
   // ============================
   const pageContainer = document.querySelector(".manage-users-page");
   const PAGE_ROLE_RAW = (pageContainer?.dataset.currentRole || "user").toLowerCase();
-  const PAGE_ROLE_NORM = PAGE_ROLE_RAW.replace(/\s+/g, "").replace(/_/g, "");
-  const CAN_CREATE_USER = PAGE_ROLE_NORM === "admin" || PAGE_ROLE_NORM === "superadmin";
+  const PAGE_ROLE_NORM = normalizeRole(PAGE_ROLE_RAW);
+  const CAN_CREATE_USER = isAdminRole(PAGE_ROLE_RAW);
 
   if (createBtn) {
     if (!CAN_CREATE_USER) {
@@ -101,14 +125,9 @@ document.addEventListener("DOMContentLoaded", () => {
   let usersFetchController = null;
   let usersSearchDebounceTimer = null;
 
-  function normalizeRole(r) {
-    return (r || "").toLowerCase().replace(/\s+/g, "").replace(/_/g, "");
-  }
-
   function fetchUsers() {
     const q = (searchInput?.value || "").trim();
     const params = new URLSearchParams({
-      mode: "ajax",
       page: String(currentPage),
       page_size: String(rowsPerPage),
     });
@@ -117,29 +136,19 @@ document.addEventListener("DOMContentLoaded", () => {
     if (usersFetchController) usersFetchController.abort();
     usersFetchController = new AbortController();
 
-    return fetch(`/manage-users?${params.toString()}`, {
-      headers: { Accept: "application/json" },
+    return fetchUsersJson(`/api/users?${params.toString()}`, {
       signal: usersFetchController.signal,
     })
-      .then((res) => {
-        if (!res.ok) throw new Error("HTTP " + res.status);
-        return res.json();
-      })
-      .then((payload) => {
-        if (payload && payload.users) {
-          allUsers = Array.isArray(payload.users) ? payload.users : [];
-        } else {
-          allUsers = [];
-        }
+      .then(({ data: payload }) => {
+        allUsers = Array.isArray(payload?.users) ? payload.users : [];
         totalItems = Number(payload?.total || 0);
         totalPages = Number(payload?.total_pages || 1);
         currentPage = Number(payload?.page || currentPage);
-        const role = (payload && payload.current_user && payload.current_user.role) ? payload.current_user.role : "User";
-        currentUserRole = normalizeRole(role);
+        currentUserRole = normalizeRole(payload?.current_user?.role || "User");
         renderPage();
       })
       .catch((err) => {
-        if (err && err.name === "AbortError") return;
+        if (err && (err.name === "AbortError" || err.message === "session_expired")) return;
         console.error("Error fetching users:", err);
         allUsers = [];
         totalItems = 0;
@@ -171,11 +180,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (!allUsers.length) {
       if (noUserRow) noUserRow.style.display = "";
-      if (showingCount) showingCount.textContent = "0";
-      if (pageNow) pageNow.textContent = "1";
-      if (pageTotal) pageTotal.textContent = "1";
-      if (prevBtn) prevBtn.disabled = true;
-      if (nextBtn) nextBtn.disabled = true;
+      updatePaginationFooter(0, 1, rowsPerPage, 1);
       return;
     }
 
@@ -214,13 +219,7 @@ document.addEventListener("DOMContentLoaded", () => {
       tableBody.appendChild(tr);
     });
 
-    const startEntry = totalItems === 0 ? 0 : (currentPage - 1) * rowsPerPage + 1;
-    const endEntry = Math.min(currentPage * rowsPerPage, totalItems);
-    if (showingCount) showingCount.textContent = totalItems > 0 ? `${startEntry}-${endEntry} of ${totalItems}` : "0";
-    if (pageNow) pageNow.textContent = String(currentPage);
-    if (pageTotal) pageTotal.textContent = String(totalPages);
-    if (prevBtn) prevBtn.disabled = currentPage <= 1 || totalItems === 0;
-    if (nextBtn) nextBtn.disabled = currentPage >= totalPages || totalItems === 0;
+    updatePaginationFooter(totalItems, currentPage, rowsPerPage, totalPages);
   }
 
   function escapeHtml(s) {

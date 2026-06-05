@@ -1,5 +1,4 @@
 document.addEventListener("DOMContentLoaded", () => {
-
     const companyPage = document.querySelector(".company-page");
     let canEdit = companyPage?.dataset.canEdit === "1";
     const isNewCompanyPage = companyPage?.dataset.isNewCompany === "1";
@@ -179,12 +178,37 @@ document.addEventListener("DOMContentLoaded", () => {
       runLiveValidation();
     }
 
+    async function fetchCompanyJson(url, options) {
+      const res = await fetch(url, {
+        credentials: "same-origin",
+        cache: "no-store",
+        headers: { Accept: "application/json", ...(options && options.headers) },
+        ...options,
+      });
+      let data = null;
+      try {
+        data = await res.json();
+      } catch (e) {
+        data = null;
+      }
+      if (res.status === 401) {
+        showToast((data && (data.message || data.error)) || "Session expired. Please log in again.", "error");
+        setTimeout(() => { window.location.href = "/login?message=session_expired"; }, 1200);
+        throw new Error("session_expired");
+      }
+      if (res.status === 403 && data && data.message && /company setup/i.test(data.message)) {
+        showToast(data.message, "error");
+        setTimeout(() => { window.location.href = "/company_info"; }, 1200);
+        throw new Error("company_setup_required");
+      }
+      return { res, data };
+    }
+
     async function loadCompanyInformation() {
       try {
-        const response = await fetch(API_URL);
-        const result = await response.json();
-        if (!response.ok || !result.success) {
-          if (response.status === 403) {
+        const { res, data: result } = await fetchCompanyJson(API_URL);
+        if (!res.ok || !result.success) {
+          if (res.status === 403) {
             showToast(result.message || "Access denied.", "error");
           }
           return;
@@ -203,6 +227,7 @@ document.addEventListener("DOMContentLoaded", () => {
           setViewOnlyMode();
         }
       } catch (err) {
+        if (err.message === "session_expired") return;
         console.error("Failed to load company information:", err);
         if (isNewCompanyPage) {
           showNewCompanyForm({});
@@ -252,7 +277,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const NAME_RE = /^[A-Za-z0-9 .,&()'/-]{3,100}$/;
     const CODE_RE = /^[A-Z0-9-]{2,20}$/;
     const OWNER_RE = /^[A-Za-z\s]{2,80}$/;
-    const GSTIN_RE = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/;
+    const TAX_ID_RE = /^[A-Z0-9]{2,20}$/;
     const REG_RE = /^[A-Z0-9]{8,25}$/;
     const EMAIL_RE =
       /^[A-Za-z0-9._%+-]{1,64}@(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)*(?:com|in|org|net|edu|gov|info|biz|co|io|me|us|uk|au|asia|tech|store|online|site|app|dev|ai|co\.in|com\.in|net\.in|org\.in|gov\.in|ac\.in|edu\.in)$/i;
@@ -342,11 +367,11 @@ document.addEventListener("DOMContentLoaded", () => {
   
       const gstin = gstinInput.value.trim();
       if (!gstin) {
-        gstinErr.textContent = "GSTIN is required.";
+        gstinErr.textContent = "Tax ID is required.";
         gstinInput.classList.add("input-error");
         ok = false;
-      } else if (gstin.length !== 15 || !GSTIN_RE.test(gstin)) {
-        gstinErr.textContent = "Enter valid 15-character GSTIN.";
+      } else if (!TAX_ID_RE.test(gstin)) {
+        gstinErr.textContent = "Use 2-20 letters and numbers only.";
         gstinInput.classList.add("input-error");
         ok = false;
       } else {
@@ -355,7 +380,11 @@ document.addEventListener("DOMContentLoaded", () => {
       }
   
       const regNo = registrationInput.value.trim();
-      if (regNo && !REG_RE.test(regNo)) {
+      if (!regNo) {
+        registrationErr.textContent = "Registration number is required.";
+        registrationInput.classList.add("input-error");
+        ok = false;
+      } else if (!REG_RE.test(regNo)) {
         registrationErr.textContent = "Use 8-25 uppercase letters and numbers only.";
         registrationInput.classList.add("input-error");
         ok = false;
@@ -393,7 +422,11 @@ document.addEventListener("DOMContentLoaded", () => {
       }
   
       const website = websiteInput.value.trim();
-      if (website && !WEBSITE_RE.test(website)) {
+      if (!website) {
+        websiteErr.textContent = "Website is required.";
+        websiteInput.classList.add("input-error");
+        ok = false;
+      } else if (!WEBSITE_RE.test(website)) {
         websiteErr.textContent = "Enter a valid website (e.g. www.example.com).";
         websiteInput.classList.add("input-error");
         ok = false;
@@ -644,21 +677,28 @@ document.addEventListener("DOMContentLoaded", () => {
       if (saveBtn) saveBtn.disabled = true;
   
       try {
-        const response = await fetch(API_URL, {
+        const { res, data: result } = await fetchCompanyJson(API_URL, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(getCompanyData())
+          body: JSON.stringify(getCompanyData()),
         });
-  
-        const result = await response.json();
-  
-        if (!response.ok || !result.success) {
-          throw new Error(result.message || "Failed to save company information");
+
+        if (!res.ok || !result.success) {
+          const msg = result.message || "Failed to save company information";
+          if (res.status === 409 && /tax id|registration|email|website|phone/i.test(msg)) {
+            if (/tax id/i.test(msg)) gstinErr.textContent = msg;
+            else if (/registration/i.test(msg)) registrationErr.textContent = msg;
+            else if (/email/i.test(msg)) emailErr.textContent = msg;
+            else if (/website/i.test(msg)) websiteErr.textContent = msg;
+            else if (/phone/i.test(msg)) phoneErr.textContent = msg;
+          }
+          throw new Error(msg);
         }
   
         showToast(result.message || "Company information saved successfully");
         clearForm();
       } catch (error) {
+        if (error.message === "session_expired" || error.message === "company_setup_required") return;
         console.error(error);
         showToast(error.message || "Failed to save company information", "error");
       } finally {
@@ -752,7 +792,7 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   
     gstinInput.addEventListener("input", () => {
-      gstinInput.value = gstinInput.value.replace(/[^A-Za-z0-9]/g, "").toUpperCase().slice(0, 15);
+      gstinInput.value = gstinInput.value.replace(/[^A-Za-z0-9]/g, "").toUpperCase().slice(0, 20);
       runLiveValidation();
     });
   

@@ -1,6 +1,79 @@
 // static/department-roles.js
 document.addEventListener("DOMContentLoaded", () => {
-  console.log("department-roles.js loaded ✅");
+  function normalizeRole(r) {
+    return (r || "").toLowerCase().replace(/\s+/g, "").replace(/_/g, "");
+  }
+
+  function isAdminRole(r) {
+    const n = normalizeRole(r);
+    return n === "admin" || n === "superadmin";
+  }
+
+  function showSuccessNotification(message) {
+    document.querySelectorAll(".success-notification, .error-notification").forEach((n) => n.remove());
+    const el = document.createElement("div");
+    el.className = "success-notification";
+    el.textContent = message;
+    document.body.appendChild(el);
+    requestAnimationFrame(() => el.classList.add("show"));
+    setTimeout(() => {
+      el.classList.remove("show");
+      setTimeout(() => el.remove(), 400);
+    }, 2000);
+  }
+
+  function showErrorNotification(message) {
+    document.querySelectorAll(".success-notification, .error-notification").forEach((n) => n.remove());
+    const el = document.createElement("div");
+    el.className = "error-notification";
+    el.textContent = message;
+    document.body.appendChild(el);
+    requestAnimationFrame(() => el.classList.add("show"));
+    setTimeout(() => {
+      el.classList.remove("show");
+      setTimeout(() => el.remove(), 400);
+    }, 3000);
+  }
+
+  async function fetchDepartmentsJson(url, options) {
+    const res = await fetch(url, {
+      credentials: "same-origin",
+      cache: "no-store",
+      headers: { Accept: "application/json", ...(options && options.headers) },
+      ...options,
+    });
+    let data = null;
+    try {
+      data = await res.json();
+    } catch (e) {
+      data = null;
+    }
+    if (res.status === 401) {
+      showErrorNotification((data && (data.message || data.error)) || "Session expired. Please log in again.");
+      setTimeout(() => { window.location.href = "/login?message=session_expired"; }, 1200);
+      throw new Error("session_expired");
+    }
+    if (res.status === 403 && data && data.message && /company setup/i.test(data.message)) {
+      showErrorNotification(data.message);
+      setTimeout(() => { window.location.href = "/company_info"; }, 1200);
+      throw new Error("company_setup_required");
+    }
+    return { res, data };
+  }
+
+  function departmentDuplicateError(list, code, name, excludeCode) {
+    const newCode = String(code || "").trim().toLowerCase();
+    const newName = String(name || "").trim().toLowerCase();
+    const skip = String(excludeCode || "").trim().toLowerCase();
+    for (const d of list || []) {
+      const c = String(d.code || "").trim().toLowerCase();
+      const n = String(d.name || "").trim().toLowerCase();
+      if (skip && c === skip) continue;
+      if (c && c === newCode) return "Department code already exists. Please use a different code.";
+      if (n && n === newName) return "Department name already exists. Please use a different name.";
+    }
+    return "";
+  }
 
   // Check for flash success message on page load
   const flashSuccess = document.querySelector(".flash-success, .alert-success, [data-flash='success']");
@@ -61,10 +134,6 @@ document.addEventListener("DOMContentLoaded", () => {
   /** From /api/departments — roles.json matrix for Department & Roles */
   let rbacDept = { full_access: false, view: false, create: false, edit: false, delete: false };
 
-  function normalizeRole(r) {
-    return (r || "").toLowerCase().replace(/\s+/g, "").replace(/_/g, "");
-  }
-
   function fetchDepartments() {
     const q = (searchInput?.value || "").trim();
     const params = new URLSearchParams({
@@ -77,22 +146,15 @@ document.addEventListener("DOMContentLoaded", () => {
     if (departmentsFetchController) departmentsFetchController.abort();
     departmentsFetchController = new AbortController();
 
-    return fetch(`/api/departments?${params.toString()}`, { signal: departmentsFetchController.signal })
-      .then((res) => {
-        if (!res.ok) throw new Error("HTTP " + res.status);
-        return res.json();
-      })
-      .then((payload) => {
-        if (payload && payload.departments) {
-          allDepartments = Array.isArray(payload.departments) ? payload.departments : [];
-        } else {
-          allDepartments = [];
-        }
+    return fetchDepartmentsJson(`/api/departments?${params.toString()}`, {
+      signal: departmentsFetchController.signal,
+    })
+      .then(({ data: payload }) => {
+        allDepartments = Array.isArray(payload?.departments) ? payload.departments : [];
         totalItems = Number(payload?.total || 0);
         totalPages = Number(payload?.total_pages || 1);
         currentPage = Number(payload?.page || currentPage);
-        const role = (payload && payload.current_user && payload.current_user.role) ? payload.current_user.role : "User";
-        currentUserRole = normalizeRole(role);
+        currentUserRole = normalizeRole(payload?.current_user?.role || "User");
         if (payload && payload.permissions && payload.permissions.department_roles) {
           rbacDept = payload.permissions.department_roles;
         } else {
@@ -102,7 +164,7 @@ document.addEventListener("DOMContentLoaded", () => {
         renderPage();
       })
       .catch((err) => {
-        if (err && err.name === "AbortError") return;
+        if (err && (err.name === "AbortError" || err.message === "session_expired")) return;
         console.error("Error fetching departments:", err);
         allDepartments = [];
         totalItems = 0;
@@ -113,7 +175,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function canCreate() {
     if (rbacDept.full_access || rbacDept.create) return true;
-    return currentUserRole === "admin" || currentUserRole === "superadmin";
+    return isAdminRole(currentUserRole);
   }
 
   function updateCreateButtonState() {
@@ -129,7 +191,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function canEdit() {
     if (rbacDept.full_access || rbacDept.edit) return true;
-    return currentUserRole === "admin" || currentUserRole === "superadmin";
+    return isAdminRole(currentUserRole);
   }
   function canDelete() {
     if (rbacDept.full_access || rbacDept.delete) return true;
@@ -148,16 +210,13 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function updateCountsAndPages(total, totalPagesVal) {
-    const startEntry = total === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1;
-    const endEntry   = Math.min(currentPage * PAGE_SIZE, total);
-
-    if (showingSpan) {
-      showingSpan.textContent = total > 0 ? `${startEntry}-${endEntry} of ${total}` : "0";
-    }
-    if (currentPageSpan) currentPageSpan.textContent = currentPage;
-    if (totalPagesSpan) totalPagesSpan.textContent = totalPagesVal;
-    if (prevBtn) prevBtn.disabled = currentPage <= 1;
-    if (nextBtn) nextBtn.disabled = currentPage >= totalPagesVal;
+    const start = total === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1;
+    const end = Math.min(currentPage * PAGE_SIZE, total);
+    if (showingSpan) showingSpan.textContent = total > 0 ? `${start}-${end} of ${total}` : "0";
+    if (currentPageSpan) currentPageSpan.textContent = String(currentPage);
+    if (totalPagesSpan) totalPagesSpan.textContent = String(totalPagesVal);
+    if (prevBtn) prevBtn.disabled = currentPage <= 1 || total === 0;
+    if (nextBtn) nextBtn.disabled = currentPage >= totalPagesVal || total === 0;
   }
 
   function renderPage() {
@@ -771,28 +830,24 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
-    fetch("/department-roles/edit", {
-      method: "POST",
+    const dupMsg = departmentDuplicateError(allDepartments, code, name, editId.value);
+    if (dupMsg) {
+      showErrorNotification(dupMsg);
+      if (saveBtn) {
+        saveBtn.disabled = false;
+        saveBtn.textContent = saveBtn.dataset.originalText || "Save";
+        updateEditDepartmentButtonState();
+      }
+      return;
+    }
+
+    const originalCode = encodeURIComponent(editId.value);
+    fetchDepartmentsJson(`/api/departments/${originalCode}`, {
+      method: "PUT",
       headers: { "Content-Type": "application/json" },
-      credentials: "same-origin",
-      body: JSON.stringify({
-        original_code: editId.value,
-        code,
-        name,
-        description: desc,
-      }),
+      body: JSON.stringify({ code, name, description: desc }),
     })
-      .then((r) => r.json().then((data) => ({ res: r, data })))
-      .then(({ res, data }) => {
-        if (res.status === 401) {
-          showErrorNotification(data.error || "Session expired. Please log in again.");
-          setTimeout(() => { window.location.href = "/login?message=session_expired"; }, 1500);
-          if (saveBtn) {
-            saveBtn.disabled = false;
-            saveBtn.textContent = saveBtn.dataset.originalText || "Save";
-          }
-          return;
-        }
+      .then(({ data }) => {
         if (data.success) {
           if (saveBtn) {
             saveBtn.textContent = saveBtn.dataset.originalText || "Save";
@@ -802,7 +857,7 @@ document.addEventListener("DOMContentLoaded", () => {
           showSuccessNotification("Department has been edited successfully");
           fetchDepartments();
         } else {
-          showErrorNotification(data.error || "Update failed");
+          showErrorNotification(data.message || data.error || "Update failed");
           if (saveBtn) {
             saveBtn.disabled = false;
             saveBtn.textContent = saveBtn.dataset.originalText || "Save";
@@ -811,11 +866,9 @@ document.addEventListener("DOMContentLoaded", () => {
         }
       })
       .catch((err) => {
+        if (err.message === "session_expired") return;
         console.error("Edit API error:", err);
-        // Show error notification instead of alert
         showErrorNotification("API error while updating department");
-        
-        // Re-enable button on error
         if (saveBtn) {
           saveBtn.disabled = false;
           saveBtn.textContent = saveBtn.dataset.originalText || "Save";
@@ -887,24 +940,22 @@ document.addEventListener("DOMContentLoaded", () => {
   confirmDel?.addEventListener("click", () => {
     if (!pendingDeptCode) return;
 
-    fetch("/department-roles/delete", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ code: pendingDeptCode }),
+    fetchDepartmentsJson(`/api/departments/${encodeURIComponent(pendingDeptCode)}`, {
+      method: "DELETE",
     })
-      .then((res) => res.json())
-      .then((data) => {
+      .then(({ data }) => {
         if (data.success) {
           closeDeleteDeptModal();
           showSuccessNotification("Department has been deleted successfully");
           fetchDepartments();
         } else {
-          alert("Failed to delete department: " + (data.error || "Unknown error"));
+          showErrorNotification(data.message || data.error || "Delete failed");
         }
       })
       .catch((err) => {
+        if (err.message === "session_expired") return;
         console.error("Delete error:", err);
-        alert("Error deleting department. Please try again.");
+        showErrorNotification("Error deleting department. Please try again.");
       });
   });
 

@@ -1,8 +1,83 @@
 // static/create-department.js
 // Simple Fetch/XHR integration for the Department & Roles → Create Department page.
 
+function branchOptionLabel(b) {
+  const name = (b.name || "").trim();
+  const code = (b.code || "").trim();
+  if (!name) return "";
+  return code ? `${name} (${code})` : name;
+}
+
+function populateBranchSelect(selectEl, branches, selectedValue) {
+  if (!selectEl) return;
+  const keep = (selectedValue || selectEl.value || "").trim();
+  const list = Array.isArray(branches) ? branches : [];
+  if (!list.length) return;
+
+  selectEl.innerHTML = '<option value="">Select a branch</option>';
+  list.forEach((b) => {
+    const name = (b.name || "").trim();
+    if (!name) return;
+    const opt = document.createElement("option");
+    opt.value = name;
+    opt.textContent = branchOptionLabel(b);
+    if (name === keep) opt.selected = true;
+    selectEl.appendChild(opt);
+  });
+
+  const hint = document.getElementById("branchSelectHint");
+  if (hint) hint.style.display = "none";
+}
+
+function loadCompanyBranches(selectEl, selectedValue, onDone) {
+  if (!selectEl) {
+    if (typeof onDone === "function") onDone();
+    return Promise.resolve();
+  }
+
+  const serverOptions = Array.from(selectEl.options)
+    .filter((o) => o.value)
+    .map((o) => ({ name: o.value, code: "" }));
+
+  return fetch("/api/company-branches", { credentials: "same-origin", cache: "no-store" })
+    .then((res) => res.json())
+    .then((data) => {
+      const hint = document.getElementById("branchSelectHint");
+      if (!data || !data.success) {
+        if (hint && serverOptions.length === 0) hint.style.display = "";
+        return;
+      }
+      const branches = data.branches || [];
+      if (branches.length) {
+        populateBranchSelect(selectEl, branches, selectedValue);
+      } else if (serverOptions.length) {
+        populateBranchSelect(selectEl, serverOptions, selectedValue);
+      } else if (hint) {
+        hint.style.display = "";
+      }
+    })
+    .catch((err) => {
+      console.error("Error loading company branches:", err);
+      const hint = document.getElementById("branchSelectHint");
+      if (hint && serverOptions.length === 0) hint.style.display = "";
+    })
+    .finally(() => {
+      if (typeof onDone === "function") onDone();
+    });
+}
+
+window.loadCompanyBranches = loadCompanyBranches;
+
 document.addEventListener("DOMContentLoaded", () => {
   console.log("create-department.js loaded ✅");
+
+  const branchSelect = document.getElementById("branchSelect");
+  const preselectedBranch = branchSelect?.value || "";
+  loadCompanyBranches(branchSelect, preselectedBranch, () => {
+    if (typeof window.updateNewDepartmentButtonState === "function") {
+      window.updateNewDepartmentButtonState();
+    }
+  });
 
   // Fire a Fetch/XHR call so this page shows activity in DevTools → Network → Fetch/XHR.
   // We also log the number of existing roles for quick diagnostics.
@@ -318,6 +393,7 @@ document.addEventListener("DOMContentLoaded", () => {
       // Enable button only if all fields are valid
       submitBtn.disabled = !(codeValid && nameValid && branchValid && descValid);
     }
+    window.updateNewDepartmentButtonState = updateNewDepartmentButtonState;
 
     // Add event listeners to update button state
     if (departmentCode) {

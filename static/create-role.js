@@ -248,6 +248,41 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     loadDepartmentOptions();
 
+    function branchOptionLabel(b) {
+        const name = (b.name || "").trim();
+        const code = (b.code || "").trim();
+        if (!name) return "";
+        return code ? `${name} (${code})` : name;
+    }
+
+    function loadBranchOptions() {
+        if (!branch) return;
+        fetch("/api/company-branches", { credentials: "same-origin", cache: "no-store" })
+            .then((res) => res.json())
+            .then((data) => {
+                if (!data || !data.success) return;
+                const keep = (branch.value || "").trim();
+                const list = data.branches || [];
+                if (!list.length) return;
+                branch.innerHTML = '<option value="">Select a branch</option>';
+                list.forEach((b) => {
+                    const name = (b.name || "").trim();
+                    if (!name) return;
+                    const opt = document.createElement("option");
+                    opt.value = name;
+                    opt.textContent = branchOptionLabel(b);
+                    if (name === keep) opt.selected = true;
+                    branch.appendChild(opt);
+                });
+                if (typeof updateCreateRoleButtonState === "function") updateCreateRoleButtonState();
+            })
+            .catch((err) => {
+                console.error("Error loading company branches:", err);
+                if (typeof updateCreateRoleButtonState === "function") updateCreateRoleButtonState();
+            });
+    }
+    loadBranchOptions();
+
     // --------------------
     // CONFIRM MODAL
     // --------------------

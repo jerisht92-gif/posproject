@@ -47,11 +47,16 @@
           <select id="branchSelect" name="branch" required>
             <option value="">Select a branch</option>
             {% for b in branches %}
-              <option value="{{ b.id }}" {% if form and form.branch == b.id %}selected{% endif %}>
-                {{ b.name if b.name else b.id }}
+              <option value="{{ b.name }}" {% if form and form.branch == b.name %}selected{% endif %}>
+                {{ b.name }}{% if b.code %} ({{ b.code }}){% endif %}
               </option>
             {% endfor %}
           </select>
+          <p id="branchSelectHint" class="field-hint" style="{% if branches %}display:none;{% endif %}margin-top:6px;font-size:12px;color:#666;">
+            No company branches yet.
+            <a href="{{ url_for('company_info') }}">Add branches in Company Information</a>
+            first, then return here.
+          </p>
         </div>
       </div>
 

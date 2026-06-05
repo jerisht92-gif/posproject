@@ -800,50 +800,267 @@ if _USER and _PASSWORD and _HOST and _PORT and _DBNAME and _PASSWORD != "[YOUR-P
         # Keep app importable even if DB env is not configured yet.
         print(f"Failed to create SQLAlchemy engine: {e}")
 
-def get_departments_from_db():
+def _fetch_departments_for_tenant(
+    tenant_code,
+    *,
+    q: str = "",
+    page: int | None = None,
+    page_size: int | None = None,
+):
+    """
+    Tenant-scoped departments from DB only (SQL + row_visible_to_tenant).
+    Returns (rows, total, page, total_pages).
+    """
+    from signup_tenant import normalize_company_code, row_visible_to_tenant, tenant_where_clause
+
+    code = normalize_company_code(tenant_code or "")
+    if not code:
+        return [], 0, 1, 1
+
     conn = get_db_connection()
     cur = conn.cursor()
+    try:
+        clause, tparams = tenant_where_clause(code, table_alias="")
+        where_parts = [clause]
+        params = list(tparams)
+        if q:
+            like = f"%{q}%"
+            where_parts.append(
+                """
+                (LOWER(code) LIKE %s
+                   OR LOWER(name) LIKE %s
+                   OR LOWER(description) LIKE %s)
+                """
+            )
+            params.extend([like, like, like])
+        where_sql = " WHERE " + " AND ".join(where_parts)
 
-    cur.execute("""
-        SELECT code, name, branch, description
-        FROM departments
-        ORDER BY code ASC
-    """)
+        cur.execute(f"SELECT COUNT(*) FROM departments {where_sql}", tuple(params))
+        total = int((cur.fetchone() or [0])[0] or 0)
 
-    rows = cur.fetchall()
-    cur.close()
-    conn.close()
+        if page is not None and page_size is not None:
+            total_pages = max(1, (total + page_size - 1) // page_size)
+            page = max(1, min(page, total_pages))
+            offset = (page - 1) * page_size
+            order_sql = "ORDER BY code DESC"
+            limit_sql = "LIMIT %s OFFSET %s"
+            exec_params = tuple(params + [page_size, offset])
+        else:
+            total_pages = 1
+            page = 1
+            order_sql = "ORDER BY code ASC"
+            limit_sql = ""
+            exec_params = tuple(params)
 
-    return [
-        {
-            "code": r[0],
-            "name": r[1],  # UI expects name
-            "branch": r[2],
-            "description": r[3],
-        }
+        cur.execute(
+            f"""
+            SELECT code, name, branch, description, COALESCE(company_code, '')
+            FROM departments
+            {where_sql}
+            {order_sql}
+            {limit_sql}
+            """.strip(),
+            exec_params,
+        )
+        raw_rows = cur.fetchall()
+    finally:
+        cur.close()
+        conn.close()
+
+    departments = []
+    for r in raw_rows:
+        if not row_visible_to_tenant(r[4], code):
+            continue
+        departments.append(
+            {
+                "code": r[0],
+                "name": r[1],
+                "branch": r[2],
+                "description": r[3],
+                "company_code": (r[4] or "").strip().upper(),
+            }
+        )
+
+    if page is None:
+        return departments, len(departments), 1, 1
+    return departments, total, page, total_pages
+
+
+def get_departments_from_db(tenant_code=None):
+    departments, _, _, _ = _fetch_departments_for_tenant(tenant_code)
+    return departments
+
+
+def _user_list_item_from_row(row, *, otp_entry=None, failed_entry=None, now_ts=None):
+    """Build manage-users table JSON row from a DB tuple."""
+    email_key = (row[2] or "").strip().lower()
+    otp_entry = otp_entry if isinstance(otp_entry, dict) else {}
+    failed_entry = failed_entry if isinstance(failed_entry, dict) else {}
+    ts = now_ts if now_ts is not None else time.time()
+    otp_ts = float(otp_entry.get("timestamp", 0) or 0)
+    return {
+        "user_id": row[0],
+        "name": row[1],
+        "email": row[2],
+        "phone": row[3],
+        "role": row[4],
+        "first_name": row[5] or "",
+        "last_name": row[6] or "",
+        "branch": row[7] or "",
+        "department": row[8] or "",
+        "reporting_to": row[9] or "",
+        "available_branches": str(row[10]) if row[10] is not None else "",
+        "employee_id": row[11] or "",
+        "email_otp": (otp_entry.get("otp") or ""),
+        "otp_expiry": (
+            datetime.fromtimestamp(otp_ts + 300).isoformat(sep=" ")
+            if otp_entry.get("timestamp") and (otp_ts + 300) >= ts
+            else ""
+        ),
+        "failed_attempts": (
+            int(failed_entry.get("count", 0))
+            if isinstance(failed_entry, dict)
+            else int(failed_entry or 0)
+        ),
+    }
+
+
+def _fetch_users_for_tenant(
+    tenant_code,
+    *,
+    q: str = "",
+    page: int | None = None,
+    page_size: int | None = None,
+):
+    """Tenant-scoped users for Manage Users (returns rows, total, page, total_pages)."""
+    from signup_tenant import normalize_company_code
+
+    code = normalize_company_code(tenant_code or "")
+    if not code:
+        return [], 0, 1, 1
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        where_parts = []
+        params = []
+        _append_tenant_where(where_parts, params, cur, "users", code)
+        if q:
+            like = f"%{q}%"
+            where_parts.append(
+                """
+                (LOWER(name) LIKE %s
+                   OR LOWER(email) LIKE %s
+                   OR LOWER(phone) LIKE %s
+                   OR LOWER(role) LIKE %s)
+                """
+            )
+            params.extend([like, like, like, like])
+        where_sql = (" WHERE " + " AND ".join(where_parts)) if where_parts else ""
+
+        cur.execute(f"SELECT COUNT(*) FROM users {where_sql}", tuple(params))
+        total = int((cur.fetchone() or [0])[0] or 0)
+
+        if page is not None and page_size is not None:
+            total_pages = max(1, (total + page_size - 1) // page_size)
+            page = max(1, min(page, total_pages))
+            offset = (page - 1) * page_size
+            limit_sql = "LIMIT %s OFFSET %s"
+            exec_params = tuple(params + [page_size, offset])
+        else:
+            total_pages = 1
+            page = 1
+            limit_sql = ""
+            exec_params = tuple(params)
+
+        cur.execute(
+            f"""
+            SELECT
+                user_id, name, email, phone, role,
+                first_name, last_name, branch, department,
+                reporting_to, available_branches, employee_id
+            FROM users
+            {where_sql}
+            ORDER BY user_id DESC
+            {limit_sql}
+            """.strip(),
+            exec_params,
+        )
+        rows = cur.fetchall()
+    finally:
+        cur.close()
+        conn.close()
+
+    otp_data = load_otps()
+    failed_data = load_failed_attempts()
+    now_ts = time.time()
+    users = [
+        _user_list_item_from_row(
+            r,
+            otp_entry=otp_data.get((r[2] or "").strip().lower(), {}),
+            failed_entry=failed_data.get((r[2] or "").strip().lower(), {}),
+            now_ts=now_ts,
+        )
         for r in rows
     ]
-def get_roles_from_db():
+    return users, total, page, total_pages
+
+
+def _masters_admin_json_denied():
+    """403 JSON if current user is not Admin / Super Admin."""
+    prof = get_current_user_profile() or {}
+    if normalize_role(prof.get("role")) in ["superadmin", "admin"]:
+        return None
+    return jsonify({
+        "success": False,
+        "message": "Only Super Admin or Admin can perform this action.",
+    }), 403
+
+
+def get_roles_from_db(tenant_code=None):
+    from signup_tenant import normalize_company_code
+
+    code = normalize_company_code(tenant_code or "")
+    if not code:
+        return []
+
     conn = get_db_connection()
     cur = conn.cursor()
- 
-    cur.execute("""
-        SELECT
-            r.role_id,
-            COALESCE(d.name, r.department_name),
-            COALESCE(d.code, ''),
-            r.role_name,
-            r.description,
-            r.permissions,
-            r.branch
-        FROM roles r
-        LEFT JOIN departments d
-            ON LOWER(TRIM(COALESCE(r.department_name, ''))) = LOWER(TRIM(COALESCE(d.name, '')))
-        ORDER BY r.role_id DESC
-    """)
- 
-    rows = cur.fetchall()
- 
+    try:
+        where_parts = []
+        params = []
+        _append_tenant_where(where_parts, params, cur, "roles", code, alias="r")
+        where_sql = (" WHERE " + " AND ".join(where_parts)) if where_parts else ""
+        dept_join = (
+            "LOWER(TRIM(COALESCE(r.department_name, ''))) = LOWER(TRIM(COALESCE(d.name, '')))"
+        )
+        if _table_has_company_code(cur, "departments"):
+            dept_join += (
+                " AND UPPER(TRIM(COALESCE(d.company_code, ''))) = UPPER(TRIM(COALESCE(r.company_code, '')))"
+            )
+        cur.execute(
+            f"""
+            SELECT
+                r.role_id,
+                COALESCE(d.name, r.department_name),
+                COALESCE(d.code, ''),
+                r.role_name,
+                r.description,
+                r.permissions,
+                r.branch
+            FROM roles r
+            LEFT JOIN departments d
+                ON {dept_join}
+            {where_sql}
+            ORDER BY r.role_id DESC
+            """,
+            tuple(params),
+        )
+        rows = cur.fetchall()
+    finally:
+        cur.close()
+        conn.close()
+
     roles = []
     for r in rows:
         roles.append({
@@ -855,25 +1072,27 @@ def get_roles_from_db():
             "permissions": r[5] or {},
             "branch": r[6] or "",
         })
- 
-    cur.close()
-    conn.close()
     return roles
 
 
-def _resolve_department_name(cur, department_ref):
+def _resolve_department_name(cur, department_ref, tenant_code=None):
     """Map department code or display name to canonical departments.name (FK target for roles.department_name)."""
     department_ref = (department_ref or "").strip()
     if not department_ref:
         return None
+    where_parts = [
+        "(LOWER(TRIM(code)) = LOWER(TRIM(%s)) OR LOWER(TRIM(name)) = LOWER(TRIM(%s)))"
+    ]
+    params = [department_ref, department_ref]
+    if tenant_code:
+        _append_tenant_where(where_parts, params, cur, "departments", tenant_code)
     cur.execute(
-        """
+        f"""
         SELECT name FROM departments
-        WHERE LOWER(TRIM(code)) = LOWER(TRIM(%s))
-           OR LOWER(TRIM(name)) = LOWER(TRIM(%s))
+        WHERE {' AND '.join(where_parts)}
         LIMIT 1
         """,
-        (department_ref, department_ref),
+        tuple(params),
     )
     row = cur.fetchone()
     return (row[0] or "").strip() if row else None
@@ -1871,10 +2090,10 @@ def normalize_department_for_storage(d):
 
 
 def department_for_api(d):
-    """Department dict safe for JSON (no id)."""
+    """Department dict safe for JSON (no id / internal tenant fields)."""
     if not isinstance(d, dict):
         return {}
-    return {k: v for k, v in d.items() if k != "id"}
+    return {k: v for k, v in d.items() if k not in ("id", "company_code")}
 
 
 def _dept_code_key(d):
@@ -1891,6 +2110,25 @@ def find_department_by_code(departments, code_ref):
     for d in departments:
         if isinstance(d, dict) and _dept_code_key(d) == cref:
             return d
+    return None
+
+
+def _department_duplicate_message(departments, code, name, *, exclude_code=""):
+    """Return error message if code/name conflicts within tenant department list."""
+    from signup_tenant import department_code_exists_for_tenant
+
+    skip = (exclude_code or "").strip().lower()
+    scoped = [
+        d for d in (departments or [])
+        if isinstance(d, dict) and _dept_code_key(d) != skip
+    ]
+    if department_code_exists_for_tenant(scoped, code):
+        return "Department code already exists. Please use a different code."
+    new_name = (name or "").strip().lower()
+    if new_name:
+        for d in scoped:
+            if (d.get("name") or "").strip().lower() == new_name:
+                return "Department name already exists. Please use a different name."
     return None
 
 
@@ -1927,7 +2165,15 @@ def load_products():
     try:
         conn = get_db_connection()
         cur = conn.cursor()
-        cur.execute("SELECT * FROM products")
+        tenant_code = (session.get("company_code") or "").strip().upper()
+        from signup_tenant import is_dummy_company_code
+
+        where_parts = []
+        params = []
+        if tenant_code and not is_dummy_company_code(tenant_code):
+            _append_tenant_where(where_parts, params, cur, "products", tenant_code)
+        where_sql = f"WHERE {' AND '.join(where_parts)}" if where_parts else ""
+        cur.execute(f"SELECT * FROM products {where_sql}", tuple(params))
         rows = cur.fetchall()
         col_names = [desc[0] for desc in cur.description]
 
@@ -2636,23 +2882,108 @@ def _sync_logged_in_role_from_db(email: str) -> str:
 
 def _user_needs_company_setup(cur, user_email: str) -> bool:
     """True when founder must complete Company Information (PENDING or no saved profile)."""
-    from signup_tenant import FOUNDER_DUMMY_COMPANY_CODE
+    from signup_tenant import user_needs_company_setup as _needs_setup
 
     user_code, user_name, _ = _fetch_user_company_context(cur, user_email)
-    if user_code == FOUNDER_DUMMY_COMPANY_CODE:
-        return True
-    if not user_name:
-        return False
+    company_information_exists = False
+    if user_name:
+        cur.execute(
+            """
+            SELECT 1
+            FROM company_information
+            WHERE LOWER(TRIM(company_name)) = %s
+            LIMIT 1
+            """,
+            (user_name,),
+        )
+        company_information_exists = cur.fetchone() is not None
+    return _needs_setup(
+        user_code,
+        user_company_name=user_name,
+        company_information_exists=company_information_exists,
+    )
+
+
+def _establish_user_session(cur, user_id, email, remember_me=False):
+    """
+    After successful password or OTP login: promote founder if needed, set session, last_seen.
+    Returns (needs_company_setup, role, redirect_url).
+    """
+    from signup_tenant import FOUNDER_DUMMY_COMPANY_CODE, FOUNDER_ROLE
+
     cur.execute(
         """
-        SELECT 1
-        FROM company_information
-        WHERE LOWER(TRIM(company_name)) = %s
+        SELECT user_id, role, branch, department,
+               UPPER(TRIM(company_code)), LOWER(TRIM(company_name))
+        FROM users
+        WHERE user_id = %s
         LIMIT 1
         """,
-        (user_name,),
+        (user_id,),
     )
-    return cur.fetchone() is None
+    row = cur.fetchone()
+    if not row:
+        return False, "", url_for("login")
+
+    _uid, db_role, db_branch, db_department, db_company_code, login_company_name = row
+    db_company_code = (db_company_code or "").strip().upper()
+    login_company_name = (login_company_name or "").strip()
+    email = (email or "").strip().lower()
+
+    if db_company_code == FOUNDER_DUMMY_COMPANY_CODE and not _is_super_admin_role(db_role):
+        if not _company_has_super_admin(cur, login_company_name):
+            cur.execute(
+                "UPDATE users SET role = %s WHERE user_id = %s",
+                (FOUNDER_ROLE, user_id),
+            )
+            db_role = FOUNDER_ROLE
+    elif not _is_super_admin_role(db_role) and login_company_name:
+        if not _company_has_super_admin(cur, login_company_name):
+            cur.execute(
+                """
+                SELECT user_id FROM users
+                WHERE LOWER(TRIM(company_name)) = %s
+                ORDER BY user_id ASC
+                LIMIT 1
+                """,
+                (login_company_name,),
+            )
+            first_row = cur.fetchone()
+            if first_row and int(first_row[0]) == int(user_id):
+                cur.execute(
+                    """
+                    UPDATE users SET role = %s, company_code = %s WHERE user_id = %s
+                    """,
+                    (FOUNDER_ROLE, FOUNDER_DUMMY_COMPANY_CODE, user_id),
+                )
+                db_role = FOUNDER_ROLE
+                db_company_code = FOUNDER_DUMMY_COMPANY_CODE
+
+    session.permanent = True
+    session["user"] = email
+    session["role"] = db_role
+    session["branch"] = db_branch or "Main Branch"
+    session["department"] = db_department or ""
+    session["company_code"] = db_company_code
+    session["company_name"] = login_company_name
+    session["last_active"] = time.time()
+    session["remember_me"] = remember_me
+
+    cur.execute(
+        "UPDATE users SET last_seen = NOW() WHERE user_id = %s",
+        (user_id,),
+    )
+
+    needs_company_setup = _user_needs_company_setup(cur, email)
+
+    cur.execute("SELECT role FROM users WHERE user_id = %s LIMIT 1", (user_id,))
+    role_row = cur.fetchone()
+    if role_row and role_row[0]:
+        db_role = (role_row[0] or "").strip() or db_role
+        session["role"] = db_role
+
+    redirect_url = url_for("company_info") if needs_company_setup else url_for("dashboard")
+    return needs_company_setup, db_role, redirect_url
 
 
 def _get_company_setup_prefill(cur, user_email: str) -> dict:
@@ -2691,12 +3022,14 @@ def _get_company_permissions(user_email: str):
         info_company_code, info_company_name = _fetch_company_info_for_user(cur, user_company_name)
         role_norm = (user_role or "").strip().lower().replace(" ", "").replace("_", "")
         is_super_admin = role_norm == "superadmin"
-        can_access = _user_can_access_company_info(
+        from signup_tenant import can_access_company_information
+
+        can_access = can_access_company_information(
             user_company_code,
             user_company_name,
             info_company_code,
             info_company_name,
-            is_super_admin=is_super_admin,
+            role=user_role,
         )
         can_edit = is_super_admin and can_access
         return can_access, can_edit
@@ -2705,10 +3038,107 @@ def _get_company_permissions(user_email: str):
         conn.close()
 
 
+def _fetch_company_branches_for_tenant(tenant_code, user_email=None):
+    """Company branches from company_information → company_branches (for dropdowns)."""
+    from signup_tenant import is_dummy_company_code, normalize_company_code
+
+    company_id = None
+    code = normalize_company_code(tenant_code or "")
+    if code and not is_dummy_company_code(code):
+        row = fetch_one(
+            """
+            SELECT company_id
+            FROM company_information
+            WHERE UPPER(TRIM(company_code)) = %s
+            ORDER BY company_id
+            LIMIT 1
+            """,
+            (code,),
+        )
+        if row:
+            company_id = row["company_id"]
+
+    if not company_id and user_email:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        try:
+            _code, company_name, _role = _fetch_user_company_context(cur, user_email)
+            if company_name:
+                cur.execute(
+                    """
+                    SELECT company_id
+                    FROM company_information
+                    WHERE LOWER(TRIM(company_name)) = LOWER(TRIM(%s))
+                    ORDER BY company_id
+                    LIMIT 1
+                    """,
+                    (company_name,),
+                )
+                name_row = cur.fetchone()
+                if name_row:
+                    company_id = name_row[0]
+        finally:
+            cur.close()
+            conn.close()
+
+    if not company_id:
+        return []
+
+    rows = fetch_all(
+        """
+        SELECT branch_name, branch_code
+        FROM company_branches
+        WHERE company_id = %s
+        ORDER BY branch_id
+        """,
+        (company_id,),
+    )
+    branches = []
+    for r in rows or []:
+        name = (r.get("branch_name") or "").strip()
+        if not name:
+            continue
+        branches.append({
+            "name": name,
+            "code": (r.get("branch_code") or "").strip(),
+        })
+    return branches
+
+
+def _registered_company_branch_names(branches_list):
+    """Lowercase set of branch names from company_branches."""
+    names = set()
+    for b in branches_list or []:
+        if not isinstance(b, dict):
+            continue
+        name = (b.get("name") or "").strip().lower()
+        if name:
+            names.add(name)
+    return names
+
+
+def _validate_department_branch(branch, branches_list):
+    """Ensure department branch is one of the company's registered branches."""
+    selected = (branch or "").strip()
+    if not selected:
+        return "Please select a branch."
+    if not branches_list:
+        return "No company branches found. Add branches in Company Information first."
+    allowed = _registered_company_branch_names(branches_list)
+    if selected.lower() not in allowed:
+        return "Selected branch must be a branch registered in Company Information."
+    return None
+
+
 def _fetch_user_company_context(cur, user_email: str):
+    """(company_code, company_name, role) for company-information access checks."""
+    from signup_tenant import FOUNDER_DUMMY_COMPANY_CODE, is_dummy_company_code, normalize_company_code
+
     cur.execute(
         """
-        SELECT UPPER(TRIM(company_code)), LOWER(TRIM(company_name)), role
+        SELECT UPPER(TRIM(COALESCE(company_code, ''))),
+               LOWER(TRIM(COALESCE(company_name, ''))),
+               COALESCE(role, 'User')
         FROM users
         WHERE LOWER(email) = LOWER(%s)
         LIMIT 1
@@ -2718,38 +3148,25 @@ def _fetch_user_company_context(cur, user_email: str):
     row = cur.fetchone()
     if not row:
         return "", "", "User"
-    return (
-        (row[0] or "").strip(),
-        (row[1] or "").strip(),
-        (row[2] or "User").strip(),
-    )
-
-
-def _user_can_access_company_info(
-    user_company_code: str,
-    user_company_name: str,
-    info_company_code: str,
-    info_company_name: str,
-    *,
-    is_super_admin: bool,
-) -> bool:
-    """Same-tenant users may open the page; only Super Admin may edit (enforced on POST)."""
-    from signup_tenant import FOUNDER_DUMMY_COMPANY_CODE
-
-    if is_super_admin:
-        return True
-    # New company founder still on setup code — always allow Company Information.
-    if user_company_code == FOUNDER_DUMMY_COMPANY_CODE:
-        return True
-    if not info_company_code and not info_company_name:
-        return True
-    if user_company_code and info_company_code and user_company_code == info_company_code:
-        return True
-    if user_company_name and info_company_name and user_company_name == info_company_name:
-        return True
-    if user_company_code == FOUNDER_DUMMY_COMPANY_CODE and user_company_name and info_company_name:
-        return user_company_name == info_company_name
-    return False
+    code = (row[0] or "").strip().upper()
+    name = (row[1] or "").strip().lower()
+    role = (row[2] or "User").strip()
+    if name and (not code or is_dummy_company_code(code)):
+        cur.execute(
+            """
+            SELECT UPPER(TRIM(company_code))
+            FROM company_information
+            WHERE LOWER(TRIM(company_name)) = %s
+              AND UPPER(TRIM(company_code)) <> %s
+            ORDER BY company_id DESC
+            LIMIT 1
+            """,
+            (name, FOUNDER_DUMMY_COMPANY_CODE),
+        )
+        info_row = cur.fetchone()
+        if info_row and info_row[0]:
+            code = info_row[0]
+    return normalize_company_code(code), name, role
 
 
 @app.route("/company_info")
@@ -2949,8 +3366,12 @@ def company_logo():
                 file.seek(0)
             except Exception:
                 return jsonify({"success": False, "message": "Invalid image file. Use JPG or PNG only."}), 400
-            company_code = (request.form.get("company_code") or "").strip().upper()
-            rel_path = _company_logo_relative_path(company_code, ext)
+            from signup_tenant import is_dummy_company_code
+
+            logo_code = (session.get("company_code") or "").strip().upper()
+            if is_dummy_company_code(logo_code):
+                logo_code = None
+            rel_path = _company_logo_relative_path(logo_code, ext)
             stored_path, _ = _persist_module_upload(
                 object_storage.MODULE_COMPANY_INFORMATION_ATTACHMENTS,
                 COMPANY_INFORMATION_ATTACHMENTS_FOLDER,
@@ -2997,19 +3418,46 @@ def save_company_information():
         if not can_edit:
             return jsonify({"success": False, "message": "Only Super Admin can update company information."}), 403
 
+    from signup_tenant import FOUNDER_DUMMY_COMPANY_CODE
+
     conn = get_db_connection()
     cur = conn.cursor()
     try:
-        _, user_company_name, _ = _fetch_user_company_context(cur, user_email)
+        user_company_code, user_company_name, user_role = _fetch_user_company_context(cur, user_email)
         is_new_company = _user_needs_company_setup(cur, user_email)
         setup_prefill = _get_company_setup_prefill(cur, user_email) if is_new_company else {}
+        cur.execute(
+            """
+            SELECT TRIM(company_name)
+            FROM users
+            WHERE LOWER(email) = LOWER(%s)
+            LIMIT 1
+            """,
+            (user_email,),
+        )
+        tenant_name_row = cur.fetchone()
+        tenant_company_name = (tenant_name_row[0] or "").strip() if tenant_name_row else ""
     finally:
         cur.close()
         conn.close()
 
     if request.method == "GET":
         row = None
-        if user_company_name:
+        if user_company_code and user_company_code != FOUNDER_DUMMY_COMPANY_CODE:
+            row = fetch_one(
+                """
+                SELECT company_id, company_name, company_code, company_type, owner_name,
+                       logo_path, gstin, registration_no, email, phone_number, website,
+                       address, city, state, country, pincode
+                FROM company_information
+                WHERE UPPER(TRIM(company_code)) = %s
+                ORDER BY company_id
+                LIMIT 1
+                """,
+                (user_company_code,),
+            )
+        elif tenant_company_name or user_company_name:
+            lookup_name = tenant_company_name or user_company_name
             row = fetch_one(
                 """
                 SELECT company_id, company_name, company_code, company_type, owner_name,
@@ -3020,18 +3468,7 @@ def save_company_information():
                 ORDER BY company_id
                 LIMIT 1
                 """,
-                (user_company_name,),
-            )
-        elif not is_new_company:
-            row = fetch_one(
-                """
-                SELECT company_id, company_name, company_code, company_type, owner_name,
-                       logo_path, gstin, registration_no, email, phone_number, website,
-                       address, city, state, country, pincode
-                FROM company_information
-                ORDER BY company_id
-                LIMIT 1
-                """
+                (lookup_name,),
             )
         if not row:
             return jsonify({
@@ -3081,47 +3518,140 @@ def save_company_information():
     if not data:
         return jsonify({"success": False, "message": "No data received"}), 400
 
-    company_name = (data.get("company_name") or "").strip()
-    company_code = (data.get("company_code") or "").strip()
-    if not company_name or not company_code:
-        return jsonify({"success": False, "message": "Company name and code are required"}), 400
+    submitted_name = (data.get("company_name") or "").strip()
+    submitted_code = (data.get("company_code") or "").strip()
+    if not submitted_code:
+        return jsonify({"success": False, "message": "Company code is required"}), 400
+    if not COMPANY_CODE_REGEX.match(submitted_code.strip().upper()):
+        return jsonify({
+            "success": False,
+            "message": "Company code must be 3–20 letters, numbers, or hyphens.",
+        }), 400
 
     branches = data.get("branches") or []
     if not branches:
         return jsonify({"success": False, "message": "At least one branch is required"}), 400
 
-    logo_path = (session.pop("company_logo_path", None) or "").strip()
-    if logo_path:
-        logo_path = _finalize_company_logo_path(company_code, logo_path)
-    if not logo_path:
-        for ext in (".png", ".jpg"):
-            rel = _company_logo_relative_path(company_code, ext)
-            resolved = _resolve_stored_file_path(rel)
-            if resolved and (object_storage.is_remote_url(resolved) or os.path.isfile(resolved)):
-                logo_path = resolved if object_storage.is_remote_url(resolved) else rel
-                break
-            candidate = os.path.join(COMPANY_INFORMATION_ATTACHMENTS_FOLDER, rel.replace("/", os.sep))
-            if os.path.isfile(candidate):
-                logo_path = rel
-                break
-    if not logo_path:
-        _, legacy_name = _legacy_company_logo_file()
-        if legacy_name:
-            logo_path = url_for("company_logo")
-
     conn = get_db_connection()
     cur = conn.cursor()
-
     try:
+        user_company_code, _, user_role = _fetch_user_company_context(cur, user_email)
+        role_norm = (user_role or "").strip().lower().replace(" ", "").replace("_", "")
+        is_super_admin = role_norm == "superadmin"
+
+        cur.execute(
+            """
+            SELECT TRIM(company_name)
+            FROM users
+            WHERE LOWER(email) = LOWER(%s)
+            LIMIT 1
+            """,
+            (user_email,),
+        )
+        tenant_row = cur.fetchone()
+        tenant_company_name = (tenant_row[0] or "").strip() if tenant_row else ""
+
+        from signup_tenant import (
+            FOUNDER_DUMMY_COMPANY_CODE,
+            validate_company_information_save,
+            validate_company_info_unique_fields,
+        )
+
+        registered_code = submitted_code.strip().upper()
+        cur.execute(
+            """
+            SELECT 1
+            FROM company_information
+            WHERE UPPER(TRIM(company_code)) = %s
+              AND LOWER(TRIM(company_name)) <> LOWER(TRIM(%s))
+            LIMIT 1
+            """,
+            (registered_code, tenant_company_name),
+        )
+        code_used_by_other = cur.fetchone() is not None
+
+        save_check = validate_company_information_save(
+            submitted_name,
+            submitted_code,
+            tenant_company_name=tenant_company_name,
+            is_super_admin=is_super_admin,
+            code_used_by_other_tenant=code_used_by_other,
+        )
+        if not save_check.ok:
+            cur.close()
+            conn.close()
+            return jsonify({"success": False, "message": save_check.message}), 400
+
+        company_name = save_check.company_name
+        registered_code = save_check.company_code
+
+        contact_fields = {
+            "gstin": (data.get("gstin") or "").strip(),
+            "registration_no": (data.get("registration_no") or "").strip(),
+            "email": (data.get("email") or "").strip(),
+            "website": (data.get("website") or "").strip(),
+            "phone": (data.get("phone") or "").strip(),
+        }
+
+        cur.execute(
+            """
+            SELECT company_id
+            FROM company_information
+            WHERE LOWER(TRIM(company_name)) = LOWER(TRIM(%s))
+            ORDER BY company_id
+            LIMIT 1
+            """,
+            (company_name,),
+        )
+        existing_row = cur.fetchone()
+        exclude_company_id = existing_row[0] if existing_row else None
+
+        conflicts = _company_information_field_conflicts(
+            cur, exclude_company_id, contact_fields
+        )
+        unique_check = validate_company_info_unique_fields(
+            gstin=contact_fields["gstin"],
+            registration_no=contact_fields["registration_no"],
+            email=contact_fields["email"],
+            website=contact_fields["website"],
+            phone=contact_fields["phone"],
+            conflicts=conflicts,
+        )
+        if not unique_check.ok:
+            cur.close()
+            conn.close()
+            return jsonify({"success": False, "message": unique_check.message}), 409
+
+        logo_path = (session.pop("company_logo_path", None) or "").strip()
+        if logo_path:
+            logo_path = _finalize_company_logo_path(registered_code, logo_path)
+        if not logo_path:
+            for ext in (".png", ".jpg"):
+                rel = _company_logo_relative_path(registered_code, ext)
+                resolved = _resolve_stored_file_path(rel)
+                if resolved and (object_storage.is_remote_url(resolved) or os.path.isfile(resolved)):
+                    logo_path = resolved if object_storage.is_remote_url(resolved) else rel
+                    break
+                candidate = os.path.join(
+                    COMPANY_INFORMATION_ATTACHMENTS_FOLDER, rel.replace("/", os.sep)
+                )
+                if os.path.isfile(candidate):
+                    logo_path = rel
+                    break
+        if not logo_path:
+            _, legacy_name = _legacy_company_logo_file()
+            if legacy_name:
+                logo_path = url_for("company_logo")
+
         vals = (
             company_name,
-            company_code,
+            registered_code,
             (data.get("company_type") or "").strip(),
             (data.get("owner_name") or "").strip(),
             logo_path,
-            (data.get("gstin") or "").strip(),
-            (data.get("registration_no") or "").strip(),
-            (data.get("email") or "").strip(),
+            (data.get("gstin") or "").strip().upper(),
+            (data.get("registration_no") or "").strip().upper(),
+            (data.get("email") or "").strip().lower(),
             (data.get("phone") or "").strip(),
             (data.get("website") or "").strip(),
             (data.get("address") or "").strip(),
@@ -3131,23 +3661,42 @@ def save_company_information():
             (data.get("pincode") or "").strip(),
         )
 
-        cur.execute(
-            """
-            INSERT INTO company_information (
-                company_name, company_code, company_type, owner_name, logo_path,
-                gstin, registration_no, email, phone_number, website,
-                address, city, state, country, pincode, created_at, updated_at
-            ) VALUES (
-                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                %s, %s, %s, %s, %s,
-                CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-            )
-            RETURNING company_id
-            """,
-            vals,
-        )
+        existing = existing_row
 
-        company_id = cur.fetchone()[0]
+        if existing:
+            company_id = existing[0]
+            cur.execute(
+                """
+                UPDATE company_information SET
+                    company_name = %s, company_code = %s, company_type = %s, owner_name = %s,
+                    logo_path = %s, gstin = %s, registration_no = %s, email = %s,
+                    phone_number = %s, website = %s, address = %s, city = %s, state = %s,
+                    country = %s, pincode = %s, updated_at = CURRENT_TIMESTAMP
+                WHERE company_id = %s
+                """,
+                vals + (company_id,),
+            )
+            cur.execute(
+                "DELETE FROM company_branches WHERE company_id = %s",
+                (company_id,),
+            )
+        else:
+            cur.execute(
+                """
+                INSERT INTO company_information (
+                    company_name, company_code, company_type, owner_name, logo_path,
+                    gstin, registration_no, email, phone_number, website,
+                    address, city, state, country, pincode, created_at, updated_at
+                ) VALUES (
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s,
+                    CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                )
+                RETURNING company_id
+                """,
+                vals,
+            )
+            company_id = cur.fetchone()[0]
 
         for b in branches:
             cur.execute(
@@ -3171,34 +3720,24 @@ def save_company_information():
                 ),
             )
 
-        from signup_tenant import FOUNDER_DUMMY_COMPANY_CODE
-
-        cur.execute(
-            """
-            SELECT LOWER(TRIM(company_name))
-            FROM users
-            WHERE LOWER(email) = LOWER(%s)
-            LIMIT 1
-            """,
-            (user_email,),
-        )
-        founder_row = cur.fetchone()
-        founder_company_name = (founder_row[0] or "").strip() if founder_row else ""
-        registered_code = company_code.strip().upper()
-
-        if founder_company_name and registered_code != FOUNDER_DUMMY_COMPANY_CODE:
+        if tenant_company_name and registered_code != FOUNDER_DUMMY_COMPANY_CODE:
             cur.execute(
                 """
                 UPDATE users
                 SET company_code = %s
-                WHERE LOWER(TRIM(company_name)) = %s
-                  AND UPPER(TRIM(company_code)) = %s
+                WHERE LOWER(TRIM(company_name)) = LOWER(TRIM(%s))
+                  AND (
+                        UPPER(TRIM(COALESCE(company_code, ''))) = %s
+                        OR company_code IS NULL
+                        OR TRIM(COALESCE(company_code, '')) = ''
+                      )
                 """,
-                (registered_code, founder_company_name, FOUNDER_DUMMY_COMPANY_CODE),
+                (registered_code, tenant_company_name, FOUNDER_DUMMY_COMPANY_CODE),
             )
 
         conn.commit()
         session["company_code"] = registered_code
+        session["company_name"] = company_name.strip().lower()
 
         return jsonify({
             "success": True,
@@ -3220,46 +3759,71 @@ def save_company_information():
 # =========================================
 # 3. MASTERS — Manage Users
 # =========================================
-def _db_fetch_users_ordered(include_id: bool = False):
-    """Return users in the same order as Manage Users table (latest first)."""
+def _db_fetch_users_ordered(include_id: bool = False, tenant_code: str | None = None):
+    """Return users in the same order as Manage Users table (latest first), scoped by company."""
+    from signup_tenant import normalize_company_code
+
+    code = normalize_company_code(tenant_code or "")
+    if not code:
+        return []
+
     conn = get_db_connection()
     cur = conn.cursor()
-    if include_id:
-        cur.execute(
-            """
-            SELECT user_id, name, email, phone, role, first_name, last_name, country_code,
-                   contact_number, branch, department, reporting_to, available_branches, employee_id
-            FROM users
-            ORDER BY user_id DESC
-            """
-        )
-        rows = cur.fetchall()
-        users = []
-        for r in rows:
-            users.append(
-                {
-                    "user_id": r[0],
-                    "name": r[1],
-                    "email": r[2],
-                    "phone": r[3],
-                    "role": r[4],
-                    "first_name": r[5],
-                    "last_name": r[6],
-                    "country_code": r[7],
-                    "contact_number": r[8],
-                    "branch": r[9],
-                    "department": r[10],
-                    "reporting_to": r[11],
-                    "available_branches": str(r[12]) if r[12] is not None else "",
-                    "employee_id": r[13],
-                }
+    where_parts = []
+    params = []
+    _append_tenant_where(where_parts, params, cur, "users", code)
+    where_sql = (" WHERE " + " AND ".join(where_parts)) if where_parts else ""
+    try:
+        if include_id:
+            cur.execute(
+                f"""
+                SELECT user_id, name, email, phone, role, first_name, last_name, country_code,
+                       contact_number, branch, department, reporting_to, available_branches, employee_id
+                FROM users
+                {where_sql}
+                ORDER BY user_id DESC
+                """,
+                tuple(params),
             )
-    else:
-        cur.execute("SELECT user_id, name, email, phone, role FROM users ORDER BY user_id DESC")
-        rows = cur.fetchall()
-        users = [{"user_id": r[0], "name": r[1], "email": r[2], "phone": r[3], "role": r[4]} for r in rows]
-    cur.close()
-    conn.close()
+            rows = cur.fetchall()
+            users = []
+            for r in rows:
+                users.append(
+                    {
+                        "user_id": r[0],
+                        "name": r[1],
+                        "email": r[2],
+                        "phone": r[3],
+                        "role": r[4],
+                        "first_name": r[5],
+                        "last_name": r[6],
+                        "country_code": r[7],
+                        "contact_number": r[8],
+                        "branch": r[9],
+                        "department": r[10],
+                        "reporting_to": r[11],
+                        "available_branches": str(r[12]) if r[12] is not None else "",
+                        "employee_id": r[13],
+                    }
+                )
+        else:
+            cur.execute(
+                f"""
+                SELECT user_id, name, email, phone, role
+                FROM users
+                {where_sql}
+                ORDER BY user_id DESC
+                """,
+                tuple(params),
+            )
+            rows = cur.fetchall()
+            users = [
+                {"user_id": r[0], "name": r[1], "email": r[2], "phone": r[3], "role": r[4]}
+                for r in rows
+            ]
+    finally:
+        cur.close()
+        conn.close()
     return users
 
 
@@ -3426,8 +3990,12 @@ def get_effective_permissions_for_session():
         full["is_platform_admin"] = True
         return full
 
-    roles = get_roles_from_db()
-    # roles = get_roles_from_db()
+    from signup_tenant import is_dummy_company_code
+
+    tenant_code = (session.get("company_code") or "").strip().upper()
+    roles = get_roles_from_db(
+        tenant_code if tenant_code and not is_dummy_company_code(tenant_code) else None
+    )
     dept = (prof.get("department") or "").strip().lower()
     branch = (prof.get("branch") or "Main Branch").strip().lower()
     role_name = (prof.get("role") or "").strip().lower()
@@ -3529,203 +4097,63 @@ def _db_sync_users_id_sequence(cur):
 
 @app.route("/manage-users")
 def manage_users():
-    user_email = session.get("user")
-    if not user_email:
-        if wants_json():
-            return jsonify({"success": False, "message": "Session expired"}), 401
-        return redirect(url_for("login", message="session_expired"))
-
-    users = _db_fetch_users_ordered(include_id=False)
+    """Shell page; data loaded in manage-users.js via GET /api/users."""
+    user_email, tenant_code, tenant_resp, tenant_status = _masters_tenant_from_session()
+    if tenant_resp is not None:
+        if not user_email:
+            return redirect(url_for("login", message="session_expired"))
+        return redirect(url_for("company_info"))
 
     prof = get_current_user_profile() or {}
-    user_name = (prof.get("name") or "User").strip()
-    user_role = (prof.get("role") or "User").strip()
-
-    if wants_json():
-        q = (request.args.get("q") or "").strip().lower()
-        try:
-            page = max(1, int(request.args.get("page") or 1))
-        except (TypeError, ValueError):
-            page = 1
-        try:
-            page_size = int(request.args.get("page_size") or 10)
-        except (TypeError, ValueError):
-            page_size = 10
-        page_size = min(max(page_size, 1), 100)
-
-        conn = get_db_connection()
-        cur = conn.cursor()
-        try:
-            where_sql = ""
-            params = []
-            if q:
-                where_sql = """
-                    WHERE LOWER(name) LIKE %s
-                       OR LOWER(email) LIKE %s
-                       OR LOWER(phone) LIKE %s
-                       OR LOWER(role) LIKE %s
-                """
-                like = f"%{q}%"
-                params = [like, like, like, like]
-
-            cur.execute(
-                f"""
-                SELECT COUNT(*)
-                FROM users
-                {where_sql}
-                """,
-                tuple(params),
-            )
-            total = int((cur.fetchone() or [0])[0] or 0)
-            total_pages = max(1, (total + page_size - 1) // page_size)
-            page = max(1, min(page, total_pages))
-            offset = (page - 1) * page_size
-
-            cur.execute(
-                f"""
-                SELECT
-                    user_id,
-                    name,
-                    email,
-                    phone,
-                    role,
-                    first_name,
-                    last_name,
-                    branch,
-                    department,
-                    reporting_to,
-                    available_branches,
-                    employee_id
-                FROM users
-                {where_sql}
-                ORDER BY user_id DESC
-                LIMIT %s OFFSET %s
-                """,
-                tuple(params + [page_size, offset]),
-            )
-            rows = cur.fetchall()
-        finally:
-            cur.close()
-            conn.close()
-
-        otp_data = load_otps()
-        failed_attempts_data = load_failed_attempts()
-        now_ts = time.time()
-
-        page_users = [
-            (
-                lambda email_key, otp_entry, failed_entry: {
-                    "user_id": r[0],
-                    "name": r[1],
-                    "email": r[2],
-                    "phone": r[3],
-                    "role": r[4],
-                    "first_name": r[5] or "",
-                    "last_name": r[6] or "",
-                    "branch": r[7] or "",
-                    "department": r[8] or "",
-                    "reporting_to": r[9] or "",
-                    "available_branches": str(r[10]) if r[10] is not None else "",
-                    "employee_id": r[11] or "",
-                    "email_otp": (otp_entry.get("otp") or "") if isinstance(otp_entry, dict) else "",
-                    "otp_expiry": (
-                        datetime.fromtimestamp(float(otp_entry.get("timestamp", 0)) + 300).isoformat(sep=" ")
-                        if isinstance(otp_entry, dict)
-                        and otp_entry.get("timestamp")
-                        and (float(otp_entry.get("timestamp", 0)) + 300) >= now_ts
-                        else ""
-                    ),
-                    "failed_attempts": (
-                        int(failed_entry.get("count", 0))
-                        if isinstance(failed_entry, dict)
-                        else int(failed_entry or 0)
-                    ),
-                }
-            )(
-                ((r[2] or "").strip().lower()),
-                otp_data.get((r[2] or "").strip().lower(), {}),
-                failed_attempts_data.get((r[2] or "").strip().lower(), {}),
-            )
-            for r in rows
-        ]
-
-        return jsonify({
-            "success": True,
-            "users": page_users,
-            "total": total,
-            "page": page,
-            "total_pages": total_pages,
-            "current_user": {"email": user_email, "name": user_name, "role": user_role},
-        }), 200
-
     return render_template(
         "manage-users.html",
-        users=users,
         title="Manage Users - Stackly",
         page="manage_users",
         section="masters",
         user_email=user_email,
-        user_name=user_name,
-        user_role=user_role,
+        user_name=(prof.get("name") or "User").strip(),
+        user_role=(prof.get("role") or "User").strip(),
     )
 # =========================================
 # 4. MASTERS — Department & Roles
 # =========================================
 @app.route("/department-roles")
 def department_roles():
-    user_email = session.get("user")
-    if not user_email:
-        if wants_json():
-            return jsonify({"success": False, "message": "Session expired. Please login first."}), 401
-        return redirect(url_for("login", message="session_expired"))
+    """Shell page; data loaded in department-roles.js via GET /api/departments."""
+    user_email, tenant_code, tenant_resp, tenant_status = _masters_tenant_from_session()
+    if tenant_resp is not None:
+        if not user_email:
+            return redirect(url_for("login", message="session_expired"))
+        return redirect(url_for("company_info"))
 
-    # departments = load_departments()
-    departments = get_departments_from_db()
     prof = get_current_user_profile() or {}
-    user_name = prof.get("name") or "User"
-    user_role = prof.get("role") or "User"
-
-    if wants_json():
-        return jsonify(
-            {
-                "success": True,
-                "departments": departments,
-                "total": len(departments),
-                "current_user": {"email": user_email, "name": user_name, "role": user_role},
-                "permissions": get_effective_permissions_for_session(),
-            }
-        ), 200
-
     return render_template(
         "department-roles.html",
         title="Department & Roles - Stackly",
         page="department_roles",
         section="masters",
         user_email=user_email,
-        user_name=user_name,
-        user_role=user_role,
-        departments=departments,
+        user_name=prof.get("name") or "User",
+        user_role=prof.get("role") or "User",
     )
 
 
 
 @app.route("/department-roles/create", methods=["GET", "POST"])
 def create_department():
-    user_email = session.get("user")
-    if not user_email:
-        return redirect(url_for("login", message="session_expired"))
+    user_email, tenant_code, tenant_resp, tenant_status = _masters_tenant_from_session()
+    if tenant_resp is not None:
+        if not user_email:
+            return redirect(url_for("login", message="session_expired"))
+        return redirect(url_for("company_info"))
 
     prof = get_current_user_profile() or {}
     user_name = prof.get("name") or "User"
     user_role = prof.get("role") or "User"
 
-    branches_list = [
-        {"id": "main_branch", "name": "Main Branch"},
-        {"id": "branch_1", "name": "Branch 1"},
-        {"id": "branch_2", "name": "Branch 2"},
-    ]
+    branches_list = _fetch_company_branches_for_tenant(tenant_code, user_email)
 
-    roles = get_roles_from_db()
+    roles = get_roles_from_db(tenant_code)
     print("ROLES COUNT:", len(roles))
 
     if request.method == "POST":
@@ -3766,7 +4194,7 @@ def create_department():
                 user_role=user_role,
                 error=error,
                 form={"code": code, "department_name": name, "branch": branch, "description": desc},
-                branches=[],
+                branches=branches_list,
                 roles=roles,
             )
 
@@ -3782,11 +4210,27 @@ def create_department():
                 user_role=user_role,
                 error=error,
                 form={"code": code, "department_name": name, "branch": branch, "description": desc},
-                branches=[],
+                branches=branches_list,
                 roles=roles,
             )
 
-        departments = get_departments_from_db()
+        branch_err = _validate_department_branch(branch, branches_list)
+        if branch_err:
+            return render_template(
+                "create-department.html",
+                title="Create Department - Stackly",
+                page="department_roles",
+                section="masters",
+                user_email=user_email,
+                user_name=user_name,
+                user_role=user_role,
+                error=branch_err,
+                form={"code": code, "department_name": name, "branch": branch, "description": desc},
+                branches=branches_list,
+                roles=roles,
+            )
+
+        departments = get_departments_from_db(tenant_code)
 
         # Check for duplicates (case-insensitive) - either code OR name should be unique
         for d in departments:
@@ -3837,20 +4281,18 @@ def create_department():
         # 🔥 ADD DB INSERT
         conn = get_db_connection()
         cur = conn.cursor()
-
-        cur.execute("""
-            INSERT INTO departments (code, name, branch, description)
-            VALUES (%s, %s, %s, %s)
-        """, (
-            code,
-            name,
-            branch,
-            desc
-        ))
-
-        conn.commit()
-        cur.close()
-        conn.close()
+        try:
+            _insert_with_company_code(
+                cur,
+                "departments",
+                ["code", "name", "branch", "description"],
+                [code, name, branch, desc],
+                tenant_code,
+            )
+            conn.commit()
+        finally:
+            cur.close()
+            conn.close()
 
         flash("Department has been created successfully", "success")
         return redirect(url_for("department_roles"))
@@ -3868,105 +4310,7 @@ def create_department():
     )
 
 # =========================================
-# 4. MASTERS — Department & Roles — Edit/Delete (UI)
-# =========================================
-@app.route("/department-roles/edit", methods=["POST"])
-def edit_department():
-    # Session check (same as Edit Product / other edit modules)
-    user_email = session.get("user")
-    if not user_email:
-        return jsonify(success=False, error="Session expired. Please login first."), 401
-
-    try:
-        data = request.get_json(silent=True) or {}
-        # Original code identifies the row (before rename); legacy clients may send "id" with the old code
-        original_code = (data.get("original_code") or data.get("id") or "").strip()
-        code = (data.get("code") or "").strip()
-        name = (data.get("name") or "").strip()
-        description = data.get("description")
-
-        if not original_code:
-            return jsonify(success=False, error="Missing department identifier (original code)"), 400
-
-        departments = get_departments_from_db()
-        if not isinstance(departments, list):
-            departments = []
-
-        current = find_department_by_code(departments, original_code)
-        if not current:
-            return jsonify(success=False, error="Department not found"), 404
-
-        # Check for duplicates (case-insensitive) - exclude current department
-        new_code = code.lower()
-        new_name = name.lower()
-
-        for dept in departments:
-            if dept is current:
-                continue
-            existing_code = (dept.get("code") or "").strip().lower()
-            existing_name = (dept.get("name") or "").strip().lower()
-            if existing_code == new_code:
-                return jsonify(success=False, error="Department code already exists. Please use a different code."), 409
-            if existing_name == new_name:
-                return jsonify(success=False, error="Department name already exists. Please use a different name."), 409
-
-        conn = get_db_connection()
-        cur = conn.cursor()
-
-        cur.execute("""
-            UPDATE departments
-            SET code = %s,
-                name = %s,
-                description = %s
-            WHERE LOWER(code) = LOWER(%s)
-        """, (
-            code,
-            name,
-            description,
-            original_code
-        ))
-        conn.commit()
-        cur.close()
-        conn.close()
-
-        return jsonify(success=True)
-   
-    except Exception as e:
-        print("EDIT ERROR:", e)
-        return jsonify(success=False, error=str(e)), 500
-
-@app.route("/department-roles/delete", methods=["POST"])
-def delete_department():
-    user_email = session.get("user")
-    if not user_email:
-        return jsonify({"success": False, "error": "session_expired"}), 401
-
-    data = request.get_json(silent=True) or {}
-    code_ref = (data.get("code") or data.get("id") or "").strip()
-
-    if not code_ref:
-        return jsonify({"success": False, "error": "missing_code"}), 400
-    conn = get_db_connection()
-    cur = conn.cursor()
-
-    cur.execute("DELETE FROM departments WHERE LOWER(code) = LOWER(%s)", (code_ref,))
-
-    if cur.rowcount == 0:
-        cur.close()
-        conn.close()
-        return jsonify({"success": False, "error": "not_found"}), 404
-
-    conn.commit()
-    cur.close()
-    conn.close()
-
-    return jsonify({"success": True})
-
-    
-
-# =========================================
-# =========================================
-# 4. MASTERS — Department & Roles — APIs
+# 4. MASTERS — Department & Roles — APIs (edit/delete: PUT/DELETE /api/departments)
 # =========================================
 @app.route("/api/me/permissions", methods=["GET"])
 def api_me_permissions():
@@ -3982,90 +4326,58 @@ def api_me_permissions():
     ), 200
 
 
-@app.route("/api/departments", methods=["GET"])
-def api_departments():
-    """Get all departments - supports JSON response for Postman"""
+@app.route("/api/company-branches", methods=["GET"])
+def api_company_branches():
+    """JSON: branches for the logged-in user's company (Company Information)."""
     user_email = session.get("user")
     if not user_email:
         return jsonify({"success": False, "message": "Session expired. Please login first."}), 401
+
+    tenant_code, company_name = _sync_tenant_session_from_db(user_email)
+    branches = _fetch_company_branches_for_tenant(tenant_code, user_email)
+    return jsonify({
+        "success": True,
+        "branches": branches,
+        "company_code": tenant_code or "",
+        "company_name": company_name or "",
+    }), 200
+
+
+@app.route("/api/departments", methods=["GET"])
+def api_departments():
+    """Get all departments - supports JSON response for Postman"""
+    user_email, tenant_code, tenant_resp, tenant_status = _masters_tenant_from_session()
+    if tenant_resp is not None:
+        return tenant_resp, tenant_status
 
     q = (request.args.get("q") or "").strip().lower()
     raw_page = request.args.get("page")
     raw_page_no = request.args.get("page_no")
     raw_page_size = request.args.get("page_size")
-    use_pagination = bool(q or raw_page_size or raw_page_no or (raw_page and str(raw_page).isdigit()))
+    use_pagination = bool(
+        q
+        or raw_page_size
+        or raw_page_no
+        or (raw_page and str(raw_page).isdigit())
+        or request.args.get("source") == "department-roles"
+    )
 
     if not use_pagination:
-        departments = get_departments_from_db()
-        prof = get_current_user_profile() or {}
-        user_name = prof.get("name") or "User"
-        user_role = prof.get("role") or "User"
-        perms = get_effective_permissions_for_session()
-        return jsonify(
-            {
-                "success": True,
-                "departments": [department_for_api(d) for d in departments if isinstance(d, dict)],
-                "total": len(departments),
-                "page": 1,
-                "total_pages": 1,
-                "current_user": {
-                    "email": user_email,
-                    "name": user_name,
-                    "role": user_role,
-                },
-                "permissions": perms,
-            }
-        ), 200
-
-    try:
-        page = max(1, int(raw_page_no or raw_page or 1))
-    except (TypeError, ValueError):
-        page = 1
-    try:
-        page_size = int(request.args.get("page_size") or 10)
-    except (TypeError, ValueError):
-        page_size = 10
-    page_size = min(max(page_size, 1), 100)
-
-    conn = get_db_connection()
-    cur = conn.cursor()
-    try:
-        where_sql = ""
-        params = []
-        if q:
-            like = f"%{q}%"
-            where_sql = """
-                WHERE LOWER(code) LIKE %s
-                   OR LOWER(name) LIKE %s
-                   OR LOWER(description) LIKE %s
-            """
-            params = [like, like, like]
-
-        cur.execute(f"SELECT COUNT(*) FROM departments {where_sql}", tuple(params))
-        total = int((cur.fetchone() or [0])[0] or 0)
-        total_pages = max(1, (total + page_size - 1) // page_size)
-        page = max(1, min(page, total_pages))
-        offset = (page - 1) * page_size
-
-        cur.execute(
-            f"""
-            SELECT code, name, branch, description
-            FROM departments
-            {where_sql}
-            ORDER BY code DESC
-            LIMIT %s OFFSET %s
-            """,
-            tuple(params + [page_size, offset]),
+        departments, total, page, total_pages = _fetch_departments_for_tenant(tenant_code)
+    else:
+        try:
+            page = max(1, int(raw_page_no or raw_page or 1))
+        except (TypeError, ValueError):
+            page = 1
+        try:
+            page_size = int(request.args.get("page_size") or 10)
+        except (TypeError, ValueError):
+            page_size = 10
+        page_size = min(max(page_size, 1), 100)
+        departments, total, page, total_pages = _fetch_departments_for_tenant(
+            tenant_code, q=q, page=page, page_size=page_size
         )
-        rows = cur.fetchall()
-    finally:
-        cur.close()
-        conn.close()
 
-    departments = [
-        {"code": r[0], "name": r[1], "branch": r[2], "description": r[3]}
-        for r in rows
-    ]
     prof = get_current_user_profile() or {}
     user_name = prof.get("name") or "User"
     user_role = prof.get("role") or "User"
@@ -4091,11 +4403,11 @@ def api_departments():
 @app.route("/api/departments/<path:dept_ref>", methods=["GET"])
 def api_get_department(dept_ref):
     """Get single department by code (URL path, case-insensitive)."""
-    user_email = session.get("user")
-    if not user_email:
-        return jsonify({"success": False, "message": "Session expired. Please login first."}), 401
-    
-    departments = get_departments_from_db()
+    user_email, tenant_code, tenant_resp, tenant_status = _masters_tenant_from_session()
+    if tenant_resp is not None:
+        return tenant_resp, tenant_status
+
+    departments = get_departments_from_db(tenant_code)
     department = find_department_by_code(departments, dept_ref)
     
     if not department:
@@ -4111,71 +4423,48 @@ def api_get_department(dept_ref):
 @app.route("/api/departments", methods=["POST"])
 def api_create_department():
     """Create new department"""
-    user_email = session.get("user")
-    if not user_email:
-        return jsonify({"success": False, "message": "Session expired. Please login first."}), 401
-    
-    # Check user role
-    users = load_users()
-    user_role = "User"
-    for u in users:
-        if isinstance(u, dict) and (u.get("email") or "").lower() == user_email.lower():
-            user_role = (u.get("role") or "User").strip()
-            break
-    
-    normalized_role = user_role.replace(" ", "").replace("_", "").lower()
-    if normalized_role not in ["superadmin", "admin"]:
-        return jsonify({
-            "success": False,
-            "message": "User cannot create new departments."
-        }), 403
-    
+    user_email, tenant_code, tenant_resp, tenant_status = _masters_tenant_from_session()
+    if tenant_resp is not None:
+        return tenant_resp, tenant_status
+
+    denied = _masters_admin_json_denied()
+    if denied is not None:
+        return denied
+
     data = request.get_json() or {}
     code = (data.get("code") or "").strip()
     name = (data.get("name") or data.get("department_name") or "").strip()
     branch = (data.get("branch") or "").strip()
     description = (data.get("description") or "").strip()
-    
-    # Validation
+
     if not code:
         return jsonify({"success": False, "message": "Department code is required."}), 400
-    
     if not name:
         return jsonify({"success": False, "message": "Department name is required."}), 400
-    
-    departments = get_departments_from_db()
-    
-    # Check for duplicates (case-insensitive)
-    for d in departments:
-        existing_code = (d.get("code") or "").strip().lower()
-        existing_name = (d.get("name") or "").strip().lower()
-        new_code = code.lower()
-        new_name = name.lower()
-        
-        if existing_code == new_code:
-            return jsonify({
-                "success": False,
-                "message": "Department code already exists. Please use a different code."
-            }), 409
-        
-        if existing_name == new_name:
-            return jsonify({
-                "success": False,
-                "message": "Department name already exists. Please use a different name."
-            }), 409
+
+    branches_list = _fetch_company_branches_for_tenant(tenant_code, user_email)
+    branch_err = _validate_department_branch(branch, branches_list)
+    if branch_err:
+        return jsonify({"success": False, "message": branch_err}), 400
+
+    dup = _department_duplicate_message(get_departments_from_db(tenant_code), code, name)
+    if dup:
+        return jsonify({"success": False, "message": dup}), 409
     
     conn = get_db_connection()
     cur = conn.cursor()
-    cur.execute(
-        """
-        INSERT INTO departments (code, name, branch, description)
-        VALUES (%s, %s, %s, %s)
-        """,
-        (code, name, branch, description),
-    )
-    conn.commit()
-    cur.close()
-    conn.close()
+    try:
+        _insert_with_company_code(
+            cur,
+            "departments",
+            ["code", "name", "branch", "description"],
+            [code, name, branch, description],
+            tenant_code,
+        )
+        conn.commit()
+    finally:
+        cur.close()
+        conn.close()
 
     new_dept = {"code": code, "name": name, "branch": branch, "description": description}
     
@@ -4190,82 +4479,61 @@ def api_create_department():
 @app.route("/api/departments/<path:dept_ref>", methods=["PUT"])
 def api_update_department(dept_ref):
     """Update existing department"""
-    user_email = session.get("user")
-    if not user_email:
-        return jsonify({"success": False, "message": "Session expired. Please login first."}), 401
-    
-    # Check user role
-    users = load_users()
-    user_role = "User"
-    for u in users:
-        if isinstance(u, dict) and (u.get("email") or "").lower() == user_email.lower():
-            user_role = (u.get("role") or "User").strip()
-            break
-    
-    normalized_role = user_role.replace(" ", "").replace("_", "").lower()
-    if normalized_role not in ["superadmin", "admin"]:
-        return jsonify({
-            "success": False,
-            "message": "Only Super Admin or Admin can edit departments."
-        }), 403
-    
+    user_email, tenant_code, tenant_resp, tenant_status = _masters_tenant_from_session()
+    if tenant_resp is not None:
+        return tenant_resp, tenant_status
+
+    denied = _masters_admin_json_denied()
+    if denied is not None:
+        return denied
+
     data = request.get_json() or {}
     code = (data.get("code") or "").strip()
     name = (data.get("name") or "").strip()
     description = (data.get("description") or "").strip()
-    
+
     if not dept_ref or not str(dept_ref).strip():
         return jsonify({"success": False, "message": "Department code is required in the URL."}), 400
-    
-    departments = get_departments_from_db()
+
+    departments = get_departments_from_db(tenant_code)
     current = find_department_by_code(departments, dept_ref)
     if not current:
         return jsonify({"success": False, "message": "Department not found"}), 404
-    
-    # Check for duplicates (case-insensitive) - exclude current department
-    merged_code = (code or current.get("code") or "").strip().lower()
-    merged_name = (name or current.get("name") or "").strip().lower()
-
-    for dept in departments:
-        if dept is current:
-            continue
-
-        existing_code = (dept.get("code") or "").strip().lower()
-        existing_name = (dept.get("name") or "").strip().lower()
-
-        if existing_code == merged_code:
-            return jsonify({
-                "success": False,
-                "message": "Department code already exists. Please use a different code."
-            }), 409
-
-        if existing_name == merged_name:
-            return jsonify({
-                "success": False,
-                "message": "Department name already exists. Please use a different name."
-            }), 409
 
     merged_code = (code or current.get("code") or "").strip()
     merged_name = (name or current.get("name") or "").strip()
+    dup = _department_duplicate_message(
+        departments, merged_code, merged_name, exclude_code=dept_ref
+    )
+    if dup:
+        return jsonify({"success": False, "message": dup}), 409
+
     merged_branch = (data.get("branch") or current.get("branch") or "").strip()
     merged_description = description if description is not None else (current.get("description") or "")
 
     conn = get_db_connection()
     cur = conn.cursor()
-    cur.execute(
-        """
-        UPDATE departments
-        SET code = %s,
-            name = %s,
-            branch = %s,
-            description = %s
-        WHERE LOWER(code) = LOWER(%s)
-        """,
-        (merged_code, merged_name, merged_branch, merged_description, dept_ref),
-    )
-    conn.commit()
-    cur.close()
-    conn.close()
+    try:
+        upd_where = ["LOWER(code) = LOWER(%s)"]
+        upd_params = [dept_ref]
+        _append_tenant_where(upd_where, upd_params, cur, "departments", tenant_code)
+        cur.execute(
+            f"""
+            UPDATE departments
+            SET code = %s,
+                name = %s,
+                branch = %s,
+                description = %s
+            WHERE {' AND '.join(upd_where)}
+            """,
+            (merged_code, merged_name, merged_branch, merged_description, *upd_params),
+        )
+        if cur.rowcount == 0:
+            return jsonify({"success": False, "message": "Department not found"}), 404
+        conn.commit()
+    finally:
+        cur.close()
+        conn.close()
 
     current["code"] = merged_code
     current["name"] = merged_name
@@ -4282,35 +4550,32 @@ def api_update_department(dept_ref):
 @app.route("/api/departments/<path:dept_ref>", methods=["DELETE"])
 def api_delete_department(dept_ref):
     """Delete department by code (URL path segment)."""
-    user_email = session.get("user")
-    if not user_email:
-        return jsonify({"success": False, "message": "Session expired. Please login first."}), 401
-    
-    # Check user role
-    users = load_users()
-    user_role = "User"
-    for u in users:
-        if isinstance(u, dict) and (u.get("email") or "").lower() == user_email.lower():
-            user_role = (u.get("role") or "User").strip()
-            break
-    
-    normalized_role = user_role.replace(" ", "").replace("_", "").lower()
-    if normalized_role not in ["superadmin", "admin"]:
-        return jsonify({
-            "success": False,
-            "message": "Only Super Admin or Admin can delete departments."
-        }), 403
-    
+    user_email, tenant_code, tenant_resp, tenant_status = _masters_tenant_from_session()
+    if tenant_resp is not None:
+        return tenant_resp, tenant_status
+
+    denied = _masters_admin_json_denied()
+    if denied is not None:
+        return denied
+
     if not dept_ref or not str(dept_ref).strip():
         return jsonify({"success": False, "message": "Department code is required in the URL."}), 400
     
     conn = get_db_connection()
     cur = conn.cursor()
-    cur.execute("DELETE FROM departments WHERE LOWER(code) = LOWER(%s)", (dept_ref,))
-    deleted = cur.rowcount
-    conn.commit()
-    cur.close()
-    conn.close()
+    try:
+        del_where = ["LOWER(code) = LOWER(%s)"]
+        del_params = [dept_ref]
+        _append_tenant_where(del_where, del_params, cur, "departments", tenant_code)
+        cur.execute(
+            f"DELETE FROM departments WHERE {' AND '.join(del_where)}",
+            tuple(del_params),
+        )
+        deleted = cur.rowcount
+        conn.commit()
+    finally:
+        cur.close()
+        conn.close()
 
     if deleted == 0:
         return jsonify({"success": False, "message": "Department not found"}), 404
@@ -4326,9 +4591,11 @@ def api_delete_department(dept_ref):
 # =========================================
 @app.route("/department-role/create/new")
 def department_new():
-    user_email = session.get("user")
-    if not user_email:
-        return redirect(url_for("login", message="session_expired"))
+    user_email, tenant_code, tenant_resp, tenant_status = _masters_tenant_from_session()
+    if tenant_resp is not None:
+        if not user_email:
+            return redirect(url_for("login", message="session_expired"))
+        return redirect(url_for("company_info"))
 
     users = load_users()
 
@@ -4358,13 +4625,9 @@ def save_role():
     data = request.get_json() or {}
 
     try:
-        # -----------------------------------------
-        #  ROLE-BASED ACCESS CHECK
-        #  Only Super Admin and Admin can create roles
-        # -----------------------------------------
-        user_email = session.get("user")
-        if not user_email:
-            return jsonify({"status": "error", "message": "session_expired"}), 401
+        user_email, tenant_code, tenant_resp, tenant_status = _masters_tenant_from_session()
+        if tenant_resp is not None:
+            return tenant_resp, tenant_status
 
         users = load_users()
         user_role = "User"
@@ -4403,7 +4666,7 @@ def save_role():
 
         conn = get_db_connection()
         cur = conn.cursor()
-        dept_name = _resolve_department_name(cur, data.get("department"))
+        dept_name = _resolve_department_name(cur, data.get("department"), tenant_code)
         if not dept_name:
             cur.close()
             conn.close()
@@ -4411,7 +4674,7 @@ def save_role():
                 {"status": "error", "message": "Department not found. Select a valid department from the list."}
             ), 400
 
-        roles = get_roles_from_db()
+        roles = get_roles_from_db(tenant_code)
 
         # -----------------------------------------
         #  DUPLICATE CHECK
@@ -4451,22 +4714,23 @@ def save_role():
                 "message": "Department, Branch and Role are required"
             }), 400
 
-        # No duplicate → append and save (department_name must be departments.name for fk_department)
-        cur.execute("""
-            INSERT INTO roles (department_name, branch, role_name, description, permissions)
-            VALUES (%s, %s, %s, %s, %s)
-        """, (
-            dept_name,
-            data.get("branch"),
-            data.get("role"),
-            data.get("description"),
-            json.dumps(data.get("permissions", {}))
-        ))
+        _insert_with_company_code(
+            cur,
+            "roles",
+            ["department_name", "branch", "role_name", "description", "permissions"],
+            [
+                dept_name,
+                data.get("branch"),
+                data.get("role"),
+                data.get("description"),
+                json.dumps(data.get("permissions", {})),
+            ],
+            tenant_code,
+        )
 
         conn.commit()
         cur.close()
         conn.close()
-        # save_roles(roles)             # ✅ use same saver
         return jsonify({"status": "success"})
     except Exception as e:
         print("❌ data save error:", e)
@@ -4475,6 +4739,10 @@ def save_role():
 
 @app.route("/department-roles/create/edit", methods=["POST"])
 def edit_role():
+    user_email, tenant_code, tenant_resp, tenant_status = _masters_tenant_from_session()
+    if tenant_resp is not None:
+        return tenant_resp, tenant_status
+
     data = request.get_json() or {}
     try:
         role_id = int(data.get("role_id"))
@@ -4497,21 +4765,29 @@ def edit_role():
     conn = get_db_connection()
     cur = conn.cursor()
     try:
-        dept_name = _resolve_department_name(cur, new_department)
+        if not _db_role_belongs_to_tenant(cur, role_id, tenant_code):
+            return jsonify(success=False, error="Role not found"), 404
+
+        dept_name = _resolve_department_name(cur, new_department, tenant_code)
         if not dept_name:
             return jsonify(
                 success=False,
                 error="Department not found. Select a valid department from the list.",
             ), 400
 
+        dup_where = [
+            "role_id != %s",
+            "LOWER(TRIM(role_name)) = LOWER(TRIM(%s))",
+            "LOWER(TRIM(COALESCE(department_name, ''))) = LOWER(TRIM(%s))",
+        ]
+        dup_params = [role_id, new_role, dept_name]
+        _append_tenant_where(dup_where, dup_params, cur, "roles", tenant_code, alias="r")
         cur.execute(
-            """
-            SELECT 1 FROM roles
-            WHERE role_id != %s
-              AND LOWER(TRIM(role_name)) = LOWER(TRIM(%s))
-              AND LOWER(TRIM(COALESCE(department_name, ''))) = LOWER(TRIM(%s))
+            f"""
+            SELECT 1 FROM roles r
+            WHERE {' AND '.join(dup_where)}
             """,
-            (role_id, new_role, dept_name),
+            tuple(dup_params),
         )
         if cur.fetchone():
             return jsonify(
@@ -4519,16 +4795,19 @@ def edit_role():
                 error="This combination of Role and Department already exists.",
             ), 409
 
+        upd_where = ["role_id = %s"]
+        upd_params = [role_id]
+        _append_tenant_where(upd_where, upd_params, cur, "roles", tenant_code)
         cur.execute(
-            """
+            f"""
             UPDATE roles
             SET role_name = %s,
                 description = %s,
                 department_name = %s,
                 updated_at = NOW()
-            WHERE role_id = %s
+            WHERE {' AND '.join(upd_where)}
             """,
-            (new_role, description, dept_name, role_id),
+            (new_role, description, dept_name, *upd_params),
         )
 
         if cur.rowcount == 0:
@@ -4548,28 +4827,36 @@ def edit_role():
 
 @app.route("/department-roles/create/delete", methods=["POST"])
 def delete_role():
+    user_email, tenant_code, tenant_resp, tenant_status = _masters_tenant_from_session()
+    if tenant_resp is not None:
+        return tenant_resp, tenant_status
+
     data = request.get_json(silent=True) or {}
-    print("DELETE DATA:", data)
+    try:
+        role_id = int(data.get("role_id"))
+    except (TypeError, ValueError):
+        return jsonify(success=False, error="Missing or invalid role id"), 400
 
-    description = data.get("description")
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        if not _db_role_belongs_to_tenant(cur, role_id, tenant_code):
+            return jsonify(success=False, error="not_found"), 404
 
-    if not description:
-        return jsonify(success=False, error="missing_description"), 400
-
-    roles = get_roles_from_db()
-    before = len(roles)
-
-    roles = [
-        r for r in roles
-        if r.get("description", "").strip().lower()
-        != description.strip().lower()
-    ]
-
-    if len(roles) == before:
-        return jsonify(success=False, error="not_found"), 404
-
-    # save_roles(roles)
-    return jsonify(success=True)
+        del_where = ["role_id = %s"]
+        del_params = [role_id]
+        _append_tenant_where(del_where, del_params, cur, "roles", tenant_code)
+        cur.execute(
+            f"DELETE FROM roles WHERE {' AND '.join(del_where)}",
+            tuple(del_params),
+        )
+        if cur.rowcount == 0:
+            return jsonify(success=False, error="not_found"), 404
+        conn.commit()
+        return jsonify(success=True)
+    finally:
+        cur.close()
+        conn.close()
 
 
 # =========================================
@@ -4578,14 +4865,14 @@ def delete_role():
 @app.route("/api/roles", methods=["GET"])
 def api_roles():
     """Get all roles - supports JSON response for Postman"""
-    user_email = session.get("user")
-    if not user_email:
-        return jsonify({"success": False, "message": "Session expired. Please login first."}), 401
-    
+    user_email, tenant_code, tenant_resp, tenant_status = _masters_tenant_from_session()
+    if tenant_resp is not None:
+        return tenant_resp, tenant_status
+
     prof = get_current_user_profile() or {}
     user_name = prof.get("name") or "User"
     user_role = prof.get("role") or "User"
-    roles = get_roles_from_db()
+    roles = get_roles_from_db(tenant_code)
     
     return jsonify({
         "success": True,
@@ -4603,11 +4890,11 @@ def api_roles():
 @app.route("/api/roles/<int:role_index>", methods=["GET"])
 def api_get_role(role_index):
     """Get single role by index (0-based)"""
-    user_email = session.get("user")
-    if not user_email:
-        return jsonify({"success": False, "message": "Session expired. Please login first."}), 401
-    
-    roles = get_roles_from_db()
+    user_email, tenant_code, tenant_resp, tenant_status = _masters_tenant_from_session()
+    if tenant_resp is not None:
+        return tenant_resp, tenant_status
+
+    roles = get_roles_from_db(tenant_code)
     
     if role_index < 0 or role_index >= len(roles):
         return jsonify({"success": False, "message": "Role index out of range"}), 404
@@ -4621,9 +4908,9 @@ def api_get_role(role_index):
 
 @app.route("/api/roles", methods=["POST"])
 def api_create_role():
-    user_email = session.get("user")
-    if not user_email:
-        return jsonify({"success": False, "message": "Session expired"}), 401
+    user_email, tenant_code, tenant_resp, tenant_status = _masters_tenant_from_session()
+    if tenant_resp is not None:
+        return tenant_resp, tenant_status
 
     # 🔐 ROLE CHECK (optional but recommended)
     prof = get_current_user_profile() or {}
@@ -4653,19 +4940,23 @@ def api_create_role():
     cur = conn.cursor()
 
     try:
-        dept_name = _resolve_department_name(cur, department_code)
+        dept_name = _resolve_department_name(cur, department_code, tenant_code)
         if not dept_name:
             return jsonify(
                 success=False,
                 message="Department not found. Select a valid department from the list.",
             ), 400
 
-        # 🔥 DUPLICATE CHECK (IMPORTANT) — compare using canonical name stored in DB
-        cur.execute("""
-            SELECT 1 FROM roles
-            WHERE LOWER(TRIM(role_name)) = LOWER(TRIM(%s))
-              AND LOWER(TRIM(COALESCE(department_name, ''))) = LOWER(TRIM(%s))
-        """, (role_name, dept_name))
+        dup_where = [
+            "LOWER(TRIM(role_name)) = LOWER(TRIM(%s))",
+            "LOWER(TRIM(COALESCE(department_name, ''))) = LOWER(TRIM(%s))",
+        ]
+        dup_params = [role_name, dept_name]
+        _append_tenant_where(dup_where, dup_params, cur, "roles", tenant_code)
+        cur.execute(
+            f"SELECT 1 FROM roles WHERE {' AND '.join(dup_where)}",
+            tuple(dup_params),
+        )
 
         if cur.fetchone():
             return jsonify(success=False, message="Role already exists"), 409
@@ -4674,18 +4965,22 @@ def api_create_role():
         perms = data.get("permissions")
         if not isinstance(perms, dict):
             perms = {}
-        # ✅ INSERT: roles.department_name FK references departments.name; permissions from Create Role grid → jsonb
-        cur.execute("""
-            INSERT INTO roles (role_name, department_name, branch, description, created_at, permissions)
-            VALUES (%s, %s, %s, %s, NOW(), %s::jsonb)
-        """, (
-            role_name,
-            dept_name,
-            branch or None,
-            description,
-            json.dumps(perms),
-        ))
-
+        if _table_has_company_code(cur, "roles"):
+            cur.execute(
+                """
+                INSERT INTO roles (role_name, department_name, branch, description, created_at, permissions, company_code)
+                VALUES (%s, %s, %s, %s, NOW(), %s::jsonb, %s)
+                """,
+                (role_name, dept_name, branch or None, description, json.dumps(perms), tenant_code),
+            )
+        else:
+            cur.execute(
+                """
+                INSERT INTO roles (role_name, department_name, branch, description, created_at, permissions)
+                VALUES (%s, %s, %s, %s, NOW(), %s::jsonb)
+                """,
+                (role_name, dept_name, branch or None, description, json.dumps(perms)),
+            )
         conn.commit()
 
     except Exception as e:
@@ -4702,9 +4997,9 @@ def api_create_role():
 @app.route("/api/roles/<int:role_index>", methods=["PUT"])
 def api_update_role(role_index):
 
-    user_email = session.get("user")
-    if not user_email:
-        return jsonify({"success": False, "message": "Session expired"}), 401
+    user_email, tenant_code, tenant_resp, tenant_status = _masters_tenant_from_session()
+    if tenant_resp is not None:
+        return tenant_resp, tenant_status
 
     prof = get_current_user_profile() or {}
     user_role = prof.get("role", "User")
@@ -4727,39 +5022,39 @@ def api_update_role(role_index):
     cur = conn.cursor()
 
     try:
-        # ✅ correct select
-        cur.execute("""
-            SELECT role_id
-            FROM roles
-            ORDER BY role_id
-        """)
-        rows = cur.fetchall()
-
-        if role_index >= len(rows):
+        roles = get_roles_from_db(tenant_code)
+        if role_index < 0 or role_index >= len(roles):
             return jsonify({"success": False, "message": "Role not found"}), 404
 
-        role_id = rows[role_index][0]
+        role_id = roles[role_index]["id"]
 
         dept_name_update = None
         if new_department_code:
-            dept_name_update = _resolve_department_name(cur, new_department_code)
+            dept_name_update = _resolve_department_name(cur, new_department_code, tenant_code)
             if not dept_name_update:
                 return jsonify({"success": False, "message": "Department not found"}), 400
 
-        # ✅ correct update (FK: department_name must be departments.name)
-        cur.execute("""
+        upd_where = ["role_id = %s"]
+        upd_params = [role_id]
+        _append_tenant_where(upd_where, upd_params, cur, "roles", tenant_code)
+        cur.execute(
+            f"""
             UPDATE roles
-            SET 
+            SET
                 role_name = COALESCE(%s, role_name),
                 description = COALESCE(%s, description),
                 department_name = COALESCE(%s, department_name)
-            WHERE role_id = %s
-        """, (
-            new_role_name if new_role_name else None,
-            description if description else None,
-            dept_name_update if new_department_code else None,
-            role_id
-        ))
+            WHERE {' AND '.join(upd_where)}
+            """,
+            (
+                new_role_name if new_role_name else None,
+                description if description else None,
+                dept_name_update if new_department_code else None,
+                *upd_params,
+            ),
+        )
+        if cur.rowcount == 0:
+            return jsonify({"success": False, "message": "Role not found"}), 404
 
         conn.commit()
 
@@ -4780,10 +5075,10 @@ def api_update_role(role_index):
 @app.route("/api/roles/<int:role_index>", methods=["DELETE"])
 def api_delete_role(role_index):
     """Delete role by index"""
-    user_email = session.get("user")
-    if not user_email:
-        return jsonify({"success": False, "message": "Session expired. Please login first."}), 401
-    
+    user_email, tenant_code, tenant_resp, tenant_status = _masters_tenant_from_session()
+    if tenant_resp is not None:
+        return tenant_resp, tenant_status
+
     prof = get_current_user_profile() or {}
 
     user_role = (prof.get("role") or "User") \
@@ -4792,32 +5087,35 @@ def api_delete_role(role_index):
         .replace("_", "") \
         .lower()
 
-    print("DELETE ROLE CHECK:", user_role)
-
     if user_role not in ["superadmin", "admin"]:
-
-    
         return jsonify({
             "success": False,
             "message": "Only Super Admin or Admin can delete roles."
         }), 403
 
-    # ✅ SAME SOURCE AS UI
-    roles = get_roles_from_db()
+    roles = get_roles_from_db(tenant_code)
 
     if role_index < 0 or role_index >= len(roles):
         return jsonify({"success": False, "message": "Role not found"}), 404
 
-    role_id = roles[role_index]["id"]   # 🔥 KEY FIX
+    role_id = roles[role_index]["id"]
 
     conn = get_db_connection()
     cur = conn.cursor()
-
-    cur.execute("DELETE FROM roles WHERE role_id = %s", (role_id,))
-
-    conn.commit()
-    cur.close()
-    conn.close()
+    try:
+        del_where = ["role_id = %s"]
+        del_params = [role_id]
+        _append_tenant_where(del_where, del_params, cur, "roles", tenant_code)
+        cur.execute(
+            f"DELETE FROM roles WHERE {' AND '.join(del_where)}",
+            tuple(del_params),
+        )
+        if cur.rowcount == 0:
+            return jsonify({"success": False, "message": "Role not found"}), 404
+        conn.commit()
+    finally:
+        cur.close()
+        conn.close()
 
     return jsonify({
         "success": True,
@@ -5022,12 +5320,15 @@ def reset_password_submit():
 # =========================================
 @app.route("/create-user", methods=["GET", "POST"])
 def create_user():
-    user_email = session.get("user")
-    if not user_email:
-        # Check if JSON request
-        if request.is_json or request.content_type == "application/json":
-            return jsonify({"success": False, "message": "Session expired"}), 401
-        return redirect(url_for("login", message="session_expired"))
+    user_email, tenant_code, tenant_resp, tenant_status = _masters_tenant_from_session()
+    if tenant_resp is not None:
+        if request.is_json or request.content_type == "application/json" or wants_json():
+            return tenant_resp, tenant_status
+        if not user_email:
+            return redirect(url_for("login", message="session_expired"))
+        return redirect(url_for("company_info"))
+
+    tenant_company_name = (session.get("company_name") or "").strip()
 
     # ✅ DB USER FETCH
     
@@ -5070,8 +5371,8 @@ def create_user():
             user_email=user_email,
             user_name=user_name,
             user_role=user_role,
-            departments=get_departments_from_db(),
-            roles=get_roles_from_db(),
+            departments=get_departments_from_db(tenant_code),
+            roles=get_roles_from_db(tenant_code),
         )
 
     # -----------------------------------------
@@ -5209,11 +5510,18 @@ def create_user():
         errors.append("Employee ID is required")
     elif not re.match(r"^[A-Za-z0-9\-]{1,20}$", employee_id):
         errors.append("Employee ID may have letters, numbers and '-' (max 20 characters)")
-    # 🔥 DB DUPLICATE CHECK
+    # 🔥 DB DUPLICATE CHECK (same company only)
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    cursor.execute("SELECT email, contact_number, employee_id FROM users")
+    dup_parts = []
+    dup_params = []
+    _append_tenant_where(dup_parts, dup_params, cursor, "users", tenant_code)
+    dup_where = (" WHERE " + " AND ".join(dup_parts)) if dup_parts else ""
+    cursor.execute(
+        f"SELECT email, contact_number, employee_id FROM users{dup_where}",
+        tuple(dup_params),
+    )
     db_users = cursor.fetchall()
 
     for u in db_users:
@@ -5277,15 +5585,12 @@ def create_user():
     print("DEBUG NAME:", full_name)
     print("DEBUG PHONE:", full_phone)
 
-    insert_sql = """
-    INSERT INTO users (
-        name, phone, first_name, last_name, email,
-        country_code, contact_number, branch, department,
-        role, reporting_to, available_branches, employee_id, password
-    )
-    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-    """
-    insert_vals = (
+    insert_cols = [
+        "name", "phone", "first_name", "last_name", "email",
+        "country_code", "contact_number", "branch", "department",
+        "role", "reporting_to", "available_branches", "employee_id", "password",
+    ]
+    insert_vals = [
         full_name,
         full_phone,
         first_name,
@@ -5300,9 +5605,20 @@ def create_user():
         int(available_branches),
         employee_id,
         stored_password,
-    )
+    ]
+    if tenant_code and _table_has_company_code(cursor, "users"):
+        insert_cols.append("company_code")
+        insert_vals.append(tenant_code)
+    if tenant_company_name and _table_has_column(cursor, "users", "company_name"):
+        insert_cols.append("company_name")
+        insert_vals.append(tenant_company_name)
+    placeholders = ", ".join(["%s"] * len(insert_vals))
+    insert_sql = f"""
+    INSERT INTO users ({", ".join(insert_cols)})
+    VALUES ({placeholders})
+    """
     try:
-        cursor.execute(insert_sql, insert_vals)
+        cursor.execute(insert_sql, tuple(insert_vals))
         conn.commit()
     except psycopg2.errors.UniqueViolation as e:
         # If users.id sequence is behind, sync once and retry.
@@ -5310,7 +5626,7 @@ def create_user():
         if "users_pkey" in str(e):
             _db_sync_users_id_sequence(cursor)
             conn.commit()
-            cursor.execute(insert_sql, insert_vals)
+            cursor.execute(insert_sql, tuple(insert_vals))
             conn.commit()
         else:
             raise
@@ -5359,9 +5675,9 @@ def normalize_role(role: str) -> str:
 # =========================================
 @app.route("/update-user/<int:user_id>", methods=["PUT"])
 def update_user(user_id):
-    user_email = session.get("user")
-    if not user_email:
-        return jsonify({"success": False, "message": "Session expired"}), 401
+    user_email, tenant_code, tenant_resp, tenant_status = _masters_tenant_from_session()
+    if tenant_resp is not None:
+        return tenant_resp, tenant_status
 
     data = request.get_json(silent=True) or {}
 
@@ -5415,8 +5731,14 @@ def update_user(user_id):
         if normalize_role(row[0]) not in ["superadmin", "admin"]:
             return jsonify({"success": False, "message": "No permission"}), 403
 
-        # ✅ UPDATE using user_id
-        cur.execute("""
+        if not _db_user_belongs_to_tenant(cur, user_id, tenant_code):
+            return jsonify({"success": False, "message": "User not found"}), 404
+
+        upd_where = ["user_id = %s"]
+        upd_params = [user_id]
+        _append_tenant_where(upd_where, upd_params, cur, "users", tenant_code)
+        cur.execute(
+            f"""
             UPDATE users
             SET name=%s,
                 email=%s,
@@ -5431,23 +5753,27 @@ def update_user(user_id):
                 reporting_to=%s,
                 available_branches=%s,
                 employee_id=%s
-            WHERE user_id=%s
-        """, (
-            name,
-            email,
-            phone,
-            role,
-            first_name,
-            last_name,
-            country_code,
-            contact_number,
-            branch,
-            department,
-            reporting_to,
-            available_branches,
-            employee_id,
-            user_id,
-        ))
+            WHERE {' AND '.join(upd_where)}
+            """,
+            (
+                name,
+                email,
+                phone,
+                role,
+                first_name,
+                last_name,
+                country_code,
+                contact_number,
+                branch,
+                department,
+                reporting_to,
+                available_branches,
+                employee_id,
+                *upd_params,
+            ),
+        )
+        if cur.rowcount == 0:
+            return jsonify({"success": False, "message": "User not found"}), 404
 
         conn.commit()
 
@@ -5587,6 +5913,253 @@ def _require_login_json():
     if not user_email:
         return None, jsonify({"success": False, "message": "Session expired. Please login first."}), 401
     return user_email, None, None
+
+
+_TENANT_COLUMN_CACHE = {}
+
+
+def _table_has_company_code(cur, table_name: str) -> bool:
+    if table_name in _TENANT_COLUMN_CACHE:
+        return _TENANT_COLUMN_CACHE[table_name]
+    cur.execute(
+        """
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = %s
+          AND column_name = 'company_code'
+        LIMIT 1
+        """,
+        (table_name,),
+    )
+    ok = cur.fetchone() is not None
+    if ok:
+        _TENANT_COLUMN_CACHE[table_name] = True
+    return ok
+
+
+def _session_tenant_code_or_response():
+    """Registered tenant code (DB-backed when logged in; blocks PENDING / missing)."""
+    from signup_tenant import is_dummy_company_code
+
+    user_email = session.get("user")
+    if user_email:
+        code, _ = _sync_tenant_session_from_db(user_email)
+    else:
+        code = (session.get("company_code") or "").strip().upper()
+    if not code:
+        return None, jsonify({"success": False, "message": "Session expired. Please login first."}), 401
+    if is_dummy_company_code(code):
+        return None, jsonify({
+            "success": False,
+            "message": "Complete company setup before accessing this module.",
+        }), 403
+    return code, None, None
+
+
+def _append_tenant_where(where_parts, params, cur, table_name, company_code, alias=""):
+    from signup_tenant import MASTERS_TENANT_TABLES, append_tenant_where, normalize_company_code
+
+    code = normalize_company_code(company_code or "")
+    if table_name in MASTERS_TENANT_TABLES:
+        if not code:
+            where_parts.append("1=0")
+            return
+        append_tenant_where(where_parts, params, code, table_alias=alias)
+        return
+
+    if code and _table_has_company_code(cur, table_name):
+        append_tenant_where(where_parts, params, code, table_alias=alias)
+
+
+def _sync_tenant_session_from_db(user_email: str) -> tuple[str, str]:
+    """Load tenant from users / company_information and refresh session."""
+    from signup_tenant import FOUNDER_DUMMY_COMPANY_CODE, is_dummy_company_code, normalize_company_code
+
+    email = (user_email or "").strip().lower()
+    if not email:
+        return "", ""
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        code, name, _role = _fetch_user_company_context(cur, email)
+    finally:
+        cur.close()
+        conn.close()
+
+    code = normalize_company_code(code)
+    if code and not is_dummy_company_code(code):
+        session["company_code"] = code
+    if name:
+        session["company_name"] = name
+    return code, name
+
+
+def _masters_tenant_from_session():
+    """Masters gate: Manage Users, Department & Roles (DB tenant, blocks PENDING)."""
+    from signup_tenant import is_dummy_company_code
+
+    user_email = session.get("user")
+    if not user_email:
+        return None, None, jsonify({"success": False, "message": "Session expired. Please login first."}), 401
+
+    tenant_code, _ = _sync_tenant_session_from_db(user_email)
+    if not tenant_code:
+        return None, None, jsonify({"success": False, "message": "Session expired. Please login first."}), 401
+    if is_dummy_company_code(tenant_code):
+        return user_email, None, jsonify({
+            "success": False,
+            "message": "Complete company setup before accessing this module.",
+        }), 403
+    return user_email, tenant_code, None, None
+
+
+def _insert_with_company_code(cur, table_name, columns, values, tenant_code):
+    """INSERT with company_code when the table has the tenant column (products pattern)."""
+    cols = list(columns)
+    vals = list(values)
+    if tenant_code and _table_has_company_code(cur, table_name):
+        cols.append("company_code")
+        vals.append(tenant_code)
+    placeholders = ", ".join(["%s"] * len(vals))
+    cur.execute(
+        f"INSERT INTO {table_name} ({', '.join(cols)}) VALUES ({placeholders})",
+        tuple(vals),
+    )
+
+
+def _table_has_column(cur, table_name: str, column_name: str) -> bool:
+    key = (table_name, column_name)
+    if key in _TENANT_COLUMN_CACHE:
+        return _TENANT_COLUMN_CACHE[key]
+    cur.execute(
+        """
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = %s
+          AND column_name = %s
+        LIMIT 1
+        """,
+        (table_name, column_name),
+    )
+    ok = cur.fetchone() is not None
+    if ok:
+        _TENANT_COLUMN_CACHE[key] = True
+    return ok
+
+
+def _db_user_belongs_to_tenant(cur, user_id: int, tenant_code: str) -> bool:
+    if not tenant_code:
+        return False
+    where_parts = ["user_id = %s"]
+    params = [user_id]
+    _append_tenant_where(where_parts, params, cur, "users", tenant_code)
+    cur.execute(
+        f"SELECT 1 FROM users WHERE {' AND '.join(where_parts)} LIMIT 1",
+        tuple(params),
+    )
+    return cur.fetchone() is not None
+
+
+def _db_role_belongs_to_tenant(cur, role_id: int, tenant_code: str) -> bool:
+    if not tenant_code:
+        return False
+    where_parts = ["role_id = %s"]
+    params = [role_id]
+    _append_tenant_where(where_parts, params, cur, "roles", tenant_code)
+    cur.execute(
+        f"SELECT 1 FROM roles WHERE {' AND '.join(where_parts)} LIMIT 1",
+        tuple(params),
+    )
+    return cur.fetchone() is not None
+
+
+def _company_information_field_conflicts(cur, exclude_company_id, fields):
+    """
+    Return {field: other_company_name} when another company_information row
+    already uses the same tax id, registration, email, website, or phone.
+    """
+    from signup_tenant import normalize_company_info_phone, normalize_company_info_website
+
+    conflicts = {}
+    exclude_id = exclude_company_id if exclude_company_id is not None else -1
+
+    gstin = (fields.get("gstin") or "").strip()
+    if gstin:
+        cur.execute(
+            """
+            SELECT company_name FROM company_information
+            WHERE UPPER(TRIM(gstin)) = UPPER(TRIM(%s))
+              AND company_id <> %s
+            LIMIT 1
+            """,
+            (gstin, exclude_id),
+        )
+        row = cur.fetchone()
+        if row:
+            conflicts["gstin"] = (row[0] or "").strip()
+
+    reg = (fields.get("registration_no") or "").strip()
+    if reg:
+        cur.execute(
+            """
+            SELECT company_name FROM company_information
+            WHERE UPPER(TRIM(registration_no)) = UPPER(TRIM(%s))
+              AND company_id <> %s
+            LIMIT 1
+            """,
+            (reg, exclude_id),
+        )
+        row = cur.fetchone()
+        if row:
+            conflicts["registration_no"] = (row[0] or "").strip()
+
+    email = (fields.get("email") or "").strip()
+    if email:
+        cur.execute(
+            """
+            SELECT company_name FROM company_information
+            WHERE LOWER(TRIM(email)) = LOWER(TRIM(%s))
+              AND company_id <> %s
+            LIMIT 1
+            """,
+            (email, exclude_id),
+        )
+        row = cur.fetchone()
+        if row:
+            conflicts["email"] = (row[0] or "").strip()
+
+    phone_norm = normalize_company_info_phone(fields.get("phone") or "")
+    if phone_norm:
+        cur.execute(
+            """
+            SELECT company_name, phone_number FROM company_information
+            WHERE company_id <> %s
+              AND TRIM(COALESCE(phone_number, '')) <> ''
+            """,
+            (exclude_id,),
+        )
+        for name, stored in cur.fetchall():
+            if normalize_company_info_phone(stored) == phone_norm:
+                conflicts["phone_number"] = (name or "").strip()
+                break
+
+    website_norm = normalize_company_info_website(fields.get("website") or "")
+    if website_norm:
+        cur.execute(
+            """
+            SELECT company_name, website FROM company_information
+            WHERE company_id <> %s
+              AND TRIM(COALESCE(website, '')) <> ''
+            """,
+            (exclude_id,),
+        )
+        for name, stored in cur.fetchall():
+            if normalize_company_info_website(stored) == website_norm:
+                conflicts["website"] = (name or "").strip()
+                break
+
+    return conflicts
 
 
 @app.route("/api/product-tax-codes", methods=["GET", "POST"])
@@ -5838,11 +6411,18 @@ def api_get_product(product_id):
     if resp is not None:
         return resp, status
 
+    tenant_code, resp, status = _session_tenant_code_or_response()
+    if resp is not None:
+        return resp, status
+
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
     try:
+        where_parts = ["product_id = %s"]
+        params = [str(product_id)]
+        _append_tenant_where(where_parts, params, cur, "products", tenant_code)
         cur.execute(
-            """
+            f"""
             SELECT
                 product_id,
                 product_name,
@@ -5856,10 +6436,10 @@ def api_get_product(product_id):
                 tax_code,
                 supplier_name
             FROM products
-            WHERE product_id = %s
+            WHERE {' AND '.join(where_parts)}
             LIMIT 1
             """,
-            (str(product_id),),
+            tuple(params),
         )
         row = cur.fetchone()
     finally:
@@ -5980,40 +6560,77 @@ def api_create_product():
         "image": (data.get("image") or "").strip(),
     }
     
+    tenant_code, resp, status = _session_tenant_code_or_response()
+    if resp is not None:
+        return resp, status
+
     # Save product directly (faster than load+rewrite all products)
     conn = get_db_connection()
     cur = conn.cursor()
     try:
-        cur.execute(
-            """
-            INSERT INTO products (
-                product_id, product_name, product_type, category_name,
-                status, stock_level, unit_price,
-                description, sub_category, tax_code, supplier_name,
-                product_usage, image
-            ) VALUES (
-                %s, %s, %s, %s,
-                %s, %s, %s,
-                %s, %s, %s, %s,
-                %s, %s
+        if _table_has_company_code(cur, "products"):
+            cur.execute(
+                """
+                INSERT INTO products (
+                    product_id, product_name, product_type, category_name,
+                    status, stock_level, unit_price,
+                    description, sub_category, tax_code, supplier_name,
+                    product_usage, image, company_code
+                ) VALUES (
+                    %s, %s, %s, %s,
+                    %s, %s, %s,
+                    %s, %s, %s, %s,
+                    %s, %s, %s
+                )
+                """,
+                (
+                    product["product_id"],
+                    product["product_name"],
+                    product.get("type", ""),
+                    product.get("category", ""),
+                    product.get("status", "Active"),
+                    int(product.get("stock_level", 0) or 0),
+                    float(product.get("price", 0.0) or 0.0),
+                    product.get("description", ""),
+                    product.get("sub_category", ""),
+                    product.get("tax_code", ""),
+                    product.get("supplier", ""),
+                    product.get("product_usage", ""),
+                    product.get("image", ""),
+                    tenant_code,
+                ),
             )
-            """,
-            (
-                product["product_id"],
-                product["product_name"],
-                product.get("type", ""),
-                product.get("category", ""),
-                product.get("status", "Active"),
-                int(product.get("stock_level", 0) or 0),
-                float(product.get("price", 0.0) or 0.0),
-                product.get("description", ""),
-                product.get("sub_category", ""),
-                product.get("tax_code", ""),
-                product.get("supplier", ""),
-                product.get("product_usage", ""),
-                product.get("image", ""),
-            ),
-        )
+        else:
+            cur.execute(
+                """
+                INSERT INTO products (
+                    product_id, product_name, product_type, category_name,
+                    status, stock_level, unit_price,
+                    description, sub_category, tax_code, supplier_name,
+                    product_usage, image
+                ) VALUES (
+                    %s, %s, %s, %s,
+                    %s, %s, %s,
+                    %s, %s, %s, %s,
+                    %s, %s
+                )
+                """,
+                (
+                    product["product_id"],
+                    product["product_name"],
+                    product.get("type", ""),
+                    product.get("category", ""),
+                    product.get("status", "Active"),
+                    int(product.get("stock_level", 0) or 0),
+                    float(product.get("price", 0.0) or 0.0),
+                    product.get("description", ""),
+                    product.get("sub_category", ""),
+                    product.get("tax_code", ""),
+                    product.get("supplier", ""),
+                    product.get("product_usage", ""),
+                    product.get("image", ""),
+                ),
+            )
         conn.commit()
     except Exception:
         conn.rollback()
@@ -7672,11 +8289,21 @@ def save_product():
 # =========================================
 # 6. MASTERS — Customer
 # =========================================
-def get_customers_from_db():
+def get_customers_from_db(company_code=None):
     conn = get_db_connection()
     cur = conn.cursor()
 
-    cur.execute("""
+    tenant_code = (company_code or session.get("company_code") or "").strip().upper()
+    from signup_tenant import is_dummy_company_code
+
+    where_parts = []
+    params = []
+    if tenant_code and not is_dummy_company_code(tenant_code):
+        _append_tenant_where(where_parts, params, cur, "customers", tenant_code)
+    where_sql = f"WHERE {' AND '.join(where_parts)}" if where_parts else ""
+
+    cur.execute(
+        f"""
     SELECT 
         customer_id,
         name,
@@ -7701,7 +8328,10 @@ def get_customers_from_db():
         billing_address,
         shipping_address
     FROM customers
-""")
+    {where_sql}
+""",
+        tuple(params),
+    )
 
     rows = cur.fetchall()
 
@@ -8228,6 +8858,11 @@ def api_customer():
     user_email = session.get("user")
     if not user_email:
         return jsonify({"success": False, "message": "Session expired. Please login first."}), 401
+
+    tenant_code, resp, status = _session_tenant_code_or_response()
+    if resp is not None:
+        return resp, status
+
     try:
         q = (request.args.get("q") or "").strip().lower()
         status = (request.args.get("status") or "").strip()
@@ -8247,6 +8882,10 @@ def api_customer():
         where_parts = []
         where_params = []
 
+        conn = get_db_connection()
+        cur = conn.cursor()
+        _append_tenant_where(where_parts, where_params, cur, "customers", tenant_code)
+
         if q:
             like = f"%{q}%"
             where_parts.append("(LOWER(customer_id) LIKE %s OR LOWER(name) LIKE %s OR LOWER(company) LIKE %s)")
@@ -8262,9 +8901,6 @@ def api_customer():
             where_params.append(sales_rep.lower())
 
         where_sql = f"WHERE {' AND '.join(where_parts)}" if where_parts else ""
-
-        conn = get_db_connection()
-        cur = conn.cursor()
 
         cur.execute(f"SELECT COUNT(*) FROM customers {where_sql}", tuple(where_params))
         total_items = int((cur.fetchone() or [0])[0] or 0)
@@ -8300,11 +8936,33 @@ def api_customer():
                 "sales_rep": r[8] or "",
             })
 
-        cur.execute("SELECT DISTINCT customer_status FROM customers WHERE customer_status IS NOT NULL AND customer_status <> '' ORDER BY customer_status")
+        cust_meta_parts = []
+        cust_meta_params = []
+        _append_tenant_where(cust_meta_parts, cust_meta_params, cur, "customers", tenant_code)
+        cust_meta_where = ("WHERE " + " AND ".join(cust_meta_parts)) if cust_meta_parts else ""
+        cur.execute(
+            f"SELECT DISTINCT customer_status FROM customers {cust_meta_where} "
+            "AND customer_status IS NOT NULL AND customer_status <> '' ORDER BY customer_status"
+            if cust_meta_where else
+            "SELECT DISTINCT customer_status FROM customers WHERE customer_status IS NOT NULL AND customer_status <> '' ORDER BY customer_status",
+            tuple(cust_meta_params),
+        )
         statuses = [r[0] for r in cur.fetchall()]
-        cur.execute("SELECT DISTINCT COALESCE(customer_type, '') AS ct FROM customers WHERE COALESCE(customer_type, '') <> '' ORDER BY ct")
+        cur.execute(
+            f"SELECT DISTINCT COALESCE(customer_type, '') AS ct FROM customers {cust_meta_where} "
+            "AND COALESCE(customer_type, '') <> '' ORDER BY ct"
+            if cust_meta_where else
+            "SELECT DISTINCT COALESCE(customer_type, '') AS ct FROM customers WHERE COALESCE(customer_type, '') <> '' ORDER BY ct",
+            tuple(cust_meta_params),
+        )
         types = [r[0] for r in cur.fetchall()]
-        cur.execute("SELECT DISTINCT sales_rep FROM customers WHERE sales_rep IS NOT NULL AND sales_rep <> '' ORDER BY sales_rep")
+        cur.execute(
+            f"SELECT DISTINCT sales_rep FROM customers {cust_meta_where} "
+            "AND sales_rep IS NOT NULL AND sales_rep <> '' ORDER BY sales_rep"
+            if cust_meta_where else
+            "SELECT DISTINCT sales_rep FROM customers WHERE sales_rep IS NOT NULL AND sales_rep <> '' ORDER BY sales_rep",
+            tuple(cust_meta_params),
+        )
         sales_reps = [r[0] for r in cur.fetchall()]
 
         cur.close()
@@ -8358,10 +9016,35 @@ def api_get_customer(customer_id):
     
     Returns a single customer by ID )
     """
+    user_email = session.get("user")
+    if not user_email:
+        return jsonify({"success": False, "message": "Session expired. Please login first."}), 401
+
+    tenant_code, resp, status = _session_tenant_code_or_response()
+    if resp is not None:
+        return resp, status
+
     try:
-       
-        customers = get_customers_from_db()
-       
+        conn = get_db_connection()
+        cur = conn.cursor()
+        where_parts = ["customer_id = %s"]
+        params = [customer_id]
+        _append_tenant_where(where_parts, params, cur, "customers", tenant_code)
+        cur.execute(
+            f"SELECT customer_id FROM customers WHERE {' AND '.join(where_parts)} LIMIT 1",
+            tuple(params),
+        )
+        if not cur.fetchone():
+            cur.close()
+            conn.close()
+            return jsonify({
+                "success": False,
+                "message": "Customer not found"
+            }), 404
+        cur.close()
+        conn.close()
+
+        customers = get_customers_from_db(company_code=tenant_code)
         customer = next((c for c in customers if str(c.get("customer_id")) == str(customer_id)), None)
         
         if not customer:
@@ -8467,19 +9150,29 @@ def api_delete_customer(customer_id):
     if not user_email:
         return jsonify({"success": False, "message": "Session expired. Please login first."}), 401
 
-    
+    tenant_code, resp, status = _session_tenant_code_or_response()
+    if resp is not None:
+        return resp, status
+
     conn = get_db_connection()
     cur = conn.cursor()
 
-    # Check exists
-    cur.execute("SELECT customer_id FROM customers WHERE customer_id = %s", (customer_id,))
+    where_parts = ["customer_id = %s"]
+    params = [customer_id]
+    _append_tenant_where(where_parts, params, cur, "customers", tenant_code)
+    cur.execute(
+        f"SELECT customer_id FROM customers WHERE {' AND '.join(where_parts)}",
+        tuple(params),
+    )
     if not cur.fetchone():
         cur.close()
         conn.close()
         return jsonify({"success": False, "message": "Customer not found"}), 404
 
-    # Delete
-    cur.execute("DELETE FROM customers WHERE customer_id = %s", (customer_id,))
+    cur.execute(
+        f"DELETE FROM customers WHERE {' AND '.join(where_parts)}",
+        tuple(params),
+    )
 
     conn.commit()
     cur.close()
@@ -8624,9 +9317,16 @@ def create_customer():
     if len(zip_digits) != 6:
         return jsonify({"error": "Zip code must be exactly 6 digits"}), 400
 
+    user_email = session.get("user")
+    if not user_email:
+        return jsonify({"error": "Session expired"}), 401
+
+    tenant_code, resp, status = _session_tenant_code_or_response()
+    if resp is not None:
+        return resp, status
+
     try:
-       
-        customers = get_customers_from_db()
+        customers = get_customers_from_db(company_code=tenant_code)
 
         if gst_id:
             for c in customers:
@@ -8675,42 +9375,62 @@ def create_customer():
        
         conn = get_db_connection()
         cur = conn.cursor()
-        # _db_sync_customers_id_sequence(cur)
 
-        cur.execute("""
-        INSERT INTO customers (
-            customer_id, name, first_name, last_name,
-            company, customer_type, customer_status, email, phone,
-            credit_limit, city, sales_rep,
-            street, state, zip_code, country,
-            payment_terms, credit_term, gstin,
-            available_limit, billing_address, shipping_address
+        cust_vals = (
+            customer_id,
+            customer_data["name"],
+            data.get("firstName"),
+            data.get("lastName"),
+            customer_data["company"],
+            customer_data["customer_type"],
+            data.get("customerStatus"),
+            customer_data["email"],
+            data.get("phoneNumber"),
+            float(customer_data["credit_limit"] or 0),
+            customer_data["city"],
+            customer_data["sales_rep"],
+            data.get("street"),
+            data.get("state"),
+            zip_digits,
+            data.get("country"),
+            data.get("paymentTerms"),
+            data.get("creditTerm"),
+            data.get("gstNumber"),
+            float(data.get("availableLimit") or 0),
+            data.get("billingAddress"),
+            data.get("shippingAddress"),
         )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-    """, (
-        customer_id,
-        customer_data["name"],
-        data.get("firstName"),
-        data.get("lastName"),
-        customer_data["company"],
-        customer_data["customer_type"],
-        data.get("customerStatus"),
-        customer_data["email"],
-        data.get("phoneNumber"),
-        float(customer_data["credit_limit"] or 0),
-        customer_data["city"],
-        customer_data["sales_rep"],
-        data.get("street"),
-        data.get("state"),
-        zip_digits,
-        data.get("country"),
-        data.get("paymentTerms"),
-        data.get("creditTerm"),
-        data.get("gstNumber"),
-        float(data.get("availableLimit") or 0),
-        data.get("billingAddress"),
-        data.get("shippingAddress")
-    ))
+        if _table_has_company_code(cur, "customers"):
+            cur.execute(
+                """
+                INSERT INTO customers (
+                    customer_id, name, first_name, last_name,
+                    company, customer_type, customer_status, email, phone,
+                    credit_limit, city, sales_rep,
+                    street, state, zip_code, country,
+                    payment_terms, credit_term, gstin,
+                    available_limit, billing_address, shipping_address,
+                    company_code
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                cust_vals + (tenant_code,),
+            )
+        else:
+            cur.execute(
+                """
+                INSERT INTO customers (
+                    customer_id, name, first_name, last_name,
+                    company, customer_type, customer_status, email, phone,
+                    credit_limit, city, sales_rep,
+                    street, state, zip_code, country,
+                    payment_terms, credit_term, gstin,
+                    available_limit, billing_address, shipping_address
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                cust_vals,
+            )
         conn.commit()
         cur.close()
         conn.close()
@@ -10373,40 +11093,26 @@ def signup():
 
         tenant_state = _get_signup_tenant_db_state(cur, company_name, company_code)
 
-        if is_dummy_company_code(company_code):
-            if tenant_state["company_name_exists"]:
-                cur.close()
-                conn.close()
-                return jsonify({
-                    "success": False,
-                    "message": (
-                        "This company is already registered. "
-                        "Use your company's registered code to join."
-                    ),
-                }), 400
-            signup_role = FOUNDER_ROLE
-            stored_company_code = FOUNDER_DUMMY_COMPANY_CODE
-        else:
-            tenant = resolve_signup_tenant(
-                company_name,
-                company_code,
-                company_name_exists=tenant_state["company_name_exists"],
-                codes_for_name=tenant_state["codes_for_name"],
-                name_and_code_match=tenant_state["name_and_code_match"],
-                registered_code_used_by_other_company=tenant_state[
-                    "registered_code_used_by_other_company"
-                ],
-                company_registered_in_info=tenant_state["company_registered_in_info"],
-                info_company_code=tenant_state["info_company_code"],
-                code_registered_in_info=tenant_state["code_registered_in_info"],
-                code_info_company_name=tenant_state["code_info_company_name"],
-            )
-            if not tenant.ok:
-                cur.close()
-                conn.close()
-                return jsonify({"success": False, "message": tenant.message}), 400
-            signup_role = tenant.role or FOUNDER_ROLE
-            stored_company_code = tenant.stored_company_code or company_code
+        tenant = resolve_signup_tenant(
+            company_name,
+            company_code,
+            company_name_exists=tenant_state["company_name_exists"],
+            codes_for_name=tenant_state["codes_for_name"],
+            name_and_code_match=tenant_state["name_and_code_match"],
+            registered_code_used_by_other_company=tenant_state[
+                "registered_code_used_by_other_company"
+            ],
+            company_registered_in_info=tenant_state["company_registered_in_info"],
+            info_company_code=tenant_state["info_company_code"],
+            code_registered_in_info=tenant_state["code_registered_in_info"],
+            code_info_company_name=tenant_state["code_info_company_name"],
+        )
+        if not tenant.ok:
+            cur.close()
+            conn.close()
+            return jsonify({"success": False, "message": tenant.message}), 400
+        signup_role = tenant.role or FOUNDER_ROLE
+        stored_company_code = tenant.stored_company_code or company_code
 
         import hashlib
         hashed_password = hashlib.sha256(password.encode()).hexdigest()
@@ -10553,83 +11259,21 @@ def login_post():
             conn.close()
             return jsonify({"success": False, "message": "Wrong password"}), 401
 
-        # PENDING founder without a Super Admin for this company → promote on login.
-        from signup_tenant import FOUNDER_DUMMY_COMPANY_CODE, FOUNDER_ROLE
-
-        cur.execute(
-            "SELECT LOWER(TRIM(company_name)) FROM users WHERE user_id = %s LIMIT 1",
-            (user_id,),
+        needs_company_setup, db_role, redirect_url = _establish_user_session(
+            cur, user_id, email, remember_me=remember_me
         )
-        login_company_row = cur.fetchone()
-        login_company_name = (login_company_row[0] or "").strip() if login_company_row else ""
-
-        pending_founder = (db_company_code or "").strip().upper() == FOUNDER_DUMMY_COMPANY_CODE
-        if pending_founder and not _is_super_admin_role(db_role):
-            if not _company_has_super_admin(cur, login_company_name):
-                cur.execute(
-                    "UPDATE users SET role = %s WHERE user_id = %s",
-                    (FOUNDER_ROLE, user_id),
-                )
-                db_role = FOUNDER_ROLE
-        elif not _is_super_admin_role(db_role) and login_company_name:
-            if not _company_has_super_admin(cur, login_company_name):
-                cur.execute(
-                    """
-                    SELECT user_id FROM users
-                    WHERE LOWER(TRIM(company_name)) = %s
-                    ORDER BY user_id ASC
-                    LIMIT 1
-                    """,
-                    (login_company_name,),
-                )
-                first_row = cur.fetchone()
-                if first_row and int(first_row[0]) == int(user_id):
-                    cur.execute(
-                        "UPDATE users SET role = %s, company_code = %s WHERE user_id = %s",
-                        (FOUNDER_ROLE, FOUNDER_DUMMY_COMPANY_CODE, user_id),
-                    )
-                    db_role = FOUNDER_ROLE
-                    db_company_code = FOUNDER_DUMMY_COMPANY_CODE
- 
-        # ✅ Password correct — set session directly
-        session.permanent = True
-        session["user"] = email
-        session["role"] = db_role
-        session["branch"] = db_branch or "Main Branch"
-        session["department"] = db_department or ""
-        session["company_code"] = (db_company_code or "").strip().upper()
-        session["last_active"] = time.time()
-        session["remember_me"] = remember_me
-
-        # Keep DB login audit columns updated for normal password login too.
-        cur.execute(
-            """
-            UPDATE users
-            SET last_seen = NOW()
-            WHERE user_id = %s
-            """,
-            (user_id,),
-        )
- 
-        needs_company_setup = _user_needs_company_setup(cur, email)
-
-        cur.execute("SELECT role FROM users WHERE user_id = %s LIMIT 1", (user_id,))
-        role_row = cur.fetchone()
-        if role_row and role_row[0]:
-            db_role = (role_row[0] or "").strip() or db_role
-            session["role"] = db_role
 
         conn.commit()
         cur.close()
         conn.close()
 
-        redirect_url = url_for("company_info") if needs_company_setup else url_for("dashboard")
         return jsonify({
             "success": True,
             "message": "Login successful",
             "needs_company_setup": needs_company_setup,
             "redirect": redirect_url,
             "role": session.get("role") or db_role,
+            "company_code": session.get("company_code") or "",
         }), 200
  
     except Exception as e:
@@ -10669,27 +11313,23 @@ def verify_login_otp():
             if datetime.now() > expiry_naive:
                 return jsonify({"success": False, "message": "OTP expired"}), 400
  
-        # ✅ SUCCESS LOGIN
-        session.permanent = True
-        session["user"] = email
-        session["role"] = role
-        session["branch"] = branch or "Main Branch"
-        session["department"] = department or ""
-        session["last_active"] = time.time()
-        session["remember_me"] = data.get("rememberMe", False)
- 
-        # ✅ Update last_seen
-        cur.execute("""
-            UPDATE users
-            SET last_seen = NOW()
-            WHERE user_id = %s
-        """, (user_id,))
- 
+        remember_me = data.get("rememberMe", False)
+        needs_company_setup, role, redirect_url = _establish_user_session(
+            cur, user_id, email, remember_me=remember_me
+        )
+
         conn.commit()
         cur.close()
         conn.close()
- 
-        return jsonify({"success": True, "message": "Login successful"})
+
+        return jsonify({
+            "success": True,
+            "message": "Login successful",
+            "needs_company_setup": needs_company_setup,
+            "redirect": redirect_url,
+            "role": session.get("role") or role,
+            "company_code": session.get("company_code") or "",
+        })
  
     except Exception as e:
         print("❌ OTP error:", e)
@@ -10853,6 +11493,10 @@ def api_products():
     if resp is not None:
         return resp, status
 
+    tenant_code, resp, status = _session_tenant_code_or_response()
+    if resp is not None:
+        return resp, status
+
     q = (request.args.get("q") or "").strip().lower()
     ptype = (request.args.get("type") or "").strip()
     cat = (request.args.get("category") or "").strip()
@@ -10939,6 +11583,8 @@ def api_products():
         elif stock == "ok":
             where_clauses.append("COALESCE(stock_level, 0) > 5")
 
+        _append_tenant_where(where_clauses, params, cur, "products", tenant_code)
+
         where_sql = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
 
         cur.execute(
@@ -10987,13 +11633,41 @@ def api_products():
             d["brand"] = d.get("supplier_name") or ""
             items.append(d)
 
-        cur.execute("SELECT DISTINCT product_type FROM products WHERE COALESCE(product_type,'') <> '' ORDER BY product_type")
+        meta_parts = []
+        meta_params = []
+        _append_tenant_where(meta_parts, meta_params, cur, "products", tenant_code)
+        meta_where = ("WHERE " + " AND ".join(meta_parts)) if meta_parts else ""
+        cur.execute(
+            f"SELECT DISTINCT product_type FROM products {meta_where} "
+            "AND COALESCE(product_type,'') <> '' ORDER BY product_type"
+            if meta_where else
+            "SELECT DISTINCT product_type FROM products WHERE COALESCE(product_type,'') <> '' ORDER BY product_type",
+            tuple(meta_params),
+        )
         types = [str(r.get("product_type") or "") for r in (cur.fetchall() or []) if str(r.get("product_type") or "").strip()]
-        cur.execute("SELECT DISTINCT category_name FROM products WHERE COALESCE(category_name,'') <> '' ORDER BY category_name")
+        cur.execute(
+            f"SELECT DISTINCT category_name FROM products {meta_where} "
+            "AND COALESCE(category_name,'') <> '' ORDER BY category_name"
+            if meta_where else
+            "SELECT DISTINCT category_name FROM products WHERE COALESCE(category_name,'') <> '' ORDER BY category_name",
+            tuple(meta_params),
+        )
         categories = [str(r.get("category_name") or "") for r in (cur.fetchall() or []) if str(r.get("category_name") or "").strip()]
-        cur.execute("SELECT DISTINCT status FROM products WHERE COALESCE(status,'') <> '' ORDER BY status")
+        cur.execute(
+            f"SELECT DISTINCT status FROM products {meta_where} "
+            "AND COALESCE(status,'') <> '' ORDER BY status"
+            if meta_where else
+            "SELECT DISTINCT status FROM products WHERE COALESCE(status,'') <> '' ORDER BY status",
+            tuple(meta_params),
+        )
         statuses = [str(r.get("status") or "") for r in (cur.fetchall() or []) if str(r.get("status") or "").strip()]
-        cur.execute("SELECT DISTINCT supplier_name FROM products WHERE COALESCE(supplier_name,'') <> '' ORDER BY supplier_name")
+        cur.execute(
+            f"SELECT DISTINCT supplier_name FROM products {meta_where} "
+            "AND COALESCE(supplier_name,'') <> '' ORDER BY supplier_name"
+            if meta_where else
+            "SELECT DISTINCT supplier_name FROM products WHERE COALESCE(supplier_name,'') <> '' ORDER BY supplier_name",
+            tuple(meta_params),
+        )
         brands = [str(r.get("supplier_name") or "") for r in (cur.fetchall() or []) if str(r.get("supplier_name") or "").strip()]
     finally:
         cur.close()
@@ -11038,11 +11712,21 @@ def api_delete_product(product_id):
     if resp is not None:
         return resp, status
 
+    tenant_code, resp, status = _session_tenant_code_or_response()
+    if resp is not None:
+        return resp, status
+
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
     deleted_product = None
     try:
-        cur.execute("SELECT * FROM products WHERE product_id = %s", (product_id,))
+        where_parts = ["product_id = %s"]
+        sel_params = [product_id]
+        _append_tenant_where(where_parts, sel_params, cur, "products", tenant_code)
+        cur.execute(
+            f"SELECT * FROM products WHERE {' AND '.join(where_parts)}",
+            tuple(sel_params),
+        )
         deleted_product = cur.fetchone()
         if not deleted_product:
             error_response = {
@@ -11052,7 +11736,13 @@ def api_delete_product(product_id):
             }
             return jsonify(error_response), 404
 
-        cur.execute("DELETE FROM products WHERE product_id = %s", (product_id,))
+        del_parts = ["product_id = %s"]
+        del_params = [product_id]
+        _append_tenant_where(del_parts, del_params, cur, "products", tenant_code)
+        cur.execute(
+            f"DELETE FROM products WHERE {' AND '.join(del_parts)}",
+            tuple(del_params),
+        )
         conn.commit()
     except Exception as e:
         conn.rollback()
@@ -11286,26 +11976,38 @@ def monthly_sales():
 # =========================================
 @app.route("/api/users", methods=["GET"])
 def api_get_users():
-    """Get all users as JSON - for Postman/API testing"""
-    user_email = session.get("user")
-    if not user_email:
-        return jsonify({"success": False, "message": "Session expired. Please login first."}), 401
+    """Tenant-scoped users JSON for Manage Users page."""
+    user_email, tenant_code, tenant_resp, tenant_status = _masters_tenant_from_session()
+    if tenant_resp is not None:
+        return tenant_resp, tenant_status
 
-    users = _db_fetch_users_ordered(include_id=False)
+    q = (request.args.get("q") or "").strip().lower()
+    try:
+        page = max(1, int(request.args.get("page") or 1))
+    except (TypeError, ValueError):
+        page = 1
+    try:
+        page_size = int(request.args.get("page_size") or 10)
+    except (TypeError, ValueError):
+        page_size = 10
+    page_size = min(max(page_size, 1), 100)
+
+    users, total, page, total_pages = _fetch_users_for_tenant(
+        tenant_code, q=q, page=page, page_size=page_size
+    )
 
     prof = get_current_user_profile() or {}
-    user_name = (prof.get("name") or "User").strip()
-    user_role = (prof.get("role") or "User").strip()
-
     return jsonify({
         "success": True,
         "users": [user_public_dict(u) for u in users if isinstance(u, dict)],
-        "total": len(users),
+        "total": total,
+        "page": page,
+        "total_pages": total_pages,
         "current_user": {
             "email": user_email,
-            "name": user_name,
-            "role": user_role
-        }
+            "name": (prof.get("name") or "User").strip(),
+            "role": (prof.get("role") or "User").strip(),
+        },
     }), 200
 
 
@@ -11313,9 +12015,9 @@ def api_get_users():
 @app.route("/api/users/<int:user_index>", methods=["GET"])
 def api_get_user(user_index):
     """Get a single user by index as JSON - for Postman/API testing"""
-    user_email = session.get("user")
-    if not user_email:
-        return jsonify({"success": False, "message": "Session expired. Please login first."}), 401
+    user_email, tenant_code, tenant_resp, tenant_status = _masters_tenant_from_session()
+    if tenant_resp is not None:
+        return tenant_resp, tenant_status
 
     if user_index < 0:
         return jsonify({"success": False, "message": "User index out of range"}), 404
@@ -11323,15 +12025,20 @@ def api_get_user(user_index):
     conn = get_db_connection()
     cur = conn.cursor()
     try:
+        where_parts = []
+        params = []
+        _append_tenant_where(where_parts, params, cur, "users", tenant_code)
+        where_sql = (" WHERE " + " AND ".join(where_parts)) if where_parts else ""
         cur.execute(
-            """
+            f"""
             SELECT user_id, name, email, phone, role, first_name, last_name, country_code,
                    contact_number, branch, department, reporting_to, available_branches, employee_id
             FROM users
+            {where_sql}
             ORDER BY user_id DESC
             OFFSET %s LIMIT 1
             """,
-            (user_index,),
+            tuple(params + [user_index]),
         )
         row = cur.fetchone()
         if not row:
@@ -11368,9 +12075,9 @@ def api_get_user(user_index):
 @app.route("/api/users", methods=["POST"])
 def api_create_user():
     """Create new user. Requires JSON body. Use ?format=json or Accept: application/json."""
-    user_email = session.get("user")
-    if not user_email:
-        return jsonify({"success": False, "message": "Session expired. Please login first."}), 401
+    user_email, tenant_code, tenant_resp, tenant_status = _masters_tenant_from_session()
+    if tenant_resp is not None:
+        return tenant_resp, tenant_status
 
     prof = get_current_user_profile() or {}
     user_role = prof.get("role") or "User"
@@ -11467,9 +12174,9 @@ def api_create_user():
 @app.route("/api/users/<int:user_index>", methods=["PUT"])
 def api_update_user(user_index):
     """Update user by index. Requires JSON body."""
-    user_email = session.get("user")
-    if not user_email:
-        return jsonify({"success": False, "message": "Session expired. Please login first."}), 401
+    user_email, tenant_code, tenant_resp, tenant_status = _masters_tenant_from_session()
+    if tenant_resp is not None:
+        return tenant_resp, tenant_status
 
     if user_index < 0:
         return jsonify({"success": False, "message": "User index out of range"}), 404
@@ -11486,14 +12193,19 @@ def api_update_user(user_index):
         if not current or normalize_role(current[0]) not in ["superadmin", "admin"]:
             return jsonify({"success": False, "message": "Only Super Admin/Admin can edit users."}), 403
 
+        where_parts = []
+        params = []
+        _append_tenant_where(where_parts, params, cur, "users", tenant_code)
+        where_sql = (" WHERE " + " AND ".join(where_parts)) if where_parts else ""
         cur.execute(
-            """
+            f"""
             SELECT user_id, name, email, phone, role, department, branch
             FROM users
+            {where_sql}
             ORDER BY user_id DESC
             OFFSET %s LIMIT 1
             """,
-            (user_index,),
+            tuple(params + [user_index]),
         )
         base = cur.fetchone()
         if not base:
@@ -11507,14 +12219,26 @@ def api_update_user(user_index):
         new_department = str(data.get("department", base[5] or "")).strip()
         new_branch = str(data.get("branch", base[6] or "")).strip()
 
+        upd_parts = [
+            "name=%s", "email=%s", "phone=%s", "role=%s",
+            "department=%s", "branch=%s",
+        ]
+        upd_vals = [
+            new_name, new_email, new_phone, new_role, new_department, new_branch,
+        ]
+        upd_where = ["user_id = %s"]
+        upd_params = list(upd_vals) + [user_id]
+        _append_tenant_where(upd_where, upd_params, cur, "users", tenant_code)
         cur.execute(
-            """
+            f"""
             UPDATE users
-            SET name=%s, email=%s, phone=%s, role=%s, department=%s, branch=%s
-            WHERE id=%s
+            SET {", ".join(upd_parts)}
+            WHERE {" AND ".join(upd_where)}
             """,
-            (new_name, new_email, new_phone, new_role, new_department, new_branch, user_id),
+            tuple(upd_params),
         )
+        if cur.rowcount == 0:
+            return jsonify({"success": False, "message": "User not found"}), 404
         conn.commit()
 
         refreshed = {
@@ -11540,9 +12264,9 @@ def api_update_user(user_index):
 # =========================================
 @app.route("/delete-user/<int:user_id>", methods=["DELETE"])
 def delete_user(user_id):
-    user_email = session.get("user")
-    if not user_email:
-        return jsonify({"success": False, "message": "Not logged in"}), 401
+    user_email, tenant_code, tenant_resp, tenant_status = _masters_tenant_from_session()
+    if tenant_resp is not None:
+        return tenant_resp, tenant_status
 
     conn = get_db_connection()
     cur = conn.cursor()
@@ -11559,6 +12283,9 @@ def delete_user(user_id):
 
         if normalize_role(row[0]) != "superadmin":
             return jsonify({"success": False, "message": "Only super admin can delete"}), 403
+
+        if not _db_user_belongs_to_tenant(cur, user_id, tenant_code):
+            return jsonify({"success": False, "message": "User not found"}), 404
 
         cur.execute(
             "SELECT user_id, email FROM users WHERE user_id = %s",
@@ -13056,23 +13783,33 @@ def get_customers_quotation():
 @app.route('/get-products')
 def get_products():
     try:
+        tenant_code, resp, status = _session_tenant_code_or_response()
+        if resp is not None:
+            return resp, status
+
         conn = get_db_connection()
         cur = conn.cursor(cursor_factory=RealDictCursor)
         try:
-            cur.execute("""
+            where_parts = ["status = 'Active'"]
+            params = []
+            _append_tenant_where(where_parts, params, cur, "products", tenant_code)
+            cur.execute(
+                f"""
                 SELECT 
                     product_id,
                     product_name,
                     unit_price,
-                    uom_name AS uom,          -- alias to match frontend
-                    tax_percent AS tax,       -- alias to match frontend
+                    uom_name AS uom,
+                    tax_percent AS tax,
                     discount,
                     quantity,
                     status
                 FROM products
-                WHERE status = 'Active'
+                WHERE {' AND '.join(where_parts)}
                 ORDER BY product_name
-            """)
+                """,
+                tuple(params),
+            )
             products = cur.fetchall()
             for p in products:
                 if p.get('unit_price') is not None:
@@ -14934,7 +15671,17 @@ def quick_billing():
 def api_products_qb():
     """Fetch products from database using actual table schema."""
     try:
-        rows = fetch_all("""
+        tenant_code, resp, status = _session_tenant_code_or_response()
+        if resp is not None:
+            return resp, status
+
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        where_parts = ["status = 'Active'"]
+        params = []
+        _append_tenant_where(where_parts, params, cur, "products", tenant_code)
+        cur.execute(
+            f"""
             SELECT 
                 product_id,
                 product_name,
@@ -14945,9 +15692,14 @@ def api_products_qb():
                 category_name,
                 specifications
             FROM products 
-            WHERE status = 'Active'
+            WHERE {' AND '.join(where_parts)}
             ORDER BY product_id
-        """)
+            """,
+            tuple(params),
+        )
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
         products = []
         for row in rows:
             pid = row["product_id"]
