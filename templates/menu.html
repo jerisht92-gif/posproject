@@ -219,17 +219,13 @@
           <div id="finance-submenu"
               class="submenu{% if page in ['credit_note','debit_note','create_payment'] %} open{% endif %}">
 
-            <a id="creditNoteLink" href="{{ url_for('credit_note') }}"
+            <a href="{{ url_for('credit_note') }}"
               class="submenu-item{% if page == 'credit_note' %} active{% endif %}">
               <span class="submenu-icon">💳</span>
               <span>Credit Note</span>
             </a>
 
-            <a href="#"
-              class="submenu-item{% if page == 'debit_note' %} active{% endif %}">
-              <span class="submenu-icon">💳</span>
-              <span>Debit Note</span>
-            </a>
+            
 
             <a href="{{ url_for('create_payment') }}"
                class="submenu-item{% if page == 'create_payment' %} active{% endif %}">

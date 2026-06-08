@@ -20,24 +20,28 @@ import os
 load_dotenv(".env")
 load_dotenv("env")
 
-# Fetch variables (lowercase keys match Supabase / .env examples)
-USER = os.getenv("user")
-PASSWORD = os.getenv("password")
-HOST = os.getenv("host")
-PORT = os.getenv("port")
-DBNAME = os.getenv("dbname")
+# Match app.py: DB_* keys first, then lowercase Supabase-style fallbacks
+USER = (os.getenv("DB_USER") or os.getenv("user") or "").strip()
+PASSWORD = (os.getenv("DB_PASSWORD") or os.getenv("password") or "").strip()
+HOST = (os.getenv("DB_HOST") or os.getenv("host") or "").strip()
+PORT = (os.getenv("DB_PORT") or os.getenv("port") or "5432").strip()
+DBNAME = (os.getenv("DB_NAME") or os.getenv("dbname") or "").strip()
+SSLMODE = (
+    os.getenv("DB_SSLMODE")
+    or ("require" if "supabase.co" in HOST else "prefer")
+).strip()
 
-if not all([USER, PASSWORD, HOST, PORT, DBNAME]) or PASSWORD.strip() == "[YOUR-PASSWORD]":
+if not all([USER, PASSWORD, HOST, PORT, DBNAME]) or PASSWORD == "[YOUR-PASSWORD]":
     print(
-        "Set user, password, host, port, dbname in .env "
-        "(replace [YOUR-PASSWORD] with your real database password)."
+        "Set DB_USER, DB_PASSWORD, DB_HOST, DB_PORT, DB_NAME in .env "
+        "(or user, password, host, port, dbname for Supabase)."
     )
     raise SystemExit(1)
 
 # Construct the SQLAlchemy connection string (quote password for special chars)
 DATABASE_URL = (
     f"postgresql+psycopg2://{quote_plus(USER)}:{quote_plus(PASSWORD)}"
-    f"@{HOST}:{PORT}/{DBNAME}?sslmode=require"
+    f"@{HOST}:{PORT}/{DBNAME}?sslmode={quote_plus(SSLMODE)}"
 )
 
 # Create the SQLAlchemy engine

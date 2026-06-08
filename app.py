@@ -47,6 +47,7 @@ from flask import make_response, request
 from email.mime.multipart import MIMEMultipart
 from email.mime.application import MIMEApplication
 from email.mime.text import MIMEText
+from email.message import EmailMessage
 
 
 from io import BytesIO
@@ -1120,6 +1121,14 @@ registerFontFamily(
 
 
 )
+
+_FA_SOLID_PATH = os.path.join(FONT_DIR, "fa-solid-900.ttf")
+if os.path.isfile(_FA_SOLID_PATH):
+    try:
+        pdfmetrics.registerFont(TTFont("FaSolid", _FA_SOLID_PATH))
+    except Exception as _fa_err:
+        print(f"Font Awesome register failed: {_fa_err}")
+
 
 # =========================================
 # ✅ EMAIL SENDER (SMTP / UNIVERSAL)
@@ -14676,7 +14685,7 @@ def send_otp_email(email, otp, quotation_id=None):
 
 
 # ===================================================
-# SINGLE SOURCE OF TRUTH - ONE PDF GENERATOR FOR ALL
+# QUOTATION PDF
 # ===================================================
 def generate_quotation_pdf(quotation, quotation_id=None):
     """Generate PDF from quotation dict (already fetched from DB) – INR only."""
@@ -14684,12 +14693,27 @@ def generate_quotation_pdf(quotation, quotation_id=None):
         import io
         from reportlab.lib.pagesizes import A4
         from reportlab.lib import colors
-        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image as RLImage
         from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
         from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
-        from datetime import datetime
+        from reportlab.pdfbase import pdfmetrics
+
+        # POS billing maroon palette 
+        MAROON = colors.HexColor("#a12828")
+        MAROON_DARK = colors.HexColor("#8c1f1f")
+        MAROON_LABEL = colors.HexColor("#6b1a1a")
+        MAROON_LIGHT = colors.HexColor("#f5ebe8")
+        MAROON_BORDER = colors.HexColor("#d4a5a5")
+        MAROON_ROW_ALT = colors.HexColor("#faf5f4")
+        STACKLY_BLUE = colors.HexColor("#1e4d72")
+        STACKLY_TEAL = colors.HexColor("#2db8a8")
+        STACKLY_ICON_BLUE = colors.HexColor("#2a6fad")
 
         buffer = io.BytesIO()
+        page_w, page_h = A4
+        usable_w = page_w - 36  # left+right margin 18pt each
+        SECTION_GAP = 18   # space between major blocks
+        ROW_PAD = 8        # even padding inside table rows
         doc = SimpleDocTemplate(
             buffer,
             pagesize=A4,
@@ -14701,50 +14725,82 @@ def generate_quotation_pdf(quotation, quotation_id=None):
 
         styles = getSampleStyleSheet()
 
-        # ---------- Custom styles (matching DNR) ----------
-        company_style = ParagraphStyle(
-            name="Quot_CompanyName",
+        doc_title_style = ParagraphStyle(
+            name="Quot_DocTitle",
             parent=styles["Normal"],
-            fontName="DejaVuSans-Bold",
-            fontSize=20,
-            leading=24,
-            textColor=colors.HexColor("#8c1f1f"),
-            alignment=TA_CENTER,
-            spaceAfter=4,
-        )
-
-        company_info_style = ParagraphStyle(
-            name="Quot_CompanyInfo",
-            parent=styles["Normal"],
-            fontName="DejaVuSans",
-            fontSize=9,
-            leading=12,
-            textColor=colors.black,
-            alignment=TA_CENTER,
-            spaceAfter=1,
-        )
-
-        page_title_style = ParagraphStyle(
-            name="Quot_PageTitle",
-            parent=styles["Heading1"],
-            fontName="DejaVuSans-Bold",
-            fontSize=16,
-            leading=20,
-            textColor=colors.green,
-            alignment=TA_CENTER,
-            spaceBefore=12,
-            spaceAfter=12,
-        )
-
-        section_style = ParagraphStyle(
-            name="Quot_Section",
-            parent=styles["Heading3"],
             fontName="DejaVuSans-Bold",
             fontSize=11,
-            leading=14,
-            textColor=colors.HexColor("#8c1f1f"),
-            spaceAfter=6,
-            spaceBefore=10,
+            leading=13,
+            textColor=MAROON_DARK,
+            alignment=TA_CENTER,
+            spaceAfter=0,
+        )
+
+        stackly_name_style = ParagraphStyle(
+            name="Quot_StacklyName",
+            parent=styles["Normal"],
+            fontName="DejaVuSans-Bold",
+            fontSize=22,
+            leading=26,
+            textColor=STACKLY_BLUE,
+            alignment=TA_LEFT,
+        )
+
+        contact_style = ParagraphStyle(
+            name="Quot_Contact",
+            parent=styles["Normal"],
+            fontName="DejaVuSans",
+            fontSize=8.5,
+            leading=13,
+            textColor=colors.black,
+            alignment=TA_LEFT,
+        )
+
+        address_style = ParagraphStyle(
+            name="Quot_Address",
+            parent=contact_style,
+            fontSize=7.5,
+            leading=11,
+            spaceBefore=0,
+            spaceAfter=0,
+        )
+
+        meta_label_style = ParagraphStyle(
+            name="Quot_MetaLabel",
+            parent=styles["Normal"],
+            fontName="DejaVuSans-Bold",
+            fontSize=8,
+            leading=11,
+            textColor=MAROON_LABEL,
+        )
+
+        meta_value_style = ParagraphStyle(
+            name="Quot_MetaValue",
+            parent=styles["Normal"],
+            fontName="DejaVuSans",
+            fontSize=8,
+            leading=11,
+            textColor=colors.black,
+        )
+
+        section_title_style = ParagraphStyle(
+            name="Quot_SectionTitle",
+            parent=styles["Normal"],
+            fontName="DejaVuSans-Bold",
+            fontSize=10,
+            leading=13,
+            textColor=MAROON_DARK,
+            spaceAfter=4,
+            spaceBefore=2,
+        )
+
+        box_header_style = ParagraphStyle(
+            name="Quot_BoxHeader",
+            parent=styles["Normal"],
+            fontName="DejaVuSans-Bold",
+            fontSize=9,
+            leading=12,
+            textColor=MAROON_DARK,
         )
 
         label_style = ParagraphStyle(
@@ -14753,7 +14809,7 @@ def generate_quotation_pdf(quotation, quotation_id=None):
             fontName="DejaVuSans-Bold",
             fontSize=8.5,
             leading=11,
-            textColor=colors.HexColor("#6b1a1a"),
+            textColor=MAROON_LABEL,
         )
 
         value_style = ParagraphStyle(
@@ -14763,6 +14819,24 @@ def generate_quotation_pdf(quotation, quotation_id=None):
             fontSize=8.5,
             leading=11,
             textColor=colors.black,
+        )
+
+        item_center_style = ParagraphStyle(
+            name="Quot_ItemCenter",
+            parent=value_style,
+            alignment=TA_CENTER,
+        )
+
+        item_name_style = ParagraphStyle(
+            name="Quot_ItemName",
+            parent=value_style,
+            alignment=TA_LEFT,
+        )
+
+        summary_value_style = ParagraphStyle(
+            name="Quot_SummaryVal",
+            parent=value_style,
+            alignment=TA_CENTER,
         )
 
         header_small_style = ParagraphStyle(
@@ -14779,165 +14853,462 @@ def generate_quotation_pdf(quotation, quotation_id=None):
             name="Quot_Terms",
             parent=styles["Normal"],
             fontName="DejaVuSans",
-            fontSize=8,
+            fontSize=7.5,
             leading=11,
             textColor=colors.black,
-            leftIndent=8,
+            leftIndent=4,
         )
 
-        # ---------- Helper functions ----------
-        def safe_str(val, default="-"):
-            if val is None:
-                return default
-            s = str(val).strip()
-            return s if s else default
+        thank_style = ParagraphStyle(
+            name="Quot_ThankYou",
+            parent=styles["Normal"],
+            fontName="DejaVuSans",
+            fontSize=11,
+            leading=14,
+            textColor=MAROON_DARK,
+            alignment=TA_CENTER,
+            spaceBefore=8,
+            spaceAfter=8,
+        )
 
-        def safe_float(val, default=0.0):
-            try:
-                if val in (None, ""):
-                    return default
-                return float(val)
-            except Exception:
-                return default
+        grand_total_label_style = ParagraphStyle(
+            name="Quot_GrandLabel",
+            parent=styles["Normal"],
+            fontName="DejaVuSans-Bold",
+            fontSize=9,
+            leading=12,
+            textColor=colors.white,
+        )
+
+        grand_total_value_style = ParagraphStyle(
+            name="Quot_GrandValue",
+            parent=styles["Normal"],
+            fontName="DejaVuSans-Bold",
+            fontSize=11,
+            leading=14,
+            textColor=colors.white,
+            alignment=TA_CENTER,
+        )
+
+        # Font Awesome 6 solid glyphs (same icons as web invoice/quotation UI)
+        FA_GLYPHS = {
+            "location": "\uf3c5",   # fa-location-dot
+            "phone": "\uf095",      # fa-phone
+            "email": "\uf0e0",      # fa-envelope
+            "globe": "\uf0ac",      # fa-globe
+            "document": "\uf570",   # fa-file-invoice
+            "calendar": "\uf133",   # fa-calendar
+            "terms": "\uf09d",      # fa-credit-card
+            "user": "\uf007",       # fa-user
+            "user_tie": "\uf508",   # fa-user-tie
+            "file": "\uf15c",       # fa-file-lines
+            "calculator": "\uf1ec", # fa-calculator
+            "shield": "\uf3ed",     # fa-shield-halved
+        }
+
+        currency_map = {
+            "IND": "₹", "INR": "₹", "USD": "$", "EUR": "€", "GBP": "£",
+            "JPY": "¥", "SGD": "S$", "CAD": "C$", "AUD": "A$",
+        }
+        cv = quotation.get("currency")
+        currency_code = ("IND" if cv is None else str(cv).strip()) or "IND"
+        if currency_code == "-":
+            currency_code = "IND"
+        currency_code = currency_code.upper()
+        currency_symbol = currency_map.get(currency_code, "₹")
+
+        use_fa_icons = "FaSolid" in pdfmetrics.getRegisteredFontNames()
+        quot_icons = {}
+        for isz in (10, 12, 13):
+            quot_icons[("currency", isz)] = Paragraph(
+                currency_symbol,
+                ParagraphStyle(
+                    name=f"QuotCurrencyIcon_{isz}",
+                    parent=styles["Normal"],
+                    fontName="DejaVuSans-Bold",
+                    fontSize=isz + 1,
+                    leading=isz + 2,
+                    textColor=MAROON,
+                    alignment=TA_CENTER,
+                ),
+            )
+            if use_fa_icons:
+                for ik, glyph in FA_GLYPHS.items():
+                    quot_icons[(ik, isz)] = Paragraph(
+                        glyph,
+                        ParagraphStyle(
+                            name=f"QuotFa_{ik}_{isz}",
+                            parent=styles["Normal"],
+                            fontName="FaSolid",
+                            fontSize=isz,
+                            leading=isz + 1,
+                            textColor=MAROON,
+                            alignment=TA_CENTER,
+                        ),
+                    )
+
+        if not use_fa_icons:
+            from reportlab.graphics.shapes import Drawing, Circle, Line, Rect, Polygon
+
+            fb = {}
+            for kind in FA_GLYPHS:
+                sz = 18
+                s = sz / 20.0
+                d = Drawing(sz, sz)
+                if kind == "location":
+                    d.add(Circle(10 * s, 12.8 * s, 4.6 * s, fillColor=MAROON, strokeColor=MAROON, strokeWidth=0))
+                    d.add(Polygon(
+                        points=[10 * s, 2.8 * s, 5.4 * s, 11.2 * s, 14.6 * s, 11.2 * s],
+                        fillColor=MAROON, strokeColor=MAROON, strokeWidth=0,
+                    ))
+                elif kind == "phone":
+                    d.add(Polygon(
+                        points=[6 * s, 15 * s, 14 * s, 15 * s, 15 * s, 8 * s, 10 * s, 4 * s, 5 * s, 8 * s],
+                        fillColor=MAROON, strokeColor=MAROON, strokeWidth=0,
+                    ))
+                elif kind == "email":
+                    d.add(Rect(4 * s, 7 * s, 12 * s, 8 * s, fillColor=MAROON, strokeColor=MAROON, strokeWidth=0))
+                    d.add(Polygon(
+                        points=[4 * s, 15 * s, 10 * s, 10 * s, 16 * s, 15 * s],
+                        fillColor=MAROON, strokeColor=MAROON, strokeWidth=0,
+                    ))
+                elif kind == "globe":
+                    d.add(Circle(10 * s, 10 * s, 7 * s, fillColor=MAROON, strokeColor=MAROON, strokeWidth=0))
+                    d.add(Line(3 * s, 10 * s, 17 * s, 10 * s, strokeColor=colors.white, strokeWidth=0.6 * s))
+                    d.add(Line(10 * s, 3 * s, 10 * s, 17 * s, strokeColor=colors.white, strokeWidth=0.6 * s))
+                    d.add(Circle(10 * s, 10 * s, 4.5 * s, fillColor=MAROON, strokeColor=colors.white, strokeWidth=0.5 * s))
+                elif kind == "user":
+                    d.add(Circle(10 * s, 13.8 * s, 3.4 * s, fillColor=MAROON, strokeColor=MAROON, strokeWidth=0))
+                    d.add(Polygon(
+                        points=[4.5 * s, 19.5 * s, 15.5 * s, 19.5 * s, 13.5 * s, 11.5 * s, 6.5 * s, 11.5 * s],
+                        fillColor=MAROON, strokeColor=MAROON, strokeWidth=0,
+                    ))
+                elif kind == "file":
+                    d.add(Rect(5.5 * s, 3.5 * s, 9 * s, 14 * s, fillColor=MAROON, strokeColor=MAROON, strokeWidth=0))
+                    d.add(Polygon(
+                        points=[14.5 * s, 3.5 * s, 14.5 * s, 7.5 * s, 10.5 * s, 7.5 * s],
+                        fillColor=MAROON_LIGHT, strokeColor=MAROON, strokeWidth=0,
+                    ))
+                    d.add(Line(7.5 * s, 11 * s, 12.5 * s, 11 * s, strokeColor=colors.white, strokeWidth=0.7 * s))
+                    d.add(Line(7.5 * s, 13 * s, 12.5 * s, 13 * s, strokeColor=colors.white, strokeWidth=0.7 * s))
+                    d.add(Line(7.5 * s, 15 * s, 11.5 * s, 15 * s, strokeColor=colors.white, strokeWidth=0.7 * s))
+                else:
+                    d.add(Circle(10 * s, 10 * s, 4 * s, fillColor=MAROON, strokeColor=MAROON, strokeWidth=0))
+                fb[kind] = d
+            for k, v in fb.items():
+                for isz in (10, 12, 13):
+                    quot_icons.setdefault((k, isz), v)
 
         elements = []
 
-        currency_symbol = "₹"
-        currency_code = "IND"
-
         totals = quotation.get('totals', {})
-        subtotal = safe_float(totals.get('subtotal', 0))
-        total_tax = safe_float(totals.get('tax_summary', 0))
-        shipping = safe_float(totals.get('shipping_charge', 0))
-        grand_total = safe_float(totals.get('grand_total', 0))
-        global_discount_pct = safe_float(totals.get('global_discount_percent', 0))
-        rounding = safe_float(totals.get('rounding_adjustment', 0))
+        subtotal = float(totals.get('subtotal', 0)) if totals.get('subtotal', 0) not in (None, "") else 0.0
+        total_tax = float(totals.get('tax_summary', 0)) if totals.get('tax_summary', 0) not in (None, "") else 0.0
+        shipping = float(totals.get('shipping_charge', 0)) if totals.get('shipping_charge', 0) not in (None, "") else 0.0
+        grand_total = float(totals.get('grand_total', 0)) if totals.get('grand_total', 0) not in (None, "") else 0.0
+        global_discount_pct = float(totals.get('global_discount_percent', 0)) if totals.get('global_discount_percent', 0) not in (None, "") else 0.0
+        rounding = float(totals.get('rounding_adjustment', 0)) if totals.get('rounding_adjustment', 0) not in (None, "") else 0.0
         global_discount_amt = subtotal * (global_discount_pct / 100) if global_discount_pct else 0
 
-        # Calculate item-level discount total
         total_discount = 0.0
         for item in quotation.get('items', []):
-            qty = safe_float(item.get('quantity', 0))
-            price = safe_float(item.get('unit_price', 0))
-            disc_pct = safe_float(item.get('discount', 0))
+            iq = item.get('quantity', 0)
+            ip = item.get('unit_price', 0)
+            disc_raw = item.get('discount', 0)
+            qty = float(iq) if iq not in (None, "") else 0.0
+            price = float(ip) if ip not in (None, "") else 0.0
+            disc_pct = float(disc_raw) if disc_raw not in (None, "") else 0.0
             if disc_pct > 0:
                 total_discount += qty * price * (disc_pct / 100)
 
-        # ---------- Company header (same as DNR) ----------
-        elements.append(Paragraph("STACKLY", company_style))
-        elements.append(Paragraph(
-            "MMR Complex, Chinna Thirupathi, near Chinna Muniyappan Kovil, Salem, Tamil Nadu - 636008",
-            company_info_style,
-        ))
-        elements.append(Paragraph("Phone: +91 7010792745", company_info_style))
-        elements.append(Paragraph("Email: info@stackly.com", company_info_style))
-        elements.append(Spacer(1, 10))
+        sv = quotation.get('status', 'draft')
+        status_raw = ('draft' if sv is None else str(sv).strip()) or 'draft'
+        status_key = status_raw.lower()
+        status_display_map = {
+            'send': 'SENT',
+            'sent': 'SENT',
+            'submitted': 'SENT',
+            'draft': 'DRAFT',
+            'approved': 'APPROVED',
+            'rejected': 'REJECTED',
+            'expired': 'EXPIRED',
+        }
+        status_display = status_display_map.get(status_key, status_raw.upper())
+        qd = quotation.get('quotation_date', '')
+        quot_date = ('-' if qd is None else str(qd).strip()) or '-'
+        ex = quotation.get('expiry_date', '')
+        expiry = ('-' if ex is None else str(ex).strip()) or '-'
+        sr = quotation.get('sales_rep', '')
+        sales_rep = ('-' if sr is None else str(sr).strip()) or '-'
+        po = quotation.get('customer_po', 'N/A')
+        po_ref = ('N/A' if po is None else str(po).strip()) or 'N/A'
+        pt = quotation.get('payment_terms') or quotation.get('payment_term')
+        payment_terms = ('N/A' if pt is None else str(pt).strip()) or 'N/A'
+        cn = quotation.get('customer_name')
+        customer_name = ('-' if cn is None else str(cn).strip()) or '-'
+        qi = quotation.get('quotation_id')
+        q_id = ('-' if qi is None else str(qi).strip()) or '-'
 
-        status = quotation.get('status', 'draft').upper()
-        page_title_text = f"QUOTATION - {status}"
-        elements.append(Paragraph(page_title_text, page_title_style))
-        elements.append(Spacer(1, 2))
+        # ---------- Header: STACKLY logo (left) | QUOTATION title (right) ----------
+        col_gap = 20
+        left_w = (usable_w - col_gap) * 0.58
+        right_w = usable_w - col_gap - left_w
 
-        # ---------- Watermark for rejected/expired (preserve original behavior) ----------
-        if status.lower() in ['rejected', 'expired']:
-            watermark_text = "⚠️ REJECTED - FOR REFERENCE ONLY ⚠️" if status.lower() == 'rejected' else "⚠️ EXPIRED - FOR REFERENCE ONLY ⚠️"
-            watermark_color = colors.red if status.lower() == 'rejected' else colors.orange
-            watermark_para = Paragraph(
+        logo_brand = None
+        for logo_name in ("stack-img.webp", "stack-img.png", "stackly-logo.png"):
+            logo_path = os.path.join(BASE_DIR, "static", "images", logo_name)
+            if not os.path.isfile(logo_path):
+                continue
+            try:
+                logo_brand = RLImage(logo_path)
+            except Exception:
+                try:
+                    from PIL import Image as PILImage
+                    logo_buf = io.BytesIO()
+                    PILImage.open(logo_path).convert("RGBA").save(logo_buf, format="PNG")
+                    logo_buf.seek(0)
+                    logo_brand = RLImage(logo_buf)
+                except Exception:
+                    continue
+            if logo_brand and logo_brand.imageWidth and logo_brand.imageHeight:
+                logo_aspect = logo_brand.imageHeight / float(logo_brand.imageWidth)
+                logo_brand.drawWidth = 118
+                logo_brand.drawHeight = 118 * logo_aspect
+            break
+        if logo_brand is None:
+            from reportlab.graphics.shapes import Drawing, Polygon
+            logo_icon = Drawing(28, 28)
+            ls = 28 / 32.0
+            logo_icon.add(Polygon(
+                points=[6 * ls, 26 * ls, 18 * ls, 26 * ls, 22 * ls, 18 * ls, 10 * ls, 18 * ls, 14 * ls, 10 * ls, 26 * ls, 10 * ls, 22 * ls, 6 * ls, 8 * ls, 6 * ls, 4 * ls, 14 * ls, 16 * ls, 14 * ls, 12 * ls, 22 * ls, 4 * ls, 22 * ls],
+                fillColor=STACKLY_TEAL, strokeColor=STACKLY_TEAL, strokeWidth=0,
+            ))
+            logo_icon.add(Polygon(
+                points=[10 * ls, 24 * ls, 20 * ls, 24 * ls, 24 * ls, 16 * ls, 14 * ls, 16 * ls, 18 * ls, 8 * ls, 28 * ls, 8 * ls, 24 * ls, 4 * ls, 12 * ls, 4 * ls, 8 * ls, 12 * ls, 18 * ls, 12 * ls, 14 * ls, 20 * ls, 6 * ls, 20 * ls],
+                fillColor=STACKLY_ICON_BLUE, strokeColor=STACKLY_ICON_BLUE, strokeWidth=0,
+            ))
+            logo_brand = Table(
+                [[logo_icon, Paragraph("STACKLY", stackly_name_style)]],
+                colWidths=[32, 86],
+            )
+        if isinstance(logo_brand, Table):
+            logo_brand.setStyle(TableStyle([
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                ("TOPPADDING", (0, 0), (-1, -1), 0),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+            ]))
+
+        top_row = Table(
+            [[logo_brand, "", Paragraph(f"QUOTATION - {status_display}", doc_title_style)]],
+            colWidths=[left_w, col_gap, right_w],
+        )
+        top_row.setStyle(TableStyle([
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("ALIGN", (2, 0), (2, 0), "CENTER"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+            ("TOPPADDING", (0, 0), (-1, -1), 0),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ]))
+        elements.append(top_row)
+        elements.append(Spacer(1, 6))
+
+        # ---------- Watermark for rejected/expired ----------
+        if status_key in ['rejected', 'expired']:
+            watermark_text = (
+                "REJECTED - FOR REFERENCE ONLY"
+                if status_key == 'rejected'
+                else "EXPIRED - FOR REFERENCE ONLY"
+            )
+            watermark_color = colors.red if status_key == 'rejected' else colors.orange
+            elements.append(Paragraph(
                 watermark_text,
                 ParagraphStyle(
                     'Watermark',
                     parent=styles["Normal"],
                     fontName="DejaVuSans-Bold",
-                    fontSize=12,
+                    fontSize=11,
                     textColor=watermark_color,
                     alignment=TA_CENTER,
-                    spaceAfter=10,
-                    backColor=colors.HexColor("#f9f9f9"),
-                )
-            )
-            elements.append(watermark_para)
-            elements.append(Spacer(1, 4))
+                    spaceAfter=8,
+                    backColor=MAROON_LIGHT,
+                ),
+            ))
 
-        # ---------- Quotation details table (label/value pairs, same style as DNR) ----------
-        quot_date = safe_str(quotation.get('quotation_date', ''))
-        expiry = safe_str(quotation.get('expiry_date', ''))
-        sales_rep = safe_str(quotation.get('sales_rep', ''))
-        po_ref = safe_str(quotation.get('customer_po', 'N/A'))
-        payment_terms = safe_str(quotation.get('payment_terms', 'N/A'))
+        # ---------- Company contact (left) | Quotation meta box (right) ----------
+        contact_col_w = left_w
+        contact_icon_w = 18
+        contact_text_w = contact_col_w - contact_icon_w - 4
 
-        details_data = [
-            [
-                Paragraph("<b>Quotation No:</b>", label_style),
-                Paragraph(safe_str(quotation.get('quotation_id')), value_style),
-                Paragraph("<b>Date:</b>", label_style),
-                Paragraph(quot_date, value_style),
-            ],
-            [
-                Paragraph("<b>Customer:</b>", label_style),
-                Paragraph(safe_str(quotation.get('customer_name')), value_style),
-                Paragraph("<b>Expiry Date:</b>", label_style),
-                Paragraph(expiry, value_style),
-            ],
-            [
-                Paragraph("<b>Sales Rep:</b>", label_style),
-                Paragraph(sales_rep, value_style),
-                Paragraph("<b>Currency:</b>", label_style),
-                Paragraph(f"{currency_code} ({currency_symbol})", value_style),
-            ],
-            [
-                Paragraph("<b>PO Reference:</b>", label_style),
-                Paragraph(po_ref, value_style),
-                Paragraph("<b>Payment Terms:</b>", label_style),
-                Paragraph(payment_terms, value_style),
-            ],
-        ]
-
-        details_table = Table(details_data, colWidths=[110, 170, 95, 145])
-        details_table.setStyle(
-            TableStyle(
-                [
-                    ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f3f3f3")),
-                    ("BOX", (0, 0), (-1, -1), 0.8, colors.HexColor("#8a8a8a")),
-                    ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#a5a5a5")),
-                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                    ("LEFTPADDING", (0, 0), (-1, -1), 6),
-                    ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-                    ("TOPPADDING", (0, 0), (-1, -1), 5),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-                ]
-            )
+        # Address: two fixed rows (icon spans both) — avoids ReportLab mid-line wrap
+        addr_line1 = (
+            "MMR&nbsp;Complex,&nbsp;Chinna&nbsp;Thirupathi,&nbsp;"
+            "near&nbsp;Chinna&nbsp;Muniyappan&nbsp;Kovil,"
         )
-        elements.append(details_table)
-        elements.append(Spacer(1, 16))
+        addr_line2 = "Salem, Tamil Nadu - 636008"
 
-        # ---------- Quotation items table ----------
-        elements.append(Paragraph("QUOTATION ITEMS", section_style))
-        elements.append(Spacer(1, 2))
+        address_block = Table(
+            [
+                [Paragraph(addr_line1, address_style)],
+                [Paragraph(addr_line2, address_style)],
+            ],
+            colWidths=[contact_text_w],
+        )
+        address_block.setStyle(TableStyle([
+            ("LEFTPADDING", (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+            ("TOPPADDING", (0, 0), (-1, -1), 0),
+            ("BOTTOMPADDING", (0, 0), (0, 0), 2),
+            ("BOTTOMPADDING", (0, 1), (-1, -1), 0),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ]))
+
+        contact_block = Table(
+            [
+                [quot_icons[("location", 13)], address_block],
+                [quot_icons[("phone", 13)], Paragraph("Phone: +91 7010792745", contact_style)],
+                [quot_icons[("email", 13)], Paragraph("Email: info@stackly.com", contact_style)],
+                [quot_icons[("globe", 13)], Paragraph("www.thestackly.com", contact_style)],
+            ],
+            colWidths=[contact_icon_w, contact_text_w],
+        )
+        contact_block.setStyle(TableStyle([
+            ("VALIGN", (0, 0), (-1, 0), "TOP"),
+            ("VALIGN", (0, 1), (-1, -1), "MIDDLE"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+            ("TOPPADDING", (0, 0), (-1, -1), 4),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ]))
+
+        meta_colon_style = ParagraphStyle(
+            name="Quot_MetaColon",
+            parent=meta_value_style,
+            alignment=TA_LEFT,
+        )
+
+        meta_icon_w = 18
+        meta_label_w = min(92, (right_w - meta_icon_w - 10) * 0.56)
+        meta_colon_w = 10
+        meta_value_w = max(48, right_w - meta_icon_w - meta_label_w - meta_colon_w)
+        meta_row_pad = 4
+
+        meta_rows = [
+            [quot_icons[("document", 10)], Paragraph("<b>Quotation Number</b>", meta_label_style), Paragraph(":", meta_colon_style), Paragraph(q_id, meta_value_style)],
+            [quot_icons[("calendar", 10)], Paragraph("<b>Quotation Date</b>", meta_label_style), Paragraph(":", meta_colon_style), Paragraph(quot_date, meta_value_style)],
+            [quot_icons[("calendar", 10)], Paragraph("<b>Expiry Date</b>", meta_label_style), Paragraph(":", meta_colon_style), Paragraph(expiry, meta_value_style)],
+            [quot_icons[("currency", 10)], Paragraph("<b>Currency</b>", meta_label_style), Paragraph(":", meta_colon_style), Paragraph(f"{currency_code} {currency_symbol}", meta_value_style)],
+            [quot_icons[("terms", 10)], Paragraph("<b>Payment Terms</b>", meta_label_style), Paragraph(":", meta_colon_style), Paragraph(payment_terms, meta_value_style)],
+        ]
+        meta_table = Table(
+            meta_rows,
+            colWidths=[meta_icon_w, meta_label_w, meta_colon_w, meta_value_w],
+        )
+        meta_table.setStyle(TableStyle([
+            ("BOX", (0, 0), (-1, -1), 0.8, MAROON_BORDER),
+            ("ROUNDEDCORNERS", [4, 4, 4, 4]),
+            ("BACKGROUND", (0, 0), (-1, -1), colors.white),
+            ("ALIGN", (0, 0), (0, -1), "CENTER"),
+            ("ALIGN", (1, 0), (1, -1), "RIGHT"),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("LINEBELOW", (0, 0), (-1, -2), 0.4, MAROON_BORDER),
+            ("LINEAFTER", (1, 0), (1, -1), 0.4, MAROON_BORDER),
+            ("LEFTPADDING", (0, 0), (-1, -1), 6),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+            ("TOPPADDING", (0, 0), (-1, -1), meta_row_pad),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), meta_row_pad),
+            ("RIGHTPADDING", (1, 0), (1, -1), 3),
+            ("LEFTPADDING", (2, 0), (2, -1), 1),
+            ("RIGHTPADDING", (2, 0), (2, -1), 2),
+            ("LEFTPADDING", (3, 0), (3, -1), 1),
+        ]))
+
+        info_row = Table(
+            [[contact_block, "", meta_table]],
+            colWidths=[left_w, col_gap, right_w],
+        )
+        info_row.setStyle(TableStyle([
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ]))
+        elements.append(info_row)
+        elements.append(Spacer(1, SECTION_GAP))
+
+        # ---------- BILL TO ----------
+        bill_colon_style = ParagraphStyle(
+            name="Quot_BillColon",
+            parent=value_style,
+            alignment=TA_LEFT,
+        )
+
+        bill_icon_w = 24
+        bill_label_w = 88
+        bill_colon_w = 14
+        bill_value_w = usable_w - bill_icon_w - bill_label_w - bill_colon_w
+
+        bill_to_table = Table([
+            [Paragraph("<b>BILL TO</b>", box_header_style), "", "", ""],
+            [quot_icons[("user", 12)], Paragraph("<b>Customer</b>", label_style), Paragraph(":", bill_colon_style), Paragraph(customer_name, value_style)],
+            [quot_icons[("user", 12)], Paragraph("<b>Sales Rep</b>", label_style), Paragraph(":", bill_colon_style), Paragraph(sales_rep, value_style)],
+            [quot_icons[("file", 12)], Paragraph("<b>PO Reference</b>", label_style), Paragraph(":", bill_colon_style), Paragraph(po_ref, value_style)],
+        ], colWidths=[bill_icon_w, bill_label_w, bill_colon_w, bill_value_w])
+        bill_to_table.setStyle(TableStyle([
+            ("BOX", (0, 0), (-1, -1), 0.8, MAROON_BORDER),
+            ("ROUNDEDCORNERS", [4, 4, 4, 4]),
+            ("BACKGROUND", (0, 0), (-1, 0), MAROON_LIGHT),
+            ("SPAN", (0, 0), (3, 0)),
+            ("BACKGROUND", (0, 1), (-1, -1), colors.white),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("ALIGN", (0, 1), (0, -1), "CENTER"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 10),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+            ("TOPPADDING", (0, 0), (-1, 0), 6),
+            ("BOTTOMPADDING", (0, 0), (-1, 0), 6),
+            ("TOPPADDING", (0, 1), (-1, -1), 4),
+            ("BOTTOMPADDING", (0, 1), (-1, -1), 4),
+            ("LEFTPADDING", (0, 1), (0, -1), 6),
+            ("RIGHTPADDING", (0, 1), (0, -1), 2),
+            ("LEFTPADDING", (2, 1), (2, -1), 0),
+            ("RIGHTPADDING", (2, 1), (2, -1), 4),
+            ("LINEBELOW", (0, 0), (-1, 0), 0.5, MAROON_BORDER),
+        ]))
+        elements.append(bill_to_table)
+        elements.append(Spacer(1, SECTION_GAP))
+
+        # ---------- QUOTATION ITEMS ----------
+        elements.append(Paragraph("QUOTATION ITEMS", section_title_style))
+        elements.append(Spacer(1, 8))
 
         items = quotation.get('items', []) or []
-
-        # Table header
-        item_data = [
-            [
-                Paragraph("S.No", header_small_style),
-                Paragraph("Product Name", header_small_style),
-                Paragraph("Qty", header_small_style),
-                Paragraph("UOM", header_small_style),
-                Paragraph("Unit Price", header_small_style),
-                Paragraph("Tax %", header_small_style),
-                Paragraph("Disc %", header_small_style),
-                Paragraph("Total", header_small_style),
-            ]
-        ]
+        item_data = [[
+            Paragraph("S.No", header_small_style),
+            Paragraph("Product Name", header_small_style),
+            Paragraph("Qty", header_small_style),
+            Paragraph("UOM", header_small_style),
+            Paragraph("Unit Price", header_small_style),
+            Paragraph("Tax %", header_small_style),
+            Paragraph("Disc %", header_small_style),
+            Paragraph("Total", header_small_style),
+        ]]
 
         for idx, item in enumerate(items, start=1):
-            product_name = safe_str(item.get("product_name"))
-            qty = safe_float(item.get("quantity", 0))
-            uom = safe_str(item.get("uom"))
-            price = safe_float(item.get("unit_price", 0))
-            tax = safe_float(item.get("tax", 0))
-            disc = safe_float(item.get("discount", 0))
-            line_total = safe_float(item.get("total", 0))
+            pn = item.get("product_name")
+            product_name = ('-' if pn is None else str(pn).strip()) or '-'
+            iq = item.get("quantity", 0)
+            qty = float(iq) if iq not in (None, "") else 0.0
+            um = item.get("uom")
+            uom = ('-' if um is None else str(um).strip()) or '-'
+            pr = item.get("unit_price", 0)
+            price = float(pr) if pr not in (None, "") else 0.0
+            tx = item.get("tax", 0)
+            tax = float(tx) if tx not in (None, "") else 0.0
+            dc = item.get("discount", 0)
+            disc = float(dc) if dc not in (None, "") else 0.0
+            lt = item.get("total", 0)
+            line_total = float(lt) if lt not in (None, "") else 0.0
             if line_total == 0:
                 line_subtotal = qty * price
                 disc_amt = line_subtotal * (disc / 100) if disc > 0 else 0
@@ -14945,110 +15316,157 @@ def generate_quotation_pdf(quotation, quotation_id=None):
                 tax_amt = after_disc * (tax / 100) if tax > 0 else 0
                 line_total = after_disc + tax_amt
 
-            item_data.append(
-                [
-                    Paragraph(str(idx), value_style),
-                    Paragraph(product_name, value_style),
-                    Paragraph(f"{qty:.2f}".rstrip('0').rstrip('.'), value_style),
-                    Paragraph(uom, value_style),
-                    Paragraph(f"{currency_symbol}{price:.2f}", value_style),
-                    Paragraph(f"{tax:.1f}%" if tax > 0 else "-", value_style),
-                    Paragraph(f"{disc:.1f}%" if disc > 0 else "-", value_style),
-                    Paragraph(f"{currency_symbol}{line_total:.2f}", value_style),
-                ]
-            )
+            item_data.append([
+                Paragraph(str(idx), item_center_style),
+                Paragraph(product_name, item_name_style),
+                Paragraph(f"{qty:.2f}".rstrip('0').rstrip('.'), item_center_style),
+                Paragraph(uom, item_center_style),
+                Paragraph(f"{currency_symbol}{price:.2f}", item_center_style),
+                Paragraph(f"{tax:.1f}%" if tax > 0 else "-", item_center_style),
+                Paragraph(f"{disc:.1f}%" if disc > 0 else "-", item_center_style),
+                Paragraph(f"{currency_symbol}{line_total:.2f}", item_center_style),
+            ])
 
         if len(item_data) == 1:
-            item_data.append(
-                [
-                    Paragraph("-", value_style),
-                    Paragraph("No line items available", value_style),
-                    Paragraph("-", value_style),
-                    Paragraph("-", value_style),
-                    Paragraph("-", value_style),
-                    Paragraph("-", value_style),
-                    Paragraph("-", value_style),
-                    Paragraph("-", value_style),
-                ]
-            )
+            item_data.append([
+                Paragraph("-", item_center_style),
+                Paragraph("No line items available", item_name_style),
+                Paragraph("-", item_center_style),
+                Paragraph("-", item_center_style),
+                Paragraph("-", item_center_style),
+                Paragraph("-", item_center_style),
+                Paragraph("-", item_center_style),
+                Paragraph("-", item_center_style),
+            ])
+
+        item_base_widths = [32, 138, 42, 38, 62, 42, 42, 72]
+        item_col_widths = [
+            usable_w * w / sum(item_base_widths) for w in item_base_widths
+        ]
 
         items_table = Table(
             item_data,
-            colWidths=[35, 140, 45, 40, 65, 45, 45, 75],
+            colWidths=item_col_widths,
             repeatRows=1,
         )
-        items_table.setStyle(
-            TableStyle(
-                [
-                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#a12828")),
-                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-                    ("FONTNAME", (0, 0), (-1, 0), "DejaVuSans-Bold"),
-                    ("FONTNAME", (0, 1), (-1, -1), "DejaVuSans"),
-                    ("FONTSIZE", (0, 0), (-1, -1), 7.5),
-                    ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-                    ("ALIGN", (1, 1), (2, -1), "LEFT"),
-                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                    ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#999999")),
-                    ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f7f7f7")]),
-                    ("LEFTPADDING", (0, 0), (-1, -1), 4),
-                    ("RIGHTPADDING", (0, 0), (-1, -1), 4),
-                    ("TOPPADDING", (0, 0), (-1, -1), 5),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-                ]
-            )
-        )
+        items_table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), MAROON),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("FONTNAME", (0, 0), (-1, 0), "DejaVuSans-Bold"),
+            ("FONTNAME", (0, 1), (-1, -1), "DejaVuSans"),
+            ("FONTSIZE", (0, 0), (-1, -1), 7.5),
+            ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+            ("ALIGN", (1, 1), (1, -1), "LEFT"),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("BOX", (0, 0), (-1, -1), 0.6, MAROON_BORDER),
+            ("INNERGRID", (0, 0), (-1, -1), 0.4, MAROON_BORDER),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, MAROON_ROW_ALT]),
+            ("LEFTPADDING", (0, 0), (-1, -1), 4),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+            ("TOPPADDING", (0, 0), (-1, -1), ROW_PAD),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), ROW_PAD),
+        ]))
         elements.append(items_table)
-        elements.append(Spacer(1, 16))
+        elements.append(Spacer(1, 28))
 
-        # ---------- Tax and Totals Summary (styled as a table) ----------
-        elements.append(Paragraph("TAX AND TOTALS SUMMARY", section_style))
-
-        summary_data = []
-        summary_data.append([Paragraph("Subtotal:", label_style), Paragraph(f"{currency_symbol}{subtotal:.2f}", value_style)])
-        summary_data.append([Paragraph("Total Discount (Item Level):", label_style), Paragraph(f"{currency_symbol}{total_discount:.2f}", value_style)])
-        summary_data.append([Paragraph("Total Tax:", label_style), Paragraph(f"{currency_symbol}{total_tax:.2f}", value_style)])
-        if shipping >= 0:
-            summary_data.append([Paragraph("Shipping Charge:", label_style), Paragraph(f"{currency_symbol}{shipping:.2f}", value_style)])
-        if global_discount_pct >= 0:
-            summary_data.append([Paragraph(f"Global Discount ({global_discount_pct:.1f}%):", label_style), Paragraph(f"-{currency_symbol}{global_discount_amt:.2f}", value_style)])
+        # ---------- TERMS AND CONDITIONS | AMOUNT SUMMARY (side by side) ----------
+        summary_body = [
+            [Paragraph("Subtotal", label_style), Paragraph(f"{currency_symbol}{subtotal:.2f}", summary_value_style)],
+            [Paragraph("Total Discount (Item Level)", label_style), Paragraph(f"{currency_symbol}{total_discount:.2f}", summary_value_style)],
+            [Paragraph("Total Tax", label_style), Paragraph(f"{currency_symbol}{total_tax:.2f}", summary_value_style)],
+            [Paragraph("Shipping Charge", label_style), Paragraph(f"{currency_symbol}{shipping:.2f}", summary_value_style)],
+            [Paragraph(f"Global Discount ({global_discount_pct:.1f}%)", label_style), Paragraph(f"-{currency_symbol}{global_discount_amt:.2f}", summary_value_style)],
+        ]
         if rounding != 0:
             sign = "+" if rounding > 0 else ""
-            rounding_para = Paragraph(f"{sign}{currency_symbol}{abs(rounding):.2f}", value_style)
+            rnd_style = summary_value_style
             if rounding > 0:
-                rounding_para = Paragraph(f"{sign}{currency_symbol}{abs(rounding):.2f}", ParagraphStyle(name="RoundPos", parent=value_style, textColor=colors.green))
+                rnd_style = ParagraphStyle(name="RoundPos", parent=summary_value_style, textColor=colors.green)
             elif rounding < 0:
-                rounding_para = Paragraph(f"{sign}{currency_symbol}{abs(rounding):.2f}", ParagraphStyle(name="RoundNeg", parent=value_style, textColor=colors.red))
-            summary_data.append([Paragraph("Rounding Adjustment:", label_style), rounding_para])
-        summary_data.append([Paragraph("", label_style), Paragraph("", value_style)])  # separator row
-        summary_data.append([Paragraph("<b>GRAND TOTAL:</b>", label_style), Paragraph(f"<b>{currency_symbol}{grand_total:.2f}</b>", value_style)])
+                rnd_style = ParagraphStyle(name="RoundNeg", parent=summary_value_style, textColor=colors.red)
+            summary_body.append([
+                Paragraph("Rounding Adjustment", label_style),
+                Paragraph(f"{sign}{currency_symbol}{abs(rounding):.2f}", rnd_style),
+            ])
+        summary_body.append([
+            Paragraph("<b>GRAND TOTAL</b>", grand_total_label_style),
+            Paragraph(f"<b>{currency_symbol}{grand_total:.2f}</b>", grand_total_value_style),
+        ])
 
-        summary_table = Table(summary_data, colWidths=[200, 150])
-        summary_table.setStyle(
-            TableStyle(
-                [
-                    ("FONTNAME", (0, 0), (-1, -1), "DejaVuSans"),
-                    ("FONTSIZE", (0, 0), (-1, -3), 9),
-                    ("FONTSIZE", (0, -1), (-1, -1), 10),
-                    ("ALIGN", (0, 0), (0, -1), "LEFT"),
-                    ("ALIGN", (1, 0), (1, -1), "RIGHT"),
-                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                    ("LEFTPADDING", (0, 0), (-1, -1), 6),
-                    ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-                    ("TOPPADDING", (0, 0), (-1, -1), 4),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-                    ("LINEABOVE", (0, -2), (-1, -2), 0.5, colors.HexColor("#999999")),
-                    ("LINEBELOW", (0, -2), (-1, -2), 0.5, colors.HexColor("#999999")),
-                    ("LINEABOVE", (0, -1), (-1, -1), 1.5, colors.HexColor("#8c1f1f")),
-                    ("LINEBELOW", (0, -1), (-1, -1), 1.5, colors.HexColor("#8c1f1f")),
-                    ("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#faf0f0")),
-                ]
-            )
+        bottom_gap = 24
+        half_w = (usable_w - bottom_gap) / 2
+        inner_w = half_w - 4  # room for box border inside each column
+        total_col_w = item_col_widths[7]
+        items_cols_before_total = sum(item_col_widths[:7])
+        amount_box_left = half_w + bottom_gap
+        amount_table_pad = 8
+        amount_label_w = max(
+            72,
+            items_cols_before_total - amount_box_left - amount_table_pad,
         )
-        elements.append(summary_table)
-        elements.append(Spacer(1, 16))
+        amount_table_w = amount_label_w + total_col_w
 
-        # ---------- Terms and Conditions ----------
-        elements.append(Paragraph("Terms and Conditions", section_style))
+        box_badges = {}
+        for bk in ("shield", "calculator"):
+            if use_fa_icons:
+                badge_inner = Paragraph(
+                    FA_GLYPHS[bk],
+                    ParagraphStyle(
+                        name=f"BoxBadgeFa_{bk}",
+                        parent=styles["Normal"],
+                        fontName="FaSolid",
+                        fontSize=9,
+                        leading=10,
+                        textColor=colors.white,
+                        alignment=TA_CENTER,
+                    ),
+                )
+            else:
+                from reportlab.graphics.shapes import Drawing, Rect, Line, Polygon
+                badge_draw = Drawing(16, 16)
+                bs = 1.0
+                if bk == "calculator":
+                    badge_draw.add(Rect(3 * bs, 9 * bs, 10 * bs, 4 * bs, fillColor=colors.white, strokeColor=colors.white, strokeWidth=0))
+                    for row in range(3):
+                        for col in range(3):
+                            badge_draw.add(Rect(
+                                (4 + col * 3.2) * bs, (3 + row * 2) * bs, 2.2 * bs, 1.5 * bs,
+                                fillColor=colors.white, strokeColor=colors.white, strokeWidth=0,
+                            ))
+                else:
+                    badge_draw.add(Polygon(
+                        points=[8 * bs, 14 * bs, 13 * bs, 11 * bs, 13 * bs, 6 * bs, 8 * bs, 2 * bs, 3 * bs, 6 * bs, 3 * bs, 11 * bs],
+                        fillColor=colors.white, strokeColor=colors.white, strokeWidth=0,
+                    ))
+                    badge_draw.add(Line(6 * bs, 8 * bs, 7.5 * bs, 9.5 * bs, strokeColor=MAROON, strokeWidth=0.8 * bs))
+                    badge_draw.add(Line(7.5 * bs, 9.5 * bs, 10.5 * bs, 6.5 * bs, strokeColor=MAROON, strokeWidth=0.8 * bs))
+                badge_inner = badge_draw
+            badge_tbl = Table([[badge_inner]], colWidths=[20], rowHeights=[20])
+            badge_tbl.setStyle(TableStyle([
+                ("BACKGROUND", (0, 0), (-1, -1), MAROON),
+                ("BOX", (0, 0), (-1, -1), 1.2, colors.white),
+                ("ROUNDEDCORNERS", [10, 10, 10, 10]),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                ("TOPPADDING", (0, 0), (-1, -1), 0),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+            ]))
+            box_badges[bk] = badge_tbl
+
+        terms_header = Table(
+            [[box_badges["shield"], Paragraph("<b>TERMS AND CONDITIONS</b>", box_header_style)]],
+            colWidths=[24, max(60, inner_w - 24)],
+        )
+        terms_header.setStyle(TableStyle([
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING", (0, 0), (0, 0), 6),
+            ("TOPPADDING", (0, 0), (-1, -1), 0),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ]))
+
         terms_list = [
             "1. This quotation is valid until the expiry date mentioned above.",
             "2. Prices are subject to change without prior notice.",
@@ -15057,15 +15475,136 @@ def generate_quotation_pdf(quotation, quotation_id=None):
             "5. Goods once sold will not be taken back.",
             "6. All taxes and duties as applicable.",
         ]
+        terms_rows = [[terms_header]]
         for term in terms_list:
-            elements.append(Paragraph(term, terms_style))
-        elements.append(Spacer(1, 12))
+            terms_rows.append([Paragraph(term, terms_style)])
 
-        # ---------- Generation footer ----------
-        footer_text = f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-        elements.append(Paragraph(footer_text, ParagraphStyle(name="Footer", parent=value_style, fontSize=7, alignment=TA_CENTER)))
+        # Equal-height boxes: same row count + matching row heights
+        box_header_h = 24
+        box_body_h = 20
+        box_grand_h = 26
+        target_rows = 1 + len(summary_body)
+        while len(terms_rows) < target_rows:
+            terms_rows.append([Paragraph("<br/>", terms_style)])
 
-        doc.build(elements)
+        box_row_heights = [box_header_h]
+        for i in range(len(summary_body)):
+            box_row_heights.append(
+                box_grand_h if i == len(summary_body) - 1 else box_body_h
+            )
+
+        amount_header = Table(
+            [[box_badges["calculator"], Paragraph("<b>AMOUNT SUMMARY</b>", box_header_style)]],
+            colWidths=[24, max(60, amount_table_w - 24)],
+        )
+        amount_header.setStyle(TableStyle([
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING", (0, 0), (0, 0), 6),
+            ("TOPPADDING", (0, 0), (-1, -1), 0),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ]))
+
+        amount_table = Table(
+            [[amount_header]] + summary_body,
+            colWidths=[amount_label_w, total_col_w],
+            rowHeights=box_row_heights,
+        )
+        n_summary = len(summary_body)
+        amount_style_cmds = [
+            ("BOX", (0, 0), (-1, -1), 0.8, MAROON_BORDER),
+            ("ROUNDEDCORNERS", [4, 4, 4, 4]),
+            ("SPAN", (0, 0), (1, 0)),
+            ("BACKGROUND", (0, 0), (-1, 0), MAROON_LIGHT),
+            ("LINEBELOW", (0, 0), (-1, 0), 0.5, MAROON_BORDER),
+            ("ALIGN", (1, 1), (1, -1), "CENTER"),
+            ("ALIGN", (0, -1), (0, -1), "LEFT"),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("LEFTPADDING", (0, 0), (-1, -1), amount_table_pad),
+            ("RIGHTPADDING", (0, 0), (0, -1), 8),
+            ("RIGHTPADDING", (1, 0), (1, -1), 4),
+            ("LEFTPADDING", (1, 0), (1, -1), 4),
+            ("TOPPADDING", (0, 0), (-1, -1), ROW_PAD),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), ROW_PAD),
+            ("TOPPADDING", (0, 0), (-1, 0), 2),
+            ("BOTTOMPADDING", (0, 0), (-1, 0), 2),
+            ("BACKGROUND", (0, -1), (-1, -1), MAROON),
+            ("TEXTCOLOR", (0, -1), (-1, -1), colors.white),
+        ]
+        if n_summary > 1:
+            amount_style_cmds.append(("LINEABOVE", (0, -1), (-1, -1), 0.5, MAROON_BORDER))
+        amount_table.setStyle(TableStyle(amount_style_cmds))
+
+        terms_table = Table(terms_rows, colWidths=[inner_w], rowHeights=box_row_heights)
+        terms_table.setStyle(TableStyle([
+            ("BOX", (0, 0), (-1, -1), 0.8, MAROON_BORDER),
+            ("ROUNDEDCORNERS", [4, 4, 4, 4]),
+            ("BACKGROUND", (0, 0), (-1, 0), MAROON_LIGHT),
+            ("LINEBELOW", (0, 0), (-1, 0), 0.5, MAROON_BORDER),
+            ("VALIGN", (0, 0), (-1, 0), "MIDDLE"),
+            ("VALIGN", (0, 1), (-1, -1), "TOP"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 8),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+            ("TOPPADDING", (0, 0), (-1, -1), ROW_PAD),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), ROW_PAD),
+            ("TOPPADDING", (0, 0), (-1, 0), 2),
+            ("BOTTOMPADDING", (0, 0), (-1, 0), 2),
+        ]))
+
+        box_total_h = sum(box_row_heights) + 10
+
+        terms_wrap = Table([[terms_table]], colWidths=[half_w], rowHeights=[box_total_h])
+        terms_wrap.setStyle(TableStyle([
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+            ("TOPPADDING", (0, 0), (-1, -1), 0),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ]))
+        amount_wrap = Table([[amount_table]], colWidths=[half_w], rowHeights=[box_total_h])
+        amount_wrap.setStyle(TableStyle([
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+            ("TOPPADDING", (0, 0), (-1, -1), 0),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ]))
+
+        bottom_row = Table(
+            [[
+                terms_wrap,
+                Paragraph("", contact_style),
+                amount_wrap,
+            ]],
+            colWidths=[half_w, bottom_gap, half_w],
+            rowHeights=[box_total_h],
+        )
+        bottom_row.setStyle(TableStyle([
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+            ("TOPPADDING", (0, 0), (-1, -1), 0),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ]))
+        elements.append(bottom_row)
+
+        doc.build(
+            elements,
+            onFirstPage=lambda canvas, doc: (
+                canvas.saveState(),
+                canvas.setFont("DejaVuSans", 11),
+                canvas.setFillColor(MAROON_DARK),
+                canvas.drawCentredString(page_w / 2, 22, "-----Thank you for your business!------"),
+                canvas.restoreState(),
+            ),
+            onLaterPages=lambda canvas, doc: (
+                canvas.saveState(),
+                canvas.setFont("DejaVuSans", 11),
+                canvas.setFillColor(MAROON_DARK),
+                canvas.drawCentredString(page_w / 2, 22, "-----Thank you for your business!------"),
+                canvas.restoreState(),
+            ),
+        )
         pdf = buffer.getvalue()
         buffer.close()
         return pdf
@@ -15087,6 +15626,7 @@ def generate_pdf(quotation_id):
             SELECT 
                 q.quotation_id, q.status, q.quotation_date, q.expiry_date,
                 q.customer_name, q.sales_rep, q.customer_po, q.payment_terms as payment_term,
+                q.currency,
                 COALESCE(t.subtotal, 0) as subtotal,
                 COALESCE(t.global_discount_percent, 0) as global_discount_percent,
                 COALESCE(t.tax_summary, 0) as tax_summary,
@@ -15137,17 +15677,19 @@ def generate_pdf(quotation_id):
         cur.close()
         conn.close()
 
-        # generate PDF
+        status_text = quotation.get('status', 'draft').upper()
+        if status_text == "DRAFT":
+            return jsonify({'success': False, 'error': 'PDF not available for draft quotations'}), 403
+
         pdf_bytes = generate_quotation_pdf(quotation)
+        if not pdf_bytes:
+            return jsonify({'success': False, 'error': 'PDF generation failed'}), 500
 
         from flask import make_response
         response = make_response(pdf_bytes)
         response.headers['Content-Type'] = 'application/pdf'
 
-        status_text = quotation.get('status', 'draft').upper()
-        if status_text == "DRAFT":
-            return jsonify({'success': False, 'error': 'PDF not available for draft quotations'}), 403
-        elif status_text in ["REJECTED", "EXPIRED"]:
+        if status_text in ["REJECTED", "EXPIRED"]:
             response.headers['Content-Disposition'] = f'inline; filename=quotation_{quotation_id}_REFERENCE.pdf'
         else:
             response.headers['Content-Disposition'] = f'attachment; filename=quotation_{quotation_id}.pdf'
@@ -15160,8 +15702,6 @@ def generate_pdf(quotation_id):
         traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
 
-
-from email.message import EmailMessage
 
 def get_quotation_from_db(quotation_id):
     conn = get_db_connection()
@@ -15202,6 +15742,7 @@ def get_quotation_from_db(quotation_id):
     finally:
         cur.close()
         conn.close()
+
 @app.route("/send-quotation/<quotation_id>", methods=["POST"])
 def send_quotation(quotation_id):
     quotation = get_quotation_from_db(quotation_id)
