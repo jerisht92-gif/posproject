@@ -1,0 +1,120 @@
+{% extends "menu.html" %}
+ 
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='stock-return.css') }}">
+{% endblock %}
+ 
+{% block content %}
+<div class="srn-page">
+ 
+    <!-- HEADER -->
+<div class="srn-header">
+    <h2 class="srn-title">Stock Return Note</h2>
+
+    <a href="{{ url_for('stock_new_return') }}" class="srn-btn-primary">
+        + New Stock Return
+    </a>
+</div>
+ 
+    <div class="srn-card">
+ 
+        <!-- SEARCH FULL WIDTH -->
+        <div class="srn-search-wrap">
+            <input type="text" id="srnSearch" placeholder="Search by SRN ID, Supplier name...">
+        </div>
+ 
+        <!-- CLEAR FILTER BELOW -->
+        <div class="srn-clear-row">
+            <button id="srnClear" class="srn-clear">Clear Filter</button>
+        </div>
+ 
+        <!-- FILTERS -->
+        <div class="srn-filters">
+ 
+            <!-- Supplier -->
+            <div>
+                <label>Supplier</label>
+                  <div class="custom-select">
+                <select id="supplierFilter">
+                    <option value="all">All</option>
+                </select>
+                  </div>
+            </div>
+ 
+            <!-- Status -->
+            <div>
+                <label>Status</label>
+                  <div class="custom-select">
+                <select id="statusFilter">
+                    <option value="all">All</option>
+                    <option value="draft">Draft</option>
+                    <option value="cancelled">Cancelled</option>
+                    <option value="submitted">Submitted</option>
+                    <option value="returned">Returned</option>
+                </select>
+                  </div>
+            </div>
+ 
+            <!-- RECEIVED DATE -->
+            <div class="srn-date-filter">
+
+                <label>Received Date</label>
+
+                <div class="date-range-box">
+
+                    <span class="date-label">From</span>
+
+                    <input type="date" id="fromDate">
+
+                    <span class="divider"></span>
+
+                    <span class="date-label">To</span>
+
+                    <input type="date" id="toDate">
+
+                </div>
+
+            </div>
+ 
+        </div>
+ 
+        <!-- TABLE -->
+        <div class="srn-table-wrap">
+            <table class="srn-table">
+                <thead>
+                <tr>
+                    <th>SRN ID</th>
+                    <th>GRN-ref</th>
+                    <th>Return date</th>
+                    <th>Supplier name</th>
+                    <th>Return initiatd by</th>
+                    <th>Status</th>
+                    <th>Action</th>
+                </tr>
+                </thead>
+                <tbody id="srnTbody"></tbody>
+            </table>
+        </div>
+        <!-- FOOTER -->
+        <div class="srn-footer">
+            <div class="srn-showing" id="showingText">Showing 0 Entries</div>
+ 
+            <div class="srn-pager">
+                <button class="srn-btn-page" id="prevBtn" type="button">‹ Prev</button>
+ 
+                <span class="srn-page-text">
+                    Page <b id="pageNow">1</b> of <b id="pageTotal">1</b>
+                </span>
+ 
+                <button class="srn-btn-page" id="nextBtn" type="button">Next ›</button>
+            </div>
+        </div>
+ 
+    </div>
+</div>
+ 
+{% endblock %}
+ 
+{% block extra_js %}
+<script src="{{ url_for('static', filename='stock-return.js') }}"></script>
+{% endblock %}

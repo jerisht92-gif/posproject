@@ -1,0 +1,529 @@
+{% extends "menu.html" %}
+ 
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='stock-new-return.css') }}">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+{% endblock %}
+ 
+{% block content %}
+
+<div id="topAlert" class="top-alert">
+    <span class="alert-icon">⚠</span>
+    <span id="alertMessage"></span>
+</div>
+
+<div class="snr-page">
+    <!-- HEADER -->
+<div class="snr-header">
+
+    <h2>New Stock Return</h2>
+
+    <span id="statusBadge" class="status-badge">
+        Status : Draft
+    </span>
+
+</div>
+
+<div class="snr-container">
+ 
+
+ 
+  <!-- FORM -->
+ 
+    <div class="snr-grid">
+ 
+      <div class="form-group">
+        <label>SRN (Auto Generate)</label>
+        <input type="text" name="srn_no" value="{{ srn_id }}" readonly>
+      </div>
+ 
+<div class="form-group">
+
+    <label>GRN Reference</label>
+
+    <select id="grnInput" name="grn_reference">
+        <option value="">Select GRN</option>
+    </select>
+
+    <input
+        type="text"
+        id="grnDisplay"
+        readonly
+        style="display:none;">
+
+</div>
+ 
+      <div class="form-group">
+        <label>PO Reference ID</label>
+        <input type="text" name="po_reference" readonly>
+      </div>
+ 
+      <div class="form-group">
+        <label>Received Date</label>
+        <input type="date" name="received_date" readonly>
+      </div>
+ 
+      <div class="form-group">
+        <label>Return date</label>
+        <input type="date" name="return_date">
+      <div class="live-error" id="returnDateError">
+        Return Date is required
+    </div>
+      </div>
+ 
+      <div class="form-group">
+        <label>Return Initiated By</label>
+        <input type="text" name="return_by">
+
+      <div class="live-error" id="returnByError">
+        Return Initiated By is required
+    </div>
+      </div>
+ 
+      <div class="form-group">
+        <label>Supplier Name</label>
+        <input type="text" name="supplier_name" readonly>
+      </div>
+
+       <div class="form-group">
+        <label>Supplier Email</label>
+        <input type="email" name="supplier_email" readonly>
+       </div>
+
+       <div class="form-group">
+        <label>Status</label>
+        <div class="custom-select">
+        <select name="status" class="status-select">
+          <option value="Draft">Draft</option>
+          <option value="Cancelled">Cancelled</option>
+          <option value="Submitted">Submitted</option>
+          <option value="Returned">Returned</option>
+        </select>
+        </div>
+      </div>
+      
+ 
+    </div>
+ 
+    <!-- LINE ITEMS -->
+<div class="li-container">
+ 
+  <h3 class="li-title">Line Items</h3>
+ 
+  <div class="li-box">
+    <table class="li-table">
+      <thead>
+        <tr>
+          <th>S.No</th>
+          <th>Product Name</th>
+          <th>Product Id</th>
+          <th>UOM</th>
+          <th>Qty Ordered</th>
+          <th>Rejected Qty</th>
+          <th>Return Qty</th>
+          <th>Return Reason</th>
+          <th>Unit Price</th>
+          <th>Tax (%)</th>
+          <th>Discount (%)</th>
+          <th>Total</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+ 
+       <tbody id="lineItemsBody">
+        <tr>
+          <td>1</td>
+ 
+          <td>
+            <input type="text" class="li-input product-name" readonly>
+          </td>
+ 
+          <td>
+            <input type="text" class="li-input product-id" readonly>
+          </td>
+ 
+          <td>
+            <input type="text" class="li-input uom" readonly>
+          </td>
+ 
+          <td>
+            <input type="number" class="li-input qty-ordered" readonly>
+          </td>
+ 
+          <td>
+            <input type="number" class="li-input rejected-qty" readonly>
+          </td>
+ 
+          <td>
+            <input
+                  type="number"
+                  class="li-input qty"
+                  value="0"
+                  min="0"
+                  step="1">
+          </td>
+
+ 
+          <td>
+            <input type="text" class="li-input return-reason" placeholder="Enter Return Reason...">
+          </td>
+ 
+          <td>
+            <input type="number" class="li-input price">
+          </td>
+ 
+          <td>
+            <input type="number" class="li-input tax" value="0">
+          </td>
+ 
+          <td>
+            <input type="number" class="li-input discount" value="0">
+          </td>
+ 
+          <td class="li-total">0</td>
+ 
+          <td>
+            <button type="button" class="li-delete">
+              <i class="fa-solid fa-trash"></i>
+            </button>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+ 
+  </div>
+</div>
+ 
+<h3 class="summary-heading">Order Summary</h3>
+
+<div class="summary-box">
+
+  <!-- Original Total -->
+  <div class="summary-row">
+    <span>Original Purchased Total</span>
+    <div class="summary-value" id="originalTotal">₹ 0.00</div>
+  </div>
+
+  <!-- Global Discount (ONLY MANUAL FIELD) -->
+  <div class="summary-row">
+    <span>Global Discount (%)</span>
+
+    <input
+      type="number"
+      class="summary-input"
+      id="globalDiscount"
+      value="0"
+      min="0"
+      max="100"
+    >
+  </div>
+
+  <!-- Tax -->
+  <div class="summary-row">
+    <span>Tax Summary</span>
+    <div class="summary-value" id="taxSummary">₹ 0.00</div>
+  </div>
+
+  <!-- Returned Subtotal -->
+  <div class="summary-row">
+    <span>Returned Subtotal</span>
+    <div class="summary-value" id="returnedSubtotal">₹ 0.00</div>
+  </div>
+
+  <!-- Discount Amount -->
+  <div class="summary-row">
+    <span>Global Discount Amount</span>
+    <div class="summary-value" id="discountAmount">₹ 0.00</div>
+  </div>
+
+  <!-- Rounding -->
+  <div class="summary-row">
+    <span>Rounding Adjustment</span>
+    <div class="summary-value">₹ 0.00</div>
+  </div>
+
+  <!-- Final -->
+  <div class="summary-row final-row">
+    <span>Amount to Recover</span>
+    <div class="summary-value final-value" id="amountRecover">
+      ₹ 0.00
+    </div>
+  </div>
+
+</div>
+ 
+<!-- COMMENTS / HISTORY / ATTACHMENTS -->
+<div class="comment-box">
+
+    <!-- Tabs -->
+    <div class="comment-tabs">
+        <button type="button" class="tab active" data-tab="comments">
+            💬 Comments
+        </button>
+
+        <button type="button" class="tab" data-tab="history">
+            🕘 History
+        </button>
+
+        <button type="button" class="tab" data-tab="attachments">
+            📎 Attachments (<span id="attachmentTabCount">0</span>)
+        </button>
+    </div>
+
+    <!-- COMMENTS -->
+    <div class="comment-body tab-content" id="comments">
+
+        <label>Add Comment:</label>
+
+        <textarea
+            id="commentText"
+            placeholder="Enter your comment"
+            maxlength="200"></textarea>
+
+        <button
+            class="add-btn"
+            id="addCommentBtn"
+            disabled>
+            Add New
+        </button>
+        <div id="noCommentsMsg" class="no-comments-msg">
+            No comments yet
+        </div>
+        <div id="liveComments"></div>
+
+    </div>
+
+    <!-- HISTORY -->
+    <div
+        class="comment-history tab-content"
+        id="history"
+        style="display:none;">
+
+        <div id="historyList">
+
+            <div
+                class="no-history-message"
+                id="noHistoryMsg">
+
+                No history available.
+
+            </div>
+
+        </div>
+
+    </div>
+
+    <!-- ATTACHMENTS -->
+    <div
+        class="tab-content"
+        id="attachments"
+        style="display:none;">
+
+        <!-- Upload Wrapper -->
+        <div class="upload-wrapper">
+
+            <input
+                type="file"
+                id="fileInput"
+                hidden
+                multiple>
+
+            <!-- Upload Box -->
+            <div
+                class="upload-box"
+                id="uploadBox">
+
+                <i class="fa-solid fa-cloud-arrow-up upload-icon"></i>
+
+                <h3>Upload Attachment</h3>
+
+                <p>
+                    Click to select or drag & drop
+                </p>
+
+                <small>
+                    PDF, DOC, XLS, JPG, PNG (Max 10MB)
+                </small>
+
+            </div>
+
+            <!-- Button -->
+            <button
+                type="button"
+                class="choose-btn"
+                id="uploadBtn">
+
+                <i class="fa-solid fa-upload"></i>
+
+                Choose File
+
+            </button>
+
+        </div>
+
+        <!-- FILES -->
+        <div class="files-section">
+
+            <div class="files-header">
+
+                <h4>📎 Attached Files</h4>
+
+                <span id="fileCount">
+                    0 / 10 files
+                </span>
+
+            </div>
+
+            <div
+                id="filesList"
+                class="files-list">
+
+                <div class="no-files">
+
+                    <i class="fa-solid fa-folder-open"></i>
+
+                    <p>No files attached yet</p>
+
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+ 
+
+ 
+<!-- ACTION ICONS -->
+<!-- ACTION FOOTER -->
+<div class="modal-footer">
+
+    <!-- LEFT SIDE -->
+    <div class="footer-icon-bar">
+
+        <!-- PDF -->
+        <button
+            type="button"
+            class="footer-item icon-card pdf"
+            id="pdfBtn"
+            onclick="generateStockReturnPDF()">
+
+            <i class="fa-solid fa-file-pdf"></i>
+
+            <span>PDF</span>
+
+        </button>
+
+        <!-- EMAIL -->
+        <button
+            type="button"
+            class="footer-item icon-card email"
+            id="emailBtn"
+            onclick="sendStockReturnEmail()">
+
+            <i class="fa-regular fa-envelope"></i>
+
+            <span>Email</span>
+
+        </button>
+
+    </div>
+
+<!-- RIGHT SIDE -->
+<div class="modal-footer-button">
+
+
+    <!-- CANCEL -->
+    <button
+        type="button"
+        class="btn-discard"
+        id="cancelBtn">
+
+        Cancel
+
+    </button>
+
+    <!-- SAVE DRAFT -->
+    <button
+        type="button"
+        class="btn-draft"
+        id="saveDraftBtn">
+
+        Save Draft
+
+    </button>
+
+    <!-- SUBMIT -->
+    <button
+        type="button"
+        class="btn-save"
+        id="submitBtn">
+
+        Submit
+
+    </button>
+
+        <!-- CANCEL ORDER -->
+    <button
+        type="button"
+        class="btn-discard"
+        id="cancelOrderBtn">
+
+        Cancel Order
+
+    </button>
+
+</div>
+</div>
+  
+</div>
+<div id="topAlert" class="top-alert">
+    <span class="alert-icon">✔</span>
+    <span id="alertMessage"></span>
+</div>
+
+<div id="deleteFileModal" class="delete-modal">
+
+    <div class="delete-modal-content">
+
+        <h3>Delete File</h3>
+
+        <p>
+            Are you sure you want to delete this file?
+        </p>
+
+        <div class="delete-modal-actions">
+
+            <button
+                type="button"
+                class="cancel-delete-btn"
+                id="cancelDeleteBtn">
+
+                Cancel
+
+            </button>
+
+            <button
+                type="button"
+                class="confirm-delete-btn"
+                id="confirmDeleteBtn">
+
+                Delete
+
+            </button>
+
+        </div>
+
+    </div>
+
+</div>
+{% endblock %}
+ 
+{% block extra_js %}
+<script>
+    window.LOGGED_IN_USER_NAME = "{{ user_name or 'User' }}";
+</script>
+<script src="{{ url_for('static', filename='stock-new-return.js') }}"></script>
+{% endblock %}

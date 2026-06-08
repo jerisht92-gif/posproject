@@ -1249,6 +1249,7 @@ def _resolve_stored_file_path(file_path):
         QUOTATION_ATTACHMENTS_FOLDER,
         PURCHASE_ATTACHMENTS_FOLDER,
         STOCK_ATTACHMENTS_FOLDER,
+        STOCK_RETURN_ATTACHMENTS_FOLDER,
         CREDIT_NOTE_ATTACHMENTS_FOLDER,
         SUPPLIER_ATTACHMENTS_FOLDER,
         DELIVERY_NOTE_ATTACHMENTS_FOLDER,
@@ -1288,6 +1289,7 @@ PRODUCT_IMAGES_FOLDER = _writable_upload_subdir("product_images")
 IMPORT_UPLOAD_FOLDER = _writable_upload_subdir("imports")
 PURCHASE_ATTACHMENTS_FOLDER = _writable_upload_subdir("purchase_attachments")
 STOCK_ATTACHMENTS_FOLDER = _writable_upload_subdir("stock_attachments")
+STOCK_RETURN_ATTACHMENTS_FOLDER = _writable_upload_subdir("stock_return_attachments")
 CREDIT_NOTE_ATTACHMENTS_FOLDER = _writable_upload_subdir("creditnote_attachments")
 SUPPLIER_ATTACHMENTS_FOLDER = _writable_upload_subdir("supplier_attachments")
 DELIVERY_NOTE_ATTACHMENTS_FOLDER = _writable_upload_subdir("deliverynote_attachments")
@@ -27302,6 +27304,33 @@ def stock_new():
         page="stock_new"
     )
 
+
+# ========================================
+# Stock Return page
+# ========================================
+
+
+@app.route("/stock-return")
+def stock_return():
+    return render_template(
+        "stock-return.html",
+        page="stock_return",
+    )
+
+
+@app.route("/stock-new-return")
+def stock_new_return():
+    grn = request.args.get("grn", "")
+    profile = get_current_user_profile()
+    user_name = profile.get("name", "User") if profile else "User"
+    return render_template(
+        "stock-new-return.html",
+        grn=grn,
+        user_name=user_name,
+        page="stock_return",
+    )
+
+
 @app.route("/api/generate-grn")
 def generate_grn():
 
@@ -28536,7 +28565,872 @@ def get_stock_attachments(grn_number):
     return jsonify({"success": True, "attachments": result})
 
 
+def _ensure_stock_return_tables(cur=None):
+    own_conn = None
+    own_cur = None
+    if cur is None:
+        own_conn = get_db_connection()
+        own_cur = own_conn.cursor()
+        cur = own_cur
+    try:
+        try:
+            os.makedirs(STOCK_RETURN_ATTACHMENTS_FOLDER, exist_ok=True)
+        except OSError:
+            pass
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS stock_returns (
+                srn_number TEXT PRIMARY KEY,
+                grn_number TEXT,
+                po_number TEXT,
+                supplier_name TEXT,
+                supplier_email TEXT,
+                received_date DATE,
+                return_date DATE,
+                return_by TEXT,
+                grand_total NUMERIC,
+                status TEXT
+            )
+            """
+        )
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS stock_return_items (
+                id SERIAL PRIMARY KEY,
+                srn_number TEXT NOT NULL,
+                product_id TEXT,
+                product_name TEXT,
+                uom TEXT,
+                qty_ordered NUMERIC,
+                rejected_qty NUMERIC,
+                return_qty NUMERIC,
+                return_reason TEXT,
+                unit_price NUMERIC,
+                tax_pct NUMERIC,
+                discount_pct NUMERIC,
+                total NUMERIC
+            )
+            """
+        )
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS stock_return_comments (
+                comment_id SERIAL PRIMARY KEY,
+                srn_number TEXT NOT NULL,
+                comment_text TEXT,
+                commented_by TEXT,
+                commented_at TIMESTAMP DEFAULT NOW()
+            )
+            """
+        )
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS stock_return_attachments (
+                attachment_id SERIAL PRIMARY KEY,
+                srn_number TEXT NOT NULL,
+                file_name TEXT NOT NULL,
+                file_path TEXT NOT NULL,
+                file_size BIGINT DEFAULT 0,
+                uploaded_at TIMESTAMP DEFAULT NOW()
+            )
+            """
+        )
+        cur.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_stock_return_items_srn
+            ON stock_return_items (srn_number)
+            """
+        )
+        cur.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_stock_return_comments_srn
+            ON stock_return_comments (srn_number)
+            """
+        )
+        cur.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_stock_return_attachments_srn
+            ON stock_return_attachments (srn_number)
+            """
+        )
+        cur.connection.commit()
+    finally:
+        if own_conn:
+            own_cur.close()
+            own_conn.close()
 
+
+def _stock_return_file_url(stored_path, attachment_id):
+    if object_storage.is_remote_url(stored_path):
+        return stored_path
+    return url_for("view_stock_return_attachment", attachment_id=attachment_id, _external=False)
+
+
+@app.route("/api/submitted-grns")
+def submitted_grns():
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            SELECT grn_number
+            FROM stock_receipts
+            WHERE LOWER(status) = 'submitted'
+            ORDER BY grn_number
+            """
+        )
+        rows = cur.fetchall()
+        return jsonify({
+            "success": True,
+            "data": [{"grn_number": row[0]} for row in rows],
+        })
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.route("/api/generate-srn")
+def generate_srn():
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        _ensure_stock_return_tables(cur)
+        cur.execute(
+            """
+            SELECT srn_number
+            FROM stock_returns
+            ORDER BY srn_number DESC
+            LIMIT 1
+            """
+        )
+        row = cur.fetchone()
+        if not row:
+            new_srn = "SRN-001"
+        else:
+            last_srn = row[0]
+            try:
+                last_num = int(str(last_srn).split("-")[1])
+            except Exception:
+                last_num = 0
+            new_srn = f"SRN-{str(last_num + 1).zfill(3)}"
+        return jsonify({"success": True, "srn_number": new_srn})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.route("/api/grn/<grn>")
+def get_grn(grn):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            SELECT
+                grn_number,
+                po_number,
+                supplier_name,
+                supplier_email,
+                received_date,
+                grand_total,
+                status
+            FROM stock_receipts
+            WHERE grn_number = %s
+            """,
+            (grn,),
+        )
+        stock = cur.fetchone()
+        if not stock:
+            return jsonify({"error": "GRN not found"}), 404
+
+        cur.execute(
+            """
+            SELECT
+                product_id,
+                product_name,
+                uom,
+                qty_ordered,
+                rejected_qty,
+                unit_price,
+                tax_pct,
+                disc_pct,
+                total
+            FROM stock_receipt_items
+            WHERE grn_number = %s
+            """,
+            (grn,),
+        )
+        items = cur.fetchall()
+        result = {
+            "header": {
+                "grn_number": stock[0] or "",
+                "po_number": stock[1] or "",
+                "supplier_name": stock[2] or "",
+                "supplier_email": stock[3] or "",
+                "received_date": str(stock[4]) if stock[4] else "",
+                "grand_total": float(stock[5] or 0),
+                "status": stock[6] or "",
+            },
+            "items": [],
+        }
+        for item in items:
+            result["items"].append({
+                "product_id": item[0] or "",
+                "product_name": item[1] or "",
+                "uom": item[2] or "",
+                "qty_ordered": float(item[3] or 0),
+                "rejected_qty": float(item[4] or 0),
+                "unit_price": float(item[5] or 0),
+                "tax_pct": float(item[6] or 0),
+                "discount_pct": float(item[7] or 0),
+                "total": float(item[8] or 0),
+            })
+        return jsonify(result)
+    except Exception as e:
+        print("GRN ERROR =>", e)
+        return jsonify({"error": str(e)}), 500
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.route("/api/save-stock-return", methods=["POST"])
+def save_stock_return():
+    data = request.json or {}
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        _ensure_stock_return_tables(cur)
+        srn_number = (data.get("srn_number") or "").strip()
+        if not srn_number:
+            return jsonify({"success": False, "error": "srn_number is required"}), 400
+
+        cur.execute("DELETE FROM stock_return_items WHERE srn_number = %s", (srn_number,))
+        cur.execute(
+            """
+            INSERT INTO stock_returns (
+                srn_number,
+                grn_number,
+                po_number,
+                supplier_name,
+                supplier_email,
+                received_date,
+                return_date,
+                return_by,
+                grand_total,
+                status
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (srn_number) DO UPDATE SET
+                grn_number = EXCLUDED.grn_number,
+                po_number = EXCLUDED.po_number,
+                supplier_name = EXCLUDED.supplier_name,
+                supplier_email = EXCLUDED.supplier_email,
+                received_date = EXCLUDED.received_date,
+                return_date = EXCLUDED.return_date,
+                return_by = EXCLUDED.return_by,
+                grand_total = EXCLUDED.grand_total,
+                status = EXCLUDED.status
+            """,
+            (
+                srn_number,
+                data.get("grn_number"),
+                data.get("po_number"),
+                data.get("supplier_name"),
+                data.get("supplier_email"),
+                data.get("received_date") or None,
+                data.get("return_date") or None,
+                data.get("return_by"),
+                data.get("grand_total"),
+                data.get("status"),
+            ),
+        )
+
+        for item in data.get("items", []):
+            cur.execute(
+                """
+                INSERT INTO stock_return_items (
+                    srn_number,
+                    product_id,
+                    product_name,
+                    uom,
+                    qty_ordered,
+                    rejected_qty,
+                    return_qty,
+                    return_reason,
+                    unit_price,
+                    tax_pct,
+                    discount_pct,
+                    total
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    srn_number,
+                    item.get("product_id"),
+                    item.get("product_name"),
+                    item.get("uom"),
+                    item.get("qty_ordered"),
+                    item.get("rejected_qty"),
+                    item.get("return_qty"),
+                    item.get("return_reason"),
+                    item.get("unit_price"),
+                    item.get("tax_pct"),
+                    item.get("discount_pct"),
+                    item.get("total"),
+                ),
+            )
+
+        conn.commit()
+        return jsonify({
+            "success": True,
+            "message": "Stock Return Saved Successfully",
+        })
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"success": False, "error": str(e)})
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.route("/api/stock-returns")
+def stock_returns():
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        _ensure_stock_return_tables(cur)
+        cur.execute(
+            """
+            SELECT
+                srn_number,
+                grn_number,
+                po_number,
+                supplier_name,
+                supplier_email,
+                return_date,
+                return_by,
+                grand_total,
+                status
+            FROM stock_returns
+            ORDER BY srn_number DESC
+            """
+        )
+        rows = cur.fetchall()
+        result = []
+        for row in rows:
+            result.append({
+                "srn_number": row[0] or "",
+                "grn_number": row[1] or "",
+                "po_number": row[2] or "",
+                "supplier_name": row[3] or "",
+                "supplier_email": row[4] or "",
+                "return_date": str(row[5]) if row[5] else "",
+                "return_by": row[6] or "",
+                "grand_total": float(row[7] or 0),
+                "status": row[8] or "",
+            })
+        return jsonify({"success": True, "data": result})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.route("/api/stock-return/<srn_number>/email", methods=["POST"])
+def email_stock_return(srn_number):
+    try:
+        data = request.json or {}
+        data["srn_number"] = srn_number
+        supplier_email = (data.get("supplier_email") or "").strip()
+        if not supplier_email:
+            return jsonify({"success": False, "message": "Supplier email missing"})
+
+        pdf_bytes = build_stock_return_pdf(data)
+        subject = f"Stock Return Note - {srn_number}"
+        body = f"""
+Dear Supplier,
+
+Please find attached Stock Return Note.
+
+SRN Number: {srn_number}
+
+Kindly acknowledge the return request.
+
+Regards,
+Stackly Team
+"""
+        success = send_email_with_pdf(
+            to_email=supplier_email,
+            subject=subject,
+            body=body,
+            pdf_bytes=pdf_bytes,
+            pdf_filename=f"{srn_number}.pdf",
+        )
+        if success:
+            return jsonify({"success": True})
+        return jsonify({"success": False, "message": "Email send failed"})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)})
+
+
+@app.route("/api/stock-return/<srn_no>")
+def get_stock_return(srn_no):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        _ensure_stock_return_tables(cur)
+        cur.execute(
+            """
+            SELECT
+                srn_number,
+                grn_number,
+                po_number,
+                supplier_name,
+                supplier_email,
+                received_date,
+                return_date,
+                return_by,
+                grand_total,
+                status
+            FROM stock_returns
+            WHERE srn_number = %s
+            """,
+            (srn_no,),
+        )
+        header = cur.fetchone()
+        if not header:
+            return jsonify({"error": "SRN Not Found"}), 404
+
+        cur.execute(
+            """
+            SELECT
+                product_id,
+                product_name,
+                uom,
+                qty_ordered,
+                rejected_qty,
+                return_qty,
+                return_reason,
+                unit_price,
+                tax_pct,
+                discount_pct,
+                total
+            FROM stock_return_items
+            WHERE srn_number = %s
+            """,
+            (srn_no,),
+        )
+        rows = cur.fetchall()
+        return jsonify({
+            "header": {
+                "srn_number": header[0],
+                "grn_number": header[1],
+                "po_number": header[2],
+                "supplier_name": header[3],
+                "supplier_email": header[4],
+                "received_date": str(header[5]) if header[5] else "",
+                "return_date": str(header[6]) if header[6] else "",
+                "return_by": header[7],
+                "grand_total": float(header[8] or 0),
+                "status": header[9],
+            },
+            "items": [
+                {
+                    "product_id": r[0],
+                    "product_name": r[1],
+                    "uom": r[2],
+                    "qty_ordered": float(r[3] or 0),
+                    "rejected_qty": float(r[4] or 0),
+                    "return_qty": float(r[5] or 0),
+                    "return_reason": r[6],
+                    "unit_price": float(r[7] or 0),
+                    "tax_pct": float(r[8] or 0),
+                    "discount_pct": float(r[9] or 0),
+                    "total": float(r[10] or 0),
+                }
+                for r in rows
+            ],
+        })
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.route("/api/add-stock-return-comment", methods=["POST"])
+def add_stock_return_comment():
+    data = request.json or {}
+    srn_number = data.get("srn_number")
+    comment_text = data.get("comment_text")
+    commented_by = data.get("commented_by")
+    conn = None
+    cur = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        _ensure_stock_return_tables(cur)
+        cur.execute(
+            """
+            INSERT INTO stock_return_comments (
+                srn_number,
+                comment_text,
+                commented_by
+            )
+            VALUES (%s, %s, %s)
+            """,
+            (srn_number, comment_text, commented_by),
+        )
+        conn.commit()
+        return jsonify({"success": True})
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        return jsonify({"success": False, "error": str(e)})
+    finally:
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
+
+
+@app.route("/api/get-stock-return-comments/<srn_number>")
+def get_stock_return_comments(srn_number):
+    conn = None
+    cur = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        _ensure_stock_return_tables(cur)
+        cur.execute(
+            """
+            SELECT *
+            FROM stock_return_comments
+            WHERE srn_number = %s
+            ORDER BY commented_at DESC
+            """,
+            (srn_number,),
+        )
+        comments = cur.fetchall()
+        return jsonify({"success": True, "comments": comments})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
+    finally:
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
+
+
+@app.route("/api/upload-stock-return-file", methods=["POST"])
+def upload_stock_return_file():
+    conn = None
+    cur = None
+    try:
+        file = request.files.get("file")
+        srn_number = (request.form.get("srn_number") or "").strip()
+        if not srn_number:
+            return jsonify({"success": False, "error": "srn_number is required"}), 400
+        if not file or not file.filename:
+            return jsonify({"success": False, "error": "No file uploaded"}), 400
+
+        filename = _upload_basename(file.filename)
+        file_size = _upload_file_size_bytes(file)
+        if file_size <= 0:
+            return jsonify({"success": False, "error": "Empty file cannot be uploaded"}), 400
+
+        rel_path = _upload_relative_path(srn_number, filename)
+        save_path, stored_size = _persist_module_upload(
+            object_storage.MODULE_STOCK_ATTACHMENTS,
+            STOCK_RETURN_ATTACHMENTS_FOLDER,
+            file,
+            rel_path,
+        )
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+        _ensure_stock_return_tables(cur)
+        cur.execute(
+            """
+            INSERT INTO stock_return_attachments (
+                srn_number,
+                file_name,
+                file_path,
+                file_size
+            )
+            VALUES (%s, %s, %s, %s)
+            RETURNING attachment_id
+            """,
+            (srn_number, filename, save_path, stored_size or file_size),
+        )
+        attachment_id = cur.fetchone()[0]
+        conn.commit()
+        return jsonify({
+            "success": True,
+            "attachment_id": attachment_id,
+            "file_url": _stock_return_file_url(save_path, attachment_id),
+        })
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        return jsonify({"success": False, "error": str(e)})
+    finally:
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
+
+
+@app.route("/api/get-stock-return-files/<srn_number>")
+def get_stock_return_files(srn_number):
+    conn = None
+    cur = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        _ensure_stock_return_tables(cur)
+        cur.execute(
+            """
+            SELECT
+                attachment_id,
+                file_name,
+                file_path,
+                file_size,
+                uploaded_at
+            FROM stock_return_attachments
+            WHERE srn_number = %s
+            ORDER BY uploaded_at DESC
+            """,
+            (srn_number,),
+        )
+        rows = cur.fetchall()
+        files = []
+        for row in rows:
+            attachment_id, file_name, file_path, file_size, uploaded_at = row
+            files.append({
+                "id": attachment_id,
+                "file_name": file_name,
+                "file_url": _stock_return_file_url(file_path, attachment_id),
+                "file_size": f"{int(file_size or 0)} B",
+                "uploaded_at": str(uploaded_at) if uploaded_at else "",
+            })
+        return jsonify({"success": True, "files": files})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
+    finally:
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
+
+
+@app.route("/api/delete-stock-return-file/<int:attachment_id>", methods=["DELETE"])
+def delete_stock_return_file(attachment_id):
+    conn = None
+    cur = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        _ensure_stock_return_tables(cur)
+        cur.execute(
+            """
+            SELECT file_path
+            FROM stock_return_attachments
+            WHERE attachment_id = %s
+            """,
+            (attachment_id,),
+        )
+        row = cur.fetchone()
+        if not row:
+            return jsonify({"success": False, "error": "File not found"}), 404
+        _remove_stored_upload(row[0], STOCK_RETURN_ATTACHMENTS_FOLDER)
+        cur.execute(
+            "DELETE FROM stock_return_attachments WHERE attachment_id = %s",
+            (attachment_id,),
+        )
+        conn.commit()
+        return jsonify({"success": True})
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        return jsonify({"success": False, "error": str(e)})
+    finally:
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
+
+
+@app.route("/api/stock-return-attachments/<int:attachment_id>/view")
+def view_stock_return_attachment(attachment_id):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        _ensure_stock_return_tables(cur)
+        cur.execute(
+            """
+            SELECT file_name, file_path
+            FROM stock_return_attachments
+            WHERE attachment_id = %s
+            """,
+            (attachment_id,),
+        )
+        row = cur.fetchone()
+        if not row:
+            return jsonify({"success": False, "error": "File not found"}), 404
+        file_name, file_path = row
+        resolved = _resolve_stored_file_path(file_path)
+        if object_storage.is_remote_url(resolved):
+            return redirect(resolved)
+        if resolved and os.path.isfile(resolved):
+            return send_file(resolved, as_attachment=False, download_name=file_name)
+        return jsonify({"success": False, "error": "File not found"}), 404
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.route("/generate-stock-return-pdf", methods=["POST"])
+def generate_stock_return_pdf():
+    data = request.json or {}
+    buffer = BytesIO(build_stock_return_pdf(data))
+    return send_file(
+        buffer,
+        as_attachment=True,
+        download_name=f"{data.get('srn_number')}.pdf",
+        mimetype="application/pdf",
+    )
+
+
+def build_stock_return_pdf(data):
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        rightMargin=30,
+        leftMargin=30,
+        topMargin=20,
+        bottomMargin=20,
+    )
+    styles = getSampleStyleSheet()
+
+    company_style = ParagraphStyle(
+        "CompanyStyle",
+        parent=styles["Heading1"],
+        fontName="DejaVuSans-Bold",
+        fontSize=24,
+        alignment=TA_CENTER,
+        textColor=colors.darkred,
+        spaceAfter=5,
+    )
+    title_style = ParagraphStyle(
+        "TitleStyle",
+        parent=styles["Heading2"],
+        fontName="DejaVuSans-Bold",
+        fontSize=20,
+        alignment=TA_CENTER,
+        textColor=colors.green,
+        spaceAfter=20,
+    )
+    normal_style = ParagraphStyle(
+        "NormalStyle",
+        parent=styles["Normal"],
+        fontName="DejaVuSans",
+        fontSize=10,
+    )
+
+    elements = []
+    elements.append(Paragraph("STACKLY", company_style))
+    elements.append(Paragraph("STOCK RETURN NOTE", title_style))
+    elements.append(Spacer(1, 10))
+
+    info_data = [
+        ["SRN No", data.get("srn_number"), "GRN No", data.get("grn_number")],
+        ["PO No", data.get("po_number"), "Status", data.get("status")],
+        ["Supplier", data.get("supplier_name"), "Email", data.get("supplier_email")],
+        ["Return Date", data.get("return_date"), "Return By", data.get("return_by")],
+    ]
+    info_table = Table(info_data, colWidths=[110, 140, 110, 140])
+    info_table.setStyle(TableStyle([
+        ("GRID", (0, 0), (-1, -1), 0.8, colors.grey),
+        ("FONTNAME", (0, 0), (-1, -1), "DejaVuSans"),
+        ("FONTNAME", (0, 0), (0, -1), "DejaVuSans-Bold"),
+        ("FONTNAME", (2, 0), (2, -1), "DejaVuSans-Bold"),
+        ("TEXTCOLOR", (0, 0), (-1, -1), colors.darkred),
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ("PADDING", (0, 0), (-1, -1), 8),
+    ]))
+    elements.append(info_table)
+    elements.append(Spacer(1, 20))
+
+    elements.append(Paragraph("RETURN ITEMS", title_style))
+    item_data = [["S.No", "Product", "Qty", "Return Qty", "Price", "Total"]]
+    for i, item in enumerate(data.get("items", []), start=1):
+        qty = float(item.get("qty_ordered", 0) or 0)
+        return_qty = float(item.get("return_qty", 0) or 0)
+        price = float(item.get("unit_price", 0) or 0)
+        total = return_qty * price
+        item_data.append([
+            str(i),
+            item.get("product_name"),
+            str(qty),
+            str(return_qty),
+            f"₹ {price:.2f}",
+            f"₹ {total:.2f}",
+        ])
+    item_table = Table(item_data, colWidths=[45, 180, 55, 80, 70, 90])
+    item_table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.darkred),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("GRID", (0, 0), (-1, -1), 0.8, colors.grey),
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ("FONTNAME", (0, 0), (-1, 0), "DejaVuSans-Bold"),
+        ("FONTNAME", (0, 1), (-1, -1), "DejaVuSans"),
+    ]))
+    elements.append(item_table)
+    elements.append(Spacer(1, 15))
+
+    elements.append(Paragraph("RETURN REASONS", title_style))
+    reason_data = [["Product", "Qty", "Reason"]]
+    for item in data.get("items", []):
+        reason_data.append([
+            item.get("product_name"),
+            str(item.get("return_qty", 0)),
+            item.get("return_reason", "N/A"),
+        ])
+    reason_table = Table(reason_data, colWidths=[200, 100, 250])
+    reason_table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.darkred),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("GRID", (0, 0), (-1, -1), 0.8, colors.grey),
+        ("FONTNAME", (0, 0), (-1, 0), "DejaVuSans-Bold"),
+        ("FONTNAME", (0, 1), (-1, -1), "DejaVuSans"),
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+    ]))
+    elements.append(reason_table)
+    elements.append(Spacer(1, 20))
+
+    summary_data = [
+        ["Subtotal", f"₹ {data.get('subtotal', 0)}"],
+        ["Tax", f"₹ {data.get('tax', 0)}"],
+        ["Discount", f"₹ {data.get('discount', 0)}"],
+        ["Grand Total", f"₹ {data.get('grand_total', 0)}"],
+    ]
+    summary_table = Table(summary_data, colWidths=[400, 120])
+    summary_table.setStyle(TableStyle([
+        ("GRID", (0, 0), (-1, -1), 0.8, colors.grey),
+        ("FONTNAME", (0, 0), (-1, -1), "DejaVuSans"),
+        ("FONTNAME", (0, -1), (-1, -1), "DejaVuSans-Bold"),
+        ("ALIGN", (1, 0), (1, -1), "RIGHT"),
+        ("BACKGROUND", (0, -1), (-1, -1), colors.lightgrey),
+    ]))
+    elements.append(summary_table)
+
+    doc.build(elements)
+    buffer.seek(0)
+    return buffer.read()
 
 
 # -------------------------------
