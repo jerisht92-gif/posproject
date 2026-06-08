@@ -18,20 +18,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const certificationsInput = supplierForm?.querySelector('input[name="compliance_certifications"]');
   const riskNotesInput = supplierForm?.querySelector('input[name="risk_notes_flags"]');
   const complianceStatusSelect = supplierForm?.querySelector('select[name="compliance_status"]');
-  const lastAssessmentDateWrap = supplierForm?.querySelector(
-    '[data-date-field="last_risk_assessment_date"]'
-  );
-  const lastAssessmentDateInput = lastAssessmentDateWrap?.querySelector(
-    'input[name="last_risk_assessment_date"]'
-  );
-  const lastAssessmentDatePicker = lastAssessmentDateWrap?.querySelector("input.supplier-date-native");
-  const lastAssessmentDateBtn = lastAssessmentDateWrap?.querySelector(".supplier-date-open");
-  const lastEvaluationDateWrap = supplierForm?.querySelector('[data-date-field="last_evaluation_date"]');
-  const lastEvaluationDateInput = lastEvaluationDateWrap?.querySelector(
-    'input[name="last_evaluation_date"]'
-  );
-  const lastEvaluationDatePicker = lastEvaluationDateWrap?.querySelector("input.supplier-date-native");
-  const lastEvaluationDateBtn = lastEvaluationDateWrap?.querySelector(".supplier-date-open");
+  const lastAssessmentDateInput = document.getElementById("lastRiskAssessmentDate");
+  const lastEvaluationDateInput = document.getElementById("lastEvaluationDate");
   const riskRatingInput = supplierForm?.querySelector('input[name="risk_ratings"]');
   const insuranceUploadInput = document.getElementById("insuranceUpload");
   const mitigationUploadInput = document.getElementById("mitigationUpload");
@@ -50,21 +38,20 @@ document.addEventListener("DOMContentLoaded", () => {
   const tabContents = document.querySelectorAll(".tab-content");
   const addCommentBtn = document.getElementById("addCommentBtn");
   const commentText = document.getElementById("commentText");
-  const latestCommentPreview = document.getElementById("latestCommentPreview");
-  const latestCommentMeta = document.getElementById("latestCommentMeta");
-  const latestCommentText = document.getElementById("latestCommentText");
-  const historyList = document.getElementById("historyList");
+  const historyContainer = document.getElementById("history");
   const uploadCard = document.getElementById("uploadCard");
   const uploadBtn = document.getElementById("uploadBtn");
   const fileInput = document.getElementById("fileInput");
   const filesList = document.getElementById("filesList");
   const fileCount = document.getElementById("fileCount");
+  const supplierNameInput = document.getElementById("supplierName");
   const gstinInput = document.getElementById("gstin");
   const companyRegistrationInput = document.getElementById("companyRegistrationNumber");
   const contactFirstNameInput = document.getElementById("contactFirstName");
   const contactLastNameInput = document.getElementById("contactLastName");
   const supplierPhoneInput = document.getElementById("supplierPhone");
   const supplierEmailInput = document.getElementById("supplierEmail");
+  const supplierWebsiteInput = document.getElementById("supplierWebsite");
   const alternateContactInput = document.getElementById("alternateContactNo");
   const relationshipManagerSelect = document.getElementById("relationshipManager");
   const relationshipManagerCustomInput = document.getElementById("relationshipManagerCustom");
@@ -77,6 +64,14 @@ document.addEventListener("DOMContentLoaded", () => {
   const comments = [];
   /** True when loaded `comments` field was a JSON array (history entries). */
   let storedCommentsFormatJson = false;
+  let gstinCheckDebounceTimer = null;
+  let gstinDuplicate = false;
+  let lastGstinDuplicateToastValue = "";
+  let originalGstin = "";
+  const GSTIN_DUPLICATE_TOAST = "Duplicate Tax Identification Number Found.";
+  const supplierGstinIndex = Array.isArray(window.SUPPLIER_GSTIN_INDEX)
+    ? window.SUPPLIER_GSTIN_INDEX
+    : [];
   /** Files picked in UI but not yet uploaded (waiting for supplier_id). */
   const pendingFiles = [];
   /** Attachments already saved on server for this supplier. */
@@ -89,15 +84,24 @@ document.addEventListener("DOMContentLoaded", () => {
   const SUPPLIER_UPLOAD_FORMAT_MSG =
     "Only PDF, JPEG, and PNG files are allowed.";
  
-  const SUPPLIER_EMAIL_RE = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
+  const SUPPLIER_EMAIL_RE = /^[A-Za-z0-9.]+@[A-Za-z0-9.]+\.[A-Za-z]{2,}$/;
+  const SUPPLIER_EMAIL_CHAR_STRIP = /[^A-Za-z0-9.@]/g;
+  const SUPPLIER_WEBSITE_PREFIX = "www.";
+  const SUPPLIER_WEBSITE_RE = /^www\.[A-Za-z0-9]+\.([A-Za-z0-9]+\.)*[A-Za-z]{2,}$/i;
+  const SUPPLIER_WEBSITE_CHAR_STRIP = /[^A-Za-z0-9.]/g;
+  const SUPPLIER_WEBSITE_MAX_LEN = 100;
   const SUPPLIER_PHONE_RE = /^[0-9]{10}$/;
   const SUPPLIER_CONTACT_RE = /^[A-Za-z]{2,80}$/;
   const SUPPLIER_BANK_NAME_RE = /^[A-Za-z]{2,100}$/;
   const SUPPLIER_BANK_ACCOUNT_RE = /^[0-9]{9,18}$/;
-  const SUPPLIER_NAME_RE = /^[A-Za-z0-9 .,&()'/-]{3,100}$/;
+  const SUPPLIER_NAME_MAX = 30;
+  const SUPPLIER_NAME_RE = /^[A-Za-z0-9 ]{3,30}$/;
+  const LEGAL_ENTITY_NAME_RE = /^[A-Za-z0-9 ]{3,100}$/;
+  const SUPPLIER_GSTIN_RE = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/;
   const SUPPLIER_REG_NO_RE = /^[A-Z0-9]{8,25}$/;
   const SUPPLIER_IBAN_SWIFT_RE = /^(?:[A-Z0-9]{8}|[A-Z0-9]{11})$/;
   const SUPPLIER_POSITIVE_NUMBER_RE = /^(?:0\.\d*[1-9]\d*|[1-9]\d*(?:\.\d+)?)$/;
+  const SUPPLIER_WHOLE_NUMBER_RE = /^[1-9]\d*$/;
   const SUPPLIER_NUMERIC_RE = /^[0-9]+$/;
   const PROC_FIELD_MAX = {
     categories_served: 100,
@@ -113,6 +117,8 @@ document.addEventListener("DOMContentLoaded", () => {
   };
   const RISK_RATING_MIN = 1;
   const RISK_RATING_MAX = 5;
+  const DELIVERY_TIME_DAYS_MAX = 7;
+  const PERCENT_TWO_DECIMALS = 2;
   const SUPPLIER_ID_RE = /^SUP-\d{3,}$/i;
  
   const slotUploadFiles = {
@@ -180,12 +186,11 @@ document.addEventListener("DOMContentLoaded", () => {
     const relationshipManagerCustom = (formData.get("relationship_manager_custom") || "").toString().trim();
     const payload = {
       supplier_id: (formData.get("supplier_id") || "").toString().trim(),
-      supplier_name: (formData.get("supplier_name") || "").toString().trim(),
-      gstin: (formData.get("gstin") || "")
+      supplier_name: (formData.get("supplier_name") || "")
         .toString()
-        .replace(/[^a-z0-9]/gi, "")
-        .toUpperCase()
-        .trim(),
+        .trim()
+        .slice(0, SUPPLIER_NAME_MAX),
+      gstin: sanitizeGstin((formData.get("gstin") || "").toString()),
       company_registration_number: (formData.get("company_registration_number") || "")
         .toString()
         .replace(/[^A-Za-z0-9]/g, "")
@@ -196,20 +201,26 @@ document.addEventListener("DOMContentLoaded", () => {
       supplier_type: (formData.get("supplier_type") || "").toString().trim(),
       supplier_tier: (formData.get("supplier_tier") || "").toString().trim(),
       status: (formData.get("status") || "").toString().trim(),
-      product_detail: (formData.get("product_detail") || "").toString().trim(),
+      product_detail: (formData.get("product_detail") || "")
+        .toString()
+        .replace(/[^A-Za-z ]/g, "")
+        .trim(),
       contact_first_name: (formData.get("contact_first_name") || "").toString().trim(),
       contact_last_name: (formData.get("contact_last_name") || "").toString().trim(),
-      designation_role: (formData.get("designation_role") || "").toString().trim(),
+      designation_role: (formData.get("designation_role") || "")
+        .toString()
+        .replace(/[^A-Za-z ]/g, "")
+        .trim(),
       alternate_contact_no: (formData.get("alternate_contact_no") || "")
         .toString()
         .replace(/\D/g, "")
         .trim(),
-      email: (formData.get("email") || "").toString().trim(),
+      email: sanitizeEmailInput((formData.get("email") || "").toString()),
       phone_number: (formData.get("phone_number") || "")
         .toString()
         .replace(/\D/g, "")
         .trim(),
-      website: (formData.get("website") || "").toString().trim(),
+      website: normalizeWebsiteInput((formData.get("website") || "").toString()).trim(),
       relationship_manager:
         relationshipManagerSelected === "custom"
           ? relationshipManagerCustom
@@ -240,60 +251,75 @@ document.addEventListener("DOMContentLoaded", () => {
         .replace(/[^A-Za-z0-9]/g, "")
         .toUpperCase()
         .trim(),
-      tax_withholding_setup: (formData.get("tax_withholding_setup") || "").toString().trim(),
+      tax_withholding_setup: (formData.get("tax_withholding_setup") || "")
+        .toString()
+        .replace(/[^A-Za-z ]/g, "")
+        .trim(),
       currency: (formData.get("currency") || "").toString().trim(),
       categories_served: (formData.get("categories_served") || "")
         .toString()
+        .replace(/[^A-Za-z ]/g, "")
         .trim()
         .slice(0, PROC_FIELD_MAX.categories_served),
       inco_terms: (formData.get("inco_terms") || "").toString().trim(),
       product_service_catalog: (formData.get("product_service_catalog") || "")
         .toString()
+        .replace(/[^A-Za-z ]/g, "")
         .trim()
         .slice(0, PROC_FIELD_MAX.product_service_catalog),
       freight_terms: (formData.get("freight_terms") || "").toString().trim(),
-      minimum_order_quantity: sanitizePositiveNumber(
+      minimum_order_quantity: sanitizeWholeNumber(
         (formData.get("minimum_order_quantity") || "").toString()
       ),
       return_replacement_policy: (formData.get("return_replacement_policy") || "")
         .toString()
+        .replace(/[^A-Za-z0-9 ]/g, "")
         .trim()
         .slice(0, PROC_FIELD_MAX.return_replacement_policy),
-      average_delivery_time_days: sanitizeNumericOnly(
+      average_delivery_time_days: sanitizeDeliveryTimeDays(
         (formData.get("average_delivery_time_days") || "").toString()
       ),
       contract_references: (formData.get("contract_references") || "")
         .toString()
+        .replace(/[^A-Za-z ]/g, "")
         .trim()
         .slice(0, PROC_FIELD_MAX.contract_references),
       compliance_certifications: (formData.get("compliance_certifications") || "")
         .toString()
+        .replace(/[^A-Za-z0-9 @_\-]/g, "")
         .trim()
         .slice(0, COMPLIANCE_FIELD_MAX.compliance_certifications),
       risk_notes_flags: (formData.get("risk_notes_flags") || "")
         .toString()
+        .replace(/[^A-Za-z ]/g, "")
         .trim()
         .slice(0, COMPLIANCE_FIELD_MAX.risk_notes_flags),
       compliance_status: (formData.get("compliance_status") || "").toString().trim(),
       last_risk_assessment_date: (formData.get("last_risk_assessment_date") || "").toString().trim(),
       risk_ratings: (formData.get("risk_ratings") || "").toString().trim(),
-      on_time_delivery_rate: sanitizePercent0to100(
+      on_time_delivery_rate: formatOnTimeDeliveryRate(
         (formData.get("on_time_delivery_rate") || "").toString()
       ),
       quality_ratings: sanitizeRiskRating((formData.get("quality_ratings") || "").toString()),
-      defect_return_rate: sanitizePercent0to100(
+      defect_return_rate: formatDefectReturnRate(
         (formData.get("defect_return_rate") || "").toString()
       ),
       last_evaluation_date: (formData.get("last_evaluation_date") || "").toString().trim(),
       contract_breaches: sanitizeContractBreach(
         (formData.get("contract_breaches") || "").toString()
       ),
-      improvement_plans: (formData.get("improvement_plans") || "").toString().trim(),
+      improvement_plans: (formData.get("improvement_plans") || "")
+        .toString()
+        .replace(/[^A-Za-z ]/g, "")
+        .trim(),
       complaints_registered: sanitizePositiveNumber(
         (formData.get("complaints_registered") || "").toString()
       ),
       external_key_contact: (formData.get("external_key_contact") || "").toString().trim(),
-      visit_history_meeting_notes: (formData.get("visit_history_meeting_notes") || "").toString().trim(),
+      visit_history_meeting_notes: (formData.get("visit_history_meeting_notes") || "")
+        .toString()
+        .replace(/[^A-Za-z ]/g, "")
+        .trim(),
       comments: (formData.get("comments") || "").toString().trim()
     };
     Object.keys(payload).forEach((key) => {
@@ -302,11 +328,90 @@ document.addEventListener("DOMContentLoaded", () => {
     return payload;
   }
  
+  function isSupplierTabFocusable(el) {
+    if (!el || el.disabled) return false;
+    if (el.getAttribute("tabindex") === "-1") return false;
+    if (el.type === "hidden" || el.type === "file") return false;
+    if (el.readOnly && el.classList.contains("auto-field")) return false;
+    const tabPanel = el.closest(".tab-content");
+    if (tabPanel && tabPanel.style.display === "none") return false;
+    const style = window.getComputedStyle(el);
+    if (style.display === "none" || style.visibility === "hidden") return false;
+    if (el.offsetParent === null && el !== document.body) return false;
+    return true;
+  }
+
+  function getSupplierTabFocusables() {
+    if (!supplierForm) return [];
+    const selector = [
+      "input:not([type='hidden'])",
+      "select",
+      "textarea",
+      "button.tab",
+      "button.add-btn",
+      "#uploadCard[tabindex='0']",
+      ".form-footer button",
+    ].join(", ");
+    return Array.from(supplierForm.querySelectorAll(selector)).filter(isSupplierTabFocusable);
+  }
+
+  function focusSupplierField(el) {
+    if (!el || typeof el.focus !== "function") return;
+    el.focus();
+    if (
+      el instanceof HTMLInputElement &&
+      ["text", "email", "url", "search", "tel"].includes(el.type) &&
+      typeof el.select === "function"
+    ) {
+      try {
+        el.select();
+      } catch (_err) {
+        /* ignore */
+      }
+    }
+  }
+
+  function setupSupplierFormTabNavigation() {
+    if (!supplierForm) return;
+
+    supplierForm.querySelectorAll("input.auto-field[readonly]").forEach((el) => {
+      el.tabIndex = -1;
+    });
+    supplierForm.querySelectorAll('input[type="file"]').forEach((el) => {
+      el.tabIndex = -1;
+    });
+
+    supplierForm.addEventListener("keydown", (event) => {
+      if (event.key !== "Tab") return;
+
+      const focusables = getSupplierTabFocusables();
+      if (!focusables.length) return;
+
+      const current = document.activeElement;
+      const idx = focusables.indexOf(current);
+      if (idx === -1) return;
+
+      event.preventDefault();
+      const nextIdx = event.shiftKey
+        ? (idx - 1 + focusables.length) % focusables.length
+        : (idx + 1) % focusables.length;
+      focusSupplierField(focusables[nextIdx]);
+    });
+
+    if (!editingSupplierId) {
+      const firstField =
+        getSupplierTabFocusables().find((el) => el.id === "gstin") ||
+        getSupplierTabFocusables()[0];
+      requestAnimationFrame(() => focusSupplierField(firstField));
+    }
+  }
+
   function toggleRelationshipManagerCustomField() {
     if (!relationshipManagerSelect || !relationshipManagerCustomInput || !relationshipManagerWrap) return;
     const isCustom = relationshipManagerSelect.value === "custom";
     relationshipManagerWrap.classList.toggle("is-custom", isCustom);
     relationshipManagerCustomInput.disabled = !isCustom;
+    relationshipManagerCustomInput.tabIndex = isCustom ? 0 : -1;
     if (!isCustom) {
       relationshipManagerCustomInput.value = "";
     } else {
@@ -351,12 +456,21 @@ document.addEventListener("DOMContentLoaded", () => {
     return SUPPLIER_PHONE_RE.test(digits);
   }
  
-  function isValidEmail(value) {
-    return SUPPLIER_EMAIL_RE.test((value || "").trim());
+  function sanitizeEmailInput(value) {
+    let v = (value || "").replace(SUPPLIER_EMAIL_CHAR_STRIP, "");
+    const at = v.indexOf("@");
+    if (at !== -1) {
+      v = v.slice(0, at + 1) + v.slice(at + 1).replace(/@/g, "");
+    }
+    return v.slice(0, 254);
   }
- 
+
+  function isValidEmail(value) {
+    return SUPPLIER_EMAIL_RE.test(sanitizeEmailInput(value));
+  }
+
   function validateEmailLive() {
-    const v = (supplierEmailInput?.value || "").trim();
+    const v = sanitizeEmailInput(supplierEmailInput?.value || "");
     if (!v) {
       setFieldError(supplierEmailInput, "");
       return false;
@@ -368,27 +482,142 @@ document.addEventListener("DOMContentLoaded", () => {
     setFieldError(supplierEmailInput, "");
     return true;
   }
- 
+
   function setupEmailValidation() {
     if (!supplierEmailInput) return;
-    supplierEmailInput.setAttribute("type", "email");
+    supplierEmailInput.setAttribute("type", "text");
+    supplierEmailInput.setAttribute("inputmode", "email");
     supplierEmailInput.setAttribute("autocomplete", "email");
+    supplierEmailInput.setAttribute("maxlength", "254");
     supplierEmailInput.setAttribute(
       "pattern",
-      "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}"
+      "[A-Za-z0-9.]+@[A-Za-z0-9.]+\\.[A-Za-z]{2,}"
     );
     supplierEmailInput.setAttribute("title", "Enter a valid email address (e.g. name@example.com)");
+    restrictInputCharacters(supplierEmailInput, SUPPLIER_EMAIL_CHAR_STRIP);
     supplierEmailInput.addEventListener("input", () => {
-      const raw = supplierEmailInput.value || "";
-      if (raw !== raw.trimStart()) supplierEmailInput.value = raw.trimStart();
+      const cleaned = sanitizeEmailInput(supplierEmailInput.value);
+      if (supplierEmailInput.value !== cleaned) supplierEmailInput.value = cleaned;
       validateEmailLive();
     });
     supplierEmailInput.addEventListener("blur", () => {
-      supplierEmailInput.value = (supplierEmailInput.value || "").trim();
+      supplierEmailInput.value = sanitizeEmailInput(supplierEmailInput.value);
       validateEmailLive();
     });
   }
- 
+
+  function sanitizeWebsiteInput(value) {
+    return (value || "").replace(SUPPLIER_WEBSITE_CHAR_STRIP, "").slice(0, SUPPLIER_WEBSITE_MAX_LEN);
+  }
+
+  function normalizeWebsiteInput(value) {
+    let v = sanitizeWebsiteInput(value);
+    if (!v) return "";
+    if (v.toLowerCase() === "www") return SUPPLIER_WEBSITE_PREFIX;
+    if (!v.toLowerCase().startsWith(SUPPLIER_WEBSITE_PREFIX)) {
+      v = SUPPLIER_WEBSITE_PREFIX + v.replace(/^www\.?/i, "");
+    }
+    return v.slice(0, SUPPLIER_WEBSITE_MAX_LEN);
+  }
+
+  function isValidWebsite(value) {
+    const v = normalizeWebsiteInput(value);
+    if (!v) return true;
+    return SUPPLIER_WEBSITE_RE.test(v);
+  }
+
+  function validateWebsiteLive() {
+    const v = normalizeWebsiteInput(supplierWebsiteInput?.value || "");
+    if (!v || v === SUPPLIER_WEBSITE_PREFIX) {
+      setFieldError(supplierWebsiteInput, "");
+      return true;
+    }
+    if (!isValidWebsite(v)) {
+      setFieldError(
+        supplierWebsiteInput,
+        "Enter website as www.name.domain (e.g. www.example.com)."
+      );
+      return false;
+    }
+    setFieldError(supplierWebsiteInput, "");
+    return true;
+  }
+
+  function applyWebsiteInput() {
+    if (!supplierWebsiteInput) return;
+    const normalized = normalizeWebsiteInput(supplierWebsiteInput.value);
+    if (supplierWebsiteInput.value !== normalized) {
+      supplierWebsiteInput.value = normalized;
+    }
+    validateWebsiteLive();
+  }
+
+  function setupWebsiteValidation() {
+    if (!supplierWebsiteInput) return;
+    supplierWebsiteInput.setAttribute("maxlength", String(SUPPLIER_WEBSITE_MAX_LEN));
+    supplierWebsiteInput.setAttribute(
+      "title",
+      "Enter website as www.name.domain (e.g. www.example.com)"
+    );
+    supplierWebsiteInput.addEventListener("focus", () => {
+      if (!supplierWebsiteInput.value.trim()) {
+        supplierWebsiteInput.value = SUPPLIER_WEBSITE_PREFIX;
+        try {
+          supplierWebsiteInput.setSelectionRange(
+            SUPPLIER_WEBSITE_PREFIX.length,
+            SUPPLIER_WEBSITE_PREFIX.length
+          );
+        } catch (_err) {
+          /* ignore */
+        }
+      }
+    });
+    supplierWebsiteInput.addEventListener("keydown", (event) => {
+      if (event.key === "Tab") return;
+      const start = supplierWebsiteInput.selectionStart ?? 0;
+      const end = supplierWebsiteInput.selectionEnd ?? 0;
+      if (
+        start < SUPPLIER_WEBSITE_PREFIX.length &&
+        (event.key === "Backspace" || event.key === "Delete")
+      ) {
+        event.preventDefault();
+        try {
+          supplierWebsiteInput.setSelectionRange(
+            SUPPLIER_WEBSITE_PREFIX.length,
+            SUPPLIER_WEBSITE_PREFIX.length
+          );
+        } catch (_err) {
+          /* ignore */
+        }
+      }
+      if (
+        start < SUPPLIER_WEBSITE_PREFIX.length &&
+        end <= SUPPLIER_WEBSITE_PREFIX.length &&
+        event.key.length === 1 &&
+        !event.ctrlKey &&
+        !event.metaKey
+      ) {
+        event.preventDefault();
+        try {
+          supplierWebsiteInput.setSelectionRange(
+            SUPPLIER_WEBSITE_PREFIX.length,
+            SUPPLIER_WEBSITE_PREFIX.length
+          );
+        } catch (_err) {
+          /* ignore */
+        }
+      }
+    });
+    restrictInputCharacters(supplierWebsiteInput, SUPPLIER_WEBSITE_CHAR_STRIP);
+    supplierWebsiteInput.addEventListener("input", applyWebsiteInput);
+    supplierWebsiteInput.addEventListener("blur", () => {
+      const normalized = normalizeWebsiteInput(supplierWebsiteInput.value);
+      supplierWebsiteInput.value =
+        normalized === SUPPLIER_WEBSITE_PREFIX ? "" : normalized.trim();
+      validateWebsiteLive();
+    });
+  }
+
   function validateContactFirstNameLive() {
     const v = (contactFirstNameInput?.value || "").trim();
     if (!v) {
@@ -417,6 +646,148 @@ document.addEventListener("DOMContentLoaded", () => {
     return true;
   }
  
+  function sanitizeGstin(value) {
+    return (value || "").replace(/[^A-Za-z0-9]/g, "").toUpperCase().slice(0, 15);
+  }
+
+  function isValidSupplierGstin(value) {
+    return SUPPLIER_GSTIN_RE.test(sanitizeGstin(value));
+  }
+
+  function gstinDuplicateMessage(conflict) {
+    const supplierId = (conflict?.supplier_id || "").trim();
+    return supplierId
+      ? `This tax identification number is already registered (${supplierId}).`
+      : GSTIN_DUPLICATE_TOAST;
+  }
+
+  function getGstinExcludeSupplierId() {
+    return (
+      editingSupplierId ||
+      (document.getElementById("supplierCode")?.value || "").toString().trim().toUpperCase()
+    );
+  }
+
+  function findLocalGstinDuplicate(gstin) {
+    const cleaned = sanitizeGstin(gstin);
+    if (!cleaned) return null;
+    const excludeId = getGstinExcludeSupplierId();
+    return (
+      supplierGstinIndex.find(
+        (row) => row.gstin === cleaned && row.supplier_id !== excludeId
+      ) || null
+    );
+  }
+
+  function notifyGstinDuplicate(conflict) {
+    if (!gstinInput) return;
+    const cleaned = sanitizeGstin(gstinInput.value);
+    gstinDuplicate = true;
+    setFieldError(gstinInput, gstinDuplicateMessage(conflict));
+    if (cleaned && cleaned !== lastGstinDuplicateToastValue) {
+      lastGstinDuplicateToastValue = cleaned;
+      showToast(GSTIN_DUPLICATE_TOAST, "error");
+    }
+  }
+
+  function checkGstinDuplicate() {
+    if (!gstinInput) return false;
+    const cleaned = sanitizeGstin(gstinInput.value);
+    gstinDuplicate = false;
+    if (!cleaned || !SUPPLIER_GSTIN_RE.test(cleaned)) {
+      return false;
+    }
+    if (cleaned === originalGstin) {
+      setFieldError(gstinInput, "");
+      return false;
+    }
+
+    const conflict = findLocalGstinDuplicate(cleaned);
+    if (conflict) {
+      notifyGstinDuplicate(conflict);
+      return true;
+    }
+
+    lastGstinDuplicateToastValue = "";
+    setFieldError(gstinInput, "");
+    return false;
+  }
+
+  function validateGstinLive() {
+    if (!gstinInput) return true;
+    const cleaned = sanitizeGstin(gstinInput.value);
+    if (gstinInput.value !== cleaned) gstinInput.value = cleaned;
+    if (!cleaned) {
+      gstinDuplicate = false;
+      setFieldError(gstinInput, "Tax identification number is required.");
+      return false;
+    }
+    if (!SUPPLIER_GSTIN_RE.test(cleaned)) {
+      gstinDuplicate = false;
+      setFieldError(
+        gstinInput,
+        "Enter a valid 15-character GSTIN (e.g. 33ABCDE1234F1Z5)."
+      );
+      return false;
+    }
+    if (gstinDuplicate) {
+      setFieldError(gstinInput, GSTIN_DUPLICATE_TOAST);
+      return false;
+    }
+    setFieldError(gstinInput, "");
+    return true;
+  }
+
+  let validateSupplierNameLive = () => true;
+
+  function setupSupplierNameValidation() {
+    validateSupplierNameLive = setupMaxLengthTextField(
+      supplierNameInput,
+      SUPPLIER_NAME_MAX,
+      "Supplier name"
+    );
+  }
+
+  function setupGstinValidation() {
+    if (!gstinInput) return;
+    gstinInput.setAttribute("maxlength", "15");
+    gstinInput.setAttribute(
+      "title",
+      "15-character GSTIN: 2 digits + 5 letters + 4 digits + 1 letter + entity code + Z + check character"
+    );
+    gstinInput.addEventListener("input", () => {
+      const cleaned = sanitizeGstin(gstinInput.value);
+      if (gstinInput.value !== cleaned) gstinInput.value = cleaned;
+      gstinDuplicate = false;
+      lastGstinDuplicateToastValue = "";
+      if (!cleaned) {
+        setFieldError(gstinInput, "");
+        return;
+      }
+      if (cleaned.length < 15) {
+        setFieldError(gstinInput, "GSTIN must be exactly 15 characters.");
+        return;
+      }
+      if (!SUPPLIER_GSTIN_RE.test(cleaned)) {
+        setFieldError(
+          gstinInput,
+          "Enter a valid 15-character GSTIN (e.g. 33ABCDE1234F1Z5)."
+        );
+        return;
+      }
+      setFieldError(gstinInput, "");
+      if (gstinCheckDebounceTimer) clearTimeout(gstinCheckDebounceTimer);
+      gstinCheckDebounceTimer = setTimeout(() => {
+        gstinCheckDebounceTimer = null;
+        checkGstinDuplicate();
+      }, 400);
+    });
+    gstinInput.addEventListener("blur", () => {
+      checkGstinDuplicate();
+      validateGstinLive();
+    });
+  }
+
   function sanitizeRegistrationNo(value) {
     return (value || "").replace(/[^A-Za-z0-9]/g, "").toUpperCase().slice(0, 25);
   }
@@ -496,6 +867,15 @@ document.addEventListener("DOMContentLoaded", () => {
     return v.trim();
   }
  
+  function sanitizeWholeNumber(value, maxLen = 10) {
+    return sanitizeNumericOnly(value, maxLen);
+  }
+
+  function isValidWholeNumber(value) {
+    const v = sanitizeWholeNumber(value);
+    return !!v && SUPPLIER_WHOLE_NUMBER_RE.test(v);
+  }
+
   function isValidPositiveNumber(value) {
     const v = sanitizePositiveNumber(value);
     return !!v && SUPPLIER_POSITIVE_NUMBER_RE.test(v);
@@ -529,30 +909,54 @@ document.addEventListener("DOMContentLoaded", () => {
  
   function validateMinimumOrderQtyLive() {
     if (!minimumOrderQtyInput) return true;
-    const cleaned = sanitizePositiveNumber(minimumOrderQtyInput.value);
+    const cleaned = sanitizeWholeNumber(minimumOrderQtyInput.value);
     if (minimumOrderQtyInput.value !== cleaned) minimumOrderQtyInput.value = cleaned;
     if (!cleaned) {
       setFieldError(minimumOrderQtyInput, "");
       return true;
     }
-    if (!isValidPositiveNumber(cleaned)) {
-      setFieldError(minimumOrderQtyInput, "Minimum order quantity must be a positive number.");
+    if (!isValidWholeNumber(cleaned)) {
+      setFieldError(minimumOrderQtyInput, "Minimum order quantity must be a whole number.");
       return false;
     }
     setFieldError(minimumOrderQtyInput, "");
     return true;
   }
  
+  function clampDeliveryTimeDays(value) {
+    const v = (value || "").trim();
+    if (!v) return v;
+    const n = Number(v);
+    if (Number.isFinite(n) && n > DELIVERY_TIME_DAYS_MAX) {
+      return String(DELIVERY_TIME_DAYS_MAX);
+    }
+    return v;
+  }
+
+  function sanitizeDeliveryTimeDays(value) {
+    return clampDeliveryTimeDays(sanitizeNumericOnly(value, 2));
+  }
+
+  function isValidDeliveryTimeDays(value) {
+    const v = sanitizeDeliveryTimeDays(value);
+    if (!v) return true;
+    const n = Number(v);
+    return Number.isFinite(n) && n >= 1 && n <= DELIVERY_TIME_DAYS_MAX;
+  }
+
   function validateDeliveryTimeLive() {
     if (!deliveryTimeInput) return true;
-    const cleaned = sanitizeNumericOnly(deliveryTimeInput.value);
+    const cleaned = sanitizeDeliveryTimeDays(deliveryTimeInput.value);
     if (deliveryTimeInput.value !== cleaned) deliveryTimeInput.value = cleaned;
     if (!cleaned) {
       setFieldError(deliveryTimeInput, "");
       return true;
     }
-    if (!isValidNumericOnly(cleaned)) {
-      setFieldError(deliveryTimeInput, "Delivery time must be numeric only.");
+    if (!isValidDeliveryTimeDays(cleaned)) {
+      setFieldError(
+        deliveryTimeInput,
+        `Average delivery time must be between 1 and ${DELIVERY_TIME_DAYS_MAX} days.`
+      );
       return false;
     }
     setFieldError(deliveryTimeInput, "");
@@ -618,8 +1022,8 @@ document.addEventListener("DOMContentLoaded", () => {
       PROC_FIELD_MAX.contract_references,
       "Contract references"
     );
-    setupPositiveNumberField(minimumOrderQtyInput, validateMinimumOrderQtyLive);
-    setupNumericOnlyField(deliveryTimeInput, validateDeliveryTimeLive);
+    setupNumericOnlyField(minimumOrderQtyInput, validateMinimumOrderQtyLive);
+    setupNumericOnlyField(deliveryTimeInput, validateDeliveryTimeLive, 1);
   }
  
   function validateAllProcurementFieldsLive() {
@@ -683,22 +1087,107 @@ document.addEventListener("DOMContentLoaded", () => {
     validateBillingAddressLive();
   }
  
+  function clampRiskRatingValue(value) {
+    const v = (value || "").trim();
+    if (!v) return v;
+    if (v.endsWith(".")) {
+      const intPart = v.slice(0, -1);
+      if (intPart && Number(intPart) > RISK_RATING_MAX) return String(RISK_RATING_MAX);
+      return v;
+    }
+    const n = Number(v);
+    if (Number.isFinite(n) && n > RISK_RATING_MAX) return String(RISK_RATING_MAX);
+    return v;
+  }
+
   function sanitizeRiskRating(value) {
     let v = (value || "").replace(/[^\d.]/g, "");
     const dot = v.indexOf(".");
     if (dot !== -1) {
-      v = v.slice(0, dot + 1) + v.slice(dot + 1).replace(/\./g, "");
+      const intPart = v.slice(0, dot).slice(0, 1);
+      const decPart = v.slice(dot + 1).replace(/\./g, "").slice(0, 1);
+      v = decPart.length ? `${intPart}.${decPart}` : `${intPart}.`;
+    } else {
+      v = v.slice(0, 1);
     }
-    return v.trim();
+    return clampRiskRatingValue(v.trim());
   }
- 
+
   function isValidRiskRating(value) {
     const v = sanitizeRiskRating(value);
     if (!v) return true;
+    if (!/^[1-5](\.\d)?$/.test(v)) return false;
     const n = Number(v);
     return Number.isFinite(n) && n >= RISK_RATING_MIN && n <= RISK_RATING_MAX;
   }
  
+  const SUPPLIER_INVALID_DATE_MSG =
+    "Invalid date. Use format YYYY-MM-DD (e.g. 2026-03-09).";
+
+  function isValidSupplierDateString(value) {
+    if (!value || typeof value !== "string") return false;
+    const trimmed = value.trim();
+    if (!trimmed) return true;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return false;
+    const parts = trimmed.split("-");
+    const y = parseInt(parts[0], 10);
+    const m = parseInt(parts[1], 10) - 1;
+    const d = parseInt(parts[2], 10);
+    if (y < 1900 || y > 2100) return false;
+    const date = new Date(y, m, d);
+    return (
+      date.getFullYear() === y &&
+      date.getMonth() === m &&
+      date.getDate() === d
+    );
+  }
+
+  function attachSupplierDateYearClamp(inputEl) {
+    if (!inputEl) return;
+    inputEl.addEventListener("input", () => {
+      let v = inputEl.value || "";
+      v = v.replace(/[^\d-]/g, "");
+      const iso = v.match(/^(\d{4,})-(\d{2})-(\d{2})$/);
+      if (iso) {
+        const year = iso[1].slice(0, 4);
+        inputEl.value = `${year}-${iso[2]}-${iso[3]}`;
+        return;
+      }
+      const lastDash = v.lastIndexOf("-");
+      if (lastDash !== -1) {
+        const prefix = v.slice(0, lastDash + 1);
+        let yearPart = v.slice(lastDash + 1).replace(/\D/g, "");
+        if (yearPart.length > 4) yearPart = yearPart.slice(0, 4);
+        inputEl.value = prefix + yearPart;
+        return;
+      }
+      const m = v.match(/^(\d{0,4})\d*$/);
+      inputEl.value = m ? m[1] : v;
+    });
+  }
+
+  function handleSupplierDateValidation(dateEl) {
+    if (!dateEl) return true;
+    let val = (dateEl.value || "").trim();
+    if (!val) {
+      setFieldError(dateEl, "");
+      return true;
+    }
+    const mDigits = val.match(/(\d{4})\d+/);
+    if (mDigits) {
+      val = val.replace(/(\d{4})\d+/, "$1");
+      dateEl.value = val;
+    }
+    if (!isValidSupplierDateString(val)) {
+      showToast(SUPPLIER_INVALID_DATE_MSG, "error");
+      dateEl.value = "";
+      setFieldError(dateEl, SUPPLIER_INVALID_DATE_MSG);
+      return false;
+    }
+    setFieldError(dateEl, "");
+    return true;
+  }
+
   function formatApiDateToDdMmYyyy(val) {
     const s = String(val || "").trim();
     if (!s) return "";
@@ -726,52 +1215,15 @@ document.addEventListener("DOMContentLoaded", () => {
   function supplierDateDisplayToIso(val) {
     return formatApiDateToIso(val);
   }
- 
-  function openSupplierDatePicker(pickerEl) {
-    if (!pickerEl) return;
-    if (typeof pickerEl.showPicker === "function") {
-      try {
-        pickerEl.showPicker();
-        return;
-      } catch (_err) {
-        /* fall through to click */
-      }
-    }
-    pickerEl.focus({ preventScroll: true });
-    try {
-      pickerEl.click();
-    } catch (_err) {
-      /* noop */
-    }
-  }
- 
-  /** Date text fields: store typed value as-is; calendar only fills text when a date is picked. */
-  function setupSupplierDateField(textEl, pickerEl, openBtn) {
-    if (!textEl) return;
-    textEl.setAttribute("placeholder", "dd-mm-yyyy");
-    textEl.setAttribute("title", "dd-mm-yyyy");
-    const syncPickerFromText = () => {
-      if (!pickerEl) return;
-      pickerEl.value = supplierDateDisplayToIso(textEl.value) || "";
-    };
-    const syncTextFromPicker = () => {
-      if (!pickerEl || !pickerEl.value) return;
-      const display = formatApiDateToDdMmYyyy(pickerEl.value);
-      if (display) textEl.value = display;
-    };
-    pickerEl?.addEventListener("change", syncTextFromPicker);
-    pickerEl?.addEventListener("input", syncTextFromPicker);
-    const openCalendar = (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      syncPickerFromText();
-      openSupplierDatePicker(pickerEl);
-    };
-    if (openBtn) {
-      openBtn.style.pointerEvents = "auto";
-      openBtn.addEventListener("mousedown", openCalendar);
-      openBtn.addEventListener("click", openCalendar);
-    }
+
+  /** Native date fields — same validation/toast pattern as invoice Due Date. */
+  function setupSupplierDateField(dateEl) {
+    if (!dateEl) return;
+    dateEl.setAttribute("placeholder", "dd-mm-yyyy");
+    dateEl.setAttribute("title", "dd-mm-yyyy");
+    attachSupplierDateYearClamp(dateEl);
+    dateEl.addEventListener("change", () => handleSupplierDateValidation(dateEl));
+    dateEl.addEventListener("blur", () => handleSupplierDateValidation(dateEl));
   }
  
   function validateSupplierDocFile(file) {
@@ -794,6 +1246,52 @@ document.addEventListener("DOMContentLoaded", () => {
     const sizes = ["Bytes", "KB", "MB"];
     const i = Math.min(Math.floor(Math.log(n) / Math.log(k)), sizes.length - 1);
     return `${parseFloat((n / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
+  }
+
+  function formatAttachmentUploadDate(value) {
+    if (!value) return "Unknown date";
+    const parsed = new Date(String(value).replace(" ", "T"));
+    return Number.isNaN(parsed.getTime()) ? String(value) : parsed.toLocaleString();
+  }
+
+  function isTabAttachmentUpload(category) {
+    return !category || category === "attachments";
+  }
+
+  function showUploading(filename) {
+    if (!filesList) return;
+    removeUploading();
+    filesList.querySelector(".no-files")?.remove();
+    filesList.querySelector(".loading-files")?.remove();
+    const uploading = document.createElement("div");
+    uploading.className = "file-item uploading";
+    uploading.innerHTML =
+      '<div class="file-info">' +
+        '<div class="file-icon"><i class="fa-solid fa-spinner fa-spin"></i></div>' +
+        '<div class="file-details">' +
+          '<div class="file-name">' + escapeHtml(filename) + "</div>" +
+          '<div class="upload-progress">Uploading...</div>' +
+        "</div>" +
+      "</div>";
+    filesList.insertBefore(uploading, filesList.firstChild);
+  }
+
+  function removeUploading() {
+    const uploading = filesList?.querySelector(".file-item.uploading");
+    if (uploading) uploading.remove();
+  }
+
+  function updateAttachmentBadge(count) {
+    const tab = document.querySelector('.tab[data-tab="attachments"]');
+    if (!tab) return;
+    const existingBadge = tab.querySelector(".attachment-badge");
+    if (existingBadge) existingBadge.remove();
+    if (count > 0) {
+      const badge = document.createElement("span");
+      badge.className = "attachment-badge";
+      badge.textContent = String(count);
+      tab.appendChild(badge);
+    }
   }
  
   function getAttachmentFileIconMeta(name) {
@@ -833,6 +1331,34 @@ document.addEventListener("DOMContentLoaded", () => {
           '<button type="button" class="att-btn view-btn" title="View"><i class="fa-regular fa-eye"></i></button>' +
           '<button type="button" class="att-btn download-btn" title="Download"><i class="fa-solid fa-cloud-arrow-down"></i></button>' +
           '<button type="button" class="att-btn delete-btn" title="Delete"><i class="fa-solid fa-trash-can"></i></button>' +
+        "</div>" +
+      "</div>"
+    );
+  }
+
+  function buildFileItemHtml(meta) {
+    const icon = getAttachmentFileIconMeta(meta.name);
+    const pendingAttr =
+      meta.pendingIndex != null && meta.pendingIndex !== ""
+        ? ' data-pending-index="' + String(meta.pendingIndex) + '"'
+        : "";
+    const serverAttr = meta.serverId ? ' data-server-id="' + escapeHtml(meta.serverId) + '"' : "";
+    return (
+      '<div class="file-item"' + serverAttr + pendingAttr + ">" +
+        '<div class="file-info">' +
+          '<div class="file-icon ' + icon.cls + '"><i class="fa-solid ' + icon.icon + '"></i></div>' +
+          '<div class="file-details">' +
+            '<div class="file-name">' + escapeHtml(meta.name || "") + "</div>" +
+            '<div class="file-meta">' +
+              '<span><i class="fa-regular fa-file"></i> ' + escapeHtml(meta.sizeLabel || "") + "</span>" +
+              '<span><i class="fa-regular fa-calendar"></i> ' + escapeHtml(meta.dateLabel || "") + "</span>" +
+            "</div>" +
+          "</div>" +
+        "</div>" +
+        '<div class="file-actions">' +
+          '<button type="button" class="btn-action btn-view" title="View"><i class="fa-regular fa-eye"></i></button>' +
+          '<button type="button" class="btn-action btn-download" title="Download"><i class="fa-solid fa-cloud-arrow-down"></i></button>' +
+          '<button type="button" class="btn-action btn-delete" title="Delete"><i class="fa-solid fa-trash-can"></i></button>' +
         "</div>" +
       "</div>"
     );
@@ -1041,7 +1567,7 @@ document.addEventListener("DOMContentLoaded", () => {
       return true;
     }
     if (!isValidRiskRating(cleaned)) {
-      setFieldError(riskRatingInput, "Risk rating must be a decimal between 1 and 5.");
+      setFieldError(riskRatingInput, "Risk rating must be between 1 and 5 with one decimal place (e.g. 4.8).");
       return false;
     }
     setFieldError(riskRatingInput, "");
@@ -1052,11 +1578,7 @@ document.addEventListener("DOMContentLoaded", () => {
   let validateRiskNotesLive = () => true;
  
   function setupComplianceFieldValidations() {
-    setupSupplierDateField(
-      lastAssessmentDateInput,
-      lastAssessmentDatePicker,
-      lastAssessmentDateBtn
-    );
+    setupSupplierDateField(lastAssessmentDateInput);
  
     validateCertificationsLive = setupMaxLengthTextField(
       certificationsInput,
@@ -1094,13 +1616,66 @@ document.addEventListener("DOMContentLoaded", () => {
     validateAllSupplierDocumentUploadsLive();
   }
  
-  function sanitizePercent0to100(value) {
+  function sanitizePercent0to100(value, maxDecimals = null) {
     let v = (value || "").replace(/[^0-9.]/g, "");
     const dot = v.indexOf(".");
     if (dot !== -1) {
-      v = v.slice(0, dot + 1) + v.slice(dot + 1).replace(/\./g, "");
+      const intPart = v.slice(0, dot);
+      let decPart = v.slice(dot + 1).replace(/\./g, "");
+      if (maxDecimals != null) {
+        decPart = decPart.slice(0, maxDecimals);
+      }
+      v = decPart.length ? `${intPart}.${decPart}` : `${intPart}.`;
     }
     return v.trim();
+  }
+
+  function roundPercent0to100(value, decimalPlaces = PERCENT_TWO_DECIMALS) {
+    const v = sanitizePercent0to100(value, decimalPlaces);
+    if (!v || v.endsWith(".")) return v.replace(/\.$/, "");
+    const n = Number(v);
+    if (!Number.isFinite(n)) return v;
+    const clamped = Math.min(100, Math.max(0, n));
+    return clamped.toFixed(decimalPlaces);
+  }
+
+  function sanitizePercentRateTwoDecimals(value) {
+    return sanitizePercent0to100(value, PERCENT_TWO_DECIMALS);
+  }
+
+  function formatPercentRateTwoDecimals(value) {
+    const v = (value || "").trim();
+    if (!v) return "";
+    return roundPercent0to100(v, PERCENT_TWO_DECIMALS);
+  }
+
+  function clampPercentInputToMax(value, max = 100) {
+    const v = (value || "").trim();
+    if (!v) return v;
+    if (v.endsWith(".")) {
+      const intPart = v.slice(0, -1);
+      if (intPart && Number(intPart) > max) return String(max);
+      return v;
+    }
+    const n = Number(v);
+    if (Number.isFinite(n) && n > max) return String(max);
+    return v;
+  }
+
+  function sanitizeOnTimeDeliveryRate(value) {
+    return clampPercentInputToMax(sanitizePercentRateTwoDecimals(value), 100);
+  }
+
+  function formatOnTimeDeliveryRate(value) {
+    return formatPercentRateTwoDecimals(value);
+  }
+
+  function sanitizeDefectReturnRate(value) {
+    return clampPercentInputToMax(sanitizePercentRateTwoDecimals(value), 100);
+  }
+
+  function formatDefectReturnRate(value) {
+    return formatPercentRateTwoDecimals(value);
   }
  
   function isValidPercent0to100(value) {
@@ -1113,6 +1688,7 @@ document.addEventListener("DOMContentLoaded", () => {
   function isValidQualityRating(value) {
     const v = sanitizeRiskRating(value);
     if (!v) return true;
+    if (!/^[1-5](\.\d)?$/.test(v)) return false;
     const n = Number(v);
     return Number.isFinite(n) && n >= RISK_RATING_MIN && n <= RISK_RATING_MAX;
   }
@@ -1130,7 +1706,7 @@ document.addEventListener("DOMContentLoaded", () => {
  
   function validateOnTimeDeliveryLive() {
     if (!onTimeDeliveryInput) return true;
-    const cleaned = sanitizePercent0to100(onTimeDeliveryInput.value);
+    const cleaned = sanitizeOnTimeDeliveryRate(onTimeDeliveryInput.value);
     if (onTimeDeliveryInput.value !== cleaned) onTimeDeliveryInput.value = cleaned;
     if (!cleaned) {
       setFieldError(onTimeDeliveryInput, "");
@@ -1162,7 +1738,7 @@ document.addEventListener("DOMContentLoaded", () => {
  
   function validateDefectRateLive() {
     if (!defectRateInput) return true;
-    const cleaned = sanitizePercent0to100(defectRateInput.value);
+    const cleaned = sanitizeDefectReturnRate(defectRateInput.value);
     if (defectRateInput.value !== cleaned) defectRateInput.value = cleaned;
     if (!cleaned) {
       setFieldError(defectRateInput, "");
@@ -1208,25 +1784,40 @@ document.addEventListener("DOMContentLoaded", () => {
     return true;
   }
  
-  function setupPercent0to100Field(inputEl, validateFn) {
-    if (!inputEl) return;
-    inputEl.setAttribute("inputmode", "decimal");
-    inputEl.addEventListener("input", () => {
-      const cleaned = sanitizePercent0to100(inputEl.value);
-      if (inputEl.value !== cleaned) inputEl.value = cleaned;
-      validateFn();
+  function setupOnTimeDeliveryField() {
+    if (!onTimeDeliveryInput) return;
+    onTimeDeliveryInput.setAttribute("inputmode", "decimal");
+    onTimeDeliveryInput.addEventListener("input", () => {
+      const cleaned = sanitizeOnTimeDeliveryRate(onTimeDeliveryInput.value);
+      if (onTimeDeliveryInput.value !== cleaned) onTimeDeliveryInput.value = cleaned;
+      validateOnTimeDeliveryLive();
     });
-    inputEl.addEventListener("blur", validateFn);
+    onTimeDeliveryInput.addEventListener("blur", () => {
+      const formatted = formatOnTimeDeliveryRate(onTimeDeliveryInput.value);
+      if (formatted) onTimeDeliveryInput.value = formatted;
+      validateOnTimeDeliveryLive();
+    });
   }
- 
+
+  function setupDefectReturnField() {
+    if (!defectRateInput) return;
+    defectRateInput.setAttribute("inputmode", "decimal");
+    defectRateInput.addEventListener("input", () => {
+      const cleaned = sanitizeDefectReturnRate(defectRateInput.value);
+      if (defectRateInput.value !== cleaned) defectRateInput.value = cleaned;
+      validateDefectRateLive();
+    });
+    defectRateInput.addEventListener("blur", () => {
+      const formatted = formatDefectReturnRate(defectRateInput.value);
+      if (formatted) defectRateInput.value = formatted;
+      validateDefectRateLive();
+    });
+  }
+
   function setupPerformanceFieldValidations() {
-    setupSupplierDateField(
-      lastEvaluationDateInput,
-      lastEvaluationDatePicker,
-      lastEvaluationDateBtn
-    );
-    setupPercent0to100Field(onTimeDeliveryInput, validateOnTimeDeliveryLive);
-    setupPercent0to100Field(defectRateInput, validateDefectRateLive);
+    setupSupplierDateField(lastEvaluationDateInput);
+    setupOnTimeDeliveryField();
+    setupDefectReturnField();
  
     if (qualityRatingInput) {
       qualityRatingInput.setAttribute("inputmode", "decimal");
@@ -1371,6 +1962,125 @@ document.addEventListener("DOMContentLoaded", () => {
     });
     inputEl.addEventListener("blur", runValidate);
   }
+
+  const SUPPLIER_CHAR_STRIP = {
+    name: /[^A-Za-z0-9 ]/g,
+    text: /[^A-Za-z0-9 .,&()'/:\-/]/g,
+    address: /[^A-Za-z0-9 ,.\-/]/g,
+    website: /[^A-Za-z0-9.]/g,
+    letters: /[^A-Za-z ]/g,
+    certification: /[^A-Za-z0-9 @_\-]/g,
+    general: /[^A-Za-z0-9 ]/g,
+  };
+
+  const SKIP_INPUT_CHAR_RESTRICTION_IDS = new Set([
+    "supplierEmail",
+    "supplierWebsite",
+    "supplierCode",
+    "gstin",
+    "companyRegistrationNumber",
+    "contactFirstName",
+    "contactLastName",
+    "supplierPhone",
+    "alternateContactNo",
+  ]);
+
+  const SKIP_INPUT_CHAR_RESTRICTION_NAMES = new Set([
+    "email",
+    "website",
+    "bank_name",
+    "bank_account_no",
+    "iban_swift_code",
+    "minimum_order_quantity",
+    "average_delivery_time_days",
+    "risk_ratings",
+    "on_time_delivery_rate",
+    "quality_ratings",
+    "defect_return_rate",
+    "contract_breaches",
+    "complaints_registered",
+    "last_risk_assessment_date",
+    "last_evaluation_date",
+  ]);
+
+  const INPUT_CHAR_RULE_BY_ID = {
+    supplierName: "name",
+    legalEntityName: "name",
+    registeredOfficeAddress: "address",
+    mailingAddress: "address",
+    warehouseAddress: "address",
+    billingAddress: "address",
+    relationshipManagerCustom: "letters",
+    commentText: "text",
+  };
+
+  const INPUT_CHAR_RULE_BY_NAME = {
+    product_detail: "letters",
+    designation_role: "letters",
+    categories_served: "letters",
+    product_service_catalog: "letters",
+    return_replacement_policy: "name",
+    contract_references: "letters",
+    compliance_certifications: "certification",
+    risk_notes_flags: "letters",
+    tax_withholding_setup: "letters",
+    improvement_plans: "letters",
+    complaints_registered: "general",
+    external_key_contact: "name",
+    visit_history_meeting_notes: "letters",
+  };
+
+  function restrictInputCharacters(inputEl, stripRegex) {
+    if (!inputEl || !stripRegex) return;
+
+    const sanitize = (value) => (value || "").replace(stripRegex, "");
+
+    const apply = () => {
+      const maxLen = inputEl.maxLength > 0 ? inputEl.maxLength : null;
+      let cleaned = sanitize(inputEl.value);
+      if (maxLen != null) cleaned = cleaned.slice(0, maxLen);
+      if (inputEl.value !== cleaned) inputEl.value = cleaned;
+    };
+
+    inputEl.addEventListener("input", apply);
+    inputEl.addEventListener("paste", (event) => {
+      event.preventDefault();
+      const pasted = event.clipboardData?.getData("text") || "";
+      const start = inputEl.selectionStart ?? inputEl.value.length;
+      const end = inputEl.selectionEnd ?? inputEl.value.length;
+      const merged = inputEl.value.slice(0, start) + pasted + inputEl.value.slice(end);
+      const maxLen = inputEl.maxLength > 0 ? inputEl.maxLength : null;
+      let cleaned = sanitize(merged);
+      if (maxLen != null) cleaned = cleaned.slice(0, maxLen);
+      inputEl.value = cleaned;
+      const caret = Math.min(start + sanitize(pasted).length, cleaned.length);
+      try {
+        inputEl.setSelectionRange(caret, caret);
+      } catch (_err) {
+        /* ignore */
+      }
+      inputEl.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  }
+
+  function setupSupplierTextFieldRestrictions() {
+    if (!supplierForm) return;
+
+    supplierForm.querySelectorAll('input[type="text"], textarea').forEach((inputEl) => {
+      if (inputEl.readOnly || inputEl.disabled) return;
+      if (inputEl.id && SKIP_INPUT_CHAR_RESTRICTION_IDS.has(inputEl.id)) return;
+      if (inputEl.name && SKIP_INPUT_CHAR_RESTRICTION_NAMES.has(inputEl.name)) return;
+
+      let rule = "general";
+      if (inputEl.id && INPUT_CHAR_RULE_BY_ID[inputEl.id]) {
+        rule = INPUT_CHAR_RULE_BY_ID[inputEl.id];
+      } else if (inputEl.name && INPUT_CHAR_RULE_BY_NAME[inputEl.name]) {
+        rule = INPUT_CHAR_RULE_BY_NAME[inputEl.name];
+      }
+
+      restrictInputCharacters(inputEl, SUPPLIER_CHAR_STRIP[rule]);
+    });
+  }
  
   function validateSupplierForm(formData) {
     const supplierId = trimField(formData, "supplier_id");
@@ -1384,7 +2094,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const status = trimField(formData, "status");
     const contactFirst = trimField(formData, "contact_first_name");
     const contactLast = trimField(formData, "contact_last_name");
-    const email = trimField(formData, "email");
+    const email = sanitizeEmailInput(trimField(formData, "email"));
+    const website = normalizeWebsiteInput(trimField(formData, "website")).trim();
     const phone = trimField(formData, "phone_number").replace(/\D/g, "");
     const alternatePhone = trimField(formData, "alternate_contact_no").replace(/\D/g, "");
     const regOffice = trimField(formData, "registered_office_address");
@@ -1398,36 +2109,48 @@ document.addEventListener("DOMContentLoaded", () => {
     const ibanSwift = sanitizeIbanSwift(trimField(formData, "iban_swift_code"));
     const categoriesServed = trimField(formData, "categories_served");
     const productCatalog = trimField(formData, "product_service_catalog");
-    const minimumOrderQty = sanitizePositiveNumber(trimField(formData, "minimum_order_quantity"));
-    const deliveryTime = sanitizeNumericOnly(trimField(formData, "average_delivery_time_days"));
+    const minimumOrderQty = sanitizeWholeNumber(trimField(formData, "minimum_order_quantity"));
+    const deliveryTime = sanitizeDeliveryTimeDays(trimField(formData, "average_delivery_time_days"));
     const returnPolicy = trimField(formData, "return_replacement_policy");
     const contractReferences = trimField(formData, "contract_references");
     const certifications = trimField(formData, "compliance_certifications");
     const riskNotes = trimField(formData, "risk_notes_flags");
     const complianceStatus = trimField(formData, "compliance_status");
     const riskRating = sanitizeRiskRating(trimField(formData, "risk_ratings"));
-    const onTimeDelivery = sanitizePercent0to100(trimField(formData, "on_time_delivery_rate"));
+    const onTimeDelivery = formatOnTimeDeliveryRate(trimField(formData, "on_time_delivery_rate"));
     const qualityRating = sanitizeRiskRating(trimField(formData, "quality_ratings"));
-    const defectRate = sanitizePercent0to100(trimField(formData, "defect_return_rate"));
+    const defectRate = formatDefectReturnRate(trimField(formData, "defect_return_rate"));
     const contractBreach = sanitizeContractBreach(trimField(formData, "contract_breaches"));
     const complaints = sanitizePositiveNumber(trimField(formData, "complaints_registered"));
- 
+    const lastAssessmentDate = trimField(formData, "last_risk_assessment_date");
+    const lastEvaluationDate = trimField(formData, "last_evaluation_date");
+
     if (!supplierId) {
       return "Supplier ID is required. Wait for it to generate, then try again.";
     }
     if (!SUPPLIER_ID_RE.test(supplierId.toUpperCase())) {
       return "Supplier ID must be in SUP-001 format.";
     }
-    if (!gstin) return "GSTIN is required.";
+    const gstinNorm = sanitizeGstin(gstin);
+    if (!gstinNorm) return "Tax identification number is required.";
+    if (!isValidSupplierGstin(gstinNorm)) {
+      return "Enter a valid 15-character GSTIN (e.g. 33ABCDE1234F1Z5).";
+    }
+    if (findLocalGstinDuplicate(gstinNorm)) {
+      return GSTIN_DUPLICATE_TOAST;
+    }
     if (!supplierName) return "Supplier name is required.";
     if (!SUPPLIER_NAME_RE.test(supplierName)) {
-      return "Supplier name must be 3–100 characters and use allowed characters only.";
+      return `Supplier name must be 3–${SUPPLIER_NAME_MAX} letters and numbers only (no special characters).`;
     }
     if (!companyReg) return "Company registration number is required.";
     if (!SUPPLIER_REG_NO_RE.test(companyReg)) {
       return "Company registration number must be 8–25 letters and numbers only.";
     }
     if (!legalEntity) return "Legal entity name is required.";
+    if (!LEGAL_ENTITY_NAME_RE.test(legalEntity)) {
+      return "Legal entity name must be 3–100 letters and numbers only (no special characters).";
+    }
     if (!country) return "Country of registration is required.";
     if (!supplierType) return "Supplier type is required.";
     if (!supplierTier) return "Supplier tier is required.";
@@ -1442,6 +2165,9 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     if (!email) return "Email is required.";
     if (!SUPPLIER_EMAIL_RE.test(email)) return "Enter a valid email address.";
+    if (website && !SUPPLIER_WEBSITE_RE.test(website)) {
+      return "Enter website as www.name.domain (e.g. www.example.com).";
+    }
     if (!phone) return "Phone number is required.";
     if (!SUPPLIER_PHONE_RE.test(phone)) return "Phone number must be exactly 10 digits.";
     if (alternatePhone && !SUPPLIER_PHONE_RE.test(alternatePhone)) {
@@ -1478,11 +2204,11 @@ document.addEventListener("DOMContentLoaded", () => {
     if (productCatalog.length > PROC_FIELD_MAX.product_service_catalog) {
       return "Product catalog must be at most 200 characters.";
     }
-    if (minimumOrderQty && !isValidPositiveNumber(minimumOrderQty)) {
-      return "Minimum order quantity must be a positive number.";
+    if (minimumOrderQty && !isValidWholeNumber(minimumOrderQty)) {
+      return "Minimum order quantity must be a whole number.";
     }
-    if (deliveryTime && !isValidNumericOnly(deliveryTime)) {
-      return "Average delivery time must be numeric only.";
+    if (deliveryTime && !isValidDeliveryTimeDays(deliveryTime)) {
+      return `Average delivery time must be between 1 and ${DELIVERY_TIME_DAYS_MAX} days.`;
     }
     if (returnPolicy.length > PROC_FIELD_MAX.return_replacement_policy) {
       return "Return policy must be at most 500 characters.";
@@ -1498,7 +2224,7 @@ document.addEventListener("DOMContentLoaded", () => {
       return "Risk notes must be at most 500 characters.";
     }
     if (riskRating && !isValidRiskRating(riskRating)) {
-      return "Risk rating must be a decimal between 1 and 5.";
+      return "Risk rating must be between 1 and 5 with one decimal place (e.g. 4.8).";
     }
     for (const { key, label } of SUPPLIER_SLOT_CONFIG) {
       const file = slotUploadFiles[key];
@@ -1525,6 +2251,12 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     if (contractBreach && !isValidContractBreach(contractBreach)) {
       return "Contract breach must be Y or N only.";
+    }
+    if (lastAssessmentDate && !isValidSupplierDateString(lastAssessmentDate)) {
+      return SUPPLIER_INVALID_DATE_MSG;
+    }
+    if (lastEvaluationDate && !isValidSupplierDateString(lastEvaluationDate)) {
+      return SUPPLIER_INVALID_DATE_MSG;
     }
     return "";
   }
@@ -1639,8 +2371,18 @@ document.addEventListener("DOMContentLoaded", () => {
         return;
       }
  
+      if (key === "supplier_name") {
+        field.value = stringValue.slice(0, SUPPLIER_NAME_MAX);
+        return;
+      }
+
       if (key === "company_registration_number") {
         field.value = sanitizeRegistrationNo(stringValue);
+        return;
+      }
+
+      if (key === "website") {
+        field.value = normalizeWebsiteInput(stringValue);
         return;
       }
  
@@ -1650,32 +2392,40 @@ document.addEventListener("DOMContentLoaded", () => {
       }
  
       if (key === "minimum_order_quantity") {
-        field.value = sanitizePositiveNumber(stringValue);
+        field.value = sanitizeWholeNumber(stringValue);
         return;
       }
  
       if (key === "average_delivery_time_days") {
-        field.value = sanitizeNumericOnly(stringValue);
+        field.value = sanitizeDeliveryTimeDays(stringValue);
         return;
       }
  
       if (key === "categories_served") {
-        field.value = stringValue.slice(0, PROC_FIELD_MAX.categories_served);
+        field.value = stringValue
+          .replace(/[^A-Za-z ]/g, "")
+          .slice(0, PROC_FIELD_MAX.categories_served);
         return;
       }
  
       if (key === "product_service_catalog") {
-        field.value = stringValue.slice(0, PROC_FIELD_MAX.product_service_catalog);
+        field.value = stringValue
+          .replace(/[^A-Za-z ]/g, "")
+          .slice(0, PROC_FIELD_MAX.product_service_catalog);
         return;
       }
  
       if (key === "return_replacement_policy") {
-        field.value = stringValue.slice(0, PROC_FIELD_MAX.return_replacement_policy);
+        field.value = stringValue
+          .replace(/[^A-Za-z0-9 ]/g, "")
+          .slice(0, PROC_FIELD_MAX.return_replacement_policy);
         return;
       }
  
       if (key === "contract_references") {
-        field.value = stringValue.slice(0, PROC_FIELD_MAX.contract_references);
+        field.value = stringValue
+          .replace(/[^A-Za-z ]/g, "")
+          .slice(0, PROC_FIELD_MAX.contract_references);
         return;
       }
  
@@ -1685,12 +2435,16 @@ document.addEventListener("DOMContentLoaded", () => {
       }
  
       if (key === "compliance_certifications") {
-        field.value = stringValue.slice(0, COMPLIANCE_FIELD_MAX.compliance_certifications);
+        field.value = stringValue
+          .replace(/[^A-Za-z0-9 @_\-]/g, "")
+          .slice(0, COMPLIANCE_FIELD_MAX.compliance_certifications);
         return;
       }
  
       if (key === "risk_notes_flags") {
-        field.value = stringValue.slice(0, COMPLIANCE_FIELD_MAX.risk_notes_flags);
+        field.value = stringValue
+          .replace(/[^A-Za-z ]/g, "")
+          .slice(0, COMPLIANCE_FIELD_MAX.risk_notes_flags);
         return;
       }
  
@@ -1699,8 +2453,13 @@ document.addEventListener("DOMContentLoaded", () => {
         return;
       }
  
-      if (key === "on_time_delivery_rate" || key === "defect_return_rate") {
-        field.value = sanitizePercent0to100(stringValue);
+      if (key === "on_time_delivery_rate") {
+        field.value = formatOnTimeDeliveryRate(stringValue) || sanitizeOnTimeDeliveryRate(stringValue);
+        return;
+      }
+
+      if (key === "defect_return_rate") {
+        field.value = formatDefectReturnRate(stringValue) || sanitizeDefectReturnRate(stringValue);
         return;
       }
  
@@ -1713,7 +2472,17 @@ document.addEventListener("DOMContentLoaded", () => {
         field.value = sanitizePositiveNumber(stringValue);
         return;
       }
- 
+
+      if (key === "improvement_plans") {
+        field.value = stringValue.replace(/[^A-Za-z ]/g, "");
+        return;
+      }
+
+      if (key === "visit_history_meeting_notes") {
+        field.value = stringValue.replace(/[^A-Za-z ]/g, "");
+        return;
+      }
+
       if (key === "last_risk_assessment_date" || key === "last_evaluation_date") {
         field.value = formatApiDateToDdMmYyyy(stringValue);
         return;
@@ -1733,6 +2502,7 @@ document.addEventListener("DOMContentLoaded", () => {
         return;
       }
       fillFormFromData(result.data);
+      originalGstin = sanitizeGstin(gstinInput?.value || "");
       seedCommentsHistoryFromStored(result.data);
       renderComments();
       if (addCommentBtn && commentText) {
@@ -1785,38 +2555,54 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!filesList) return;
     filesList.innerHTML = "";
     const total = totalAttachmentCount();
+    const isFull = total >= MAX_ATTACHMENTS;
     if (fileCount) {
       fileCount.textContent = `${total} / ${MAX_ATTACHMENTS} files`;
     }
+    if (uploadCard) {
+      uploadCard.style.opacity = isFull ? "0.5" : "1";
+      uploadCard.style.pointerEvents = isFull ? "none" : "auto";
+      uploadCard.setAttribute("title", isFull ? "Maximum files reached" : "Click or drag to upload");
+    }
+    if (uploadBtn) {
+      uploadBtn.disabled = isFull;
+      uploadBtn.style.opacity = isFull ? "0.5" : "1";
+      uploadBtn.setAttribute("title", isFull ? "Maximum files reached" : "Upload file");
+    }
+    const tabAttachments = serverAttachments.filter(
+      (att) => !att.category || att.category === "attachments"
+    );
+
     if (!total) {
       filesList.innerHTML =
         '<div class="no-files"><i class="fa-regular fa-folder-open"></i><p>No files attached yet</p></div>';
+      updateAttachmentBadge(0);
       return;
     }
- 
-    serverAttachments
-      .filter((att) => !att.category || att.category === "attachments")
-      .forEach((att) => {
+
+    tabAttachments.forEach((att) => {
       const wrap = document.createElement("div");
-      wrap.innerHTML = buildSupAttRowHtml({
+      wrap.innerHTML = buildFileItemHtml({
         name: att.file_name,
         sizeLabel: "—",
-        dateLabel: att.uploaded_at || "—",
+        dateLabel: formatAttachmentUploadDate(att.uploaded_at),
         serverId: String(att.id)
       });
       filesList.appendChild(wrap.firstElementChild);
     });
- 
+
     pendingFiles.forEach((file, index) => {
       const wrap = document.createElement("div");
-      wrap.innerHTML = buildSupAttRowHtml({
-        name: `${file.name} (pending)`,
+      wrap.innerHTML = buildFileItemHtml({
+        name: file.name,
         sizeLabel: formatAttachmentFileSize(file.size),
         dateLabel: new Date(file.lastModified || Date.now()).toLocaleString(),
         pendingIndex: index
       });
       filesList.appendChild(wrap.firstElementChild);
     });
+
+    updateAttachmentBadge(tabAttachments.length);
   }
  
   async function loadSupplierAttachments() {
@@ -1825,6 +2611,10 @@ document.addEventListener("DOMContentLoaded", () => {
       serverAttachments.length = 0;
       renderFiles();
       return;
+    }
+    if (filesList) {
+      filesList.innerHTML =
+        '<div class="loading-files"><i class="fa-solid fa-spinner fa-spin"></i><p>Loading attachments...</p></div>';
     }
     try {
       const response = await fetch(`/api/supplier-attachments/${encodeURIComponent(supplierId)}`);
@@ -1845,6 +2635,8 @@ document.addEventListener("DOMContentLoaded", () => {
       showToast("Supplier ID is required before uploading files.", "error");
       return false;
     }
+    const showTabUpload = isTabAttachmentUpload(category);
+    if (showTabUpload) showUploading(file.name);
     const formData = new FormData();
     formData.append("supplier_id", supplierId);
     formData.append("file", file);
@@ -1864,6 +2656,9 @@ document.addEventListener("DOMContentLoaded", () => {
         showToast(result?.message || result?.error || "Upload failed.", "error");
         return false;
       }
+      if (showTabUpload) {
+        showToast(`${file.name} uploaded successfully!`, "success");
+      }
       if (!category) {
         await loadSupplierAttachments();
       }
@@ -1871,6 +2666,8 @@ document.addEventListener("DOMContentLoaded", () => {
     } catch (error) {
       showToast("Network error while uploading file.", "error");
       return false;
+    } finally {
+      if (showTabUpload) removeUploading();
     }
   }
  
@@ -1932,30 +2729,14 @@ document.addEventListener("DOMContentLoaded", () => {
     return accepted.slice(0, Math.max(remainingSlots, 0));
   }
  
-  function renderLatestCommentPreview() {
-    if (!latestCommentMeta || !latestCommentText) return;
-    if (!comments.length) {
-      latestCommentMeta.textContent = "No comments yet";
-      latestCommentText.textContent = "Add a comment to see the latest update.";
-      return;
-    }
-    const lastComment = comments[comments.length - 1];
-    const author = (lastComment.author || loggedInUserName || "User").toString();
-    latestCommentMeta.textContent = `${author} - ${lastComment.time}`;
-    latestCommentText.textContent = lastComment.text || "-";
-  }
- 
   function renderComments() {
-    if (!historyList) return;
-    historyList.innerHTML = "";
+    if (!historyContainer) return;
+    historyContainer.innerHTML = "";
     if (!comments.length) {
-      historyList.innerHTML = '<div class="no-history-message">No history available.</div>';
-      renderLatestCommentPreview();
+      historyContainer.innerHTML = '<div class="no-history-message">No history available.</div>';
       return;
     }
- 
-    renderLatestCommentPreview();
- 
+
     comments
       .slice()
       .reverse()
@@ -1963,8 +2744,11 @@ document.addEventListener("DOMContentLoaded", () => {
         const row = document.createElement("div");
         row.className = "history-item";
         const author = (item.author || loggedInUserName || "User").toString();
-        row.innerHTML = `<p><strong>${escapeHtml(author)} - ${escapeHtml(item.time)}</strong></p><p>${escapeHtml(item.text)}</p>`;
-        historyList.appendChild(row);
+        row.innerHTML =
+          `<span class="user">${escapeHtml(author)}</span>` +
+          `<span class="time"> – ${escapeHtml(item.time)}</span>` +
+          `<p>${escapeHtml(item.text)}</p>`;
+        historyContainer.appendChild(row);
       });
   }
  
@@ -1977,6 +2761,9 @@ document.addEventListener("DOMContentLoaded", () => {
       });
       const target = document.getElementById(tab.dataset.tab);
       if (target) target.style.display = "block";
+      if (tab.dataset.tab === "attachments" && getSupplierIdForUploads()) {
+        void loadSupplierAttachments();
+      }
     });
   });
  
@@ -1993,14 +2780,17 @@ document.addEventListener("DOMContentLoaded", () => {
   });
   uploadCard?.addEventListener("dragover", (event) => {
     event.preventDefault();
-    uploadCard.classList.add("supplier-upload-card--drag");
+    uploadCard.style.borderColor = "#a12828";
+    uploadCard.style.background = "#f0f7ff";
   });
   uploadCard?.addEventListener("dragleave", () => {
-    uploadCard.classList.remove("supplier-upload-card--drag");
+    uploadCard.style.borderColor = "#ddd";
+    uploadCard.style.background = "#f8f9fa";
   });
   uploadCard?.addEventListener("drop", (event) => {
     event.preventDefault();
-    uploadCard.classList.remove("supplier-upload-card--drag");
+    uploadCard.style.borderColor = "#ddd";
+    uploadCard.style.background = "#f8f9fa";
     const droppedFiles = Array.from(event.dataTransfer?.files || []);
     void handleIncomingFiles(droppedFiles);
   });
@@ -2010,16 +2800,16 @@ document.addEventListener("DOMContentLoaded", () => {
     fileInput.value = "";
   });
   filesList?.addEventListener("click", async (event) => {
-    const btn = event.target instanceof HTMLElement ? event.target.closest(".att-btn") : null;
+    const btn = event.target instanceof HTMLElement ? event.target.closest(".btn-action") : null;
     if (!btn) return;
-    const row = btn.closest(".sup-att__row");
+    const row = btn.closest(".file-item");
     if (!row || !filesList.contains(row)) return;
- 
+
     const serverId = row.dataset.serverId;
     const pendingIndex = row.dataset.pendingIndex;
     const supplierId = getSupplierIdForUploads();
- 
-    if (btn.classList.contains("view-btn")) {
+
+    if (btn.classList.contains("btn-view")) {
       if (serverId) {
         viewSupplierAttachmentFile({ serverId });
       } else if (pendingIndex !== "") {
@@ -2029,7 +2819,7 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
  
-    if (btn.classList.contains("download-btn")) {
+    if (btn.classList.contains("btn-download")) {
       if (serverId) {
         downloadSupplierAttachmentFile({ serverId });
       } else if (pendingIndex !== "") {
@@ -2038,8 +2828,8 @@ document.addEventListener("DOMContentLoaded", () => {
       }
       return;
     }
- 
-    if (!btn.classList.contains("delete-btn")) return;
+
+    if (!btn.classList.contains("btn-delete")) return;
  
     if (serverId) {
       if (!supplierId) return;
@@ -2073,10 +2863,8 @@ document.addEventListener("DOMContentLoaded", () => {
     addCommentBtn.disabled = commentText.value.trim().length === 0;
   });
  
-  gstinInput?.addEventListener("input", () => {
-    const cleaned = (gstinInput.value || "").replace(/[^a-z0-9]/gi, "").toUpperCase();
-    if (gstinInput.value !== cleaned) gstinInput.value = cleaned;
-  });
+  setupSupplierNameValidation();
+  setupGstinValidation();
   setupCompanyRegistrationValidation();
   setupIbanSwiftValidation();
   setupProcurementFieldValidations();
@@ -2107,6 +2895,9 @@ document.addEventListener("DOMContentLoaded", () => {
     validateFn: validateBankAccountLive
   });
   setupEmailValidation();
+  setupWebsiteValidation();
+  setupSupplierFormTabNavigation();
+  setupSupplierTextFieldRestrictions();
   relationshipManagerSelect?.addEventListener("change", toggleRelationshipManagerCustomField);
   addCommentBtn?.addEventListener("click", (event) => {
     event.preventDefault();
@@ -2160,13 +2951,17 @@ document.addEventListener("DOMContentLoaded", () => {
  
   supplierForm?.addEventListener("submit", async (event) => {
     event.preventDefault();
- 
+
     const formData = new FormData(supplierForm);
     const formError = validateSupplierForm(formData);
+    validateSupplierNameLive();
     validateContactFirstNameLive();
     validateContactLastNameLive();
+    checkGstinDuplicate();
+    validateGstinLive();
     validateCompanyRegistrationLive();
     validateEmailLive();
+    validateWebsiteLive();
     validatePhoneLive(supplierPhoneInput, true);
     validatePhoneLive(alternateContactInput, false);
     validateBankNameLive();
@@ -2176,11 +2971,29 @@ document.addEventListener("DOMContentLoaded", () => {
     validateAllAddressFieldsLive();
     validateAllComplianceFieldsLive();
     validateAllPerformanceFieldsLive();
-    if (formError) {
-      if (formError.toLowerCase().includes("required")) {
+    if (formError || gstinDuplicate || !validateGstinLive()) {
+      if (gstinDuplicate) {
+        showToast(GSTIN_DUPLICATE_TOAST, "error");
+      } else if (formError === SUPPLIER_INVALID_DATE_MSG) {
+        if (
+          lastAssessmentDateInput?.value &&
+          !isValidSupplierDateString(lastAssessmentDateInput.value)
+        ) {
+          lastAssessmentDateInput.value = "";
+          setFieldError(lastAssessmentDateInput, SUPPLIER_INVALID_DATE_MSG);
+        }
+        if (
+          lastEvaluationDateInput?.value &&
+          !isValidSupplierDateString(lastEvaluationDateInput.value)
+        ) {
+          lastEvaluationDateInput.value = "";
+          setFieldError(lastEvaluationDateInput, SUPPLIER_INVALID_DATE_MSG);
+        }
+        showToast(SUPPLIER_INVALID_DATE_MSG, "error");
+      } else if (formError?.toLowerCase().includes("required")) {
         showToast("Please fill all mandatory fields.", "error");
       } else {
-        showToast(formError, "error");
+        showToast(formError || "Please correct the highlighted fields.", "error");
       }
       return;
     }
@@ -2217,6 +3030,12 @@ document.addEventListener("DOMContentLoaded", () => {
       if (!response.ok || !result.success) {
         const serverMessage =
           result?.error || result?.message || "Failed to save supplier.";
+        if (response.status === 409 && /duplicate tax identification/i.test(serverMessage)) {
+          gstinDuplicate = true;
+          setFieldError(gstinInput, GSTIN_DUPLICATE_TOAST);
+          showToast(GSTIN_DUPLICATE_TOAST, "error");
+          return;
+        }
         showToast(serverMessage, "error");
         return;
       }
@@ -2245,7 +3064,6 @@ document.addEventListener("DOMContentLoaded", () => {
   populateSupplierId();
   renderFiles();
   renderComments();
-  renderLatestCommentPreview();
 });
  
  

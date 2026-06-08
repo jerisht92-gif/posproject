@@ -76,7 +76,7 @@
           </tr>
         </thead>
  
-        <tbody>
+        <tbody id="supplierTableBody">
           {% if suppliers %}
             {% for supplier in suppliers %}
               <tr>
@@ -94,11 +94,10 @@
                 </td>
               </tr>
             {% endfor %}
-          {% else %}
-            <tr>
-              <td colspan="7" class="empty">No suppliers found</td>
-            </tr>
           {% endif %}
+          <tr id="noDataRow"{% if suppliers %} style="display: none;"{% endif %}>
+            <td colspan="7" class="empty">No Data Found</td>
+          </tr>
         </tbody>
       </table>
     </div>
@@ -113,6 +112,19 @@
         <span class="page-text">Page <b id="pageNow">1</b> of <b id="pageTotal">1</b></span>
         <button class="pager-btn" id="nextBtn" type="button">Next</button>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- Delete Supplier Modal (same pattern as Manage Users) -->
+<div id="deleteSupplierModal" class="modal" aria-hidden="true" role="dialog" aria-modal="true">
+  <div class="modal-content delete-modal" role="document">
+    <h2 class="modal-title">Delete Supplier</h2>
+    <p id="deleteSupplierText" class="delete-text"></p>
+
+    <div class="modal-actions">
+      <button id="cancelDeleteSupplierBtn" class="cancel-btn" type="button">Cancel</button>
+      <button id="confirmDeleteSupplierBtn" class="danger-btn" type="button">Delete</button>
     </div>
   </div>
 </div>

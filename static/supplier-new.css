@@ -110,8 +110,7 @@
  
  
   /* Labels in main supplier form — align with New Sales Order (sales-new.css) */
-  #supplierForm .form-group label,
-  #supplierForm .currency-row > label {
+  #supplierForm .form-group label {
     margin-bottom: 6px;
     color: #333;
     font-size: 12px;
@@ -120,7 +119,6 @@
  
   /* Mandatory field indicator (red asterisk) */
   #supplierForm .form-group label.req-label::after,
-  #supplierForm .currency-row > label.req-label::after,
   .supplier-page .comment-body label.req-label::after {
     content: " *";
     color: #e53935;
@@ -286,70 +284,13 @@
     display: block;
   }
  
-  #supplierForm .supplier-date-wrap {
-    position: relative;
-    display: block;
+  #supplierForm input[type="date"] {
     width: 100%;
-    min-width: 0;
-  }
- 
-  #supplierForm .supplier-date-wrap .supplier-date-text {
-    width: 100%;
-    padding-right: 38px;
-  }
- 
-  #supplierForm .supplier-date-wrap .supplier-date-open {
-    position: absolute;
-    right: 6px;
-    top: 50%;
-    transform: translateY(-50%);
-    width: 26px;
-    height: 26px;
-    padding: 0;
-    border: none;
-    border-radius: 6px;
-    background: transparent;
-    color: #333;
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    box-sizing: border-box;
-    font-size: 13px;
-    z-index: 6;
-    pointer-events: auto;
-  }
- 
-  #supplierForm .supplier-date-wrap .supplier-date-open:hover {
-    background: rgba(167, 52, 52, 0.1);
-    color: #a12828;
-  }
- 
-  /* Native picker anchored in field (not off-screen) so showPicker() works */
-  #supplierForm .supplier-date-wrap .supplier-date-native {
-    position: absolute !important;
-    right: 4px !important;
-    top: 50% !important;
-    left: auto !important;
-    transform: translateY(-50%) !important;
-    width: 32px !important;
-    height: 30px !important;
-    min-width: 0 !important;
-    max-width: 32px !important;
-    margin: 0 !important;
-    padding: 0 !important;
-    border: 0 !important;
-    background: transparent !important;
-    opacity: 0;
-    cursor: pointer;
-    z-index: 5;
-    box-sizing: border-box;
     color-scheme: light;
-    pointer-events: none;
   }
- 
-  #supplierForm .supplier-date-wrap .supplier-date-native::-webkit-calendar-picker-indicator {
-    display: none;
+
+  #supplierForm input[type="date"]::placeholder {
+    color: #d18a84;
   }
  
   .supplier-page #supplierForm select option {
@@ -410,30 +351,23 @@
     gap: 10px;
     margin-top: 30px;
   }
- 
- 
- 
- 
- 
+
+/* Comments / History / Attachments — match New Invoice */
 .supplier-page .comment-box {
-  border: 1px solid var(--sup-box-border);
-  border-radius: 8px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
   overflow: hidden;
   margin-top: 20px;
-  background: var(--sup-field-bg);
-  font-family: "Poppins", sans-serif;
+  background: #fff;
 }
- 
+
 .supplier-page .comment-tabs {
   background: #a73434;
   padding: 10px 30px;
   display: flex;
   justify-content: space-between;
 }
- 
- 
- 
- 
+
 .supplier-page .comment-tabs .tab {
   background: #1e1e1e;
   color: #fff;
@@ -443,38 +377,69 @@
   font-size: 10px;
   cursor: pointer;
 }
- 
+
 .supplier-page .comment-tabs .tab.active {
   background: #000;
 }
- 
+
 .supplier-page .comment-body {
   padding: 15px;
-  border-bottom: 1px solid var(--sup-box-border-soft);
+  border-bottom: 1px solid #eee;
 }
- 
+
 .supplier-page .comment-body label {
   display: block;
   font-size: 13px;
   margin-bottom: 6px;
 }
- 
-.supplier-page .comment-body textarea,
-.supplier-page #commentText {
+
+.supplier-page .comment-body textarea {
+  width: 100%;
+  height: 90px;
+  padding: 10px 12px;
+  resize: none;
+  font-size: 14px;
+  border-radius: 10px;
+  border: 1px solid #e7b7b5;
+  background-color: #fff5f5;
+  box-sizing: border-box;
+  transition: 0.2s ease;
+  color: #000;
   margin-bottom: 10px;
 }
- 
+
+.supplier-page .comment-body textarea::placeholder {
+  color: #d18a84;
+}
+
+.supplier-page .comment-body textarea:hover {
+  transform: scale(1.01);
+  background: #f5d4d4;
+  border-color: #b9473e;
+  box-shadow: 0 4px 10px rgba(161, 40, 40, 0.12);
+  transition: 0.25s ease-in-out;
+}
+
+.supplier-page .comment-body textarea:focus {
+  border-color: #a12828;
+  box-shadow: 0 0 0 1px rgba(161, 40, 40, 0.25);
+  outline: none;
+}
+
 .supplier-page .comment-box .add-btn {
-  background: #a73434;
+  background: #d9a3a3;
   color: #fff;
   border: none;
   padding: 6px 14px;
   border-radius: 4px;
   font-size: 12px;
   cursor: pointer;
-  margin-top: 0;
 }
- 
+
+.supplier-page .comment-box .add-btn:hover:not(:disabled) {
+  background: #a73434;
+}
+
 .supplier-page .comment-box .add-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
@@ -484,211 +449,118 @@
   transform: none;
   pointer-events: none;
 }
- 
-.supplier-page .latest-comment-preview {
-  margin-top: 12px;
-  padding: 10px 12px;
-  background: var(--sup-field-bg);
-  border: 1px solid var(--sup-box-border-soft);
-  color: #1f2f3f;
-  border-radius: 8px;
-  font-size: 12px;
-}
- 
-.supplier-page .latest-comment-head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 6px;
-}
- 
-.supplier-page .latest-comment-avatar {
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: #e6e6e6;
-  color: #222;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 12px;
-  flex-shrink: 0;
-}
- 
-.supplier-page .latest-comment-meta {
-  font-size: 13px;
-  font-weight: 600;
-  color: #a12828;
-  line-height: 1.15;
-}
- 
-.supplier-page .latest-comment-text {
-  margin: 0 0 0 30px;
-  font-size: 12px;
-  color: #111;
-  line-height: 1.2;
-}
- 
+
 .supplier-page .comment-history {
   padding: 15px;
 }
- 
+
 .supplier-page .comment-box .history-item {
   padding: 10px 0;
-  border-bottom: 1px solid var(--sup-box-border-soft);
+  border-bottom: 1px solid #eee;
 }
- 
+
 .supplier-page .comment-box .history-item:last-child {
   border-bottom: none;
 }
- 
+
+.supplier-page .comment-box .user {
+  font-weight: 600;
+  color: #a73434;
+  font-size: 13px;
+}
+
+.supplier-page .comment-box .time {
+  font-size: 12px;
+  color: #666;
+}
+
 .supplier-page .comment-box .history-item p {
   margin: 4px 0 0;
   font-size: 12px;
   color: #444;
 }
- 
-.supplier-page .comment-box .history-item strong {
-  font-weight: 600;
-  color: #a73434;
-  font-size: 13px;
-}
- 
-.supplier-page .no-history-message {
-  color: #666;
-  font-size: 13px;
-}
- 
+
 .supplier-page .comment-box .tab-content {
   padding: 25px;
   background: #fff;
-  border-radius: 8px;
+  border-radius: 10px;
 }
- 
-/* Attachments tab upload area */
+
 .supplier-page .comment-box .upload-section {
   text-align: center;
-}
- 
-.supplier-page .comment-box .upload-section {
   margin-bottom: 30px;
   padding-bottom: 20px;
-  border-bottom: 1px solid var(--sup-box-border-soft);
+  border-bottom: 1px solid #eee;
 }
- 
-.supplier-page .supplier-upload-card {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 2px;
-  background: #fff;
-  border: 1px dashed var(--sup-upload-dash);
-  border-radius: 10px;
-  padding: 28px 16px;
-  margin-bottom: 10px;
+
+.supplier-page .comment-box .upload-card {
+  background: #f8f9fa;
+  border: 2px dashed #ddd;
+  border-radius: 12px;
+  padding: 30px 20px;
+  margin-bottom: 15px;
   cursor: pointer;
-  transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
-  width: 100%;
-  box-sizing: border-box;
-}
- 
-.supplier-page .comment-box .supplier-upload-card {
+  transition: all 0.3s;
   max-width: 500px;
   margin-left: auto;
   margin-right: auto;
 }
- 
-.supplier-page .supplier-upload-card--compact {
-  padding: 14px 12px;
+
+.supplier-page .comment-box .upload-card:hover {
+  border-color: #a12828;
+  background: #f0f7ff;
 }
- 
-.supplier-page .supplier-upload-card:hover,
-.supplier-page .supplier-upload-card.supplier-upload-card--drag {
-  border-color: var(--sup-field-hover-border);
-  background: var(--sup-field-hover-bg);
-  box-shadow: var(--sup-field-hover-shadow);
+
+.supplier-page .comment-box .upload-card i {
+  font-size: 48px;
+  color: #6c757d;
+  margin-bottom: 10px;
 }
- 
-.supplier-page .supplier-upload-card i {
-  font-size: 36px;
-  color: #8b6b6b;
-  margin-bottom: 4px;
-  line-height: 1;
-}
- 
-.supplier-page .supplier-upload-card--compact i {
-  font-size: 28px;
-  margin-bottom: 2px;
-}
- 
-.supplier-page .supplier-upload-card__title {
-  font-size: 15px;
+
+.supplier-page .comment-box .upload-card h4 {
+  font-size: 18px;
   color: #333;
-  font-weight: 600;
-  line-height: 1.3;
+  margin-bottom: 5px;
 }
- 
-.supplier-page .supplier-upload-card--compact .supplier-upload-card__title {
-  font-size: 13px;
-}
- 
-.supplier-page .supplier-upload-card__hint {
+
+.supplier-page .comment-box .upload-card p {
   color: #666;
-  font-size: 12px;
-  line-height: 1.3;
+  font-size: 14px;
+  margin-bottom: 5px;
 }
- 
-.supplier-page .supplier-upload-card--compact .supplier-upload-card__hint {
-  font-size: 11px;
-}
- 
-.supplier-page .supplier-upload-card small {
+
+.supplier-page .comment-box .upload-card small {
   color: #999;
-  font-size: 11px;
-  margin-top: 2px;
+  font-size: 12px;
 }
- 
-.supplier-page .btn-upload {
+
+.supplier-page .comment-box .btn-upload {
   background: #a12828;
   color: #fff;
   border: none;
-  padding: 8px 20px;
+  padding: 10px 30px;
   border-radius: 6px;
-  font-size: 13px;
-  font-family: inherit;
+  font-size: 14px;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
-  justify-content: center;
   gap: 8px;
-  transition: filter 0.2s ease;
 }
- 
-.supplier-page .btn-upload:hover {
-  filter: brightness(1.05);
-}
- 
-.supplier-page .btn-upload:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
- 
+
 .supplier-page .comment-box .files-section {
   background: #fff;
-  border: 1px solid var(--sup-box-border-soft);
-  border-radius: 10px;
+  border-radius: 8px;
 }
- 
+
 .supplier-page .comment-box .files-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   padding: 15px 0;
-  border-bottom: 1px solid var(--sup-box-border-soft);
+  border-bottom: 2px solid #f0f0f0;
   margin-bottom: 15px;
 }
- 
+
 .supplier-page .comment-box .files-header h4 {
   font-size: 16px;
   color: #333;
@@ -696,13 +568,12 @@
   align-items: center;
   gap: 8px;
   margin: 0;
-  font-weight: 600;
 }
- 
+
 .supplier-page .comment-box .files-header i {
   color: #a12828;
 }
- 
+
 .supplier-page .comment-box .file-count {
   background: #e9ecef;
   padding: 4px 10px;
@@ -710,29 +581,187 @@
   font-size: 12px;
   color: #495057;
 }
- 
+
 .supplier-page .comment-box .files-list {
-  min-height: 80px;
+  min-height: 100px;
 }
- 
+
 .supplier-page .comment-box .no-files {
   text-align: center;
-  padding: 32px 16px;
+  padding: 40px 20px;
   color: #999;
 }
- 
+
 .supplier-page .comment-box .no-files i {
-  font-size: 44px;
+  font-size: 48px;
   color: #ddd;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
 }
- 
+
 .supplier-page .comment-box .no-files p {
   font-size: 14px;
   margin: 0;
 }
+
+.supplier-page .comment-box .file-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 15px;
+  background: #f8f9fa;
+  border: 1px solid #eee;
+  border-radius: 8px;
+  margin-bottom: 8px;
+  animation: supAttSlideIn 0.3s ease;
+}
+
+@keyframes supAttSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.supplier-page .comment-box .file-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.supplier-page .comment-box .file-icon {
+  font-size: 24px;
+  min-width: 30px;
+}
+
+.supplier-page .comment-box .file-icon.pdf { color: #dc3545; }
+.supplier-page .comment-box .file-icon.doc { color: #0d6efd; }
+.supplier-page .comment-box .file-icon.xls { color: #198754; }
+.supplier-page .comment-box .file-icon.jpg,
+.supplier-page .comment-box .file-icon.png { color: #6f42c1; }
+.supplier-page .comment-box .file-icon.default { color: #6c757d; }
+
+.supplier-page .comment-box .file-details {
+  display: flex;
+  flex-direction: column;
+}
+
+.supplier-page .comment-box .file-name {
+  font-weight: 500;
+  color: #333;
+  font-size: 14px;
+  margin-bottom: 3px;
+}
+
+.supplier-page .comment-box .file-meta {
+  display: flex;
+  gap: 15px;
+  font-size: 11px;
+  color: #888;
+}
+
+.supplier-page .comment-box .file-actions {
+  display: flex;
+  gap: 5px;
+}
+
+.supplier-page .comment-box .btn-action {
+  background: none;
+  border: none;
+  padding: 5px 10px;
+  font-size: 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.2s;
+}
+
+.supplier-page .comment-box .btn-view {
+  color: #007bff;
+  background: #e7f1ff;
+}
+
+.supplier-page .comment-box .btn-view:hover {
+  background: #cfe2ff;
+}
+
+.supplier-page .comment-box .btn-download {
+  color: #198754;
+  background: #e8f5e9;
+}
+
+.supplier-page .comment-box .btn-download:hover {
+  background: #d4edda;
+}
+
+.supplier-page .comment-box .btn-delete {
+  color: #dc3545;
+  background: #f8d7da;
+}
+
+.supplier-page .comment-box .btn-delete:hover {
+  background: #f5c2c7;
+}
+
+.supplier-page .comment-box .file-item.uploading {
+  background: #fff3cd;
+  border-color: #ffc107;
+}
+
+.supplier-page .comment-box .file-item.uploading .upload-progress {
+  height: auto;
+  background: transparent;
+  font-size: 11px;
+  color: #856404;
+  margin-top: 2px;
+}
+
+.supplier-page .comment-box .loading-files {
+  text-align: center;
+  padding: 40px 20px;
+  color: #999;
+}
+
+.supplier-page .comment-box .loading-files i {
+  font-size: 24px;
+  color: #a12828;
+  margin-bottom: 10px;
+}
+
+.supplier-page .comment-box .loading-files p {
+  font-size: 14px;
+  margin: 0;
+}
+
+.supplier-page .comment-box .attachment-badge {
+  display: inline-block;
+  background: #007bff;
+  color: #fff;
+  font-size: 11px;
+  font-weight: bold;
+  padding: 2px 6px;
+  border-radius: 10px;
+  margin-left: 8px;
+}
+
+.supplier-page .comment-box .no-history-message {
+  color: #666;
+  font-size: 13px;
+}
  
-/* Attachment rows — view / download / delete (like Delivery Note Return) */
+ 
+ 
+ 
+ 
+
+
+
+/* Attachment rows for inline document slots (not the Comments tab file list) */
 .sup-att__items,
 .supplier-doc-upload__list {
   display: flex;
@@ -860,26 +889,7 @@
 .supplier-doc-upload__list:not(:empty) {
   margin-top: 8px;
 }
- 
-.supplier-page .comment-box .files-list .file-item {
-  display: none;
-}
- 
-@keyframes slideIn {
-  from {
-    opacity: 0;
-    transform: translateY(-10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
- 
-.supplier-page .comment-box .form-footer {
-  border-top: 1px solid var(--sup-box-border-soft);
-}
- 
+
 .delete-btn {
   margin-top: 5px;
   background: red;
@@ -891,88 +901,9 @@
 }
  
  
- 
- 
- 
-/* ================= COMMENT CARD STYLE ================= */
-.comment-item {
-  background: var(--sup-field-bg);
-  border: 1px solid var(--sup-box-border-soft);
-  padding: 12px;
-  border-radius: 8px;
-  margin-top: 10px;
-  border-left: 4px solid #b9473e;
-}
- 
-.comment-item strong {
-  color:#b9473e;
-}
- 
- 
-/* ================= HISTORY STYLE ================= */
-.history-card {
-  background: var(--sup-field-bg);
-  border: 1px solid var(--sup-box-border-soft);
-  padding: 10px;
-  border-radius: 8px;
-  margin: 8px 0;
-}
- 
- 
-/* ================= FILE ITEM ================= */
-.file-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  background: var(--sup-field-bg);
-  border: 1px solid var(--sup-box-border-soft);
-  padding: 10px;
-  border-radius: 8px;
-  margin-top: 10px;
-}
- 
- 
-/* ================= FILE ACTION BUTTONS ================= */
-.file-actions button {
-  margin-left: 8px;
-  padding: 5px 10px;
-  border-radius: 6px;
-  border: none;
-  cursor: pointer;
-}
- 
- 
-/* DOWNLOAD BUTTON */
-.download-btn {
-  background: #b9473e;
-  color: white;
-}
- 
- 
-/* REMOVE BUTTON */
-.remove-btn {
-  background: #ffffff;
-  border: 1px solid red;
-  color: red;
-}
- 
- 
-/* ================= UPLOAD BUTTON ================= */
-.upload-btn {
-  background: #fff;
-  border: 1px solid var(--sup-field-border);
-  padding: 8px 14px;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: 0.2s ease;
-}
- 
-.upload-btn:hover {
-  background: var(--sup-field-hover-bg);
-  border-color: var(--sup-field-hover-border);
-  box-shadow: var(--sup-field-hover-shadow);
-}
- 
+
+
+
 /* Centered notification style used across modules */
 .success-notification,
 .error-notification {
@@ -1170,31 +1101,22 @@
   box-shadow: var(--sup-field-hover-shadow);
 }
  
-/* ===== FOOTER (EXACT UI MATCH) ===== */
+/* ===== FOOTER (match New Invoice — no divider lines) ===== */
 .form-footer {
-  border-top: 1px solid #ddd;   /* divider line */
-  margin-top: 25px;
-  padding-top: 15px;
- 
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   align-items: center;
+  margin-top: 0;
+  padding-top: 60px;
+  border: none;
 }
- 
-/* LEFT TEXT */
-.footer-left {
-  font-size: 13px;
-  color: #666;
-}
- 
-/* RIGHT BUTTONS */
+
 .footer-right {
   display: flex;
   gap: 10px;
-  width: 100%;
-  padding: 20px 10px;
-  justify-content: end;
-  align-items: end;
+  justify-content: flex-end;
+  align-items: center;
+  padding: 0;
 }
  
 

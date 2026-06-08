@@ -4,10 +4,13 @@ S3 object storage for uploads (AWS S3 or generic S3-compatible endpoints).
 Configure via environment variables in `.env`. When not configured,
 upload paths fall back to local disk in app.py.
 
-Object keys use a prefix per submodule, e.g.:
-  purchase_attachments/PO-001/invoice.pdf
-  creditnote_attachments/CRN-001/file.pdf
-  company_information_attachments/RR001/logo.png
+Object keys are scoped by deployment environment, then submodule, e.g.:
+  Dev/purchase_attachments/PO-001/invoice.pdf
+  QA/creditnote_attachments/CRN-001/file.pdf
+  Prod/company_information_attachments/RR001/logo.png
+
+Environment folder (Dev | QA | Prod) is taken from S3_ENV_PREFIX, or inferred from
+DB_HOST / APP_BASE_URL against S3_DEV_HOSTS / S3_QA_HOSTS in .env, else Prod.
 
 Public URLs stored in PostgreSQL:
   AWS/native: https://{bucket}.s3.{region}.amazonaws.com/{key}
@@ -44,7 +47,92 @@ MODULE_PRODUCT_IMAGES = "product_images"
 MODULE_IMPORTS = "imports"
 MODULE_COMPANY_INFORMATION_ATTACHMENTS = "company_information_attachments"
 
+ENV_DEV = "Dev"
+ENV_QA = "QA"
+ENV_PROD = "Prod"
+_VALID_ENV_PREFIXES = frozenset({ENV_DEV, ENV_QA, ENV_PROD})
+
+ALL_MODULE_KEYS = (
+    MODULE_SUPPLIER_ATTACHMENTS,
+    MODULE_QUOTATION_ATTACHMENTS,
+    MODULE_INVOICE_ATTACHMENTS,
+    MODULE_INVOICE_RETURN_ATTACHMENTS,
+    MODULE_PURCHASE_ATTACHMENTS,
+    MODULE_STOCK_ATTACHMENTS,
+    MODULE_CREDIT_NOTE_ATTACHMENTS,
+    MODULE_DELIVERY_NOTE_ATTACHMENTS,
+    MODULE_DELIVERY_NOTE_RETURN_ATTACHMENTS,
+    MODULE_PRODUCT_IMAGES,
+    MODULE_IMPORTS,
+    MODULE_COMPANY_INFORMATION_ATTACHMENTS,
+)
+
 _s3_client = None
+
+
+def _normalize_env_prefix(value: str) -> str:
+    raw = (value or "").strip()
+    if not raw:
+        return ENV_PROD
+    lowered = raw.lower()
+    if lowered in ("dev", "development"):
+        return ENV_DEV
+    if lowered in ("qa", "quality", "staging"):
+        return ENV_QA
+    if lowered in ("prod", "production"):
+        return ENV_PROD
+    if raw in _VALID_ENV_PREFIXES:
+        return raw
+    return ENV_PROD
+
+
+def _host_from_url(value: str) -> str:
+    s = (value or "").strip()
+    if not s:
+        return ""
+    if "://" in s:
+        s = s.split("://", 1)[1]
+    return s.split("/", 1)[0].split(":", 1)[0].strip()
+
+
+def _hosts_from_env(env_var: str) -> frozenset:
+    raw = (os.getenv(env_var) or "").strip()
+    if not raw:
+        return frozenset()
+    hosts = set()
+    for part in raw.split(","):
+        host = _host_from_url(part) or part.strip()
+        if host:
+            hosts.add(host)
+    return frozenset(hosts)
+
+
+def _env_prefix_from_hosts() -> Optional[str]:
+    dev_hosts = _hosts_from_env("S3_DEV_HOSTS")
+    qa_hosts = _hosts_from_env("S3_QA_HOSTS")
+
+    db_host = (os.getenv("DB_HOST") or "").strip()
+    if db_host in dev_hosts:
+        return ENV_DEV
+    if db_host in qa_hosts:
+        return ENV_QA
+
+    for raw_url in (os.getenv("APP_BASE_URL") or "").split(","):
+        host = _host_from_url(raw_url)
+        if host in dev_hosts:
+            return ENV_DEV
+        if host in qa_hosts:
+            return ENV_QA
+    return None
+
+
+def get_env_prefix() -> str:
+    """Return S3 top-level folder for this deployment: Dev, QA, or Prod."""
+    explicit = (os.getenv("S3_ENV_PREFIX") or os.getenv("OBJECT_STORAGE_ENV") or "").strip()
+    if explicit:
+        return _normalize_env_prefix(explicit)
+    detected = _env_prefix_from_hosts()
+    return detected if detected else ENV_PROD
 
 
 def is_remote_url(value: Optional[str]) -> bool:
@@ -154,6 +242,51 @@ def object_key_from_public_url(url: str) -> Optional[str]:
     return None
 
 
+def _sanitize_relative_path(relative_name: str) -> str:
+    rel = (relative_name or "file").replace("\\", "/").strip("/")
+    parts = [p for p in rel.split("/") if p and p != "." and p != ".."]
+    return "/".join(parts) or "file"
+
+
+def _build_object_key(module_key: str, relative_name: str) -> str:
+    rel = _sanitize_relative_path(relative_name)
+    mod = (module_key or "").strip().strip("/")
+    inner = f"{mod}/{rel}" if mod else rel
+    return f"{get_env_prefix()}/{inner}"
+
+
+def ensure_environment_folders() -> None:
+    """Create Dev/QA/Prod module prefix markers in the bucket (S3 has no real folders)."""
+    if not is_enabled():
+        return
+    env = get_env_prefix()
+    client = _get_client()
+    bucket = _bucket()
+    try:
+        from botocore.exceptions import ClientError
+    except ImportError:  # pragma: no cover
+        return
+
+    for module_key in ALL_MODULE_KEYS:
+        marker_key = f"{env}/{module_key}/.keep"
+        try:
+            client.head_object(Bucket=bucket, Key=marker_key)
+        except ClientError as ex:
+            code = (ex.response or {}).get("Error", {}).get("Code", "")
+            if code not in ("404", "NoSuchKey", "NotFound"):
+                print(f"object_storage ensure_environment_folders head {marker_key}: {ex}")
+                continue
+            try:
+                client.put_object(
+                    Bucket=bucket,
+                    Key=marker_key,
+                    Body=b"",
+                    ContentType="application/octet-stream",
+                )
+            except Exception as put_ex:  # pragma: no cover
+                print(f"object_storage ensure_environment_folders put {marker_key}: {put_ex}")
+
+
 def _get_client():
     global _s3_client
     if _s3_client is not None:
@@ -192,11 +325,8 @@ def try_upload_stream(
 ) -> Optional[Tuple[str, int]]:
     if not is_enabled():
         return None
-    rel = (object_name or "file").replace("\\", "/").strip("/")
-    parts = [p for p in rel.split("/") if p and p != "." and p != ".."]
-    rel = "/".join(parts) or "file"
-    mod = (module_key or "").strip().strip("/")
-    key = f"{mod}/{rel}" if mod else rel
+    rel = _sanitize_relative_path(object_name)
+    key = _build_object_key(module_key, rel)
     basename = rel.split("/")[-1]
     try:
         file_storage.stream.seek(0)
@@ -215,16 +345,23 @@ def try_upload_stream(
 
 
 def try_copy_object(module_key: str, src_object_name: str, dest_object_name: str) -> Optional[str]:
-    """Copy within the bucket under module_key/; returns public URL for destination or None."""
+    """Copy within the bucket under {env}/{module_key}/; returns public URL for destination or None."""
     if not is_enabled():
         return None
-    mod = (module_key or "").strip().strip("/")
-    src_parts = [p for p in (src_object_name or "").replace("\\", "/").split("/") if p and p not in (".", "..")]
-    dest_parts = [p for p in (dest_object_name or "").replace("\\", "/").split("/") if p and p not in (".", "..")]
+    src_parts = [
+        p
+        for p in (src_object_name or "").replace("\\", "/").split("/")
+        if p and p not in (".", "..")
+    ]
+    dest_parts = [
+        p
+        for p in (dest_object_name or "").replace("\\", "/").split("/")
+        if p and p not in (".", "..")
+    ]
     if not src_parts or not dest_parts:
         return None
-    src_key = f"{mod}/{'/'.join(src_parts)}" if mod else "/".join(src_parts)
-    dest_key = f"{mod}/{'/'.join(dest_parts)}" if mod else "/".join(dest_parts)
+    src_key = _build_object_key(module_key, "/".join(src_parts))
+    dest_key = _build_object_key(module_key, "/".join(dest_parts))
     if src_key == dest_key:
         return public_url_for_key(dest_key)
     bucket = _bucket()

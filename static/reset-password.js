@@ -2,8 +2,6 @@
 // Token from body attribute
 // =============================
 const token = document.body.getAttribute("data-token");
-// OR: const token = document.body.dataset.token;   // both are same
-console.log("Reset token from HTML:", token);
 
 // =============================
 // Element selection
@@ -17,8 +15,9 @@ const statusEl          = document.getElementById("resetStatus");
 const capsWarningEl     = document.getElementById("capsWarning");
 const toggleNewBtn      = document.getElementById("toggleNewPwd");
 const toggleConfirmBtn  = document.getElementById("toggleConfirmPwd");
+const eyeNewIcon        = document.getElementById("eyeNewIcon");
+const eyeConfirmIcon    = document.getElementById("eyeConfirmIcon");
 
-// ✅ flag to know if reset already success
 let resetSuccess = false;
 
 // =============================
@@ -27,68 +26,100 @@ let resetSuccess = false;
 function clearErrors() {
   newPwdErrorEl.textContent = "";
   confirmPwdErrorEl.textContent = "";
+  newPwdInput?.closest(".password-group")?.classList.remove("input-error");
+  confirmPwdInput?.closest(".password-group")?.classList.remove("input-error");
   statusEl.textContent = "";
+  statusEl.className = "status-msg";
 }
 
-// Password rule check
-function checkPasswordRules(pwd) {
-  const lengthOK   = pwd.length >= 8 && pwd.length <= 20;
+function setStatus(message, type) {
+  statusEl.textContent = message;
+  statusEl.className = "status-msg";
+  if (type) statusEl.classList.add(type);
+}
+
+const PASSWORD_RULE_MSG =
+  "Password must be 8–20 characters and include uppercase, lowercase, number and special character.";
+
+function getNewPasswordError(pwd) {
+  if (!pwd) return "Password is required.";
+  if (pwd.length < 8 || pwd.length > 20) {
+    return "Password must be 8–20 characters long.";
+  }
   const hasUpper   = /[A-Z]/.test(pwd);
   const hasLower   = /[a-z]/.test(pwd);
   const hasNumber  = /[0-9]/.test(pwd);
   const hasSpecial = /[^A-Za-z0-9]/.test(pwd);
+  if (!hasUpper || !hasLower || !hasNumber || !hasSpecial) {
+    return PASSWORD_RULE_MSG;
+  }
+  return "";
+}
 
-  return lengthOK && hasUpper && hasLower && hasNumber && hasSpecial;
+function setPasswordGroupError(inputEl, errorEl, message) {
+  const group = inputEl?.closest(".password-group");
+  if (message) {
+    errorEl.textContent = message;
+    group?.classList.add("input-error");
+    return false;
+  }
+  errorEl.textContent = "";
+  group?.classList.remove("input-error");
+  return true;
+}
+
+function validateNewPasswordLive() {
+  if (!newPwdInput || newPwdInput.disabled) return true;
+  const pwd = newPwdInput.value.trim();
+  return setPasswordGroupError(newPwdInput, newPwdErrorEl, getNewPasswordError(pwd));
+}
+
+function validateConfirmPasswordLive() {
+  if (!confirmPwdInput || confirmPwdInput.disabled) return true;
+  const pwd = newPwdInput.value.trim();
+  const cpwd = confirmPwdInput.value.trim();
+  if (!cpwd) {
+    return setPasswordGroupError(
+      confirmPwdInput,
+      confirmPwdErrorEl,
+      "Please confirm your password."
+    );
+  }
+  if (pwd && pwd !== cpwd) {
+    return setPasswordGroupError(
+      confirmPwdInput,
+      confirmPwdErrorEl,
+      "Passwords do not match."
+    );
+  }
+  return setPasswordGroupError(confirmPwdInput, confirmPwdErrorEl, "");
 }
 
 function validatePasswords() {
   clearErrors();
-
-  const pwd  = newPwdInput.value.trim();
-  const cpwd = confirmPwdInput.value.trim();
-
-  let ok = true;
-
-  if (!pwd) {
-    newPwdErrorEl.textContent = "Password is required.";
-    ok = false;
-  } else if (pwd.length < 8 || pwd.length > 20) {
-    newPwdErrorEl.textContent = "Password must be 8–20 characters long.";
-    ok = false;
-  } else if (!checkPasswordRules(pwd)) {
-    newPwdErrorEl.textContent =
-      "Password must contain uppercase, lowercase, number and special character.";
-    ok = false;
-  }
-
-  if (!cpwd) {
-    confirmPwdErrorEl.textContent = "Please confirm your password.";
-    ok = false;
-  } else if (pwd && pwd !== cpwd) {
-    confirmPwdErrorEl.textContent = "Passwords do not match.";
-    ok = false;
-  }
-
-  return ok;
+  const newOk = validateNewPasswordLive();
+  const confirmOk = validateConfirmPasswordLive();
+  return newOk && confirmOk;
 }
 
 // =============================
 // Events: live clearing + Caps Lock warning
 // =============================
 newPwdInput.addEventListener("input", () => {
-  newPwdErrorEl.textContent = "";
-  statusEl.textContent = "";
+  validateNewPasswordLive();
+  if (confirmPwdInput.value.trim()) validateConfirmPasswordLive();
+  setStatus("", null);
 });
 
 confirmPwdInput.addEventListener("input", () => {
-  confirmPwdErrorEl.textContent = "";
-  statusEl.textContent = "";
+  validateConfirmPasswordLive();
+  setStatus("", null);
 });
 
 ["keyup", "keydown"].forEach((ev) => {
   newPwdInput.addEventListener(ev, (e) => {
     if (e.getModifierState && e.getModifierState("CapsLock")) {
-      capsWarningEl.textContent = "Warning: Caps Lock is ON.";
+      capsWarningEl.textContent = "Caps Lock is ON.";
     } else {
       capsWarningEl.textContent = "";
     }
@@ -104,31 +135,42 @@ confirmPwdInput.addEventListener("input", () => {
 });
 
 // =============================
-// Toggle eye buttons
+// Toggle eye buttons (SVG icons)
 // =============================
-function toggleVisibility(input, btn) {
-  if (input.type === "password") {
-    input.type = "text";
-    btn.textContent = "🙈";
-  } else {
-    input.type = "password";
-    btn.textContent = "👁";
-  }
+const EYE_OPEN = `
+  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+  <circle cx="12" cy="12" r="3"></circle>
+`;
+
+const EYE_CLOSED = `
+  <path d="M17.94 17.94A10.94 10.94 0 0 1 12 20
+           C5 20 1 12 1 12c.38-.78 1.87-3.32 5.29-6.71M9.9 4.24
+           A10.94 10.94 0 0 1 12 4c7 0 11 8 11 8
+           a21.82 21.82 0 0 1-2.23 3.4M12 12
+           a3 3 0 0 0 3 3M3 3l18 18"></path>
+`;
+
+function toggleVisibility(input, iconEl) {
+  const isPassword = input.getAttribute("type") === "password";
+  input.setAttribute("type", isPassword ? "text" : "password");
+  iconEl.innerHTML = isPassword ? EYE_CLOSED : EYE_OPEN;
+  iconEl.setAttribute("stroke", "currentColor");
 }
 
-toggleNewBtn.addEventListener("click", () =>
-  toggleVisibility(newPwdInput, toggleNewBtn)
-);
+toggleNewBtn.addEventListener("click", (e) => {
+  e.preventDefault();
+  toggleVisibility(newPwdInput, eyeNewIcon);
+});
 
-toggleConfirmBtn.addEventListener("click", () =>
-  toggleVisibility(confirmPwdInput, toggleConfirmBtn)
-);
+toggleConfirmBtn.addEventListener("click", (e) => {
+  e.preventDefault();
+  toggleVisibility(confirmPwdInput, eyeConfirmIcon);
+});
 
 // =============================
 // Submit handler + Login redirect
 // =============================
 resetBtn.addEventListener("click", () => {
-  // ✅ after success, next click = go to login
   if (resetSuccess) {
     window.location.href = "/login";
     return;
@@ -138,8 +180,8 @@ resetBtn.addEventListener("click", () => {
 
   const password = newPwdInput.value.trim();
 
-  statusEl.textContent = "Updating password...";
-  statusEl.style.color = "#ffd966";
+  setStatus("Updating password...", null);
+  resetBtn.disabled = true;
 
   fetch("/reset-password", {
     method: "POST",
@@ -149,29 +191,22 @@ resetBtn.addEventListener("click", () => {
     .then((res) => res.json())
     .then((data) => {
       if (data.status === "ok") {
-        statusEl.textContent =
-          "Password updated successfully. You can login now.";
-        statusEl.style.color = "#00ff99";
-
-        // 🎯 mark success
+        setStatus("Password updated successfully. You can log in now.", "success");
         resetSuccess = true;
-
-        // Change button text + style
-        resetBtn.textContent = "Login";
-        resetBtn.classList.add("login-mode");
-
-        // disable fields so user can't change again
+        resetBtn.textContent = "Log In";
+        resetBtn.disabled = false;
         newPwdInput.disabled = true;
         confirmPwdInput.disabled = true;
+        toggleNewBtn.disabled = true;
+        toggleConfirmBtn.disabled = true;
       } else {
-        statusEl.textContent =
-          "Error: " + (data.message || "Could not update password.");
-        statusEl.style.color = "#ffffff";
+        setStatus("Error: " + (data.message || "Could not update password."), "error");
+        resetBtn.disabled = false;
       }
     })
     .catch((err) => {
       console.error("Reset password fetch error:", err);
-      statusEl.textContent = "Network error. Please try again.";
-      statusEl.style.color = "#ffffff";
+      setStatus("Network error. Please try again.", "error");
+      resetBtn.disabled = false;
     });
 });

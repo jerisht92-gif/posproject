@@ -9,6 +9,7 @@ const nextBtn = document.getElementById("nextBtn");
 const pageNow = document.getElementById("pageNow");
 const pageTotal = document.getElementById("pageTotal");
 const showingCount = document.getElementById("showingCount");
+const noDataRow = document.getElementById("noDataRow");
  
 const ROWS_PER_PAGE = 10;
 let currentPage = 1;
@@ -40,7 +41,7 @@ function setBtnDisabled(btn, disabled) {
 }
  
 function isDataRow(row) {
-  return !!row && !row.querySelector("td.empty");
+  return !!row && row.id !== "noDataRow";
 }
  
 /** Center-align supplier table headers and data cells (overrides products.css defaults). */
@@ -48,7 +49,7 @@ function applySupplierTableAlignment() {
   const table = document.querySelector(".supplier-page .product-table");
   if (!table) return;
  
-  table.querySelectorAll("thead th, tbody td").forEach((cell) => {
+  table.querySelectorAll("thead th, tbody td:not(.empty)").forEach((cell) => {
     cell.style.textAlign = "center";
   });
  
@@ -99,13 +100,21 @@ function getFilteredRows() {
  
 function showCurrentPageRows() {
   document.querySelectorAll("tbody tr").forEach((row) => {
-    if (row.querySelector("td.empty")) {
-      row.style.display = filteredRows.length === 0 ? "" : "none";
-      return;
-    }
+    if (row.id === "noDataRow") return;
     row.style.display = "none";
   });
- 
+
+  if (filteredRows.length === 0) {
+    if (noDataRow) {
+      noDataRow.style.display = "";
+      const emptyCell = noDataRow.querySelector("td.empty");
+      if (emptyCell) emptyCell.style.textAlign = "left";
+    }
+    return;
+  }
+
+  if (noDataRow) noDataRow.style.display = "none";
+
   const startIndex = (currentPage - 1) * ROWS_PER_PAGE;
   for (let i = startIndex; i < startIndex + ROWS_PER_PAGE && i < filteredRows.length; i++) {
     filteredRows[i].style.display = "";
@@ -121,7 +130,11 @@ function updatePagination() {
   const startIndex = (currentPage - 1) * ROWS_PER_PAGE;
   const shown = filteredRows.slice(startIndex, startIndex + ROWS_PER_PAGE).length;
  
-  if (showingCount) showingCount.textContent = `Showing ${shown} of ${total} Entries`;
+  if (showingCount) {
+    showingCount.textContent = total === 0
+      ? "Showing 0 Entries"
+      : `Showing ${shown} of ${total} Entries`;
+  }
   if (pageNow) pageNow.textContent = String(currentPage);
   if (pageTotal) pageTotal.textContent = String(totalPages);
  
@@ -180,27 +193,79 @@ function getSupplierIdFromRow(row) {
 function editSupplier(supplierId) {
   window.location.href = `/supplier-new?supplier_id=${encodeURIComponent(supplierId)}`;
 }
- 
-function deleteSupplier(supplierId, row) {
-  if (confirm("Are you sure you want to delete this supplier?")) {
-    fetch(`/api/suppliers/${encodeURIComponent(supplierId)}`, {
-      method: "DELETE"
-    })
-      .then(async (response) => {
-        const result = await response.json().catch(() => ({}));
-        if (!response.ok || !result.success) {
-          throw new Error(result?.message || "Failed to delete supplier.");
-        }
-        row.remove();
-        currentPage = 1;
-        updatePagination();
-        showToast("Supplier deleted successfully.", "success");
-      })
-      .catch((err) => {
-        showToast(err.message || "Failed to delete supplier.", "error");
-      });
-  }
+
+const deleteModal = document.getElementById("deleteSupplierModal");
+const deleteSupplierText = document.getElementById("deleteSupplierText");
+const cancelDeleteBtn = document.getElementById("cancelDeleteSupplierBtn");
+const confirmDeleteBtn = document.getElementById("confirmDeleteSupplierBtn");
+
+let pendingDeleteSupplierId = null;
+let pendingDeleteRow = null;
+let lastFocusedDelete = null;
+
+function openDeleteModal() {
+  if (!deleteModal) return;
+  lastFocusedDelete = document.activeElement;
+  deleteModal.style.display = "flex";
+  deleteModal.setAttribute("aria-hidden", "false");
+  const focusable = deleteModal.querySelectorAll(
+    'button, input, select, textarea, [tabindex]:not([tabindex="-1"])'
+  );
+  if (focusable.length) focusable[0].focus();
 }
+
+function closeDeleteModal() {
+  if (!deleteModal) return;
+  deleteModal.style.display = "none";
+  deleteModal.setAttribute("aria-hidden", "true");
+  if (lastFocusedDelete) lastFocusedDelete.focus();
+  pendingDeleteSupplierId = null;
+  pendingDeleteRow = null;
+}
+
+function showDeleteSupplierModal(supplierId, row) {
+  pendingDeleteSupplierId = supplierId;
+  pendingDeleteRow = row;
+  const name = (row.children[1]?.textContent || "").trim() || "this supplier";
+  if (deleteSupplierText) {
+    deleteSupplierText.textContent = `Are you sure you want to delete "${name}"?`;
+  }
+  openDeleteModal();
+}
+
+function performDeleteSupplier() {
+  if (!pendingDeleteSupplierId || !pendingDeleteRow) return;
+
+  const supplierId = pendingDeleteSupplierId;
+  const row = pendingDeleteRow;
+
+  fetch(`/api/suppliers/${encodeURIComponent(supplierId)}`, {
+    method: "DELETE",
+  })
+    .then(async (response) => {
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !result.success) {
+        throw new Error(result?.message || "Failed to delete supplier.");
+      }
+      closeDeleteModal();
+      row.remove();
+      currentPage = 1;
+      updatePagination();
+      showToast("Supplier deleted successfully.", "success");
+    })
+    .catch((err) => {
+      closeDeleteModal();
+      showToast(err.message || "Failed to delete supplier.", "error");
+    });
+}
+
+cancelDeleteBtn?.addEventListener("click", closeDeleteModal);
+
+window.addEventListener("click", (e) => {
+  if (e.target === deleteModal) closeDeleteModal();
+});
+
+confirmDeleteBtn?.addEventListener("click", performDeleteSupplier);
  
 function attachActionButtonsToRows() {
   document.querySelectorAll("tbody tr").forEach((row) => {
@@ -217,7 +282,7 @@ function attachActionButtonsToRows() {
  
     deleteBtn.addEventListener("click", () => {
       const supplierId = getSupplierIdFromRow(row);
-      if (supplierId) deleteSupplier(supplierId, row);
+      if (supplierId) showDeleteSupplierModal(supplierId, row);
     });
   });
 }

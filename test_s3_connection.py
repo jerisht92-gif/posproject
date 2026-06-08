@@ -21,6 +21,7 @@ def main() -> int:
     print("S3 enabled:", object_storage.is_enabled())
     print("Bucket:", os.getenv("S3_BUCKET"))
     print("Region:", os.getenv("S3_REGION"))
+    print("Env folder:", object_storage.get_env_prefix())
 
     if not object_storage.is_enabled():
         print("S3 is not enabled. Check bucket/region/credentials/IAM role.")

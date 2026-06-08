@@ -1421,6 +1421,17 @@ def _purge_prior_same_name_files(cur, table, entity_col, entity_id, name_col, fi
 
 _migrate_legacy_upload_dirs()
 
+
+def _init_object_storage_environment():
+    try:
+        if object_storage.is_enabled():
+            object_storage.ensure_environment_folders()
+    except Exception as ex:
+        print(f"object_storage: environment folder init failed: {ex}")
+
+
+_init_object_storage_environment()
+
 PRODUCT_FILE = os.path.join(app.root_path, "product.json")
 CATEGORY_FILE = os.path.join(app.root_path, "product_categories.json")
 TAX_CODE_FILE = os.path.join(app.root_path, "product_tax_codes.json")
@@ -9938,19 +9949,47 @@ def suppliers():
     )
  
  
+def _supplier_gstin_index():
+    """All saved supplier GSTINs for live duplicate checks on supplier-new."""
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            SELECT supplier_id, gstin
+            FROM suppliers
+            WHERE COALESCE(TRIM(gstin), '') <> ''
+            """
+        )
+        rows = cur.fetchall()
+        index = []
+        for row in rows:
+            gstin = re.sub(r"\s", "", str(row[1] or "").strip().upper())
+            if not gstin:
+                continue
+            index.append({
+                "supplier_id": (row[0] or "").strip().upper(),
+                "gstin": gstin,
+            })
+        return index
+    finally:
+        cur.close()
+        conn.close()
+
+
 @app.route("/supplier-new")
 def supplier_new():
     user_email = session.get("user")
     if not user_email:
         return redirect(url_for("login", message="session_expired"))
- 
+
     users = load_users()
     user_name = "User"
     for u in users:
         if isinstance(u, dict) and (u.get("email") or "").lower() == user_email.lower():
             user_name = u.get("name") or "User"
             break
- 
+
     return render_template(
         "supplier-new.html",
         title="Create Supplier - Stackly",
@@ -9958,6 +9997,7 @@ def supplier_new():
         section="inventory",
         user_email=user_email,
         user_name=user_name,
+        supplier_gstin_index=_supplier_gstin_index(),
     )
  
  
@@ -9965,10 +10005,16 @@ def supplier_new():
 # Supplier Backend (Clean REST + PostgreSQL)
 # =========================================
 #---------intialize regex patterns for supplier validation
-SUPPLIER_NAME_REGEX = re.compile(r"^[A-Za-z0-9 .,&()'/-]{3,100}$")
+SUPPLIER_NAME_REGEX = re.compile(r"^[A-Za-z0-9 ]{3,30}$")
+SUPPLIER_LEGAL_ENTITY_NAME_REGEX = re.compile(r"^[A-Za-z0-9 ]{3,100}$")
+SUPPLIER_GSTIN_REGEX = re.compile(r"^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$")
 SUPPLIER_CONTACT_REGEX = re.compile(r"^[A-Za-z .'-]{2,80}$")
 SUPPLIER_PHONE_REGEX = re.compile(r"^\+?[0-9][0-9\s-]{6,19}$")
-SUPPLIER_EMAIL_REGEX = re.compile(r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$")
+SUPPLIER_EMAIL_REGEX = re.compile(r"^[A-Za-z0-9.]+@[A-Za-z0-9.]+\.[A-Za-z]{2,}$")
+SUPPLIER_WEBSITE_REGEX = re.compile(
+    r"^www\.[A-Za-z0-9]+\.([A-Za-z0-9]+\.)*[A-Za-z]{2,}$",
+    re.IGNORECASE,
+)
 SUPPLIER_FIELDS = (
     "supplier_id",
     "supplier_name",
@@ -10132,8 +10178,50 @@ def validate_supplier_required(row):
         return "Last name must be 2–80 letters (spaces, dots, apostrophes allowed)."
     sname = (row.get("supplier_name") or "").strip()
     if not SUPPLIER_NAME_REGEX.match(sname):
-        return "Supplier name must be 3–100 characters and use allowed characters only."
+        return "Supplier name must be 3–30 letters and numbers only (no special characters)."
+    legal_name = (row.get("legal_entity_name") or "").strip()
+    if not SUPPLIER_LEGAL_ENTITY_NAME_REGEX.match(legal_name):
+        return "Legal entity name must be 3–100 letters and numbers only (no special characters)."
+    gstin = re.sub(r"\s", "", str(row.get("gstin") or "").strip().upper())
+    if not SUPPLIER_GSTIN_REGEX.match(gstin):
+        return "Enter a valid 15-character GSTIN (e.g. 33ABCDE1234F1Z5)."
+    website = (row.get("website") or "").strip()
+    if website and not SUPPLIER_WEBSITE_REGEX.match(website):
+        return "Enter website as www.name.domain (e.g. www.example.com)."
     return None
+
+
+def check_duplicate_supplier_gstin(gstin, exclude_supplier_id=""):
+    """Return {supplier_id, supplier_name} if another supplier already uses this GSTIN."""
+    gstin = re.sub(r"\s", "", str(gstin or "").strip().upper())
+    if not gstin:
+        return None
+    exclude = (exclude_supplier_id or "").strip().upper()
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            SELECT supplier_id, supplier_name
+            FROM suppliers
+            WHERE UPPER(TRIM(gstin)) = %s
+              AND UPPER(TRIM(supplier_id)) <> %s
+            LIMIT 1
+            """,
+            (gstin, exclude),
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+        return {
+            "supplier_id": (row[0] or "").strip(),
+            "supplier_name": (row[1] or "").strip(),
+        }
+    finally:
+        cur.close()
+        conn.close()
+
+
 #---------function to generate next supplier ID in SUP-NNN format
  
 def generate_supplier_id():
@@ -10167,6 +10255,30 @@ def generate_supplier_id():
     return f"SUP-{str(best + 1).zfill(3)}"
  
 #---------API endpoint to get a new supplier ID (for supplier creation form)
+@app.route("/api/check-supplier-gstin", methods=["GET"])
+def check_supplier_gstin():
+    """Live duplicate check for supplier tax identification number (GSTIN)."""
+    try:
+        value = re.sub(r"\s", "", str(request.args.get("value") or "").strip().upper())
+        exclude_id = (request.args.get("exclude_supplier_id") or "").strip().upper()
+        if not value:
+            return jsonify({"success": True, "duplicate": False})
+        if not SUPPLIER_GSTIN_REGEX.match(value):
+            return jsonify({"success": True, "duplicate": False})
+        conflict = check_duplicate_supplier_gstin(value, exclude_id)
+        if conflict:
+            return jsonify({
+                "success": True,
+                "duplicate": True,
+                "supplier_id": conflict["supplier_id"],
+                "supplier_name": conflict["supplier_name"],
+            })
+        return jsonify({"success": True, "duplicate": False})
+    except Exception as e:
+        print("❌ check_supplier_gstin:", e)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @app.route("/api/suppliers/new-id", methods=["GET"])
 def get_new_supplier_id():
     return jsonify({"supplierId": generate_supplier_id()})
@@ -10199,10 +10311,18 @@ def create_supplier():
     req_err = validate_supplier_required(data)
     if req_err:
         return jsonify({"success": False, "error": req_err}), 400
- 
+
+    gstin = re.sub(r"\s", "", str(data.get("gstin") or "").strip().upper())
+    conflict = check_duplicate_supplier_gstin(gstin, "")
+    if conflict:
+        return jsonify({
+            "success": False,
+            "error": "Duplicate Tax Identification Number Found.",
+        }), 409
+
     conn = get_db_connection()
     cur = conn.cursor()
- 
+
     try:
         cur.execute("""
             INSERT INTO suppliers (
@@ -10387,7 +10507,15 @@ def update_supplier(supplier_id):
         req_err = validate_supplier_required(merged_check)
         if req_err:
             return jsonify({"success": False, "error": req_err}), 400
- 
+
+        gstin = re.sub(r"\s", "", str(merged_check.get("gstin") or "").strip().upper())
+        conflict = check_duplicate_supplier_gstin(gstin, supplier_id)
+        if conflict:
+            return jsonify({
+                "success": False,
+                "error": "Duplicate Tax Identification Number Found.",
+            }), 409
+
         # Only SET columns that exist on this database table (avoids 500 if schema lags code)
         update_columns = [
             c for c in SUPPLIER_FIELDS
@@ -31194,7 +31322,10 @@ if __name__ == "__main__":
 
     print("Application is running successfully")
     if object_storage.is_enabled():
-        print(f"S3 uploads enabled (bucket: {object_storage._s3_bucket_id_from_env()})")
+        print(
+            f"S3 uploads enabled (bucket: {object_storage._s3_bucket_id_from_env()}, "
+            f"env folder: {object_storage.get_env_prefix()})"
+        )
     else:
         print(
             "S3 uploads disabled — files save under uploads/ locally. "
