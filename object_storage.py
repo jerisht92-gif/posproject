@@ -10,7 +10,8 @@ Object keys are scoped by deployment environment, then submodule, e.g.:
   Prod/company_information_attachments/RR001/logo.png
 
 Environment folder (Dev | QA | Prod) is taken from S3_ENV_PREFIX, or inferred from
-DB_HOST / APP_BASE_URL against S3_DEV_HOSTS / S3_QA_HOSTS in .env, else Prod.
+the browser Host on each upload (matched against S3_DEV_HOSTS / S3_QA_HOSTS and
+APP_BASE_URL order: first URL = Dev, second = QA), then DB_HOST as fallback, else Prod.
 
 Public URLs stored in PostgreSQL:
   AWS/native: https://{bucket}.s3.{region}.amazonaws.com/{key}
@@ -107,22 +108,62 @@ def _hosts_from_env(env_var: str) -> frozenset:
     return frozenset(hosts)
 
 
+def _dev_qa_host_sets() -> Tuple[frozenset, frozenset]:
+    """Dev/QA host lists from S3_DEV_HOSTS / S3_QA_HOSTS plus APP_BASE_URL order."""
+    dev_hosts = set(_hosts_from_env("S3_DEV_HOSTS"))
+    qa_hosts = set(_hosts_from_env("S3_QA_HOSTS"))
+    app_urls = [u.strip() for u in (os.getenv("APP_BASE_URL") or "").split(",") if u.strip()]
+    if app_urls:
+        dev_from_app = _host_from_url(app_urls[0])
+        if dev_from_app:
+            dev_hosts.add(dev_from_app)
+    if len(app_urls) > 1:
+        qa_from_app = _host_from_url(app_urls[1])
+        if qa_from_app:
+            qa_hosts.add(qa_from_app)
+    return frozenset(dev_hosts), frozenset(qa_hosts)
+
+
+def _request_host() -> str:
+    """Host from the current HTTP request (browser URL), without port."""
+    try:
+        from flask import has_request_context, request
+
+        if has_request_context():
+            return _host_from_url(f"http://{request.host}")
+    except (ImportError, RuntimeError):
+        pass
+    return ""
+
+
+def _env_prefix_for_host(host: str, dev_hosts: frozenset, qa_hosts: frozenset) -> Optional[str]:
+    h = (host or "").strip()
+    if not h:
+        return None
+    if h in dev_hosts:
+        return ENV_DEV
+    if h in qa_hosts:
+        return ENV_QA
+    return None
+
+
 def _env_prefix_from_hosts() -> Optional[str]:
-    dev_hosts = _hosts_from_env("S3_DEV_HOSTS")
-    qa_hosts = _hosts_from_env("S3_QA_HOSTS")
+    dev_hosts, qa_hosts = _dev_qa_host_sets()
+
+    # Browser URL first: http://16.16.206.242/ → Dev, http://13.61.154.67/ → QA
+    browser_prefix = _env_prefix_for_host(_request_host(), dev_hosts, qa_hosts)
+    if browser_prefix:
+        return browser_prefix
 
     db_host = (os.getenv("DB_HOST") or "").strip()
-    if db_host in dev_hosts:
-        return ENV_DEV
-    if db_host in qa_hosts:
-        return ENV_QA
+    db_prefix = _env_prefix_for_host(db_host, dev_hosts, qa_hosts)
+    if db_prefix:
+        return db_prefix
 
     for raw_url in (os.getenv("APP_BASE_URL") or "").split(","):
-        host = _host_from_url(raw_url)
-        if host in dev_hosts:
-            return ENV_DEV
-        if host in qa_hosts:
-            return ENV_QA
+        app_prefix = _env_prefix_for_host(_host_from_url(raw_url), dev_hosts, qa_hosts)
+        if app_prefix:
+            return app_prefix
     return None
 
 
