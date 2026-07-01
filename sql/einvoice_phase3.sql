@@ -1,0 +1,22 @@
+-- Phase 3: e-Invoice data model (tax detail + IRN placeholders)
+
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS irn VARCHAR(64);
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS ack_no VARCHAR(32);
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS ack_date TIMESTAMPTZ;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS einvoice_status VARCHAR(32);
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS signed_qr TEXT;
+
+ALTER TABLE invoice_items ADD COLUMN IF NOT EXISTS hsn_code VARCHAR(20);
+ALTER TABLE invoice_items ADD COLUMN IF NOT EXISTS taxable_value NUMERIC(14, 2) DEFAULT 0;
+ALTER TABLE invoice_items ADD COLUMN IF NOT EXISTS cgst_amt NUMERIC(14, 2) DEFAULT 0;
+ALTER TABLE invoice_items ADD COLUMN IF NOT EXISTS sgst_amt NUMERIC(14, 2) DEFAULT 0;
+ALTER TABLE invoice_items ADD COLUMN IF NOT EXISTS igst_amt NUMERIC(14, 2) DEFAULT 0;
+
+ALTER TABLE bill_items ADD COLUMN IF NOT EXISTS hsn_code VARCHAR(20);
+ALTER TABLE bill_items ADD COLUMN IF NOT EXISTS taxable_value NUMERIC(14, 2) DEFAULT 0;
+ALTER TABLE bill_items ADD COLUMN IF NOT EXISTS cgst_amt NUMERIC(14, 2) DEFAULT 0;
+ALTER TABLE bill_items ADD COLUMN IF NOT EXISTS sgst_amt NUMERIC(14, 2) DEFAULT 0;
+ALTER TABLE bill_items ADD COLUMN IF NOT EXISTS igst_amt NUMERIC(14, 2) DEFAULT 0;
+
+CREATE INDEX IF NOT EXISTS idx_invoice_items_hsn_code ON invoice_items (hsn_code);
+CREATE INDEX IF NOT EXISTS idx_invoices_einvoice_status ON invoices (einvoice_status);
