@@ -1,0 +1,114 @@
+/* =============================
+   DASHBOARD PAGE WRAPPER
+============================= */
+.dashboard-page1 {
+  padding: 20px 24px;
+  font-family: "Poppins", sans-serif;
+  background: #f6f1f1;
+  color: #4a1f1a;
+}
+
+/* =============================
+   TITLE
+============================= */
+.page-title {
+  font-size: 28px;
+  font-weight: 700;
+  color: #a12828;
+  margin-bottom: 20px;
+  text-shadow: 1px 1px 2px #d8b7b7;
+  text-align: center;
+}
+
+/* =============================
+   CARDS ROW
+============================= */
+.cards-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+/* =============================
+   DASHBOARD CARD
+============================= */
+.dash-card {
+  background: #ffffff;
+  border-radius: 12px;
+  padding: 20px 24px;
+  box-shadow: 0 4px 16px rgba(161, 40, 40, 0.12);
+  display: flex;
+  flex-direction: column;
+  border: 1px solid rgba(161, 40, 40, 0.15);
+  transition: box-shadow 0.2s ease;
+}
+
+.dash-card:hover {
+  box-shadow: 0 8px 24px rgba(161, 40, 40, 0.18);
+}
+
+.dash-card .card-title {
+  font-size: 16px;
+  font-weight: 700;
+  margin-bottom: 14px;
+  color: #a12828;
+}
+
+.dash-card .card-body {
+  flex: 1;
+  position: relative;
+  height: 280px;
+}
+
+.dash-card canvas {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* =============================
+   RESPONSIVE
+============================= */
+@media (max-width: 1024px) {
+  .cards-row {
+    gap: 16px;
+  }
+}
+
+@media (max-width: 768px) {
+  .cards-row {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  .dash-card .card-body {
+    height: 240px;
+  }
+
+  .page-title {
+    font-size: 24px;
+  }
+}
+
+@media (max-width: 480px) {
+  .dashboard-page1 {
+    padding: 12px;
+  }
+
+  .cards-row {
+    gap: 12px;
+  }
+
+  .dash-card {
+    padding: 14px 16px;
+  }
+
+  .dash-card .card-body {
+    height: 200px;
+  }
+
+  .page-title {
+    font-size: 20px;
+  }
+}
