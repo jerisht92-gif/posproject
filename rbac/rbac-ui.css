@@ -1,0 +1,61 @@
+/* RBAC-denied controls: look disabled but remain clickable for access-denied toast. */
+button.rbac-action-disabled,
+input.rbac-action-disabled,
+select.rbac-action-disabled,
+textarea.rbac-action-disabled,
+a.rbac-action-disabled {
+  cursor: not-allowed !important;
+  opacity: 0.55;
+  pointer-events: auto;
+}
+
+button.rbac-action-disabled[data-rbac-denied="1"],
+input.rbac-action-disabled[data-rbac-denied="1"],
+select.rbac-action-disabled[data-rbac-denied="1"],
+textarea.rbac-action-disabled[data-rbac-denied="1"],
+a.rbac-action-disabled[data-rbac-denied="1"] {
+  filter: grayscale(0.15);
+}
+
+select.rbac-action-disabled[data-rbac-denied="1"] {
+  background-color: #f3f4f6;
+}
+
+/* Quick Billing — module unusable when core permissions are denied */
+.quick-billing-page.qb-rbac-page-blocked > :not(.qb-rbac-access-warning) {
+  pointer-events: none;
+  user-select: none;
+  opacity: 0.42;
+}
+
+.qb-rbac-access-warning {
+  position: relative;
+  z-index: 50;
+  margin: 0 0 16px;
+  padding: 16px 20px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #fff4e5, #ffe8cc);
+  border: 1.5px solid #d97706;
+  color: #7c2d12;
+  box-shadow: 0 8px 24px rgba(217, 119, 6, 0.15);
+  pointer-events: auto;
+  opacity: 1 !important;
+}
+
+.qb-rbac-access-warning strong {
+  display: block;
+  font-size: 16px;
+  margin-bottom: 6px;
+}
+
+.qb-rbac-access-warning p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.qb-del-page.qb-rbac-page-blocked > :not(.qb-rbac-access-warning) {
+  pointer-events: none;
+  user-select: none;
+  opacity: 0.42;
+}
